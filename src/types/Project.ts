@@ -1,3 +1,5 @@
+import type { QuantityItem } from "./QuantityItem";
+
 export interface Project {
   id: string;
 
@@ -66,6 +68,8 @@ export interface Project {
   // ==========================
   // QUANTITY INFORMATION
   // ==========================
+
+  quantityItems: QuantityItem[];
 
   totalWOQty: number;
   totalInvoiceQty: number;

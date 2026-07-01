@@ -51,17 +51,15 @@ const AddProject = () => {
     // ==========================
 
     invoiceRaised: 0,
-
-    paymentReceived: 0,
-
     invoiceRaisedINR: 0,
 
     balanceToBeRaised: 0,
-
     balanceToBeRaisedINR: 0,
 
-    outstanding: 0,
+    paymentReceived: 0,
+    paymentReceivedINR: 0,
 
+    outstanding: 0,
     outstandingINR: 0,
 
     paymentStatus: "",
@@ -83,6 +81,18 @@ const AddProject = () => {
     // ==========================
     // QUANTITY INFORMATION
     // ==========================
+
+    quantityItems: [
+      {
+        id: crypto.randomUUID(),
+        description: "",
+        woQty: 0,
+        invoiceQty: 0,
+        pendingQty: 0,
+        unitRate: 0,
+        pendingAmount: 0,
+      },
+    ],
 
     totalWOQty: 0,
 
@@ -129,6 +139,7 @@ const AddProject = () => {
 
   return (
     <div className="space-y-8">
+
       <div>
         <h1 className="text-4xl font-bold">
           Add New Project
@@ -173,6 +184,7 @@ const AddProject = () => {
         project={project}
         setProject={setProject}
       />
+
     </div>
   );
 };
