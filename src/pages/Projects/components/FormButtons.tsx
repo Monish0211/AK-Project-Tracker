@@ -1,12 +1,33 @@
-const FormButtons = () => {
+import type { Dispatch, SetStateAction } from "react";
+import type { Project } from "../../../types/Project";
+
+interface Props {
+  project: Project;
+  setProject: Dispatch<SetStateAction<Project>>;
+}
+
+const FormButtons = ({ project }: Props) => {
+
+  const handleSave = () => {
+    console.log(project);
+    alert("Project Saved Successfully!");
+  };
+
   return (
     <div className="flex justify-end gap-4">
 
-      <button className="px-6 py-3 bg-gray-300 rounded-lg">
+      <button
+        type="button"
+        className="px-6 py-3 rounded-lg border"
+      >
         Cancel
       </button>
 
-      <button className="px-6 py-3 bg-blue-600 text-white rounded-lg">
+      <button
+        type="button"
+        onClick={handleSave}
+        className="px-6 py-3 rounded-lg bg-blue-600 text-white"
+      >
         Save Project
       </button>
 

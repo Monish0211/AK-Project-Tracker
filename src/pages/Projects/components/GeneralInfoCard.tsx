@@ -9,7 +9,6 @@ interface Props {
 const GeneralInfoCard = ({ project, setProject }: Props) => {
   return (
     <div className="bg-white rounded-xl shadow-md p-6">
-
       <h2 className="text-2xl font-semibold mb-6">
         General Information
       </h2>
@@ -23,7 +22,7 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
           </label>
 
           <input
-            type="text"
+            type="month"
             value={project.poMonth}
             onChange={(e) =>
               setProject({
@@ -51,10 +50,11 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
               })
             }
             className="w-full border rounded-lg p-3"
+            placeholder="Enter PR Number"
           />
         </div>
 
-        {/* Client Name */}
+        {/* Client */}
         <div>
           <label className="block text-sm font-medium mb-2">
             Client Name
@@ -70,6 +70,7 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
               })
             }
             className="w-full border rounded-lg p-3"
+            placeholder="Enter Client Name"
           />
         </div>
 
@@ -89,6 +90,7 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
               })
             }
             className="w-full border rounded-lg p-3"
+            placeholder="Enter Department"
           />
         </div>
 
@@ -98,8 +100,7 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
             Domestic / Foreign
           </label>
 
-          <input
-            type="text"
+          <select
             value={project.domesticForeign}
             onChange={(e) =>
               setProject({
@@ -108,7 +109,11 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
               })
             }
             className="w-full border rounded-lg p-3"
-          />
+          >
+            <option value="">Select</option>
+            <option value="Domestic">Domestic</option>
+            <option value="Foreign">Foreign</option>
+          </select>
         </div>
 
         {/* Project Title */}
@@ -127,6 +132,7 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
               })
             }
             className="w-full border rounded-lg p-3"
+            placeholder="Enter Project Title"
           />
         </div>
 
@@ -136,8 +142,7 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
             Work Order Status
           </label>
 
-          <input
-            type="text"
+          <select
             value={project.workOrderStatus}
             onChange={(e) =>
               setProject({
@@ -146,7 +151,12 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
               })
             }
             className="w-full border rounded-lg p-3"
-          />
+          >
+            <option value="">Select</option>
+            <option value="Received">Received</option>
+            <option value="Pending">Pending</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
         </div>
 
         {/* Project Start Date */}
@@ -187,8 +197,31 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
           />
         </div>
 
-      </div>
+        {/* Project Status */}
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            Project Status
+          </label>
 
+          <select
+            value={project.projectStatus}
+            onChange={(e) =>
+              setProject({
+                ...project,
+                projectStatus: e.target.value,
+              })
+            }
+            className="w-full border rounded-lg p-3"
+          >
+            <option value="">Select</option>
+            <option value="Active">Active</option>
+            <option value="Completed">Completed</option>
+            <option value="On Hold">On Hold</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+        </div>
+
+      </div>
     </div>
   );
 };

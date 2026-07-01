@@ -13,62 +13,122 @@ const AddProject = () => {
   const [project, setProject] = useState<Project>({
     id: crypto.randomUUID(),
 
-    // General Information
+    // ==========================
+    // GENERAL INFORMATION
+    // ==========================
+
     poMonth: "",
     prNo: "",
     client: "",
     department: "",
     domesticForeign: "",
     projectTitle: "",
+
     workOrderStatus: "",
     projectStartDate: "",
     projectEndDate: "",
     projectStatus: "",
 
-    // Commercial
+    // ==========================
+    // COMMERCIAL INFORMATION
+    // ==========================
+
     contractFormalities: "",
     paymentTerms: "",
+
     workOrderValue: 0,
+
     currency: "",
-    contractExchangeRate: 0,
-    currentExchangeRate: 0,
+
+    contractExchangeRate: 1,
+
+    currentExchangeRate: 1,
+
     workOrderValueINR: 0,
 
-    // Invoice
+    // ==========================
+    // INVOICE INFORMATION
+    // ==========================
+
     invoiceRaised: 0,
-    invoiceRaisedINR: 0,
-    balanceToBeRaised: 0,
-    balanceToBeRaisedINR: 0,
+
     paymentReceived: 0,
-    paymentReceivedINR: 0,
+
+    invoiceRaisedINR: 0,
+
+    balanceToBeRaised: 0,
+
+    balanceToBeRaisedINR: 0,
+
     outstanding: 0,
+
     outstandingINR: 0,
+
     paymentStatus: "",
 
-    // Documents
-    reportLink: "",
-    completionCertificate: "",
-    projectCompletionDate: "",
+    // ==========================
+    // EXPENSE INFORMATION
+    // ==========================
 
-    // Expenses
     manhourExpenses: 0,
+
     nonManhourExpenses: 0,
+
     totalExpenses: 0,
+
     profit: 0,
+
     profitPercentage: 0,
 
-    // Quantity
+    // ==========================
+    // QUANTITY INFORMATION
+    // ==========================
+
     totalWOQty: 0,
+
     totalInvoiceQty: 0,
+
     totalPendingQty: 0,
+
     pendingAmount: 0,
+
     pendingInvoicePercentage: 0,
+
+    // ==========================
+    // DOCUMENT INFORMATION
+    // ==========================
+
+    reportLink: "",
+
+    completionCertificate: "",
+
+    projectCompletionDate: "",
+
+    // ==========================
+    // PROJECT TEAM
+    // ==========================
+
+    projectManager: "",
+
+    projectEngineer: "",
+
+    projectCoordinator: "",
+
+    clientReferenceNo: "",
+
+    remarks: "",
+
+    // ==========================
+    // AUDIT
+    // ==========================
+
+    createdAt: new Date().toISOString(),
+
+    updatedAt: new Date().toISOString(),
   });
 
   return (
     <div className="space-y-8">
-
-      {/* Page Title */}
       <div>
         <h1 className="text-4xl font-bold">
           Add New Project
@@ -79,33 +139,40 @@ const AddProject = () => {
         </p>
       </div>
 
-      {/* General Information */}
       <GeneralInfoCard
         project={project}
         setProject={setProject}
       />
 
-      {/* Commercial Information */}
       <CommercialCard
         project={project}
         setProject={setProject}
       />
 
-      {/* Invoice Information */}
-      <InvoiceCard />
+      <InvoiceCard
+        project={project}
+        setProject={setProject}
+      />
 
-      {/* Expense Information */}
-      <ExpenseCard />
+      <ExpenseCard
+        project={project}
+        setProject={setProject}
+      />
 
-      {/* Quantity Details */}
-      <QuantityCard />
+      <QuantityCard
+        project={project}
+        setProject={setProject}
+      />
 
-      {/* Documents */}
-      <DocumentCard />
+      <DocumentCard
+        project={project}
+        setProject={setProject}
+      />
 
-      {/* Buttons */}
-      <FormButtons />
-
+      <FormButtons
+        project={project}
+        setProject={setProject}
+      />
     </div>
   );
 };

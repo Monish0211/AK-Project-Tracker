@@ -66,14 +66,18 @@ const CommercialCard = ({ project, setProject }: Props) => {
           <input
             type="number"
             value={project.workOrderValue}
-            onChange={(e) =>
+            onChange={(e) => {
+              const value = Number(e.target.value);
+
               setProject({
                 ...project,
-                workOrderValue: Number(e.target.value),
+                workOrderValue: value,
                 workOrderValueINR:
-                  Number(e.target.value) * project.contractExchangeRate,
-              })
-            }
+                  project.currency === "INR"
+                    ? value
+                    : value * project.contractExchangeRate,
+              });
+            }}
             className="w-full border rounded-lg p-3"
           />
         </div>
@@ -87,7 +91,6 @@ const CommercialCard = ({ project, setProject }: Props) => {
           <CreatableSelect
             options={currencies}
             placeholder="Search or Add Currency..."
-
             value={
               project.currency
                 ? {
@@ -96,44 +99,71 @@ const CommercialCard = ({ project, setProject }: Props) => {
                   }
                 : null
             }
+            onChange={(selected) => {
+              const currency = selected?.value || "";
 
-            onChange={(selected) =>
               setProject({
                 ...project,
-                currency: selected?.value || "",
-              })
-            }
-
+                currency,
+                workOrderValueINR:
+                  currency === "INR"
+                    ? project.workOrderValue
+                    : project.workOrderValue *
+                      project.contractExchangeRate,
+              });
+            }}
             formatCreateLabel={(inputValue) =>
               `➕ Add "${inputValue}"`
             }
-
             isClearable
           />
         </div>
 
-        {/* Exchange Rate */}
+        {/* Contract Exchange Rate */}
         <div>
           <label className="block text-sm font-medium mb-2">
-            Exchange Rate
+            Contract Exchange Rate
           </label>
 
           <input
             type="number"
             value={project.contractExchangeRate}
+            onChange={(e) => {
+              const rate = Number(e.target.value);
+
+              setProject({
+                ...project,
+                contractExchangeRate: rate,
+                workOrderValueINR:
+                  project.currency === "INR"
+                    ? project.workOrderValue
+                    : project.workOrderValue * rate,
+              });
+            }}
+            className="w-full border rounded-lg p-3"
+          />
+        </div>
+
+        {/* Current Exchange Rate */}
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            Current Exchange Rate
+          </label>
+
+          <input
+            type="number"
+            value={project.currentExchangeRate}
             onChange={(e) =>
               setProject({
                 ...project,
-                contractExchangeRate: Number(e.target.value),
-                workOrderValueINR:
-                  project.workOrderValue * Number(e.target.value),
+                currentExchangeRate: Number(e.target.value),
               })
             }
             className="w-full border rounded-lg p-3"
           />
         </div>
 
-        {/* Work Order Value (INR) */}
+        {/* Work Order Value INR */}
         <div>
           <label className="block text-sm font-medium mb-2">
             Work Order Value (INR)
@@ -143,7 +173,7 @@ const CommercialCard = ({ project, setProject }: Props) => {
             type="number"
             value={project.workOrderValueINR}
             readOnly
-            className="w-full border rounded-lg p-3 bg-gray-100 cursor-not-allowed"
+            className="w-full border rounded-lg p-3 bg-gray-100"
           />
 
           <p className="text-xs text-gray-500 mt-1">

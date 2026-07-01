@@ -1,5 +1,3 @@
-import type { QuantityItem } from "./QuantityItem";
-
 export interface Project {
   id: string;
 
@@ -27,16 +25,11 @@ export interface Project {
   paymentTerms: string;
 
   workOrderValue: number;
-
   currency: string;
 
-  // Exchange Rate at the time of Contract
   contractExchangeRate: number;
-
-  // Current Live Exchange Rate
   currentExchangeRate: number;
 
-  // Automatically Calculated
   workOrderValueINR: number;
 
   // ==========================
@@ -58,21 +51,10 @@ export interface Project {
   paymentStatus: string;
 
   // ==========================
-  // DOCUMENT INFORMATION
-  // ==========================
-
-  reportLink: string;
-
-  completionCertificate: string;
-
-  projectCompletionDate: string;
-
-  // ==========================
   // EXPENSE INFORMATION
   // ==========================
 
   manhourExpenses: number;
-
   nonManhourExpenses: number;
 
   totalExpenses: number;
@@ -85,23 +67,36 @@ export interface Project {
   // QUANTITY INFORMATION
   // ==========================
 
-  quantityItems: QuantityItem[];
-
   totalWOQty: number;
-
   totalInvoiceQty: number;
-
   totalPendingQty: number;
 
   pendingAmount: number;
-
   pendingInvoicePercentage: number;
 
   // ==========================
-  // AUDIT INFORMATION
+  // DOCUMENT INFORMATION
+  // ==========================
+
+  reportLink: string;
+  completionCertificate: string;
+  projectCompletionDate: string;
+
+  // ==========================
+  // PROJECT TEAM
+  // ==========================
+
+  projectManager: string;
+  projectEngineer: string;
+  projectCoordinator: string;
+
+  clientReferenceNo: string;
+  remarks: string;
+
+  // ==========================
+  // AUDIT
   // ==========================
 
   createdAt?: string;
-
   updatedAt?: string;
 }
