@@ -1,263 +1,288 @@
-import { Trash2, Plus } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type { ChangeEvent, Dispatch, SetStateAction } from "react";
 import type { Project } from "../../../types/Project";
+import type { QuantityItem } from "../../../types/QuantityItem";
+import {
+  calculateQuantity,
+  createEmptyQuantityItem,
+  formatIndianCurrency,
+  formatIndianNumber,
+  parseNumericInput,
+  recalcQuantityItem,
+} from "../../../utils/quantityCalculations";
 
 interface Props {
   project: Project;
   setProject: Dispatch<SetStateAction<Project>>;
 }
 
-const QuantityCard = ({ project, setProject }: Props) => {
-  const calculateTotals = (items: typeof project.quantityItems) => {
-    const totalWOQty = items.reduce((sum, item) => sum + item.woQty, 0);
+type QuantityField = "woQty" | "invoiceQty" | "unitRate";
 
-    const totalInvoiceQty = items.reduce(
-      (sum, item) => sum + item.invoiceQty,
-      0
-    );
+const NUMBER_INPUT_PATTERN = /^\d*\.?\d*$/;
 
-    const totalPendingQty = items.reduce(
-      (sum, item) => sum + item.pendingQty,
-      0
-    );
+interface NumericInputProps {
+  value: number;
+  ariaLabel: string;
+  onChange: (nextValue: number) => boolean | void;
+}
 
-    const pendingAmount = items.reduce(
-      (sum, item) => sum + item.pendingAmount,
-      0
-    );
+const NumericInput = ({ value, ariaLabel, onChange }: NumericInputProps) => {
+  const [rawValue, setRawValue] = useState<string>(
+    value === 0 ? "" : String(value)
+  );
 
-    return {
-      totalWOQty,
-      totalInvoiceQty,
-      totalPendingQty,
-      pendingAmount,
-    };
-  };
+  const lastCommittedValue = useRef<number>(value);
 
-  const handleChange = (
-    index: number,
-    field: string,
-    value: string
-  ) => {
-    const updated = [...project.quantityItems];
+  useEffect(() => {
+    if (value !== lastCommittedValue.current) {
+      lastCommittedValue.current = value;
+      setRawValue(value === 0 ? "" : String(value));
+    }
+  }, [value]);
 
-    const item = updated[index];
+  const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextRaw = event.target.value;
 
-    switch (field) {
-      case "description":
-        item.description = value;
-        break;
-
-      case "woQty":
-        item.woQty = Number(value) || 0;
-        break;
-
-      case "invoiceQty":
-        item.invoiceQty = Number(value) || 0;
-        break;
-
-      case "unitRate":
-        item.unitRate = Number(value) || 0;
-        break;
+    if (nextRaw !== "" && !NUMBER_INPUT_PATTERN.test(nextRaw)) {
+      return;
     }
 
-    item.pendingQty = item.woQty - item.invoiceQty;
+    const parsedValue = parseNumericInput(nextRaw);
+    const isAccepted = onChange(parsedValue) !== false;
 
-    item.pendingAmount = item.pendingQty * item.unitRate;
+    if (!isAccepted) {
+      return;
+    }
+
+    lastCommittedValue.current = parsedValue;
+    setRawValue(nextRaw);
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      placeholder="0"
+      aria-label={ariaLabel}
+      value={rawValue}
+      onChange={handleChange}
+      className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 text-right text-sm text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-blue-400 focus:bg-blue-50 focus:ring-2 focus:ring-blue-100"
+    />
+  );
+};
+
+const applyFieldValue = (
+  item: QuantityItem,
+  field: QuantityField,
+  value: number
+): QuantityItem => {
+  switch (field) {
+    case "woQty":
+      return { ...item, woQty: value };
+
+    case "invoiceQty":
+      return { ...item, invoiceQty: value };
+
+    case "unitRate":
+      return { ...item, unitRate: value };
+  }
+};
+
+const QuantityCard = ({ project, setProject }: Props) => {
+  const handleDescriptionChange = (index: number, value: string) => {
+    const updatedItems = project.quantityItems.map((item, i) =>
+      i === index ? { ...item, description: value } : item
+    );
 
     setProject({
       ...project,
-      quantityItems: updated,
-      ...calculateTotals(updated),
+      quantityItems: updatedItems,
     });
   };
 
-  const addRow = () => {
+  const handleFieldChange = (
+    index: number,
+    field: QuantityField,
+    value: number
+  ): boolean => {
+    const currentItem = project.quantityItems[index];
+
+    if (field === "invoiceQty" && value > currentItem.woQty) {
+      window.alert("Invoice Quantity cannot exceed Work Order Quantity.");
+      return false;
+    }
+
+    const updatedItems = project.quantityItems.map((item, i) =>
+      i === index
+        ? recalcQuantityItem(applyFieldValue(item, field, value))
+        : item
+    );
+
     setProject({
       ...project,
-      quantityItems: [
-        ...project.quantityItems,
-        {
-          id: crypto.randomUUID(),
-          description: "",
-          woQty: 0,
-          invoiceQty: 0,
-          pendingQty: 0,
-          unitRate: 0,
-          pendingAmount: 0,
-        },
-      ],
+      quantityItems: updatedItems,
+      ...calculateQuantity(updatedItems),
+    });
+
+    return true;
+  };
+
+  const handleAddItem = () => {
+    const updatedItems = [...project.quantityItems, createEmptyQuantityItem()];
+
+    setProject({
+      ...project,
+      quantityItems: updatedItems,
+      ...calculateQuantity(updatedItems),
     });
   };
 
-  const removeRow = (index: number) => {
-    const updated = project.quantityItems.filter((_, i) => i !== index);
+  const handleRemoveItem = (index: number) => {
+    const updatedItems = project.quantityItems.filter((_, i) => i !== index);
 
     setProject({
       ...project,
-      quantityItems: updated,
-      ...calculateTotals(updated),
+      quantityItems: updatedItems,
+      ...calculateQuantity(updatedItems),
     });
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-semibold">
-          Quantity Details
-        </h2>
+    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-800">
+            Quantity Details
+          </h2>
+          <p className="text-sm text-slate-500">
+            Track work order quantity, invoicing progress, and pending value.
+          </p>
+        </div>
 
         <button
-          onClick={addRow}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
+          type="button"
+          onClick={handleAddItem}
+          className="inline-flex items-center justify-center gap-2 self-start rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 active:bg-blue-800 sm:self-auto"
         >
-          <Plus size={18} />
+          <Plus size={16} strokeWidth={2.5} />
           Add Item
         </button>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full border border-gray-300">
-          <thead className="bg-gray-100">
+      <div className="max-h-[28rem] overflow-auto rounded-lg border border-slate-200">
+        <table className="w-full min-w-[900px] border-collapse text-sm">
+          <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase tracking-wide text-slate-600">
             <tr>
-              <th className="border p-2 w-14">#</th>
+              <th className="w-14 border-b border-slate-200 px-3 py-3 text-center font-semibold">
+                Sl No
+              </th>
 
-              <th className="border p-2">
+              <th className="border-b border-slate-200 px-3 py-3 text-left font-semibold">
                 Description
               </th>
 
-              <th className="border p-2">
+              <th className="w-32 border-b border-slate-200 px-3 py-3 text-right font-semibold">
                 WO Qty
               </th>
 
-              <th className="border p-2">
+              <th className="w-32 border-b border-slate-200 px-3 py-3 text-right font-semibold">
                 Invoice Qty
               </th>
 
-              <th className="border p-2">
+              <th className="w-36 border-b border-slate-200 px-3 py-3 text-right font-semibold">
                 Pending Qty
               </th>
 
-              <th className="border p-2">
+              <th className="w-32 border-b border-slate-200 px-3 py-3 text-right font-semibold">
                 Unit Rate
               </th>
 
-              <th className="border p-2">
+              <th className="w-40 border-b border-slate-200 px-3 py-3 text-right font-semibold">
                 Pending Amount
               </th>
 
-              <th className="border p-2 w-20">
-                Action
+              <th className="w-16 border-b border-slate-200 px-3 py-3 text-center font-semibold">
+                Delete
               </th>
             </tr>
           </thead>
 
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {project.quantityItems.length === 0 ? (
               <tr>
-                <td
-                  colSpan={8}
-                  className="text-center py-6 text-gray-500"
-                >
-                  No quantity items added.
+                <td colSpan={8} className="py-10 text-center text-slate-400">
+                  No quantity items added. Click "Add Item" to get started.
                 </td>
               </tr>
             ) : (
               project.quantityItems.map((item, index) => (
-                <tr key={item.id}>
-                  <td className="border p-2 text-center">
+                <tr
+                  key={item.id}
+                  className="bg-white transition hover:bg-slate-50"
+                >
+                  <td className="px-3 py-2 text-center text-slate-500">
                     {index + 1}
                   </td>
 
-                  <td className="border p-2">
+                  <td className="px-3 py-2">
                     <input
                       type="text"
                       value={item.description}
+                      placeholder="Enter description"
                       onChange={(e) =>
-                        handleChange(
-                          index,
-                          "description",
-                          e.target.value
-                        )
+                        handleDescriptionChange(index, e.target.value)
                       }
-                      className="w-full px-2 py-1 outline-none rounded"
+                      className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-blue-400 focus:bg-blue-50 focus:ring-2 focus:ring-blue-100"
                     />
                   </td>
 
-                  <td className="border p-2">
-                    <input
-                      type="number"
+                  <td className="px-3 py-2">
+                    <NumericInput
                       value={item.woQty}
-                      onChange={(e) =>
-                        handleChange(
-                          index,
-                          "woQty",
-                          e.target.value
-                        )
+                      ariaLabel={`WO Qty for row ${index + 1}`}
+                      onChange={(value) =>
+                        handleFieldChange(index, "woQty", value)
                       }
-                      className="w-full px-2 py-1 outline-none rounded"
                     />
                   </td>
 
-                  <td className="border p-2">
-                    <input
-                      type="number"
+                  <td className="px-3 py-2">
+                    <NumericInput
                       value={item.invoiceQty}
-                      onChange={(e) =>
-                        handleChange(
-                          index,
-                          "invoiceQty",
-                          e.target.value
-                        )
+                      ariaLabel={`Invoice Qty for row ${index + 1}`}
+                      onChange={(value) =>
+                        handleFieldChange(index, "invoiceQty", value)
                       }
-                      className="w-full px-2 py-1 outline-none rounded"
                     />
                   </td>
 
-                  <td className="border p-2 text-center bg-gray-50">
-                    {item.pendingQty}
+                  <td className="bg-slate-50 px-3 py-2 text-right font-medium text-slate-700">
+                    {formatIndianNumber(item.pendingQty)}
                   </td>
 
-                  <td className="border p-2">
-                    <input
-                      type="number"
+                  <td className="px-3 py-2">
+                    <NumericInput
                       value={item.unitRate}
-                      onChange={(e) =>
-                        handleChange(
-                          index,
-                          "unitRate",
-                          e.target.value
-                        )
+                      ariaLabel={`Unit Rate for row ${index + 1}`}
+                      onChange={(value) =>
+                        handleFieldChange(index, "unitRate", value)
                       }
-                      className="w-full px-2 py-1 outline-none rounded"
                     />
                   </td>
 
-                  <td className="border p-2 text-center bg-gray-50">
-                    ₹
-                    {item.pendingAmount.toLocaleString(
-                      "en-IN",
-                      {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      }
-                    )}
+                  <td className="bg-slate-50 px-3 py-2 text-right font-semibold text-slate-800">
+                    {formatIndianCurrency(item.pendingAmount)}
                   </td>
 
-                  <td className="border p-2 text-center">
+                  <td className="px-3 py-2 text-center">
                     <button
-                      onClick={() =>
-                        removeRow(index)
-                      }
-                      disabled={
-                        project.quantityItems.length === 1
-                      }
-                      className="disabled:opacity-40"
+                      type="button"
+                      onClick={() => handleRemoveItem(index)}
+                      aria-label={`Delete row ${index + 1}`}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-500 transition hover:bg-red-50 hover:text-red-600"
                     >
-                      <Trash2
-                        size={18}
-                        className="text-red-500 hover:text-red-700"
-                      />
+                      <Trash2 size={16} />
                     </button>
                   </td>
                 </tr>
@@ -267,51 +292,40 @@ const QuantityCard = ({ project, setProject }: Props) => {
         </table>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-8">
-        <div className="bg-gray-50 rounded-lg p-4 shadow-sm">
-          <p className="text-sm text-gray-500">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
             Total WO Qty
           </p>
-
-          <p className="text-2xl font-bold">
-            {project.totalWOQty}
+          <p className="mt-1 text-xl font-bold text-slate-800">
+            {formatIndianNumber(project.totalWOQty)}
           </p>
         </div>
 
-        <div className="bg-gray-50 rounded-lg p-4 shadow-sm">
-          <p className="text-sm text-gray-500">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
             Total Invoice Qty
           </p>
-
-          <p className="text-2xl font-bold">
-            {project.totalInvoiceQty}
+          <p className="mt-1 text-xl font-bold text-slate-800">
+            {formatIndianNumber(project.totalInvoiceQty)}
           </p>
         </div>
 
-        <div className="bg-gray-50 rounded-lg p-4 shadow-sm">
-          <p className="text-sm text-gray-500">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
             Total Pending Qty
           </p>
-
-          <p className="text-2xl font-bold">
-            {project.totalPendingQty}
+          <p className="mt-1 text-xl font-bold text-slate-800">
+            {formatIndianNumber(project.totalPendingQty)}
           </p>
         </div>
 
-        <div className="bg-gray-50 rounded-lg p-4 shadow-sm">
-          <p className="text-sm text-gray-500">
-            Pending Amount
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-blue-600">
+            Total Pending Amount
           </p>
-
-          <p className="text-2xl font-bold text-green-600">
-            ₹
-            {project.pendingAmount.toLocaleString(
-              "en-IN",
-              {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              }
-            )}
+          <p className="mt-1 text-xl font-bold text-blue-700">
+            {formatIndianCurrency(project.pendingAmount)}
           </p>
         </div>
       </div>

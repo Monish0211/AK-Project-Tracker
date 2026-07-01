@@ -65,9 +65,17 @@ const CommercialCard = ({ project, setProject }: Props) => {
 
           <input
             type="number"
-            value={project.workOrderValue}
+            value={
+              project.workOrderValue === 0
+                ? ""
+                : project.workOrderValue
+            }
+            placeholder="Enter Work Order Value"
             onChange={(e) => {
-              const value = Number(e.target.value);
+              const value =
+                e.target.value === ""
+                  ? 0
+                  : Number(e.target.value);
 
               setProject({
                 ...project,
@@ -127,9 +135,17 @@ const CommercialCard = ({ project, setProject }: Props) => {
 
           <input
             type="number"
-            value={project.contractExchangeRate}
+            value={
+              project.contractExchangeRate === 0
+                ? ""
+                : project.contractExchangeRate
+            }
+            placeholder="Enter Exchange Rate"
             onChange={(e) => {
-              const rate = Number(e.target.value);
+              const rate =
+                e.target.value === ""
+                  ? 0
+                  : Number(e.target.value);
 
               setProject({
                 ...project,
@@ -152,11 +168,19 @@ const CommercialCard = ({ project, setProject }: Props) => {
 
           <input
             type="number"
-            value={project.currentExchangeRate}
+            value={
+              project.currentExchangeRate === 0
+                ? ""
+                : project.currentExchangeRate
+            }
+            placeholder="Enter Current Rate"
             onChange={(e) =>
               setProject({
                 ...project,
-                currentExchangeRate: Number(e.target.value),
+                currentExchangeRate:
+                  e.target.value === ""
+                    ? 0
+                    : Number(e.target.value),
               })
             }
             className="w-full border rounded-lg p-3"
@@ -170,10 +194,18 @@ const CommercialCard = ({ project, setProject }: Props) => {
           </label>
 
           <input
-            type="number"
-            value={project.workOrderValueINR}
+            type="text"
+            value={
+              project.workOrderValueINR.toLocaleString(
+                "en-IN",
+                {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                }
+              )
+            }
             readOnly
-            className="w-full border rounded-lg p-3 bg-gray-100"
+            className="w-full border rounded-lg p-3 bg-gray-100 font-semibold text-green-700"
           />
 
           <p className="text-xs text-gray-500 mt-1">
