@@ -4,9 +4,11 @@ import Sidebar from "../components/Sidebar/Sidebar";
 import Navbar from "../components/Navbar/Navbar";
 
 import Dashboard from "../pages/Dashboard/Dashboard";
+
 import Projects from "../pages/Projects/Projects";
 import AddProject from "../pages/Projects/AddProject";
 import ViewProject from "../pages/Projects/ViewProject";
+import EditProject from "../pages/Projects/EditProject";
 
 import Deliverables from "../pages/Deliverables/Deliverables";
 import Manpower from "../pages/Manpower/Manpower";
@@ -31,20 +33,67 @@ const MainLayout = () => {
         {/* Page Content */}
         <main className="flex-1 p-6">
           <Routes>
+            {/* Dashboard */}
             <Route path="/" element={<Dashboard />} />
 
+            {/* Projects */}
             <Route path="/projects" element={<Projects />} />
-            <Route path="/projects/add" element={<AddProject />} />
-            <Route path="/projects/view/:id" element={<ViewProject />} />
 
-            <Route path="/deliverables" element={<Deliverables />} />
-            <Route path="/manpower" element={<Manpower />} />
-            <Route path="/timesheets" element={<Timesheets />} />
-            <Route path="/invoices" element={<Invoices />} />
-            <Route path="/expenses" element={<Expenses />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/resources" element={<Resources />} />
-            <Route path="/settings" element={<Settings />} />
+            <Route
+              path="/projects/add"
+              element={<AddProject />}
+            />
+
+            <Route
+              path="/projects/view/:id"
+              element={<ViewProject />}
+            />
+
+            <Route
+              path="/projects/edit/:id"
+              element={<EditProject />}
+            />
+
+            {/* Other Modules */}
+            <Route
+              path="/deliverables"
+              element={<Deliverables />}
+            />
+
+            <Route
+              path="/manpower"
+              element={<Manpower />}
+            />
+
+            <Route
+              path="/timesheets"
+              element={<Timesheets />}
+            />
+
+            <Route
+              path="/invoices"
+              element={<Invoices />}
+            />
+
+            <Route
+              path="/expenses"
+              element={<Expenses />}
+            />
+
+            <Route
+              path="/reports"
+              element={<Reports />}
+            />
+
+            <Route
+              path="/resources"
+              element={<Resources />}
+            />
+
+            <Route
+              path="/settings"
+              element={<Settings />}
+            />
           </Routes>
         </main>
       </div>

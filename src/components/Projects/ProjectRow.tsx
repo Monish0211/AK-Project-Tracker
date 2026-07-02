@@ -1,33 +1,69 @@
-interface ProjectRowProps {
-  project: {
-    prNo: string;
-    client: string;
-    project: string;
-    department: string;
-    status: string;
-    woValue: string;
-  };
+import { Eye, Pencil, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import type { Project } from "../../types/Project";
+
+interface Props {
+  project: Project;
 }
 
-const ProjectRow = ({ project }: ProjectRowProps) => {
+const ProjectRow = ({ project }: Props) => {
+  const navigate = useNavigate();
+
   return (
     <tr className="border-b hover:bg-slate-50">
       <td className="p-3">{project.prNo}</td>
-      <td>{project.client}</td>
-      <td>{project.project}</td>
-      <td>{project.department}</td>
-      <td>{project.status}</td>
-      <td>{project.woValue}</td>
 
-      <td>
-        <button className="text-blue-600 hover:underline">
-          View
+      <td>{project.client}</td>
+
+      <td>{project.projectTitle}</td>
+
+      <td>{project.department}</td>
+
+      <td>{project.projectStatus || "-"}</td>
+
+      <td className="text-right">
+        ₹ {project.workOrderValue.toLocaleString("en-IN")}
+      </td>
+
+      {/* View */}
+
+      <td className="text-center">
+        <button
+          type="button"
+          onClick={() =>
+            navigate(`/projects/view/${project.id}`)
+          }
+          className="text-blue-600 hover:text-blue-800"
+          title="View Project"
+        >
+          <Eye size={18} />
         </button>
       </td>
 
-      <td>
-        <button className="text-green-600 hover:underline">
-          Edit
+      {/* Edit */}
+
+      <td className="text-center">
+        <button
+          type="button"
+          onClick={() =>
+            navigate(`/projects/edit/${project.id}`)
+          }
+          className="text-green-600 hover:text-green-800"
+          title="Edit Project"
+        >
+          <Pencil size={18} />
+        </button>
+      </td>
+
+      {/* Delete */}
+
+      <td className="text-center">
+        <button
+          type="button"
+          className="text-red-600 hover:text-red-800"
+          title="Delete Project"
+        >
+          <Trash2 size={18} />
         </button>
       </td>
     </tr>
