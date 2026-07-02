@@ -1,4 +1,4 @@
-import { Building2 } from "lucide-react";
+import { Building2, ChevronDown } from "lucide-react";
 import { getDepartmentSummary } from "../../../services/dashboardService";
 
 const COLORS = [
@@ -13,86 +13,150 @@ const COLORS = [
 const DepartmentSummary = () => {
   const departments = getDepartmentSummary();
 
+  const maxCount = Math.max(
+    ...departments.map((dept) => dept.count),
+    1
+  );
+
   return (
-    <div className="bg-white rounded-2xl shadow-md p-6">
+    <div className="bg-white rounded-2xl shadow-md border border-gray-100 min-h-[420px] flex flex-col">
 
-      <div className="flex justify-between items-center mb-6">
+      {/* Header */}
+      <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100">
 
-        <h2 className="text-xl font-semibold">
-          Department Summary
-        </h2>
+        <div className="flex items-center gap-3">
 
-        <Building2
-          className="text-blue-600"
-          size={22}
-        />
+          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+
+            <Building2
+              size={20}
+              className="text-blue-600"
+            />
+
+          </div>
+
+          <div>
+
+            <h2 className="text-lg font-semibold text-slate-800">
+              Department Summary
+            </h2>
+
+            <p className="text-xs text-gray-500">
+              Projects by Department
+            </p>
+
+          </div>
+
+        </div>
+
+        <button
+          className="
+            flex
+            items-center
+            gap-1
+            px-3
+            py-1.5
+            text-xs
+            border
+            border-gray-200
+            rounded-lg
+            hover:bg-gray-50
+            transition
+          "
+        >
+          By Projects
+
+          <ChevronDown size={14} />
+
+        </button>
 
       </div>
 
-      {departments.length === 0 ? (
+      {/* Body */}
+      <div className="flex-1 px-6 py-5">
 
-        <div className="h-64 flex items-center justify-center text-gray-500">
-          No Department Data
-        </div>
+        {departments.length === 0 ? (
 
-      ) : (
+          <div className="h-full flex items-center justify-center text-gray-400">
+            No Department Data
+          </div>
 
-        <div className="space-y-5">
+        ) : (
 
-          {departments.map((dept, index) => (
+          <div className="space-y-6">
 
-            <div key={dept.department}>
+            {departments.map((dept, index) => (
 
-              <div className="flex justify-between mb-2">
+              <div key={dept.department}>
 
-                <span className="font-medium text-gray-700">
-                  {dept.department}
-                </span>
+                <div className="flex justify-between items-center mb-2">
 
-                <span className="font-semibold">
-                  {dept.count}
-                </span>
+                  <div className="flex items-center gap-3">
+
+                    <div
+                      className={`w-3 h-3 rounded-full ${
+                        COLORS[index % COLORS.length]
+                      }`}
+                    />
+
+                    <span className="text-sm font-medium text-slate-700">
+                      {dept.department}
+                    </span>
+
+                  </div>
+
+                  <span className="text-sm font-semibold text-slate-700">
+                    {dept.count}
+                  </span>
+
+                </div>
+
+                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+
+                  <div
+                    className={`h-2 rounded-full transition-all duration-500 ${
+                      COLORS[index % COLORS.length]
+                    }`}
+                    style={{
+                      width: `${
+                        (dept.count / maxCount) * 100
+                      }%`,
+                    }}
+                  />
+
+                </div>
 
               </div>
 
-              <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+            ))}
 
-                <div
-                  className={`h-3 rounded-full ${
-                    COLORS[index % COLORS.length]
-                  }`}
-                  style={{
-                    width: `${Math.min(
-                      dept.count * 15,
-                      100
-                    )}%`,
-                  }}
-                />
+          </div>
 
-              </div>
+        )}
 
-            </div>
+      </div>
 
-          ))}
+      {/* Footer */}
+      <div className="px-6 pb-5 mt-auto">
 
-        </div>
+        <button
+          className="
+            w-full
+            py-3
+            rounded-xl
+            bg-slate-50
+            border
+            border-gray-200
+            text-blue-600
+            font-medium
+            hover:bg-blue-50
+            transition
+          "
+        >
+          View All Departments
+        </button>
 
-      )}
-
-      <button
-        className="
-          w-full
-          mt-8
-          py-2
-          rounded-xl
-          bg-blue-50
-          text-blue-600
-          font-semibold
-          hover:bg-blue-100
-        "
-      >
-        View All Departments →
-      </button>
+      </div>
 
     </div>
   );

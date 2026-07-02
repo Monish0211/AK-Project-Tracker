@@ -1,62 +1,106 @@
-import { Clock3 } from "lucide-react";
-
+import { Clock3, ArrowRight } from "lucide-react";
 import { getRecentProjects } from "../../../services/dashboardService";
 
 const RecentProjects = () => {
   const projects = getRecentProjects();
 
-  const getStatusColor = (status: string) => {
+  const getStatusStyle = (status: string) => {
     switch (status) {
       case "Completed":
-        return "bg-green-100 text-green-700";
+        return {
+          badge: "bg-green-100 text-green-700 border border-green-200",
+          dot: "bg-green-500",
+        };
 
       case "Active":
-        return "bg-blue-100 text-blue-700";
+        return {
+          badge: "bg-blue-100 text-blue-700 border border-blue-200",
+          dot: "bg-blue-500",
+        };
 
       case "On Hold":
-        return "bg-yellow-100 text-yellow-700";
+        return {
+          badge: "bg-yellow-100 text-yellow-700 border border-yellow-200",
+          dot: "bg-yellow-500",
+        };
+
+      case "In Progress":
+        return {
+          badge: "bg-purple-100 text-purple-700 border border-purple-200",
+          dot: "bg-purple-500",
+        };
 
       case "Cancelled":
-        return "bg-red-100 text-red-700";
+        return {
+          badge: "bg-red-100 text-red-700 border border-red-200",
+          dot: "bg-red-500",
+        };
 
       default:
-        return "bg-gray-100 text-gray-700";
+        return {
+          badge: "bg-gray-100 text-gray-700 border border-gray-200",
+          dot: "bg-gray-500",
+        };
     }
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-md p-6">
+    <div className="bg-white rounded-2xl shadow-md border border-gray-100 min-h-[420px] flex flex-col">
 
-      <div className="flex justify-between items-center mb-6">
+      {/* Header */}
 
-        <h2 className="text-xl font-semibold">
-          Recent Projects
-        </h2>
+      <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100">
 
-        <Clock3
-          size={22}
-          className="text-blue-600"
-        />
+        <div className="flex items-center gap-3">
+
+          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+
+            <Clock3
+              size={20}
+              className="text-blue-600"
+            />
+
+          </div>
+
+          <div>
+
+            <h2 className="text-lg font-semibold text-slate-800">
+              Recent Projects
+            </h2>
+
+            <p className="text-xs text-gray-500">
+              Latest Project Entries
+            </p>
+
+          </div>
+
+        </div>
+
+        <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+          View All
+        </button>
 
       </div>
 
-      {projects.length === 0 ? (
+      {/* Body */}
 
-        <div className="h-64 flex items-center justify-center text-gray-500">
-          No Projects Available
-        </div>
+      <div className="flex-1 overflow-hidden px-6 py-4">
 
-      ) : (
+        {projects.length === 0 ? (
 
-        <div className="overflow-x-auto">
+          <div className="h-full flex items-center justify-center text-gray-400">
+            No Recent Projects
+          </div>
 
-          <table className="w-full">
+        ) : (
+
+          <table className="w-full table-fixed">
 
             <thead>
 
-              <tr className="border-b text-gray-500 text-sm">
+              <tr className="text-xs text-gray-500 border-b">
 
-                <th className="text-left pb-3">
+                <th className="w-16 text-left pb-3">
                   PR No
                 </th>
 
@@ -64,11 +108,11 @@ const RecentProjects = () => {
                   Client
                 </th>
 
-                <th className="text-left pb-3">
+                <th className="w-28 text-center pb-3">
                   Status
                 </th>
 
-                <th className="text-right pb-3">
+                <th className="w-28 text-right pb-3">
                   WO Value
                 </th>
 
@@ -78,67 +122,101 @@ const RecentProjects = () => {
 
             <tbody>
 
-              {projects.map((project) => (
+              {projects.map((project) => {
 
-                <tr
-                  key={project.id}
-                  className="border-b last:border-none hover:bg-slate-50"
-                >
+                const status = getStatusStyle(
+                  project.projectStatus
+                );
 
-                  <td className="py-4">
-                    {project.prNo}
-                  </td>
+                return (
 
-                  <td>
-                    {project.client}
-                  </td>
+                  <tr
+                    key={project.id}
+                    className="border-b last:border-none hover:bg-slate-50 transition"
+                  >
 
-                  <td>
+                    <td className="py-4 text-sm font-medium text-slate-700">
+                      {project.prNo}
+                    </td>
 
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                        project.projectStatus
-                      )}`}
-                    >
-                      {project.projectStatus || "N/A"}
-                    </span>
+                    <td className="py-4">
 
-                  </td>
+                      <div
+                        className="truncate text-sm text-slate-700"
+                        title={project.client}
+                      >
+                        {project.client}
+                      </div>
 
-                  <td className="text-right font-semibold text-green-700">
-                    ₹{" "}
-                    {project.workOrderValue.toLocaleString(
-                      "en-IN"
-                    )}
-                  </td>
+                    </td>
 
-                </tr>
+                    <td className="text-center">
 
-              ))}
+                      <span
+                        className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${status.badge}`}
+                      >
+
+                        <span
+                          className={`w-2 h-2 rounded-full ${status.dot}`}
+                        />
+
+                        {project.projectStatus}
+
+                      </span>
+
+                    </td>
+
+                    <td className="text-right text-sm font-semibold text-slate-800">
+
+                      ₹{" "}
+                      {project.workOrderValue.toLocaleString(
+                        "en-IN"
+                      )}
+
+                    </td>
+
+                  </tr>
+
+                );
+              })}
 
             </tbody>
 
           </table>
 
-        </div>
+        )}
 
-      )}
+      </div>
 
-      <button
-        className="
-          w-full
-          mt-6
-          py-2
-          rounded-xl
-          bg-blue-50
-          text-blue-600
-          font-semibold
-          hover:bg-blue-100
-          transition
-        "
-      >
-        View All Projects →
-      </button>
+      {/* Footer */}
+
+      <div className="px-6 pb-5 mt-auto">
+
+        <button
+          className="
+            w-full
+            py-3
+            rounded-xl
+            bg-slate-50
+            border
+            border-gray-200
+            text-blue-600
+            font-medium
+            hover:bg-blue-50
+            transition
+            flex
+            items-center
+            justify-center
+            gap-2
+          "
+        >
+          View All Projects
+
+          <ArrowRight size={16} />
+
+        </button>
+
+      </div>
 
     </div>
   );

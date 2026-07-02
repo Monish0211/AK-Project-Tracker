@@ -150,6 +150,10 @@ export const getDepartmentSummary = () => {
    TOP CLIENTS
 =================================================== */
 
+/* ===================================================
+   TOP CLIENTS
+=================================================== */
+
 export const getTopClients = () => {
   const projects = getProjects();
 
@@ -165,11 +169,14 @@ export const getTopClients = () => {
   });
 
   return Object.entries(clients)
-    .map(([client, value]) => ({
+    .map(([client, workOrderValue]) => ({
       client,
-      value,
+      workOrderValue,
     }))
-    .sort((a, b) => b.value - a.value)
+    .sort(
+      (a, b) =>
+        b.workOrderValue - a.workOrderValue
+    )
     .slice(0, 5);
 };
 

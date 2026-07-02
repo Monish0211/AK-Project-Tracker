@@ -1,59 +1,110 @@
 import {
+  Activity,
   CalendarDays,
   Clock3,
-  UserCircle2,
+  Plus,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const WelcomeCard = () => {
   const now = new Date();
 
-  const formattedDate = now.toLocaleDateString("en-IN", {
+  const currentDate = now.toLocaleDateString("en-IN", {
     weekday: "long",
-    day: "numeric",
+    day: "2-digit",
     month: "long",
     year: "numeric",
   });
 
-  const formattedTime = now.toLocaleTimeString("en-IN", {
+  const currentTime = now.toLocaleTimeString("en-IN", {
     hour: "2-digit",
     minute: "2-digit",
   });
 
   return (
-    <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-cyan-500 rounded-3xl shadow-xl p-8 text-white">
+    <div className="bg-gradient-to-r from-slate-900 via-blue-900 to-cyan-700 rounded-2xl shadow-xl px-8 py-6 text-white">
 
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-6">
 
-        {/* Left Side */}
-        <div>
+        {/* Left Section */}
+        <div className="flex-1">
 
-          <h1 className="text-4xl font-bold">
-            Welcome back, Administrator 👋
+          <h1 className="text-3xl font-bold">
+            Welcome
           </h1>
 
-          <p className="mt-3 text-blue-100 text-lg">
-            Engineering Project Management & Operations Dashboard
+          <h2 className="text-xl font-semibold mt-2">
+            iFluids Engineering Project Management Dashboard
+          </h2>
+
+          <p className="text-blue-100 mt-3 max-w-3xl text-sm leading-6">
+            Monitor project execution, commercial performance,
+            billing, profitability and operational status.
           </p>
 
-          <div className="flex gap-8 mt-6">
+          {/* Status */}
+          <div className="flex flex-wrap gap-8 mt-6">
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
 
-              <CalendarDays size={20} />
+              <Activity
+                size={18}
+                className="text-green-400"
+              />
 
-              <span className="text-blue-100">
-                {formattedDate}
-              </span>
+              <div>
+
+                <p className="text-[11px] uppercase tracking-wider text-blue-200">
+                  System Status
+                </p>
+
+                <p className="font-semibold text-sm">
+                  Online
+                </p>
+
+              </div>
 
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
 
-              <Clock3 size={20} />
+              <CalendarDays
+                size={18}
+                className="text-yellow-300"
+              />
 
-              <span className="text-blue-100">
-                {formattedTime}
-              </span>
+              <div>
+
+                <p className="text-[11px] uppercase tracking-wider text-blue-200">
+                  Today
+                </p>
+
+                <p className="font-semibold text-sm">
+                  {currentDate}
+                </p>
+
+              </div>
+
+            </div>
+
+            <div className="flex items-center gap-3">
+
+              <Clock3
+                size={18}
+                className="text-cyan-300"
+              />
+
+              <div>
+
+                <p className="text-[11px] uppercase tracking-wider text-blue-200">
+                  Last Updated
+                </p>
+
+                <p className="font-semibold text-sm">
+                  {currentTime}
+                </p>
+
+              </div>
 
             </div>
 
@@ -61,21 +112,30 @@ const WelcomeCard = () => {
 
         </div>
 
-        {/* Right Side */}
-        <div className="text-center">
+        {/* Right Section */}
+        <div className="flex justify-end">
 
-          <UserCircle2
-            size={75}
-            className="mx-auto mb-3"
-          />
+          <Link
+            to="/projects/add"
+            className="
+              flex
+              items-center
+              gap-2
+              bg-blue-600
+              hover:bg-blue-700
+              px-6
+              py-3
+              rounded-xl
+              font-semibold
+              shadow-lg
+              transition
+            "
+          >
+            <Plus size={18} />
 
-          <h2 className="text-2xl font-semibold">
-            Administrator
-          </h2>
+            Add Project
 
-          <p className="text-blue-100">
-            PMO Team
-          </p>
+          </Link>
 
         </div>
 
