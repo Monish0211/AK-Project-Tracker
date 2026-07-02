@@ -1,96 +1,47 @@
-import {
-  FolderKanban,
-  IndianRupee,
-  FileText,
-  Wallet,
-} from "lucide-react";
-
-import KPICard from "../../components/Cards/KPICard";
-import ProjectStatusChart from "../../components/Charts/ProjectStatusChart";
-import RevenueChart from "../../components/Charts/RevenueChart";
+import WelcomeCard from "./components/WelcomeCard";
+import KPISection from "./components/KPISection";
+import ProjectStatusChart from "./components/ProjectStatusChart";
+import RevenueChart from "./components/RevenueChart";
+import DepartmentSummary from "./components/DepartmentSummary";
+import TopClients from "./components/TopClients";
+import RecentProjects from "./components/RecentProjects";
 
 const Dashboard = () => {
   return (
-    <div className="min-h-screen bg-slate-100 p-8">
+    <div className="min-h-screen bg-slate-100 p-8 space-y-6">
 
-      {/* Header */}
-
-      <h1 className="text-4xl font-bold text-slate-800">
-        iFluids PMO Portal
-      </h1>
-
-      <p className="text-slate-500 mt-2">
-        Engineering Project Management & Operations Portal
-      </p>
+      {/* Welcome Card */}
+      <WelcomeCard />
 
       {/* KPI Cards */}
-
-      <div className="grid grid-cols-5 gap-6 mt-10">
-
-        <KPICard
-          title="Total Projects"
-          value="48"
-          icon={
-            <FolderKanban
-              size={35}
-              className="text-blue-600"
-            />
-          }
-        />
-
-        <KPICard
-          title="Total Work Order Value"
-          value="₹82 Cr"
-          icon={
-            <IndianRupee
-              size={35}
-              className="text-green-600"
-            />
-          }
-        />
-
-        <KPICard
-          title="Invoice Raised"
-          value="₹54.25 Cr"
-          icon={
-            <FileText
-              size={35}
-              className="text-indigo-600"
-            />
-          }
-        />
-
-        <KPICard
-          title="Outstanding"
-          value="₹18.40 Cr"
-          icon={
-            <Wallet
-              size={35}
-              className="text-red-600"
-            />
-          }
-        />
-
-        <KPICard
-          title="Collection Received"
-          value="₹35.85 Cr"
-          icon={
-            <IndianRupee
-              size={35}
-              className="text-emerald-600"
-            />
-          }
-        />
-
-      </div>
+      <KPISection />
 
       {/* Charts */}
-
-      <div className="grid grid-cols-2 gap-6 mt-10">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
         <ProjectStatusChart />
 
         <RevenueChart />
+
+      </div>
+
+      {/* Department Summary & Top Clients */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+        <DepartmentSummary />
+
+        <TopClients />
+
+      </div>
+
+      {/* Recent Projects & Quick Actions */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+        <RecentProjects />
+
+        <div className="bg-white rounded-2xl shadow-md p-6 flex items-center justify-center text-gray-400 text-lg font-medium">
+          Quick Actions (Coming Next)
+        </div>
 
       </div>
 
