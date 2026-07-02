@@ -1,16 +1,28 @@
 import { Save, RotateCcw, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import type { Dispatch, SetStateAction } from "react";
+
 import type { Project } from "../../../types/Project";
+
+import {
+  addProject,
+  updateProject,
+} from "../../../services/projectService";
+
+import { createEmptyProject } from "../../../utils/createEmptyProject";
 
 interface Props {
   project: Project;
   setProject: Dispatch<SetStateAction<Project>>;
+  mode: "add" | "edit";
 }
 
 const FormButtons = ({
   project,
   setProject,
+  mode,
 }: Props) => {
+  const navigate = useNavigate();
 
   const handleSave = () => {
     if (
@@ -24,112 +36,36 @@ const FormButtons = ({
       return;
     }
 
-    const existingProjects: Project[] = JSON.parse(
-      localStorage.getItem("projects") || "[]"
-    );
-
-    const updatedProjects = [
-      ...existingProjects,
-      {
+    if (mode === "add") {
+      addProject({
         ...project,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      },
-    ];
+      });
 
-    localStorage.setItem(
-      "projects",
-      JSON.stringify(updatedProjects)
-    );
+      alert("Project Saved Successfully!");
+    } else {
+      updateProject({
+        ...project,
+        updatedAt: new Date().toISOString(),
+      });
 
-    console.log(updatedProjects);
+      alert("Project Updated Successfully!");
+    }
 
-    alert("Project Saved Successfully!");
+    navigate("/projects");
   };
 
   const handleReset = () => {
     if (
-      window.confirm(
+      !window.confirm(
         "Are you sure you want to reset the form?"
       )
     ) {
-      setProject({
-        ...project,
-
-        poMonth: "",
-        prNo: "",
-        client: "",
-        department: "",
-        domesticForeign: "",
-        projectTitle: "",
-
-        workOrderStatus: "",
-        projectStartDate: "",
-        projectEndDate: "",
-        projectStatus: "",
-
-        contractFormalities: "",
-        paymentTerms: "",
-
-        workOrderValue: 0,
-        currency: "",
-        contractExchangeRate: 1,
-        currentExchangeRate: 1,
-        workOrderValueINR: 0,
-
-        invoiceRaised: 0,
-        invoiceRaisedINR: 0,
-
-        paymentReceived: 0,
-        paymentReceivedINR: 0,
-
-        balanceToBeRaised: 0,
-        balanceToBeRaisedINR: 0,
-
-        outstanding: 0,
-        outstandingINR: 0,
-
-        paymentStatus: "",
-
-        manhourExpenses: 0,
-        nonManhourExpenses: 0,
-        totalExpenses: 0,
-        profit: 0,
-        profitPercentage: 0,
-
-        totalWOQty: 0,
-        totalInvoiceQty: 0,
-        totalPendingQty: 0,
-        pendingAmount: 0,
-        pendingInvoicePercentage: 0,
-
-        quantityItems: [
-          {
-            id: crypto.randomUUID(),
-            description: "",
-            woQty: 0,
-            invoiceQty: 0,
-            pendingQty: 0,
-            unitRate: 0,
-            pendingAmount: 0,
-          },
-        ],
-
-        reportLink: "",
-        completionCertificate: "",
-        projectCompletionDate: "",
-
-        projectManager: "",
-        projectEngineer: "",
-        projectCoordinator: "",
-
-        clientReferenceNo: "",
-        remarks: "",
-
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
+      return;
     }
+
+    setProject(createEmptyProject());
   };
 
   const handleCancel = () => {
@@ -138,7 +74,7 @@ const FormButtons = ({
         "Are you sure you want to cancel?"
       )
     ) {
-      window.history.back();
+      navigate("/projects");
     }
   };
 
@@ -169,7 +105,9 @@ const FormButtons = ({
         className="flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
       >
         <Save size={18} />
-        Save Project
+        {mode === "add"
+          ? "Save Project"
+          : "Update Project"}
       </button>
 
     </div>
