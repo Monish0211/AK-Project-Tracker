@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { Project } from "../../../types/Project";
+import { calculateExpenses } from "../../../utils/expenseCalculations";
 
 interface Props {
   project: Project;
@@ -7,39 +8,13 @@ interface Props {
 }
 
 const ExpenseCard = ({ project, setProject }: Props) => {
-  const calculateExpenses = (
-    manhour: number,
-    nonManhour: number
-  ) => {
-    const totalExpenses = manhour + nonManhour;
-
-    const profit =
-      project.paymentReceivedINR - totalExpenses;
-
-    const profitPercentage =
-      project.paymentReceivedINR === 0
-        ? 0
-        : (profit / project.paymentReceivedINR) * 100;
-
-    setProject({
-      ...project,
-      manhourExpenses: manhour,
-      nonManhourExpenses: nonManhour,
-      totalExpenses,
-      profit,
-      profitPercentage,
-    });
-  };
-
   return (
     <div className="bg-white rounded-xl shadow-md p-6">
-
       <h2 className="text-2xl font-semibold mb-6">
         Expense Information
       </h2>
 
       <div className="grid grid-cols-2 gap-6">
-
         {/* Manhour Expenses */}
 
         <div>
@@ -55,14 +30,26 @@ const ExpenseCard = ({ project, setProject }: Props) => {
                 ? ""
                 : project.manhourExpenses
             }
-            onChange={(e) =>
-              calculateExpenses(
+            onChange={(e) => {
+              const manhour =
                 e.target.value === ""
                   ? 0
-                  : Number(e.target.value),
+                  : Number(e.target.value);
+
+              const result = calculateExpenses(
+                project,
+                manhour,
                 project.nonManhourExpenses
-              )
-            }
+              );
+
+              setProject({
+                ...project,
+                manhourExpenses: manhour,
+                totalExpenses: result.totalExpenses,
+                profit: result.profit,
+                profitPercentage: result.profitPercentage,
+              });
+            }}
             className="w-full border rounded-lg p-3"
           />
         </div>
@@ -82,14 +69,26 @@ const ExpenseCard = ({ project, setProject }: Props) => {
                 ? ""
                 : project.nonManhourExpenses
             }
-            onChange={(e) =>
-              calculateExpenses(
-                project.manhourExpenses,
+            onChange={(e) => {
+              const nonManhour =
                 e.target.value === ""
                   ? 0
-                  : Number(e.target.value)
-              )
-            }
+                  : Number(e.target.value);
+
+              const result = calculateExpenses(
+                project,
+                project.manhourExpenses,
+                nonManhour
+              );
+
+              setProject({
+                ...project,
+                nonManhourExpenses: nonManhour,
+                totalExpenses: result.totalExpenses,
+                profit: result.profit,
+                profitPercentage: result.profitPercentage,
+              });
+            }}
             className="w-full border rounded-lg p-3"
           />
         </div>
@@ -160,9 +159,7 @@ const ExpenseCard = ({ project, setProject }: Props) => {
             }`}
           />
         </div>
-
       </div>
-
     </div>
   );
 };
