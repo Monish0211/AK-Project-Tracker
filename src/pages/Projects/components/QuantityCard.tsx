@@ -1,13 +1,15 @@
 import { Plus, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, Dispatch, SetStateAction } from "react";
 import type { Project } from "../../../types/Project";
 import type { QuantityItem } from "../../../types/QuantityItem";
 import {
   calculateQuantity,
+  canRemoveQuantityItem,
   createEmptyQuantityItem,
   formatIndianCurrency,
   formatIndianNumber,
+  getInvoiceQtyError,
   parseNumericInput,
   recalcQuantityItem,
 } from "../../../utils/quantityCalculations";
@@ -21,13 +23,29 @@ type QuantityField = "woQty" | "invoiceQty" | "unitRate";
 
 const NUMBER_INPUT_PATTERN = /^\d*\.?\d*$/;
 
+const DESCRIPTION_PLACEHOLDERS = [
+  "Pressure Gauge",
+  "Temperature Sensor",
+  "Calibration",
+  "Inspection",
+  "Valve Testing",
+];
+
+const LAST_ROW_WARNING = "At least one quantity item is required.";
+
 interface NumericInputProps {
   value: number;
   ariaLabel: string;
   onChange: (nextValue: number) => boolean | void;
+  hasError?: boolean;
 }
 
-const NumericInput = ({ value, ariaLabel, onChange }: NumericInputProps) => {
+const NumericInput = ({
+  value,
+  ariaLabel,
+  onChange,
+  hasError = false,
+}: NumericInputProps) => {
   const [rawValue, setRawValue] = useState<string>(
     value === 0 ? "" : String(value)
   );
@@ -65,9 +83,14 @@ const NumericInput = ({ value, ariaLabel, onChange }: NumericInputProps) => {
       inputMode="decimal"
       placeholder="0"
       aria-label={ariaLabel}
+      aria-invalid={hasError}
       value={rawValue}
       onChange={handleChange}
-      className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 text-right text-sm text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-blue-400 focus:bg-blue-50 focus:ring-2 focus:ring-blue-100"
+      className={`w-full rounded-md border bg-transparent px-2 py-1.5 text-right text-sm text-slate-800 outline-none transition placeholder:text-slate-300 focus:ring-2 ${
+        hasError
+          ? "border-red-300 bg-red-50 focus:border-red-400 focus:ring-red-100"
+          : "border-transparent focus:border-blue-400 focus:bg-blue-50 focus:ring-blue-100"
+      }`}
     />
   );
 };
@@ -90,63 +113,73 @@ const applyFieldValue = (
 };
 
 const QuantityCard = ({ project, setProject }: Props) => {
-  const handleDescriptionChange = (index: number, value: string) => {
-    const updatedItems = project.quantityItems.map((item, i) =>
-      i === index ? { ...item, description: value } : item
-    );
+  const handleDescriptionChange = useCallback(
+    (index: number, value: string) => {
+      setProject((prev) => {
+        const updatedItems = prev.quantityItems.map((item, i) =>
+          i === index ? { ...item, description: value } : item
+        );
 
-    setProject({
-      ...project,
-      quantityItems: updatedItems,
+        return {
+          ...prev,
+          quantityItems: updatedItems,
+        };
+      });
+    },
+    [setProject]
+  );
+
+  const handleFieldChange = useCallback(
+    (index: number, field: QuantityField, value: number): boolean => {
+      setProject((prev) => {
+        const updatedItems = prev.quantityItems.map((item, i) =>
+          i === index
+            ? recalcQuantityItem(applyFieldValue(item, field, value))
+            : item
+        );
+
+        return {
+          ...prev,
+          quantityItems: updatedItems,
+          ...calculateQuantity(updatedItems),
+        };
+      });
+
+      return true;
+    },
+    [setProject]
+  );
+
+  const handleAddItem = useCallback(() => {
+    setProject((prev) => {
+      const updatedItems = [...prev.quantityItems, createEmptyQuantityItem()];
+
+      return {
+        ...prev,
+        quantityItems: updatedItems,
+        ...calculateQuantity(updatedItems),
+      };
     });
-  };
+  }, [setProject]);
 
-  const handleFieldChange = (
-    index: number,
-    field: QuantityField,
-    value: number
-  ): boolean => {
-    const currentItem = project.quantityItems[index];
+  const handleRemoveItem = useCallback(
+    (index: number) => {
+      setProject((prev) => {
+        if (!canRemoveQuantityItem(prev.quantityItems)) {
+          return prev;
+        }
 
-    if (field === "invoiceQty" && value > currentItem.woQty) {
-      window.alert("Invoice Quantity cannot exceed Work Order Quantity.");
-      return false;
-    }
+        const updatedItems = prev.quantityItems.filter((_, i) => i !== index);
 
-    const updatedItems = project.quantityItems.map((item, i) =>
-      i === index
-        ? recalcQuantityItem(applyFieldValue(item, field, value))
-        : item
-    );
-
-    setProject({
-      ...project,
-      quantityItems: updatedItems,
-      ...calculateQuantity(updatedItems),
-    });
-
-    return true;
-  };
-
-  const handleAddItem = () => {
-    const updatedItems = [...project.quantityItems, createEmptyQuantityItem()];
-
-    setProject({
-      ...project,
-      quantityItems: updatedItems,
-      ...calculateQuantity(updatedItems),
-    });
-  };
-
-  const handleRemoveItem = (index: number) => {
-    const updatedItems = project.quantityItems.filter((_, i) => i !== index);
-
-    setProject({
-      ...project,
-      quantityItems: updatedItems,
-      ...calculateQuantity(updatedItems),
-    });
-  };
+        return {
+          ...prev,
+          quantityItems: updatedItems,
+          ...calculateQuantity(updatedItems),
+        };
+      });
+    },
+    [setProject]
+  );
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -163,7 +196,8 @@ const QuantityCard = ({ project, setProject }: Props) => {
         <button
           type="button"
           onClick={handleAddItem}
-          className="inline-flex items-center justify-center gap-2 self-start rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 active:bg-blue-800 sm:self-auto"
+          title="Add a new quantity item"
+          className="inline-flex items-center justify-center gap-2 self-start rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:bg-blue-800 sm:self-auto"
         >
           <Plus size={16} strokeWidth={2.5} />
           Add Item
@@ -171,38 +205,38 @@ const QuantityCard = ({ project, setProject }: Props) => {
       </div>
 
       <div className="max-h-[28rem] overflow-auto rounded-lg border border-slate-200">
-        <table className="w-full min-w-[900px] border-collapse text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase tracking-wide text-slate-600">
+        <table className="w-full min-w-[900px] table-fixed border-collapse text-sm">
+          <thead className="sticky top-0 z-10 bg-blue-50 text-xs uppercase tracking-wide text-blue-700">
             <tr>
-              <th className="w-14 border-b border-slate-200 px-3 py-3 text-center font-semibold">
+              <th className="w-14 border-b border-blue-100 px-3 py-3 text-center font-semibold">
                 Sl No
               </th>
 
-              <th className="border-b border-slate-200 px-3 py-3 text-left font-semibold">
+              <th className="border-b border-blue-100 px-3 py-3 text-left font-semibold">
                 Description
               </th>
 
-              <th className="w-32 border-b border-slate-200 px-3 py-3 text-right font-semibold">
+              <th className="w-32 border-b border-blue-100 px-3 py-3 text-right font-semibold">
                 WO Qty
               </th>
 
-              <th className="w-32 border-b border-slate-200 px-3 py-3 text-right font-semibold">
+              <th className="w-32 border-b border-blue-100 px-3 py-3 text-right font-semibold">
                 Invoice Qty
               </th>
 
-              <th className="w-36 border-b border-slate-200 px-3 py-3 text-right font-semibold">
+              <th className="w-36 border-b border-blue-100 px-3 py-3 text-right font-semibold">
                 Pending Qty
               </th>
 
-              <th className="w-32 border-b border-slate-200 px-3 py-3 text-right font-semibold">
+              <th className="w-32 border-b border-blue-100 px-3 py-3 text-right font-semibold">
                 Unit Rate
               </th>
 
-              <th className="w-40 border-b border-slate-200 px-3 py-3 text-right font-semibold">
+              <th className="w-40 border-b border-blue-100 px-3 py-3 text-right font-semibold">
                 Pending Amount
               </th>
 
-              <th className="w-16 border-b border-slate-200 px-3 py-3 text-center font-semibold">
+              <th className="w-16 border-b border-blue-100 px-3 py-3 text-center font-semibold">
                 Delete
               </th>
             </tr>
@@ -216,81 +250,112 @@ const QuantityCard = ({ project, setProject }: Props) => {
                 </td>
               </tr>
             ) : (
-              project.quantityItems.map((item, index) => (
-                <tr
-                  key={item.id}
-                  className="bg-white transition hover:bg-slate-50"
-                >
-                  <td className="px-3 py-2 text-center text-slate-500">
-                    {index + 1}
-                  </td>
+              project.quantityItems.map((item, index) => {
+                const invoiceQtyError = getInvoiceQtyError(item);
+                const canRemove = canRemoveQuantityItem(project.quantityItems);
 
-                  <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      value={item.description}
-                      placeholder="Enter description"
-                      onChange={(e) =>
-                        handleDescriptionChange(index, e.target.value)
-                      }
-                      className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-blue-400 focus:bg-blue-50 focus:ring-2 focus:ring-blue-100"
-                    />
-                  </td>
+                return (
+                  <tr
+                    key={item.id}
+                    className="bg-white transition hover:bg-blue-50/40"
+                  >
+                    <td className="px-3 py-2 text-center text-slate-500">
+                      {index + 1}
+                    </td>
 
-                  <td className="px-3 py-2">
-                    <NumericInput
-                      value={item.woQty}
-                      ariaLabel={`WO Qty for row ${index + 1}`}
-                      onChange={(value) =>
-                        handleFieldChange(index, "woQty", value)
-                      }
-                    />
-                  </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="text"
+                        value={item.description}
+                        placeholder={
+                          DESCRIPTION_PLACEHOLDERS[
+                            index % DESCRIPTION_PLACEHOLDERS.length
+                          ]
+                        }
+                        aria-label={`Description for row ${index + 1}`}
+                        onChange={(e) =>
+                          handleDescriptionChange(index, e.target.value)
+                        }
+                        className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-blue-400 focus:bg-blue-50 focus:ring-2 focus:ring-blue-100"
+                      />
+                    </td>
 
-                  <td className="px-3 py-2">
-                    <NumericInput
-                      value={item.invoiceQty}
-                      ariaLabel={`Invoice Qty for row ${index + 1}`}
-                      onChange={(value) =>
-                        handleFieldChange(index, "invoiceQty", value)
-                      }
-                    />
-                  </td>
+                    <td className="px-3 py-2">
+                      <NumericInput
+                        value={item.woQty}
+                        ariaLabel={`WO Qty for row ${index + 1}`}
+                        onChange={(value) =>
+                          handleFieldChange(index, "woQty", value)
+                        }
+                      />
+                    </td>
 
-                  <td className="bg-slate-50 px-3 py-2 text-right font-medium text-slate-700">
-                    {formatIndianNumber(item.pendingQty)}
-                  </td>
+                    <td className="px-3 py-2">
+                      <NumericInput
+                        value={item.invoiceQty}
+                        ariaLabel={`Invoice Qty for row ${index + 1}`}
+                        hasError={Boolean(invoiceQtyError)}
+                        onChange={(value) =>
+                          handleFieldChange(index, "invoiceQty", value)
+                        }
+                      />
+                      {invoiceQtyError && (
+                        <p
+                          role="alert"
+                          className="mt-1 text-right text-xs font-medium text-red-600"
+                        >
+                          {invoiceQtyError}
+                        </p>
+                      )}
+                    </td>
 
-                  <td className="px-3 py-2">
-                    <NumericInput
-                      value={item.unitRate}
-                      ariaLabel={`Unit Rate for row ${index + 1}`}
-                      onChange={(value) =>
-                        handleFieldChange(index, "unitRate", value)
-                      }
-                    />
-                  </td>
+                    <td className="bg-slate-50 px-3 py-2 text-right font-medium text-slate-700">
+                      {formatIndianNumber(item.pendingQty)}
+                    </td>
 
-                  <td className="bg-slate-50 px-3 py-2 text-right font-semibold text-slate-800">
-                    {formatIndianCurrency(item.pendingAmount)}
-                  </td>
+                    <td className="px-3 py-2">
+                      <NumericInput
+                        value={item.unitRate}
+                        ariaLabel={`Unit Rate for row ${index + 1}`}
+                        onChange={(value) =>
+                          handleFieldChange(index, "unitRate", value)
+                        }
+                      />
+                    </td>
 
-                  <td className="px-3 py-2 text-center">
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveItem(index)}
-                      aria-label={`Delete row ${index + 1}`}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-500 transition hover:bg-red-50 hover:text-red-600"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </td>
-                </tr>
-              ))
+                    <td className="bg-slate-50 px-3 py-2 text-right font-semibold text-slate-800">
+                      {formatIndianCurrency(item.pendingAmount)}
+                    </td>
+
+                    <td className="px-3 py-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveItem(index)}
+                        disabled={!canRemove}
+                        aria-label={
+                          canRemove
+                            ? `Delete row ${index + 1}`
+                            : LAST_ROW_WARNING
+                        }
+                        title={canRemove ? "Delete row" : LAST_ROW_WARNING}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-500 transition hover:bg-red-50 hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
+
+      {project.quantityItems.length === 1 && (
+        <p className="mt-2 text-xs font-medium text-slate-400">
+          {LAST_ROW_WARNING}
+        </p>
+      )}
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">

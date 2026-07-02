@@ -1,61 +1,87 @@
 import type { Project } from "../types/Project";
 
 export function calculateInvoice(project: Project) {
+  // ==========================
+  // Invoice Raised
+  // ==========================
 
-    const invoiceRaisedINR =
-        project.invoiceRaised *
-        project.contractExchangeRate;
+  const invoiceRaisedINR =
+    project.invoiceRaised * project.contractExchangeRate;
 
-    const balanceToBeRaised =
-        project.workOrderValue -
-        project.invoiceRaised;
+  // ==========================
+  // Balance To Be Raised
+  // ==========================
 
-    const balanceToBeRaisedINR =
-        balanceToBeRaised *
-        project.contractExchangeRate;
+  const balanceToBeRaised = Math.max(
+    project.workOrderValue - project.invoiceRaised,
+    0
+  );
 
-    const paymentReceivedINR =
-        project.paymentReceived *
-        project.contractExchangeRate;
+  const balanceToBeRaisedINR = Math.max(
+    project.workOrderValueINR - invoiceRaisedINR,
+    0
+  );
 
-    const outstanding =
-        project.invoiceRaised -
-        project.paymentReceived;
+  // ==========================
+  // Payment Received
+  // ==========================
 
-    const outstandingINR =
-        outstanding *
-        project.contractExchangeRate;
+  const paymentReceivedINR =
+    project.paymentReceived * project.contractExchangeRate;
 
-    let paymentStatus = "Not Invoiced";
+  // ==========================
+  // Outstanding
+  // ==========================
 
-    if (project.invoiceRaised > 0)
-        paymentStatus = "Partial Payment";
+  const outstanding = Math.max(
+    project.invoiceRaised - project.paymentReceived,
+    0
+  );
 
-    if (outstanding === 0 && project.invoiceRaised > 0)
-        paymentStatus = "Paid";
+  const outstandingINR = Math.max(
+    invoiceRaisedINR - paymentReceivedINR,
+    0
+  );
 
-    if (
-        project.invoiceRaised ===
-        project.workOrderValue
-    )
-        paymentStatus = "Fully Invoiced";
+  // ==========================
+  // Payment Status
+  // ==========================
 
-    return {
+  let paymentStatus = "Not Started";
 
-        invoiceRaisedINR,
+  if (project.invoiceRaised > 0) {
+    paymentStatus = "Unpaid";
+  }
 
-        balanceToBeRaised,
+  if (
+    project.paymentReceived > 0 &&
+    outstanding > 0
+  ) {
+    paymentStatus = "Partially Paid";
+  }
 
-        balanceToBeRaisedINR,
+  if (
+    project.invoiceRaised > 0 &&
+    outstanding === 0
+  ) {
+    paymentStatus = "Paid";
+  }
 
-        paymentReceivedINR,
+  // ==========================
+  // Return
+  // ==========================
 
-        outstanding,
+  return {
+    invoiceRaisedINR,
 
-        outstandingINR,
+    balanceToBeRaised,
+    balanceToBeRaisedINR,
 
-        paymentStatus
+    paymentReceivedINR,
 
-    };
+    outstanding,
+    outstandingINR,
 
+    paymentStatus,
+  };
 }

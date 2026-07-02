@@ -39,7 +39,7 @@ export function calculateQuantity(items: QuantityItem[]): QuantityTotals {
 }
 
 export function recalcQuantityItem(item: QuantityItem): QuantityItem {
-  const pendingQty = item.woQty - item.invoiceQty;
+  const pendingQty = Math.max(item.woQty - item.invoiceQty, 0);
   const pendingAmount = pendingQty * item.unitRate;
 
   return {
@@ -59,6 +59,18 @@ export function createEmptyQuantityItem(): QuantityItem {
     unitRate: 0,
     pendingAmount: 0,
   };
+}
+
+export function getInvoiceQtyError(item: QuantityItem): string | null {
+  if (item.invoiceQty > item.woQty) {
+    return "Invoice Quantity cannot exceed Work Order Quantity.";
+  }
+
+  return null;
+}
+
+export function canRemoveQuantityItem(items: QuantityItem[]): boolean {
+  return items.length > 1;
 }
 
 export function formatIndianNumber(value: number): string {
