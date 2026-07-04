@@ -15,7 +15,7 @@ import { getDashboardMetrics } from "../../../services/dashboardService";
 const KPISection = () => {
   const metrics = getDashboardMetrics();
 
-  const formatCurrency = (value: number) =>
+  const currency = (value: number) =>
     `₹ ${value.toLocaleString("en-IN")}`;
 
   return (
@@ -26,18 +26,18 @@ const KPISection = () => {
         value={metrics.totalProjects.toString()}
         icon={
           <FolderKanban
-            size={32}
+            size={30}
             className="text-blue-600"
           />
         }
       />
 
       <KPICard
-        title="WO Value"
-        value={formatCurrency(metrics.totalWOValue)}
+        title="Work Order Value"
+        value={currency(metrics.totalWOValue)}
         icon={
           <IndianRupee
-            size={32}
+            size={30}
             className="text-green-600"
           />
         }
@@ -45,10 +45,10 @@ const KPISection = () => {
 
       <KPICard
         title="Invoice Raised"
-        value={formatCurrency(metrics.totalInvoiceRaised)}
+        value={currency(metrics.totalInvoiceRaised)}
         icon={
           <FileText
-            size={32}
+            size={30}
             className="text-indigo-600"
           />
         }
@@ -56,10 +56,10 @@ const KPISection = () => {
 
       <KPICard
         title="Payment Received"
-        value={formatCurrency(metrics.totalPaymentReceived)}
+        value={currency(metrics.totalPaymentReceived)}
         icon={
           <Landmark
-            size={32}
+            size={30}
             className="text-emerald-600"
           />
         }
@@ -67,10 +67,10 @@ const KPISection = () => {
 
       <KPICard
         title="Outstanding"
-        value={formatCurrency(metrics.totalOutstanding)}
+        value={currency(metrics.totalOutstanding)}
         icon={
           <Wallet
-            size={32}
+            size={30}
             className="text-red-600"
           />
         }
@@ -78,10 +78,10 @@ const KPISection = () => {
 
       <KPICard
         title="Expenses"
-        value={formatCurrency(metrics.totalExpenses)}
+        value={currency(metrics.totalExpenses)}
         icon={
           <Receipt
-            size={32}
+            size={30}
             className="text-orange-600"
           />
         }
@@ -89,10 +89,10 @@ const KPISection = () => {
 
       <KPICard
         title="Profit"
-        value={formatCurrency(metrics.totalProfit)}
+        value={currency(metrics.totalProfit)}
         icon={
           <TrendingUp
-            size={32}
+            size={30}
             className="text-green-700"
           />
         }
@@ -103,7 +103,7 @@ const KPISection = () => {
         value={`${metrics.totalProfitPercentage.toFixed(2)} %`}
         icon={
           <Percent
-            size={32}
+            size={30}
             className="text-cyan-600"
           />
         }

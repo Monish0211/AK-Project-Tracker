@@ -16,87 +16,60 @@ import Timesheets from "../pages/Timesheets/Timesheets";
 import Invoices from "../pages/Invoices/Invoices";
 import Expenses from "../pages/Expenses/Expenses";
 import Reports from "../pages/Reports/Reports";
+import Documents from "../pages/Documents/Documents";
 import Resources from "../pages/Resources/Resources";
 import Settings from "../pages/Settings/Settings";
 
 const MainLayout = () => {
   return (
     <div className="flex min-h-screen bg-slate-100">
+
       {/* Sidebar */}
       <Sidebar />
 
-      {/* Right Side */}
-      <div className="flex-1 flex flex-col">
+      {/* Right Content */}
+      <div className="flex-1 flex flex-col min-h-screen">
+
         {/* Navbar */}
         <Navbar />
 
         {/* Page Content */}
-        <main className="flex-1 p-6">
+        <main className="flex-1 p-6 overflow-auto">
+
           <Routes>
+
             {/* Dashboard */}
             <Route path="/" element={<Dashboard />} />
 
             {/* Projects */}
             <Route path="/projects" element={<Projects />} />
-
-            <Route
-              path="/projects/add"
-              element={<AddProject />}
-            />
-
-            <Route
-              path="/projects/view/:id"
-              element={<ViewProject />}
-            />
-
-            <Route
-              path="/projects/edit/:id"
-              element={<EditProject />}
-            />
+            <Route path="/projects/add" element={<AddProject />} />
+            <Route path="/projects/view/:id" element={<ViewProject />} />
+            <Route path="/projects/edit/:id" element={<EditProject />} />
 
             {/* Other Modules */}
-            <Route
-              path="/deliverables"
-              element={<Deliverables />}
-            />
+            <Route path="/deliverables" element={<Deliverables />} />
+            <Route path="/manpower" element={<Manpower />} />
+            <Route path="/timesheets" element={<Timesheets />} />
+            <Route path="/invoices" element={<Invoices />} />
+            <Route path="/expenses" element={<Expenses />} />
+            <Route path="/reports" element={<Reports />} />
 
-            <Route
-              path="/manpower"
-              element={<Manpower />}
-            />
+            {/* Documents */}
+            <Route path="/documents" element={<Documents />} />
 
-            <Route
-              path="/timesheets"
-              element={<Timesheets />}
-            />
+            {/* Resources */}
+            <Route path="/resources" element={<Resources />} />
 
-            <Route
-              path="/invoices"
-              element={<Invoices />}
-            />
+            {/* Settings */}
+            <Route path="/settings" element={<Settings />} />
 
-            <Route
-              path="/expenses"
-              element={<Expenses />}
-            />
-
-            <Route
-              path="/reports"
-              element={<Reports />}
-            />
-
-            <Route
-              path="/resources"
-              element={<Resources />}
-            />
-
-            <Route
-              path="/settings"
-              element={<Settings />}
-            />
           </Routes>
+
         </main>
+
       </div>
+
     </div>
   );
 };
