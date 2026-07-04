@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import {
   Building2,
@@ -12,10 +12,10 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import type { Invoice } from "../../types/Invoice";
-import type { Project } from "../../types/Project";
-import { generateInvoiceRef } from "../../services/invoiceService";
-
+import type { Invoice } from "../../../types/Invoice";
+import type { Project } from "../../../types/Project";
+import { getInvoices } from "../../../services/invoiceService";
+import ProjectSearch from "../../../components/Search/ProjectSearch";
 interface InvoiceFormProps {
   projects: Project[];
   invoice?: Invoice | null;
@@ -59,6 +59,21 @@ const createEmptyInvoice = (): Invoice => ({
   updatedAt: "",
 });
 
+const generateInvoiceRef = (prNo: string, projectId: string): string => {
+  if (!prNo) {
+    return "";
+  }
+
+  const existingInvoicesForProject = getInvoices().filter(
+    (existingInvoice) => existingInvoice.projectId === projectId
+  );
+
+  const nextSequence = existingInvoicesForProject.length + 1;
+  const paddedSequence = String(nextSequence).padStart(2, "0");
+
+  return `${prNo}-INV-${paddedSequence}`;
+};
+
 interface FormErrors {
   projectId?: string;
   invoiceDate?: string;
@@ -81,18 +96,28 @@ const InvoiceForm = ({
   );
   const [errors, setErrors] = useState<FormErrors>({});
 
-  useEffect(() => {
+  // Reset the form whenever a different `invoice` prop is passed in (e.g. the
+  // parent swaps which record is being edited/viewed, or resets to Add mode).
+  // This adjusts state during render instead of inside a useEffect, which
+  // avoids the extra render pass ("cascading render") that setState-in-effect
+  // triggers for this "sync state to a changed prop" case.
+  const [syncedInvoice, setSyncedInvoice] = useState(invoice);
+
+  if (invoice !== syncedInvoice) {
+    setSyncedInvoice(invoice);
     setFormData(invoice ?? createEmptyInvoice());
     setErrors({});
-  }, [invoice]);
+  }
 
-  useEffect(() => {
-    setFormData((prev) => ({
-      ...prev,
-      outstandingAmount:
-        (Number(prev.invoiceAmount) || 0) - (Number(prev.receivedAmount) || 0),
-    }));
-  }, [formData.invoiceAmount, formData.receivedAmount]);
+  // Outstanding amount is a pure derived value — computed from the current
+  // form values on every render, never written back into state, so there's
+  // no effect involved and no risk of stale/out-of-sync values.
+  const outstandingAmount = useMemo(
+    () =>
+      (Number(formData.invoiceAmount) || 0) -
+      (Number(formData.receivedAmount) || 0),
+    [formData.invoiceAmount, formData.receivedAmount]
+  );
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === formData.projectId),
@@ -119,7 +144,7 @@ const InvoiceForm = ({
       client: project.client,
       invoiceRef: isEditMode
         ? prev.invoiceRef
-        : generateInvoiceRef(project.prNo),
+        : generateInvoiceRef(project.prNo, project.id),
     }));
   };
 
@@ -190,6 +215,7 @@ const InvoiceForm = ({
 
     const finalInvoice: Invoice = {
       ...formData,
+      outstandingAmount,
       id: formData.id || crypto.randomUUID(),
       createdAt: formData.createdAt || now,
       updatedAt: now,
@@ -246,23 +272,12 @@ const InvoiceForm = ({
             <Building2 size={15} className="text-blue-600" />
             Project
           </label>
-          <select
+          <ProjectSearch
+            projects={projects}
             value={formData.projectId}
             disabled={readOnly}
-            onChange={(e) => handleProjectChange(e.target.value)}
-            className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 ${
-              errors.projectId
-                ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                : "border-gray-200 focus:border-blue-500 focus:ring-blue-500/20"
-            }`}
-          >
-            <option value="">Select a project</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.prNo} — {project.projectTitle}
-              </option>
-            ))}
-          </select>
+            onSelect={handleProjectChange}
+          />
           {errors.projectId && (
             <p className="mt-1 text-xs font-medium text-red-600">
               {errors.projectId}
@@ -441,7 +456,7 @@ const InvoiceForm = ({
           </label>
           <div className="flex h-10 w-full items-center rounded-lg border border-blue-100 bg-blue-50 px-3">
             <span className="text-sm font-bold text-blue-700">
-              ₹{formData.outstandingAmount.toLocaleString("en-IN")}
+              ₹{outstandingAmount.toLocaleString("en-IN")}
             </span>
           </div>
         </div>
