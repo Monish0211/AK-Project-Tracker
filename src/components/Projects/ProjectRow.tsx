@@ -14,72 +14,173 @@ const ProjectRow = ({
 }: Props) => {
   const navigate = useNavigate();
 
-  return (
-    <tr className="border-b hover:bg-slate-50">
+  const getStatusStyle = (status: string) => {
+    switch (status) {
+      case "Active":
+        return "bg-blue-100 text-blue-700";
 
-      <td className="p-3">
+      case "Completed":
+        return "bg-green-100 text-green-700";
+
+      case "On Hold":
+        return "bg-yellow-100 text-yellow-700";
+
+      case "In Progress":
+        return "bg-purple-100 text-purple-700";
+
+      case "Cancelled":
+        return "bg-red-100 text-red-700";
+
+      default:
+        return "bg-gray-100 text-gray-700";
+    }
+  };
+
+  return (
+    <tr className="border-b hover:bg-slate-50 transition">
+
+      {/* PR No */}
+      <td className="px-4 py-4 font-medium text-slate-700 whitespace-nowrap">
         {project.prNo}
       </td>
 
-      <td>
-        {project.client}
+      {/* Client */}
+      <td className="px-4 py-4 max-w-[180px]">
+
+        <div
+          className="truncate text-slate-700"
+          title={project.client}
+        >
+          {project.client}
+        </div>
+
       </td>
 
-      <td>
-        {project.projectTitle}
+      {/* Project Title */}
+      <td className="px-4 py-4 max-w-[320px]">
+
+        <div
+          className="truncate text-slate-700"
+          title={project.projectTitle}
+        >
+          {project.projectTitle}
+        </div>
+
       </td>
 
-      <td>
-        {project.department}
+      {/* Department */}
+      <td className="px-4 py-4 max-w-[160px]">
+
+        <div
+          className="truncate"
+          title={project.department}
+        >
+          {project.department}
+        </div>
+
       </td>
 
-      <td>
-        {project.projectStatus || "-"}
+      {/* Status */}
+      <td className="px-4 py-4 text-center">
+
+        <span
+          className={`
+            inline-flex
+            items-center
+            px-3
+            py-1
+            rounded-full
+            text-xs
+            font-semibold
+            ${getStatusStyle(project.projectStatus)}
+          `}
+        >
+          {project.projectStatus || "-"}
+        </span>
+
       </td>
 
-      <td className="text-right">
+      {/* WO Value */}
+      <td className="px-4 py-4 text-right font-semibold text-slate-800 whitespace-nowrap">
+
         ₹{" "}
-        {project.workOrderValue.toLocaleString("en-IN")}
+        {project.workOrderValue.toLocaleString(
+          "en-IN"
+        )}
+
       </td>
 
-      {/* View */}
-      <td className="text-center">
-        <button
-          type="button"
-          title="View Project"
-          onClick={() =>
-            navigate(`/projects/view/${project.id}`)
-          }
-          className="text-blue-600 hover:text-blue-800 transition"
-        >
-          <Eye size={18} />
-        </button>
-      </td>
+      {/* Actions */}
+      <td className="px-4 py-4">
 
-      {/* Edit */}
-      <td className="text-center">
-        <button
-          type="button"
-          title="Edit Project"
-          onClick={() =>
-            navigate(`/projects/edit/${project.id}`)
-          }
-          className="text-green-600 hover:text-green-800 transition"
-        >
-          <Pencil size={18} />
-        </button>
-      </td>
+        <div className="flex justify-center gap-2">
 
-      {/* Delete */}
-      <td className="text-center">
-        <button
-          type="button"
-          title="Delete Project"
-          onClick={() => onDelete(project.id)}
-          className="text-red-600 hover:text-red-800 transition"
-        >
-          <Trash2 size={18} />
-        </button>
+          {/* View */}
+          <button
+            title="View"
+            onClick={() =>
+              navigate(`/projects/view/${project.id}`)
+            }
+            className="
+              w-9
+              h-9
+              rounded-lg
+              bg-blue-50
+              hover:bg-blue-100
+              text-blue-600
+              flex
+              items-center
+              justify-center
+              transition
+            "
+          >
+            <Eye size={18} />
+          </button>
+
+          {/* Edit */}
+          <button
+            title="Edit"
+            onClick={() =>
+              navigate(`/projects/edit/${project.id}`)
+            }
+            className="
+              w-9
+              h-9
+              rounded-lg
+              bg-green-50
+              hover:bg-green-100
+              text-green-600
+              flex
+              items-center
+              justify-center
+              transition
+            "
+          >
+            <Pencil size={18} />
+          </button>
+
+          {/* Delete */}
+          <button
+            title="Delete"
+            onClick={() => onDelete(project.id)}
+            className="
+              w-9
+              h-9
+              rounded-lg
+              bg-red-50
+              hover:bg-red-100
+              text-red-600
+              flex
+              items-center
+              justify-center
+              transition
+            "
+          >
+            <Trash2 size={18} />
+          </button>
+
+        </div>
+
       </td>
 
     </tr>

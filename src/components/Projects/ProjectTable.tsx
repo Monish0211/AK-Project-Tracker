@@ -1,4 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import {
+  Search,
+  FolderKanban,
+} from "lucide-react";
 
 import type { Project } from "../../types/Project";
 
@@ -14,99 +18,226 @@ const ProjectTable = () => {
     getProjects()
   );
 
-  console.log("Projects from LocalStorage:", projects);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("All");
+  const [department, setDepartment] = useState("All");
 
   const handleDelete = (id: string) => {
-    const confirmDelete = window.confirm(
-      "Are you sure you want to delete this project?"
-    );
-
-    if (!confirmDelete) return;
+    if (
+      !window.confirm(
+        "Are you sure you want to delete this project?"
+      )
+    )
+      return;
 
     deleteProject(id);
 
     setProjects(getProjects());
-
-    alert("Project deleted successfully!");
   };
 
-  return (
-    <div className="bg-white rounded-xl shadow-md p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-semibold">
-          Projects
-        </h2>
+  const departments = [
+    "All",
+    ...new Set(
+      projects.map((p) => p.department).filter(Boolean)
+    ),
+  ];
 
-        <span className="text-sm text-gray-500">
-          Total Projects: {projects.filter(Boolean).length}
+  const filteredProjects = useMemo(() => {
+    return projects.filter((project) => {
+      const matchesSearch =
+        project.prNo
+          ?.toLowerCase()
+          .includes(search.toLowerCase()) ||
+        project.client
+          ?.toLowerCase()
+          .includes(search.toLowerCase()) ||
+        project.projectTitle
+          ?.toLowerCase()
+          .includes(search.toLowerCase());
+
+      const matchesStatus =
+        status === "All" ||
+        project.projectStatus === status;
+
+      const matchesDepartment =
+        department === "All" ||
+        project.department === department;
+
+      return (
+        matchesSearch &&
+        matchesStatus &&
+        matchesDepartment
+      );
+    });
+  }, [projects, search, status, department]);
+
+  return (
+    <div className="bg-white rounded-2xl shadow-md border border-gray-100">
+
+      {/* Header */}
+
+      <div className="flex justify-between items-center p-6 border-b">
+
+        <div className="flex items-center gap-3">
+
+          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+
+            <FolderKanban
+              size={20}
+              className="text-blue-600"
+            />
+
+          </div>
+
+          <div>
+
+            <h2 className="text-xl font-semibold">
+              Project Repository
+            </h2>
+
+            <p className="text-sm text-gray-500">
+              Search and manage all projects
+            </p>
+
+          </div>
+
+        </div>
+
+        <span className="px-4 py-2 rounded-xl bg-blue-50 text-blue-700 font-medium">
+          Total Projects : {filteredProjects.length}
         </span>
+
       </div>
 
-      {projects.filter(Boolean).length === 0 ? (
-        <div className="text-center py-10 text-gray-500">
+      {/* Filters */}
+
+      <div className="grid grid-cols-3 gap-4 p-6 border-b">
+
+        {/* Search */}
+
+        <div className="relative">
+
+          <Search
+            size={18}
+            className="absolute left-3 top-3 text-gray-400"
+          />
+
+          <input
+            type="text"
+            placeholder="Search PR / Client / Project..."
+            value={search}
+            onChange={(e) =>
+              setSearch(e.target.value)
+            }
+            className="w-full border rounded-xl pl-10 pr-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+          />
+
+        </div>
+
+        {/* Department */}
+
+        <select
+          value={department}
+          onChange={(e) =>
+            setDepartment(e.target.value)
+          }
+          className="border rounded-xl px-3 py-2"
+        >
+          {departments.map((dept) => (
+            <option key={dept}>
+              {dept}
+            </option>
+          ))}
+        </select>
+
+        {/* Status */}
+
+        <select
+          value={status}
+          onChange={(e) =>
+            setStatus(e.target.value)
+          }
+          className="border rounded-xl px-3 py-2"
+        >
+          <option>All</option>
+          <option>Active</option>
+          <option>Completed</option>
+          <option>On Hold</option>
+          <option>Cancelled</option>
+        </select>
+
+      </div>
+
+      {/* Table */}
+
+      {filteredProjects.length === 0 ? (
+
+        <div className="py-16 text-center text-gray-500">
           No Projects Found
         </div>
+
       ) : (
+
         <div className="overflow-x-auto">
-          <table className="min-w-full border border-gray-200">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="border p-3 text-left">
+
+          <table className="min-w-full">
+
+            <thead className="bg-slate-50 sticky top-0">
+
+              <tr className="text-sm text-slate-700">
+
+                <th className="px-4 py-4 text-left">
                   PR No
                 </th>
 
-                <th className="border p-3 text-left">
+                <th className="px-4 py-4 text-left">
                   Client
                 </th>
 
-                <th className="border p-3 text-left">
+                <th className="px-4 py-4 text-left">
                   Project Title
                 </th>
 
-                <th className="border p-3 text-left">
+                <th className="px-4 py-4 text-left">
                   Department
                 </th>
 
-                <th className="border p-3 text-left">
+                <th className="px-4 py-4 text-center">
                   Status
                 </th>
 
-                <th className="border p-3 text-right">
+                <th className="px-4 py-4 text-right">
                   WO Value
                 </th>
 
-                <th className="border p-3 text-center">
-                  View
+                <th className="px-4 py-4 text-center">
+                  Actions
                 </th>
 
-                <th className="border p-3 text-center">
-                  Edit
-                </th>
-
-                <th className="border p-3 text-center">
-                  Delete
-                </th>
               </tr>
+
             </thead>
 
             <tbody>
-              {projects
-                .filter(
-                  (project): project is Project =>
-                    project !== undefined &&
-                    project !== null
-                )
-                .map((project) => (
-                  <ProjectRow
-                    key={project.id}
-                    project={project}
-                    onDelete={handleDelete}
-                  />
-                ))}
+
+              {filteredProjects.map((project) => (
+
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  onDelete={handleDelete}
+                />
+
+              ))}
+
             </tbody>
+
           </table>
+
         </div>
+
       )}
+
     </div>
   );
 };

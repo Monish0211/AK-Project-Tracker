@@ -5,18 +5,41 @@ interface Props {
 
 const InfoField = ({ label, value }: Props) => {
   return (
-    <div className="space-y-2">
-      <label className="block text-sm font-semibold text-gray-600">
-        {label}
-      </label>
+    <div
+      className="
+        bg-white
+        border
+        border-gray-200
+        rounded-xl
+        p-4
+        transition-all
+        duration-200
+        hover:shadow-md
+        hover:border-blue-200
+      "
+    >
+      {/* Label */}
 
-      <div className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 min-h-[48px] flex items-center">
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+        {label}
+      </p>
+
+      {/* Value */}
+
+      <div className="text-base font-medium text-slate-800 break-words min-h-[28px] flex items-center">
+
         {value !== "" &&
         value !== null &&
         value !== undefined
           ? value
-          : "-"}
+          : (
+            <span className="italic text-gray-400">
+              Not Available
+            </span>
+          )}
+
       </div>
+
     </div>
   );
 };
