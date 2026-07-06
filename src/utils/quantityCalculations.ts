@@ -8,8 +8,13 @@ export interface QuantityTotals {
   pendingInvoicePercentage: number;
 }
 
-export function calculateQuantity(items: QuantityItem[]): QuantityTotals {
-  const totalWOQty = items.reduce((sum, item) => sum + item.woQty, 0);
+export function calculateQuantity(
+  items: QuantityItem[]
+): QuantityTotals {
+  const totalWOQty = items.reduce(
+    (sum, item) => sum + item.woQty,
+    0
+  );
 
   const totalInvoiceQty = items.reduce(
     (sum, item) => sum + item.invoiceQty,
@@ -27,7 +32,9 @@ export function calculateQuantity(items: QuantityItem[]): QuantityTotals {
   );
 
   const pendingInvoicePercentage =
-    totalWOQty === 0 ? 0 : (totalPendingQty / totalWOQty) * 100;
+    totalWOQty === 0
+      ? 0
+      : (totalPendingQty / totalWOQty) * 100;
 
   return {
     totalWOQty,
@@ -38,13 +45,25 @@ export function calculateQuantity(items: QuantityItem[]): QuantityTotals {
   };
 }
 
-export function recalcQuantityItem(item: QuantityItem): QuantityItem {
-  const pendingQty = Math.max(item.woQty - item.invoiceQty, 0);
-  const pendingAmount = pendingQty * item.unitRate;
+export function recalcQuantityItem(
+  item: QuantityItem
+): QuantityItem {
+  const pendingQty = Math.max(
+    item.woQty - item.invoiceQty,
+    0
+  );
+
+  const unitRateINR =
+    item.currency === "INR"
+      ? item.unitRate
+      : item.unitRate * item.exchangeRate;
+
+  const pendingAmount = pendingQty * unitRateINR;
 
   return {
     ...item,
     pendingQty,
+    unitRateINR,
     pendingAmount,
   };
 }
@@ -52,16 +71,26 @@ export function recalcQuantityItem(item: QuantityItem): QuantityItem {
 export function createEmptyQuantityItem(): QuantityItem {
   return {
     id: crypto.randomUUID(),
+
     description: "",
+
     woQty: 0,
     invoiceQty: 0,
     pendingQty: 0,
+
+    currency: "INR",
+
     unitRate: 0,
+    exchangeRate: 1,
+    unitRateINR: 0,
+
     pendingAmount: 0,
   };
 }
 
-export function getInvoiceQtyError(item: QuantityItem): string | null {
+export function getInvoiceQtyError(
+  item: QuantityItem
+): string | null {
   if (item.invoiceQty > item.woQty) {
     return "Invoice Quantity cannot exceed Work Order Quantity.";
   }
@@ -69,17 +98,23 @@ export function getInvoiceQtyError(item: QuantityItem): string | null {
   return null;
 }
 
-export function canRemoveQuantityItem(items: QuantityItem[]): boolean {
+export function canRemoveQuantityItem(
+  items: QuantityItem[]
+): boolean {
   return items.length > 1;
 }
 
-export function formatIndianNumber(value: number): string {
+export function formatIndianNumber(
+  value: number
+): string {
   return value.toLocaleString("en-IN", {
     maximumFractionDigits: 2,
   });
 }
 
-export function formatIndianCurrency(value: number): string {
+export function formatIndianCurrency(
+  value: number
+): string {
   const formatted = value.toLocaleString("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -88,7 +123,9 @@ export function formatIndianCurrency(value: number): string {
   return `₹ ${formatted}`;
 }
 
-export function parseNumericInput(rawValue: string): number {
+export function parseNumericInput(
+  rawValue: string
+): number {
   if (rawValue.trim() === "") {
     return 0;
   }
