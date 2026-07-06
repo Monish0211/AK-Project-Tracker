@@ -2,6 +2,7 @@ import { Eye, Pencil, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import type { Project } from "../../types/Project";
+import { getNextPayment } from "../../utils/paymentUtils";
 
 interface Props {
   project: Project;
@@ -13,6 +14,8 @@ const ProjectRow = ({
   onDelete,
 }: Props) => {
   const navigate = useNavigate();
+
+  const nextPayment = getNextPayment(project);
 
   const getStatusStyle = (status: string) => {
     switch (status) {
@@ -64,6 +67,46 @@ const ProjectRow = ({
     }
   };
 
+  const getPaymentStatusStyle = (status: string) => {
+    switch (status) {
+      case "Upcoming":
+        return "text-green-600";
+
+      case "Today":
+        return "text-orange-600";
+
+      case "Overdue":
+        return "text-red-600";
+
+      default:
+        return "text-gray-500";
+    }
+  };
+
+  const formatDue = () => {
+    if (!nextPayment) return "-";
+
+    return new Date(nextPayment.dueDate).toLocaleDateString(
+      "en-IN",
+      {
+        day: "2-digit",
+        month: "short",
+      }
+    );
+  };
+
+  const formatDays = () => {
+    if (!nextPayment) return "-";
+
+    if (nextPayment.status === "Today")
+      return "Today";
+
+    if (nextPayment.status === "Upcoming")
+      return `${nextPayment.daysLeft} Days`;
+
+    return `${Math.abs(nextPayment.daysLeft)} Overdue`;
+  };
+
   return (
     <tr className="border-b hover:bg-slate-50 transition">
 
@@ -79,127 +122,101 @@ const ProjectRow = ({
       </td>
 
       {/* PR No */}
-      <td className="px-4 py-4 font-medium text-slate-700 whitespace-nowrap">
+      <td className="px-4 py-4 font-medium whitespace-nowrap">
         {project.prNo}
       </td>
 
       {/* Client */}
       <td className="px-4 py-4 max-w-[180px]">
-        <div
-          className="truncate text-slate-700"
-          title={project.client}
-        >
+        <div className="truncate">
           {project.client}
         </div>
       </td>
 
-      {/* Project Title */}
-      <td className="px-4 py-4 max-w-[320px]">
-        <div
-          className="truncate text-slate-700"
-          title={project.projectTitle}
-        >
+      {/* Project */}
+      <td className="px-4 py-4 max-w-[280px]">
+        <div className="truncate">
           {project.projectTitle}
         </div>
       </td>
 
       {/* Department */}
-      <td className="px-4 py-4 max-w-[160px]">
-        <div
-          className="truncate"
-          title={project.department}
-        >
-          {project.department}
-        </div>
+      <td className="px-4 py-4">
+        {project.department}
       </td>
 
       {/* Status */}
       <td className="px-4 py-4 text-center">
         <span
-          className={`
-            inline-flex
-            items-center
-            px-3
-            py-1
-            rounded-full
-            text-xs
-            font-semibold
-            ${getStatusStyle(project.projectStatus)}
-          `}
+          className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusStyle(
+            project.projectStatus
+          )}`}
         >
-          {project.projectStatus || "-"}
+          {project.projectStatus}
         </span>
       </td>
 
       {/* WO Value */}
-      <td className="px-4 py-4 text-right font-semibold text-slate-800 whitespace-nowrap">
+      <td className="px-4 py-4 text-right font-semibold whitespace-nowrap">
         ₹ {project.workOrderValue.toLocaleString("en-IN")}
+      </td>
+
+      {/* Next Payment */}
+      <td className="px-4 py-4 text-center whitespace-nowrap">
+        {nextPayment ? (
+          <div>
+            <div className="font-medium">
+              {formatDue()}
+            </div>
+
+            <div
+              className={`text-xs font-medium ${getPaymentStatusStyle(
+                nextPayment.status
+              )}`}
+            >
+              {formatDays()}
+            </div>
+          </div>
+        ) : (
+          "-"
+        )}
+      </td>
+
+      {/* Pending Due */}
+      <td className="px-4 py-4 text-right whitespace-nowrap">
+        {nextPayment
+          ? `₹ ${nextPayment.amount.toLocaleString("en-IN")}`
+          : "-"}
       </td>
 
       {/* Actions */}
       <td className="px-4 py-4">
         <div className="flex justify-center gap-2">
 
-          {/* View */}
           <button
             title="View"
             onClick={() =>
               navigate(`/projects/view/${project.id}`)
             }
-            className="
-              w-9
-              h-9
-              rounded-lg
-              bg-blue-50
-              hover:bg-blue-100
-              text-blue-600
-              flex
-              items-center
-              justify-center
-              transition
-            "
+            className="w-9 h-9 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center"
           >
             <Eye size={18} />
           </button>
 
-          {/* Edit */}
           <button
             title="Edit"
             onClick={() =>
               navigate(`/projects/edit/${project.id}`)
             }
-            className="
-              w-9
-              h-9
-              rounded-lg
-              bg-green-50
-              hover:bg-green-100
-              text-green-600
-              flex
-              items-center
-              justify-center
-              transition
-            "
+            className="w-9 h-9 rounded-lg bg-green-50 hover:bg-green-100 text-green-600 flex items-center justify-center"
           >
             <Pencil size={18} />
           </button>
 
-          {/* Delete */}
           <button
             title="Delete"
             onClick={() => onDelete(project.id)}
-            className="
-              w-9
-              h-9
-              rounded-lg
-              bg-red-50
-              hover:bg-red-100
-              text-red-600
-              flex
-              items-center
-              justify-center
-              transition
-            "
+            className="w-9 h-9 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center"
           >
             <Trash2 size={18} />
           </button>

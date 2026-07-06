@@ -9,7 +9,6 @@ export interface Project {
 
   poMonth: string;
 
-  // NEW FIELD
   prCategory: string;
 
   prNo: string;
@@ -24,19 +23,35 @@ export interface Project {
   projectStatus: string;
 
   // ==========================
-  // COMMERCIAL INFORMATION
+  // QUANTITY INFORMATION
   // ==========================
 
-  contractFormalities: string;
-  paymentTerms: string;
+  quantityItems: QuantityItem[];
+
+  totalWOQty: number;
+  totalInvoiceQty: number;
+  totalPendingQty: number;
+
+  pendingAmount: number;
+  pendingInvoicePercentage: number;
+
+  // ==========================
+  // PAYMENT MILESTONES
+  // ==========================
 
   workOrderValue: number;
-  currency: string;
 
-  contractExchangeRate: number;
-  currentExchangeRate: number;
+  paymentType: "Single" | "Multiple";
 
-  workOrderValueINR: number;
+  paymentMilestones: {
+    id: string;
+
+    paymentPercentage: number;
+
+    dueDate: string;
+
+    amount: number;
+  }[];
 
   // ==========================
   // INVOICE INFORMATION
@@ -67,19 +82,6 @@ export interface Project {
 
   profit: number;
   profitPercentage: number;
-
-  // ==========================
-  // QUANTITY INFORMATION
-  // ==========================
-
-  quantityItems: QuantityItem[];
-
-  totalWOQty: number;
-  totalInvoiceQty: number;
-  totalPendingQty: number;
-
-  pendingAmount: number;
-  pendingInvoicePercentage: number;
 
   // ==========================
   // DOCUMENT INFORMATION

@@ -23,19 +23,52 @@ export function createEmptyProject(): Project {
     projectStatus: "",
 
     // ==========================
-    // COMMERCIAL INFORMATION
+    // QUANTITY INFORMATION
     // ==========================
 
-    contractFormalities: "",
-    paymentTerms: "",
+    quantityItems: [
+      {
+        id: crypto.randomUUID(),
+
+        description: "",
+
+        woQty: 0,
+        invoiceQty: 0,
+        pendingQty: 0,
+
+        currency: "INR",
+
+        unitRate: 0,
+        exchangeRate: 1,
+        unitRateINR: 0,
+
+        pendingAmount: 0,
+      },
+    ],
+
+    totalWOQty: 0,
+    totalInvoiceQty: 0,
+    totalPendingQty: 0,
+
+    pendingAmount: 0,
+    pendingInvoicePercentage: 0,
+
+    // ==========================
+    // PAYMENT MILESTONES
+    // ==========================
 
     workOrderValue: 0,
-    currency: "",
 
-    contractExchangeRate: 1,
-    currentExchangeRate: 1,
+    paymentType: "Single",
 
-    workOrderValueINR: 0,
+    paymentMilestones: [
+      {
+        id: crypto.randomUUID(),
+        paymentPercentage: 100,
+        dueDate: "",
+        amount: 0,
+      },
+    ],
 
     // ==========================
     // INVOICE INFORMATION
@@ -66,37 +99,6 @@ export function createEmptyProject(): Project {
 
     profit: 0,
     profitPercentage: 0,
-
-    // ==========================
-    // QUANTITY INFORMATION
-    // ==========================
-
-    quantityItems: [
-      {
-        id: crypto.randomUUID(),
-
-        description: "",
-
-        woQty: 0,
-        invoiceQty: 0,
-        pendingQty: 0,
-
-        currency: "INR",
-
-        unitRate: 0,
-        exchangeRate: 1,
-        unitRateINR: 0,
-
-        pendingAmount: 0,
-      },
-    ],
-
-    totalWOQty: 0,
-    totalInvoiceQty: 0,
-    totalPendingQty: 0,
-
-    pendingAmount: 0,
-    pendingInvoicePercentage: 0,
 
     // ==========================
     // DOCUMENT INFORMATION

@@ -245,12 +245,21 @@ const ProjectTable = () => {
                 </th>
 
                 <th className="px-4 py-4 text-right">
-                  WO Value
-                </th>
+  WO Value
+</th>
 
-                <th className="px-4 py-4 text-center">
-                  Actions
-                </th>
+<th className="px-4 py-4 text-center">
+  Next Payment
+</th>
+
+<th className="px-4 py-4 text-right">
+  Pending Due
+</th>
+
+<th className="px-4 py-4 text-center">
+  Actions
+</th>
+    
 
               </tr>
 
