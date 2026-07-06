@@ -11,6 +11,9 @@ import AddProject from "../pages/Projects/AddProject";
 import ViewProject from "../pages/Projects/ViewProject";
 import EditProject from "../pages/Projects/EditProject";
 
+/* Customer Master */
+import CustomerMaster from "../pages/CustomerMaster/CustomerMaster";
+
 /* Invoices */
 import Invoices from "../pages/Invoices/Invoices";
 import AddInvoice from "../pages/Invoices/AddInvoice";
@@ -73,6 +76,15 @@ const MainLayout = () => {
             <Route
               path="/projects/edit/:id"
               element={<EditProject />}
+            />
+
+            {/* ===========================
+                CUSTOMER MASTER
+            ============================ */}
+
+            <Route
+              path="/customers"
+              element={<CustomerMaster />}
             />
 
             {/* ===========================

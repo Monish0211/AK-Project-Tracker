@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import {
   BarChart3,
+  Building2,
   Briefcase,
   Clock3,
   Droplet,
@@ -24,6 +25,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", to: "/", icon: LayoutDashboard },
   { label: "Projects", to: "/projects", icon: FolderKanban },
+  { label: "Customer Master", to: "/customers", icon: Building2 },
   { label: "Deliverables", to: "/deliverables", icon: PackageCheck },
   { label: "Invoices", to: "/invoices", icon: FileText },
   { label: "Expenses", to: "/expenses", icon: Wallet },

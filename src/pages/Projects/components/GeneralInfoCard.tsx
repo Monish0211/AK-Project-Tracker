@@ -1,5 +1,7 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { Project } from "../../../types/Project";
+import { getCustomers } from "../../../services/customerService";
 
 interface Props {
   project: Project;
@@ -14,6 +16,13 @@ const prCategories = [
   "Elixir Qatar",
   "India",
   "Qatar",
+];
+
+const departmentOptions = [
+  "Design Engineering Services",
+  "Environment",
+  "Risk Management",
+  "Training",
 ];
 
 const prNumberPrefixMap: Record<string, string> = {
@@ -41,6 +50,45 @@ const applyPrNoPrefix = (rawValue: string, prefix: string) => {
 };
 
 const GeneralInfoCard = ({ project, setProject }: Props) => {
+  const clientDropdownRef = useRef<HTMLDivElement>(null);
+  const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
+  const [isOtherDepartment, setIsOtherDepartment] = useState(
+    Boolean(project.department && !departmentOptions.includes(project.department))
+  );
+
+  const customers = useMemo(() => getCustomers(), []);
+
+  const filteredCustomers = useMemo(() => {
+    const input = project.client || "";
+
+    if (!input.trim()) {
+      return [];
+    }
+
+    return customers
+      .filter((customer) =>
+        customer.customerName.toLowerCase().includes(input.toLowerCase())
+      )
+      .slice(0, 8);
+  }, [customers, project.client]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        clientDropdownRef.current &&
+        !clientDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsClientDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
   return (
     <div className="bg-white rounded-xl shadow-md p-6">
       <h2 className="text-2xl font-semibold mb-6">
@@ -130,7 +178,7 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
         </div>
 
         {/* Client */}
-        <div>
+        <div className="relative" ref={clientDropdownRef}>
           <label className="block text-sm font-medium mb-2">
             Client Name
           </label>
@@ -138,15 +186,38 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
           <input
             type="text"
             value={project.client}
-            onChange={(e) =>
+            onChange={(e) => {
               setProject({
                 ...project,
                 client: e.target.value,
-              })
-            }
+              });
+              setIsClientDropdownOpen(true);
+            }}
+            onFocus={() => setIsClientDropdownOpen(true)}
             className="w-full border rounded-lg p-3"
             placeholder="Enter Client Name"
           />
+
+          {isClientDropdownOpen && filteredCustomers.length > 0 && (
+            <div className="absolute z-10 mt-1 w-full bg-white rounded-lg shadow-lg border max-h-60 overflow-y-auto">
+              {filteredCustomers.map((customer) => (
+                <button
+                  key={customer.customerName}
+                  type="button"
+                  className="w-full text-left p-3 hover:bg-blue-50"
+                  onClick={() => {
+                    setProject({
+                      ...project,
+                      client: customer.customerName,
+                    });
+                    setIsClientDropdownOpen(false);
+                  }}
+                >
+                  {customer.customerName}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Department */}
@@ -155,18 +226,51 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
             Department
           </label>
 
-          <input
-            type="text"
-            value={project.department}
-            onChange={(e) =>
+          <select
+            value={isOtherDepartment ? "Others" : project.department}
+            onChange={(e) => {
+              if (e.target.value === "Others") {
+                setIsOtherDepartment(true);
+                return;
+              }
+
+              setIsOtherDepartment(false);
               setProject({
                 ...project,
                 department: e.target.value,
-              })
-            }
+              });
+            }}
             className="w-full border rounded-lg p-3"
-            placeholder="Enter Department"
-          />
+          >
+            <option value="">Select Department</option>
+            {departmentOptions.map((department) => (
+              <option key={department} value={department}>
+                {department}
+              </option>
+            ))}
+            <option value="Others">Others</option>
+          </select>
+
+          {isOtherDepartment && (
+            <div className="mt-2">
+              <label className="block text-sm font-medium mb-2">
+                Other Department
+              </label>
+
+              <input
+                type="text"
+                value={project.department}
+                onChange={(e) =>
+                  setProject({
+                    ...project,
+                    department: e.target.value,
+                  })
+                }
+                className="w-full border rounded-lg p-3"
+                placeholder="Enter Department"
+              />
+            </div>
+          )}
         </div>
 
         {/* Domestic / Foreign */}

@@ -4,7 +4,7 @@ import { createEmptyProject } from "../../utils/createEmptyProject";
 
 import GeneralInfoCard from "./components/GeneralInfoCard";
 import QuantityCard from "./components/QuantityCard";
-import CommercialCard from "./components/CommercialCard";
+import CommercialCard from "./components/PaymentMilestoneCard";
 import InvoiceCard from "./components/InvoiceCard";
 import ExpenseCard from "./components/ExpenseCard";
 import DocumentCard from "./components/DocumentCard";
