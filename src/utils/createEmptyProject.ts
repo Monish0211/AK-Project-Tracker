@@ -54,10 +54,26 @@ export function createEmptyProject(): Project {
     pendingInvoicePercentage: 0,
 
     // ==========================
-    // PAYMENT MILESTONES
+    // COMMERCIAL INFORMATION
     // ==========================
 
+    contractFormalities: "",
+
+    paymentTerms: "",
+
+    currency: "INR",
+
+    contractExchangeRate: 1,
+
+    currentExchangeRate: 1,
+
     workOrderValue: 0,
+
+    workOrderValueINR: 0,
+
+    // ==========================
+    // PAYMENT MILESTONES
+    // ==========================
 
     paymentType: "Single",
 

@@ -36,10 +36,26 @@ export interface Project {
   pendingInvoicePercentage: number;
 
   // ==========================
-  // PAYMENT MILESTONES
+  // COMMERCIAL INFORMATION
   // ==========================
 
+  contractFormalities: string;
+
+  paymentTerms: string;
+
+  currency: string;
+
+  contractExchangeRate: number;
+
+  currentExchangeRate: number;
+
   workOrderValue: number;
+
+  workOrderValueINR: number;
+
+  // ==========================
+  // PAYMENT MILESTONES
+  // ==========================
 
   paymentType: "Single" | "Multiple";
 
