@@ -8,6 +8,10 @@ export interface Project {
   // ==========================
 
   poMonth: string;
+
+  // NEW FIELD
+  prCategory: string;
+
   prNo: string;
   client: string;
   department: string;
@@ -62,7 +66,6 @@ export interface Project {
   totalExpenses: number;
 
   profit: number;
-
   profitPercentage: number;
 
   // ==========================

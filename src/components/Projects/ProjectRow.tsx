@@ -36,8 +36,47 @@ const ProjectRow = ({
     }
   };
 
+  const getCategoryStyle = (category: string) => {
+    switch (category) {
+      case "India":
+        return "bg-blue-100 text-blue-700";
+
+      case "Malaysia":
+        return "bg-green-100 text-green-700";
+
+      case "Oman":
+        return "bg-orange-100 text-orange-700";
+
+      case "Abu Dhabi":
+        return "bg-purple-100 text-purple-700";
+
+      case "FZI":
+        return "bg-cyan-100 text-cyan-700";
+
+      case "Elixir Qatar":
+        return "bg-pink-100 text-pink-700";
+
+      case "Qatar":
+        return "bg-indigo-100 text-indigo-700";
+
+      default:
+        return "bg-gray-100 text-gray-700";
+    }
+  };
+
   return (
     <tr className="border-b hover:bg-slate-50 transition">
+
+      {/* PR Category */}
+      <td className="px-4 py-4 whitespace-nowrap">
+        <span
+          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getCategoryStyle(
+            project.prCategory
+          )}`}
+        >
+          {project.prCategory || "-"}
+        </span>
+      </td>
 
       {/* PR No */}
       <td className="px-4 py-4 font-medium text-slate-700 whitespace-nowrap">
@@ -46,43 +85,36 @@ const ProjectRow = ({
 
       {/* Client */}
       <td className="px-4 py-4 max-w-[180px]">
-
         <div
           className="truncate text-slate-700"
           title={project.client}
         >
           {project.client}
         </div>
-
       </td>
 
       {/* Project Title */}
       <td className="px-4 py-4 max-w-[320px]">
-
         <div
           className="truncate text-slate-700"
           title={project.projectTitle}
         >
           {project.projectTitle}
         </div>
-
       </td>
 
       {/* Department */}
       <td className="px-4 py-4 max-w-[160px]">
-
         <div
           className="truncate"
           title={project.department}
         >
           {project.department}
         </div>
-
       </td>
 
       {/* Status */}
       <td className="px-4 py-4 text-center">
-
         <span
           className={`
             inline-flex
@@ -97,22 +129,15 @@ const ProjectRow = ({
         >
           {project.projectStatus || "-"}
         </span>
-
       </td>
 
       {/* WO Value */}
       <td className="px-4 py-4 text-right font-semibold text-slate-800 whitespace-nowrap">
-
-        ₹{" "}
-        {project.workOrderValue.toLocaleString(
-          "en-IN"
-        )}
-
+        ₹ {project.workOrderValue.toLocaleString("en-IN")}
       </td>
 
       {/* Actions */}
       <td className="px-4 py-4">
-
         <div className="flex justify-center gap-2">
 
           {/* View */}
@@ -180,7 +205,6 @@ const ProjectRow = ({
           </button>
 
         </div>
-
       </td>
 
     </tr>

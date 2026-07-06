@@ -19,7 +19,7 @@ interface Props {
   setProject: Dispatch<SetStateAction<Project>>;
 }
 
-type QuantityField = "woQty" | "invoiceQty" | "unitRate";
+type QuantityField = "woQty" | "invoiceQty" | "unitRate" | "exchangeRate";
 
 const NUMBER_INPUT_PATTERN = /^\d*\.?\d*$/;
 
@@ -33,12 +33,17 @@ const DESCRIPTION_PLACEHOLDERS = [
 
 const LAST_ROW_WARNING = "At least one quantity item is required.";
 
+const CURRENCY_OPTIONS = ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR"];
+
+const DEFAULT_CURRENCY = "INR";
+
 interface NumericInputProps {
   value: number;
   ariaLabel: string;
   onChange: (nextValue: number) => boolean | void;
   hasError?: boolean;
   prefix?: string;
+  disabled?: boolean;
 }
 
 const NumericInput = ({
@@ -47,6 +52,7 @@ const NumericInput = ({
   onChange,
   hasError = false,
   prefix,
+  disabled = false,
 }: NumericInputProps) => {
   const [rawValue, setRawValue] = useState<string>(
     value === 0 ? "" : String(value)
@@ -87,13 +93,16 @@ const NumericInput = ({
       aria-label={ariaLabel}
       aria-invalid={hasError}
       value={rawValue}
+      disabled={disabled}
       onChange={handleChange}
-      className={`h-10 w-full rounded-lg border bg-white text-right text-sm text-slate-800 outline-none transition-all duration-150 placeholder:text-slate-300 focus:ring-2 ${
+      className={`h-10 w-full rounded-lg border text-right text-sm outline-none transition-all duration-150 placeholder:text-slate-300 focus:ring-2 ${
         prefix ? "pl-7 pr-3" : "px-3"
       } ${
-        hasError
-          ? "border-red-300 bg-red-50 focus:border-red-400 focus:ring-red-100"
-          : "border-gray-200 focus:border-blue-500 focus:ring-blue-500/20"
+        disabled
+          ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+          : hasError
+          ? "border-red-300 bg-red-50 text-slate-800 focus:border-red-400 focus:ring-red-100"
+          : "border-gray-200 bg-white text-slate-800 focus:border-blue-500 focus:ring-blue-500/20"
       }`}
     />
   );
@@ -126,7 +135,28 @@ const applyFieldValue = (
 
     case "unitRate":
       return { ...item, unitRate: value };
+
+    case "exchangeRate":
+      return { ...item, exchangeRate: value };
   }
+};
+
+const recalcItem = (item: QuantityItem): QuantityItem => {
+  const currency = item.currency || DEFAULT_CURRENCY;
+  const exchangeRate = currency === DEFAULT_CURRENCY ? 1 : item.exchangeRate;
+  const unitRateINR = item.unitRate * exchangeRate;
+
+  const base = recalcQuantityItem({
+    ...item,
+    currency,
+    exchangeRate,
+    unitRateINR,
+  });
+
+  return {
+    ...base,
+    pendingAmount: base.pendingQty * unitRateINR,
+  };
 };
 
 interface KpiCardProps {
@@ -206,9 +236,7 @@ const QuantityCard = ({ project, setProject }: Props) => {
     (index: number, field: QuantityField, value: number): boolean => {
       setProject((prev) => {
         const updatedItems = prev.quantityItems.map((item, i) =>
-          i === index
-            ? recalcQuantityItem(applyFieldValue(item, field, value))
-            : item
+          i === index ? recalcItem(applyFieldValue(item, field, value)) : item
         );
 
         return {
@@ -223,9 +251,39 @@ const QuantityCard = ({ project, setProject }: Props) => {
     [setProject]
   );
 
+  const handleCurrencyChange = useCallback(
+    (index: number, currency: string) => {
+      setProject((prev) => {
+        const updatedItems = prev.quantityItems.map((item, i) =>
+          i === index
+            ? recalcItem({
+                ...item,
+                currency,
+                exchangeRate: currency === DEFAULT_CURRENCY ? 1 : item.exchangeRate,
+              })
+            : item
+        );
+
+        return {
+          ...prev,
+          quantityItems: updatedItems,
+          ...calculateQuantity(updatedItems),
+        };
+      });
+    },
+    [setProject]
+  );
+
   const handleAddItem = useCallback(() => {
     setProject((prev) => {
-      const updatedItems = [...prev.quantityItems, createEmptyQuantityItem()];
+      const newItem: QuantityItem = {
+        ...createEmptyQuantityItem(),
+        currency: DEFAULT_CURRENCY,
+        exchangeRate: 1,
+        unitRateINR: 0,
+      };
+
+      const updatedItems = [...prev.quantityItems, newItem];
 
       return {
         ...prev,
@@ -286,7 +344,7 @@ const QuantityCard = ({ project, setProject }: Props) => {
 
       {/* Table */}
       <div className="max-h-[28rem] overflow-auto rounded-xl border border-slate-200">
-        <table className="w-full min-w-[940px] table-fixed border-collapse text-sm">
+        <table className="w-full min-w-[1360px] table-fixed border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="w-14 border-b border-slate-200 px-3 py-2.5 text-center font-semibold">
@@ -297,24 +355,36 @@ const QuantityCard = ({ project, setProject }: Props) => {
                 Description
               </th>
 
-              <th className="w-32 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
+              <th className="w-24 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
                 WO Qty
               </th>
 
-              <th className="w-32 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
+              <th className="w-24 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
                 Invoice Qty
               </th>
 
-              <th className="w-36 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
+              <th className="w-28 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
                 Pending Qty
               </th>
 
-              <th className="w-36 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
-                Unit Rate (₹)
+              <th className="w-24 border-b border-slate-200 px-3 py-2.5 text-center font-semibold">
+                Currency
               </th>
 
-              <th className="w-40 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
-                Pending Amount
+              <th className="w-28 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
+                Unit Rate
+              </th>
+
+              <th className="w-28 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
+                Exchange Rate
+              </th>
+
+              <th className="w-32 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
+                Unit Rate (INR)
+              </th>
+
+              <th className="w-36 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
+                Pending Amount (INR)
               </th>
 
               <th className="w-16 border-b border-slate-200 px-3 py-2.5 text-center font-semibold">
@@ -326,7 +396,7 @@ const QuantityCard = ({ project, setProject }: Props) => {
           <tbody className="divide-y divide-slate-100">
             {project.quantityItems.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-10 text-center text-slate-400">
+                <td colSpan={11} className="py-10 text-center text-slate-400">
                   No quantity items added. Click "Add Quantity" to get
                   started.
                 </td>
@@ -335,6 +405,8 @@ const QuantityCard = ({ project, setProject }: Props) => {
               project.quantityItems.map((item, index) => {
                 const invoiceQtyError = getInvoiceQtyError(item);
                 const canRemove = canRemoveQuantityItem(project.quantityItems);
+                const currency = item.currency || DEFAULT_CURRENCY;
+                const isInr = currency === DEFAULT_CURRENCY;
 
                 return (
                   <tr
@@ -398,14 +470,47 @@ const QuantityCard = ({ project, setProject }: Props) => {
                     </td>
 
                     <td className="px-3 py-3">
+                      <select
+                        value={currency}
+                        aria-label={`Currency for row ${index + 1}`}
+                        onChange={(e) =>
+                          handleCurrencyChange(index, e.target.value)
+                        }
+                        className="h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                      >
+                        {CURRENCY_OPTIONS.map((currencyOption) => (
+                          <option key={currencyOption} value={currencyOption}>
+                            {currencyOption}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+
+                    <td className="px-3 py-3">
                       <NumericInput
                         value={item.unitRate}
                         ariaLabel={`Unit Rate for row ${index + 1}`}
-                        prefix="₹"
                         onChange={(value) =>
                           handleFieldChange(index, "unitRate", value)
                         }
                       />
+                    </td>
+
+                    <td className="px-3 py-3">
+                      <NumericInput
+                        value={isInr ? 1 : item.exchangeRate}
+                        ariaLabel={`Exchange Rate for row ${index + 1}`}
+                        disabled={isInr}
+                        onChange={(value) =>
+                          handleFieldChange(index, "exchangeRate", value)
+                        }
+                      />
+                    </td>
+
+                    <td className="px-3 py-3 text-right">
+                      <span className="inline-flex min-w-[3rem] justify-center rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600">
+                        {formatIndianNumber(item.unitRateINR)}
+                      </span>
                     </td>
 
                     <td className="px-3 py-3 text-right">
