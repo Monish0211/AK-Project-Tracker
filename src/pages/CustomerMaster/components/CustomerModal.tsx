@@ -1,34 +1,25 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 
+import { addCustomer, getCustomers } from "../../../services/customerService";
+
 import type { Customer } from "../../../types/CustomerModel";
 
-import {
-  addCustomer,
-  getCustomers,
-} from "../../../services/customerService";
-
 interface Props {
-  customers: Customer[];
-  setCustomers: React.Dispatch<
-    React.SetStateAction<Customer[]>
-  >;
+  setCustomers: React.Dispatch<React.SetStateAction<Customer[]>>;
   onClose: () => void;
 }
 
 const CustomerModal = ({
-  customers,
   setCustomers,
   onClose,
 }: Props) => {
-  const [customerName, setCustomerName] =
-    useState("");
-
+  const [customerName, setCustomerName] = useState("");
   const [error, setError] = useState("");
 
   const handleSave = () => {
     if (!customerName.trim()) {
-      setError("Customer name is required.");
+      setError("Customer Name is required.");
       return;
     }
 
@@ -45,24 +36,20 @@ const CustomerModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
-
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
 
         {/* Header */}
 
-        <div className="flex justify-between items-center border-b p-6">
-
+        <div className="flex items-center justify-between border-b p-6">
           <div>
-
-            <h2 className="text-2xl font-bold text-slate-800">
+            <h2 className="text-2xl font-bold">
               Add Customer
             </h2>
 
-            <p className="text-sm text-gray-500 mt-1">
-              Create a new customer in the master list.
+            <p className="text-gray-500 mt-1">
+              Create a new customer.
             </p>
-
           </div>
 
           <button
@@ -71,44 +58,31 @@ const CustomerModal = ({
           >
             <X size={20} />
           </button>
-
         </div>
 
         {/* Body */}
 
-        <div className="p-6 space-y-5">
+        <div className="p-6">
 
-          <div>
+          <label className="block text-sm font-medium mb-2">
+            Customer Name
+          </label>
 
-            <label className="block text-sm font-medium mb-2">
-              Customer Name
-            </label>
-
-            <input
-              type="text"
-              value={customerName}
-              onChange={(e) => {
-                setCustomerName(e.target.value);
-                setError("");
-              }}
-              placeholder="Enter Customer Name"
-              className="
-                w-full
-                border
-                rounded-xl
-                p-3
-                focus:ring-2
-                focus:ring-blue-500
-                outline-none
-              "
-            />
-
-          </div>
+          <input
+            type="text"
+            value={customerName}
+            onChange={(e) => {
+              setCustomerName(e.target.value);
+              setError("");
+            }}
+            placeholder="Enter Customer Name"
+            className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none"
+          />
 
           {error && (
-            <div className="text-red-600 text-sm font-medium">
+            <p className="text-red-600 text-sm mt-3">
               {error}
-            </div>
+            </p>
           )}
 
         </div>
@@ -119,27 +93,14 @@ const CustomerModal = ({
 
           <button
             onClick={onClose}
-            className="
-              px-5
-              py-2.5
-              rounded-xl
-              border
-              hover:bg-gray-100
-            "
+            className="px-5 py-2 rounded-xl border hover:bg-gray-100"
           >
             Cancel
           </button>
 
           <button
             onClick={handleSave}
-            className="
-              px-5
-              py-2.5
-              rounded-xl
-              bg-blue-600
-              hover:bg-blue-700
-              text-white
-            "
+            className="px-5 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
           >
             Save Customer
           </button>
@@ -147,7 +108,6 @@ const CustomerModal = ({
         </div>
 
       </div>
-
     </div>
   );
 };
