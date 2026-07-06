@@ -9,6 +9,8 @@ export function createEmptyProject(): Project {
     // ==========================
 
     poMonth: "",
+    prCategory: "",
+
     prNo: "",
     client: "",
     department: "",
@@ -72,11 +74,19 @@ export function createEmptyProject(): Project {
     quantityItems: [
       {
         id: crypto.randomUUID(),
+
         description: "",
+
         woQty: 0,
         invoiceQty: 0,
         pendingQty: 0,
+
+        currency: "INR",
+
         unitRate: 0,
+        exchangeRate: 1,
+        unitRateINR: 0,
+
         pendingAmount: 0,
       },
     ],

@@ -6,6 +6,40 @@ interface Props {
   setProject: Dispatch<SetStateAction<Project>>;
 }
 
+const prCategories = [
+  "Malaysia",
+  "Oman",
+  "Abu Dhabi",
+  "FZI",
+  "Elixir Qatar",
+  "India",
+  "Qatar",
+];
+
+const prNumberPrefixMap: Record<string, string> = {
+  Malaysia: "MYPR-",
+  Oman: "EE-",
+  "Abu Dhabi": "PRAD-",
+  FZI: "PRI-",
+  "Elixir Qatar": "EE-Q-",
+  India: "PR-",
+  Qatar: "Q-PR-",
+};
+
+const applyPrNoPrefix = (rawValue: string, prefix: string) => {
+  if (!prefix) {
+    return rawValue;
+  }
+
+  for (let matchLength = Math.min(prefix.length, rawValue.length); matchLength >= 0; matchLength--) {
+    if (rawValue.slice(0, matchLength) === prefix.slice(0, matchLength)) {
+      return prefix + rawValue.slice(matchLength);
+    }
+  }
+
+  return prefix + rawValue;
+};
+
 const GeneralInfoCard = ({ project, setProject }: Props) => {
   return (
     <div className="bg-white rounded-xl shadow-md p-6">
@@ -34,6 +68,41 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
           />
         </div>
 
+        {/* PR Category */}
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            PR Category
+          </label>
+
+          <select
+            value={project.prCategory}
+            onChange={(e) => {
+              const newCategory = e.target.value;
+              const oldPrefix = prNumberPrefixMap[project.prCategory] || "";
+              const newPrefix = prNumberPrefixMap[newCategory] || "";
+
+              const numberPart = project.prNo.startsWith(oldPrefix)
+                ? project.prNo.slice(oldPrefix.length)
+                : project.prNo;
+
+              setProject({
+                ...project,
+                prCategory: newCategory,
+                prNo: newPrefix + numberPart,
+              });
+            }}
+            className="w-full border rounded-lg p-3"
+          >
+            <option value="">Select PR Category</option>
+
+            {prCategories.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* PR Number */}
         <div>
           <label className="block text-sm font-medium mb-2">
@@ -43,14 +112,20 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
           <input
             type="text"
             value={project.prNo}
-            onChange={(e) =>
+            onChange={(e) => {
+              const prefix = prNumberPrefixMap[project.prCategory] || "";
+
               setProject({
                 ...project,
-                prNo: e.target.value,
-              })
-            }
+                prNo: applyPrNoPrefix(e.target.value, prefix),
+              });
+            }}
             className="w-full border rounded-lg p-3"
-            placeholder="Enter PR Number"
+            placeholder={
+              prNumberPrefixMap[project.prCategory]
+                ? `${prNumberPrefixMap[project.prCategory]}Enter Number`
+                : "Enter PR Number"
+            }
           />
         </div>
 

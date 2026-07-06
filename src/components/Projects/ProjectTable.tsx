@@ -19,8 +19,9 @@ const ProjectTable = () => {
   );
 
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("All");
+  const [prCategory, setPrCategory] = useState("All");
   const [department, setDepartment] = useState("All");
+  const [status, setStatus] = useState("All");
 
   const handleDelete = (id: string) => {
     if (
@@ -42,6 +43,13 @@ const ProjectTable = () => {
     ),
   ];
 
+  const prCategories = [
+    "All",
+    ...new Set(
+      projects.map((p) => p.prCategory).filter(Boolean)
+    ),
+  ];
+
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
       const matchesSearch =
@@ -55,21 +63,32 @@ const ProjectTable = () => {
           ?.toLowerCase()
           .includes(search.toLowerCase());
 
-      const matchesStatus =
-        status === "All" ||
-        project.projectStatus === status;
+      const matchesCategory =
+        prCategory === "All" ||
+        project.prCategory === prCategory;
 
       const matchesDepartment =
         department === "All" ||
         project.department === department;
 
+      const matchesStatus =
+        status === "All" ||
+        project.projectStatus === status;
+
       return (
         matchesSearch &&
-        matchesStatus &&
-        matchesDepartment
+        matchesCategory &&
+        matchesDepartment &&
+        matchesStatus
       );
     });
-  }, [projects, search, status, department]);
+  }, [
+    projects,
+    search,
+    prCategory,
+    department,
+    status,
+  ]);
 
   return (
     <div className="bg-white rounded-2xl shadow-md border border-gray-100">
@@ -81,16 +100,13 @@ const ProjectTable = () => {
         <div className="flex items-center gap-3">
 
           <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-
             <FolderKanban
               size={20}
               className="text-blue-600"
             />
-
           </div>
 
           <div>
-
             <h2 className="text-xl font-semibold">
               Project Repository
             </h2>
@@ -98,7 +114,6 @@ const ProjectTable = () => {
             <p className="text-sm text-gray-500">
               Search and manage all projects
             </p>
-
           </div>
 
         </div>
@@ -111,7 +126,7 @@ const ProjectTable = () => {
 
       {/* Filters */}
 
-      <div className="grid grid-cols-3 gap-4 p-6 border-b">
+      <div className="grid grid-cols-4 gap-4 p-6 border-b">
 
         {/* Search */}
 
@@ -134,6 +149,25 @@ const ProjectTable = () => {
 
         </div>
 
+        {/* PR Category */}
+
+        <select
+          value={prCategory}
+          onChange={(e) =>
+            setPrCategory(e.target.value)
+          }
+          className="border rounded-xl px-3 py-2"
+        >
+          {prCategories.map((category) => (
+            <option
+              key={category}
+              value={category}
+            >
+              {category}
+            </option>
+          ))}
+        </select>
+
         {/* Department */}
 
         <select
@@ -144,7 +178,10 @@ const ProjectTable = () => {
           className="border rounded-xl px-3 py-2"
         >
           {departments.map((dept) => (
-            <option key={dept}>
+            <option
+              key={dept}
+              value={dept}
+            >
               {dept}
             </option>
           ))}
@@ -159,11 +196,11 @@ const ProjectTable = () => {
           }
           className="border rounded-xl px-3 py-2"
         >
-          <option>All</option>
-          <option>Active</option>
-          <option>Completed</option>
-          <option>On Hold</option>
-          <option>Cancelled</option>
+          <option value="All">All Status</option>
+          <option value="Active">Active</option>
+          <option value="Completed">Completed</option>
+          <option value="On Hold">On Hold</option>
+          <option value="Cancelled">Cancelled</option>
         </select>
 
       </div>
@@ -171,13 +208,10 @@ const ProjectTable = () => {
       {/* Table */}
 
       {filteredProjects.length === 0 ? (
-
         <div className="py-16 text-center text-gray-500">
           No Projects Found
         </div>
-
       ) : (
-
         <div className="overflow-x-auto">
 
           <table className="min-w-full">
@@ -185,6 +219,10 @@ const ProjectTable = () => {
             <thead className="bg-slate-50 sticky top-0">
 
               <tr className="text-sm text-slate-700">
+
+                <th className="px-4 py-4 text-left">
+                  PR Category
+                </th>
 
                 <th className="px-4 py-4 text-left">
                   PR No
@@ -235,7 +273,6 @@ const ProjectTable = () => {
           </table>
 
         </div>
-
       )}
 
     </div>
