@@ -108,13 +108,8 @@ export function createEmptyProject(): Project {
     // EXPENSE INFORMATION
     // ==========================
 
-    manhourExpenses: 0,
-    nonManhourExpenses: 0,
-
-    totalExpenses: 0,
-
-    profit: 0,
-    profitPercentage: 0,
+    manhourExpenses: [],
+    nonManhourExpenses: [],
 
     // ==========================
     // DOCUMENT INFORMATION

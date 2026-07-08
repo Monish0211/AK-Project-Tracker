@@ -9,7 +9,6 @@ import {
   CreditCard,
   Receipt,
   Wallet,
-  FolderOpen,
   Building2,
   Hash,
   Briefcase,
@@ -27,17 +26,15 @@ import GeneralInfoCard from "./components/GeneralInfoCard";
 import QuantityCard from "./components/QuantityCard";
 import CommercialCard from "./components/PaymentMilestoneCard";
 import InvoiceCard from "./components/InvoiceCard";
-import ExpenseCard from "./components/ExpenseCard";
-import DocumentCard from "./components/DocumentCard";
+import ExpSection from "./components/ExpenseInformation/ExpSection";
 import FormButtons from "./components/FormButtons";
 
 type TabKey =
   | "general"
   | "quantity"
   | "payments"
-  | "invoices"
   | "expenses"
-  | "documents";
+  | "invoices";
 
 interface TabConfig {
   key: TabKey;
@@ -49,9 +46,8 @@ const TABS: TabConfig[] = [
   { key: "general", label: "General", icon: LayoutGrid },
   { key: "quantity", label: "Quantity", icon: Package },
   { key: "payments", label: "Payments", icon: CreditCard },
-  { key: "invoices", label: "Invoices", icon: Receipt },
   { key: "expenses", label: "Expenses", icon: Wallet },
-  { key: "documents", label: "Documents", icon: FolderOpen },
+  { key: "invoices", label: "Invoices", icon: Receipt },
 ];
 
 const formatINR = (value: number): string =>
@@ -111,7 +107,7 @@ const EditProject = () => {
 
               <p className="text-gray-500 mt-1">
                 Update project information including quantities, payment
-                milestones, invoices, expenses, documents and project team.
+                milestones, expenses and invoices.
               </p>
             </div>
           </div>
@@ -281,16 +277,12 @@ const EditProject = () => {
             <CommercialCard project={project} setProject={setProject} />
           )}
 
+          {activeTab === "expenses" && (
+            <ExpSection project={project} setProject={setProject} />
+          )}
+
           {activeTab === "invoices" && (
             <InvoiceCard project={project} setProject={setProject} />
-          )}
-
-          {activeTab === "expenses" && (
-            <ExpenseCard project={project} setProject={setProject} />
-          )}
-
-          {activeTab === "documents" && (
-            <DocumentCard project={project} setProject={setProject} />
           )}
         </div>
       </div>

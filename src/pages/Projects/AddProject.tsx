@@ -5,9 +5,6 @@ import { createEmptyProject } from "../../utils/createEmptyProject";
 import GeneralInfoCard from "./components/GeneralInfoCard";
 import QuantityCard from "./components/QuantityCard";
 import CommercialCard from "./components/PaymentMilestoneCard";
-import InvoiceCard from "./components/InvoiceCard";
-import ExpenseCard from "./components/ExpenseCard";
-import DocumentCard from "./components/DocumentCard";
 import FormButtons from "./components/FormButtons";
 
 const AddProject = () => {
@@ -46,30 +43,9 @@ const AddProject = () => {
         setProject={setProject}
       />
 
-      {/* 3. Commercial Information */}
+      {/* 3. Payment Milestones */}
 
       <CommercialCard
-        project={project}
-        setProject={setProject}
-      />
-
-      {/* 4. Invoice Information */}
-
-      <InvoiceCard
-        project={project}
-        setProject={setProject}
-      />
-
-      {/* 5. Expense Information */}
-
-      <ExpenseCard
-        project={project}
-        setProject={setProject}
-      />
-
-      {/* 6. Documents */}
-
-      <DocumentCard
         project={project}
         setProject={setProject}
       />

@@ -2,48 +2,63 @@ import type { Project } from "../../../types/Project";
 import InfoField from "./InfoField";
 import InfoSection from "./InfoSection";
 
+import {
+  getGrossProfit,
+  getProfitMargin,
+  getTotalManhourCost,
+  getTotalNonManhourCost,
+  getTotalProjectCost,
+} from "../../../services/expenseService";
+
 interface Props {
   project: Project;
 }
 
+const formatINR = (value: number): string =>
+  `₹ ${value.toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
 const CostSection = ({ project }: Props) => {
+  const manhourCost = getTotalManhourCost(project.manhourExpenses);
+
+  const nonManhourCost = getTotalNonManhourCost(project.nonManhourExpenses);
+
+  const totalCost = getTotalProjectCost(
+    project.manhourExpenses,
+    project.nonManhourExpenses
+  );
+
+  const grossProfit = getGrossProfit(project.workOrderValue, totalCost);
+
+  const profitMargin = getProfitMargin(project.workOrderValue, grossProfit);
+
   return (
     <InfoSection title="Expense Information">
       <InfoField
         label="Manhour Expenses"
-        value={`₹ ${project.manhourExpenses.toLocaleString("en-IN", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}`}
+        value={formatINR(manhourCost)}
       />
 
       <InfoField
         label="Non-Manhour Expenses"
-        value={`₹ ${project.nonManhourExpenses.toLocaleString("en-IN", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}`}
+        value={formatINR(nonManhourCost)}
       />
 
       <InfoField
         label="Total Expenses"
-        value={`₹ ${project.totalExpenses.toLocaleString("en-IN", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}`}
+        value={formatINR(totalCost)}
       />
 
       <InfoField
         label="Profit"
-        value={`₹ ${project.profit.toLocaleString("en-IN", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}`}
+        value={formatINR(grossProfit)}
       />
 
       <InfoField
         label="Profit Percentage"
-        value={`${project.profitPercentage.toFixed(2)} %`}
+        value={`${profitMargin.toFixed(2)} %`}
       />
     </InfoSection>
   );
