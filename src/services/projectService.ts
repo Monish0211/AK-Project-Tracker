@@ -2,6 +2,18 @@ import type { Project } from "../types/Project";
 
 const STORAGE_KEY = "projects";
 
+function normalizeProject(project: Project): Project {
+  return {
+    ...project,
+    manhourExpenses: Array.isArray(project.manhourExpenses)
+      ? project.manhourExpenses
+      : [],
+    nonManhourExpenses: Array.isArray(project.nonManhourExpenses)
+      ? project.nonManhourExpenses
+      : [],
+  };
+}
+
 export const getProjects = (): Project[] => {
   const data = localStorage.getItem(STORAGE_KEY);
 
@@ -10,7 +22,9 @@ export const getProjects = (): Project[] => {
   }
 
   try {
-    return JSON.parse(data);
+    const parsed: Project[] = JSON.parse(data);
+
+    return parsed.map(normalizeProject);
   } catch {
     return [];
   }

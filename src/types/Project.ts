@@ -1,4 +1,6 @@
 import type { QuantityItem } from "./QuantityItem";
+import type { ManhourExpense } from "./ManhourExpense";
+import type { NonManhourExpense } from "./NonManhourExpense";
 
 export interface Project {
   id: string;
@@ -91,13 +93,9 @@ export interface Project {
   // EXPENSE INFORMATION
   // ==========================
 
-  manhourExpenses: number;
-  nonManhourExpenses: number;
+manhourExpenses: ManhourExpense[];
 
-  totalExpenses: number;
-
-  profit: number;
-  profitPercentage: number;
+nonManhourExpenses: NonManhourExpense[];
 
   // ==========================
   // DOCUMENT INFORMATION

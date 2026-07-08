@@ -1,4 +1,5 @@
 import { getProjects } from "./projectService";
+import { getGrossProfit, getTotalProjectCost } from "./expenseService";
 
 export interface DashboardMetrics {
   totalProjects: number;
@@ -41,12 +42,25 @@ export const getDashboardMetrics = (): DashboardMetrics => {
   );
 
   const totalExpenses = projects.reduce(
-    (sum, project) => sum + project.totalExpenses,
+    (sum, project) =>
+      sum +
+      getTotalProjectCost(
+        project.manhourExpenses,
+        project.nonManhourExpenses
+      ),
     0
   );
 
   const totalProfit = projects.reduce(
-    (sum, project) => sum + project.profit,
+    (sum, project) =>
+      sum +
+      getGrossProfit(
+        project.workOrderValue,
+        getTotalProjectCost(
+          project.manhourExpenses,
+          project.nonManhourExpenses
+        )
+      ),
     0
   );
 
