@@ -1,15 +1,32 @@
 import type { Project } from "../types/Project";
+import { createEmptyProject } from "../utils/createEmptyProject";
 
 const STORAGE_KEY = "projects";
 
 function normalizeProject(project: Project): Project {
+  const defaults = createEmptyProject();
+
   return {
+    ...defaults,
     ...project,
+    // Older projects were saved before these array fields existed (or
+    // before they were converted from flat numbers to arrays). Merge in
+    // safe defaults so every array field is guaranteed to be an array,
+    // never undefined/null, no matter how old the stored record is.
+    quantityItems: Array.isArray(project.quantityItems)
+      ? project.quantityItems
+      : defaults.quantityItems,
+    paymentMilestones: Array.isArray(project.paymentMilestones)
+      ? project.paymentMilestones
+      : defaults.paymentMilestones,
     manhourExpenses: Array.isArray(project.manhourExpenses)
       ? project.manhourExpenses
       : [],
     nonManhourExpenses: Array.isArray(project.nonManhourExpenses)
       ? project.nonManhourExpenses
+      : [],
+    invoiceItems: Array.isArray(project.invoiceItems)
+      ? project.invoiceItems
       : [],
   };
 }

@@ -90,19 +90,20 @@ export function createEmptyProject(): Project {
     // INVOICE INFORMATION
     // ==========================
 
-    invoiceRaised: 0,
-    invoiceRaisedINR: 0,
-
-    balanceToBeRaised: 0,
-    balanceToBeRaisedINR: 0,
+    invoiceItems: [
+      {
+        id: crypto.randomUUID(),
+        description: "",
+        numberOfDays: 0,
+        location: "",
+        unitPrice: 0,
+        totalPrice: 0,
+        invoices: [],
+      },
+    ],
 
     paymentReceived: 0,
     paymentReceivedINR: 0,
-
-    outstanding: 0,
-    outstandingINR: 0,
-
-    paymentStatus: "",
 
     // ==========================
     // EXPENSE INFORMATION

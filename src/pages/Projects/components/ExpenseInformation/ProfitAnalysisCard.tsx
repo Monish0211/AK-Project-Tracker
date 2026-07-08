@@ -1,17 +1,15 @@
-import { IndianRupee, TrendingDown, TrendingUp } from "lucide-react";
+import { IndianRupee, TrendingUp } from "lucide-react";
 
 import type { ManhourExpense } from "../../../../types/ManhourExpense";
 import type { NonManhourExpense } from "../../../../types/NonManhourExpense";
 
 import {
+  getTotalProjectCost,
   getGrossProfit,
   getProfitMargin,
-  getTotalProjectCost,
 } from "../../../../services/expenseService";
-import {
-  formatIndianCurrency,
-  formatIndianNumber,
-} from "../../../../utils/quantityCalculations";
+
+import { formatIndianCurrency } from "../../../../utils/quantityCalculations";
 
 interface Props {
   manhourExpenses: ManhourExpense[];
@@ -24,25 +22,29 @@ const ProfitAnalysisCard = ({
   nonManhourExpenses,
   revenue,
 }: Props) => {
-  const totalProjectCost = getTotalProjectCost(
+  const totalCost = getTotalProjectCost(
     manhourExpenses,
     nonManhourExpenses
   );
 
-  const grossProfit = getGrossProfit(revenue, totalProjectCost);
+  const grossProfit = getGrossProfit(
+    revenue,
+    totalCost
+  );
 
-  const profitMargin = getProfitMargin(revenue, grossProfit);
-
-  const isProfit = grossProfit >= 0;
+  const grossMargin = getProfitMargin(
+    revenue,
+    grossProfit
+  );
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-200">
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
 
       {/* Header */}
 
-      <div className="flex items-center gap-3 border-b px-6 py-5">
+      <div className="flex items-center gap-3 border-b border-slate-200 px-6 py-5">
 
-        <div className="h-11 w-11 rounded-xl bg-indigo-100 flex items-center justify-center">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-100">
 
           <TrendingUp
             size={22}
@@ -53,11 +55,11 @@ const ProfitAnalysisCard = ({
 
         <div>
 
-          <h2 className="text-lg font-semibold text-gray-800">
+          <h2 className="text-lg font-semibold text-slate-800">
             Profit Analysis
           </h2>
 
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-slate-500">
             Revenue, profit and margin are calculated automatically.
           </p>
 
@@ -65,121 +67,111 @@ const ProfitAnalysisCard = ({
 
       </div>
 
-      {/* Body */}
+      {/* KPI Grid */}
 
-      <div className="p-6">
+      <div className="grid grid-cols-1 gap-5 p-6 md:grid-cols-2">
 
-        <div className="grid grid-cols-2 gap-5">
+        {/* Revenue */}
 
-          {/* Revenue */}
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
 
-          <div className="rounded-xl bg-blue-50 p-5">
+          <div className="flex items-center gap-2">
 
-            <div className="flex items-center gap-2">
+            <IndianRupee
+              size={18}
+              className="text-blue-600"
+            />
 
-              <IndianRupee
-                size={18}
-                className="text-blue-600"
-              />
-
-              <span className="text-sm text-gray-600">
-                Project Revenue
-              </span>
-
-            </div>
-
-            <h3 className="mt-3 text-2xl font-bold text-blue-700">
-              {formatIndianCurrency(revenue)}
-            </h3>
+            <span className="text-sm font-medium text-slate-600">
+              Revenue
+            </span>
 
           </div>
 
-          {/* Total Cost */}
+          <h3 className="mt-3 text-2xl font-bold text-blue-700">
+            {formatIndianCurrency(revenue)}
+          </h3>
 
-          <div className="rounded-xl bg-red-50 p-5">
+        </div>
 
-            <div className="flex items-center gap-2">
+        {/* Total Cost */}
 
-              <IndianRupee
-                size={18}
-                className="text-red-600"
-              />
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5">
 
-              <span className="text-sm text-gray-600">
-                Total Cost
-              </span>
+          <div className="flex items-center gap-2">
 
-            </div>
+            <IndianRupee
+              size={18}
+              className="text-red-600"
+            />
 
-            <h3 className="mt-3 text-2xl font-bold text-red-700">
-              {formatIndianCurrency(totalProjectCost)}
-            </h3>
+            <span className="text-sm font-medium text-slate-600">
+              Total Cost
+            </span>
 
           </div>
 
-          {/* Gross Profit */}
+          <h3 className="mt-3 text-2xl font-bold text-red-700">
+            {formatIndianCurrency(totalCost)}
+          </h3>
 
-          <div
-            className={`rounded-xl p-5 ${
-              isProfit ? "bg-green-50" : "bg-red-50"
+        </div>
+
+        {/* Gross Profit */}
+
+        <div className="rounded-xl border border-green-200 bg-green-50 p-5">
+
+          <div className="flex items-center gap-2">
+
+            <TrendingUp
+              size={18}
+              className="text-green-600"
+            />
+
+            <span className="text-sm font-medium text-slate-600">
+              Gross Profit
+            </span>
+
+          </div>
+
+          <h3
+            className={`mt-3 text-2xl font-bold ${
+              grossProfit >= 0
+                ? "text-green-700"
+                : "text-red-700"
             }`}
           >
+            {formatIndianCurrency(grossProfit)}
+          </h3>
 
-            <div className="flex items-center gap-2">
+        </div>
 
-              {isProfit ? (
-                <TrendingUp size={18} className="text-green-600" />
-              ) : (
-                <TrendingDown size={18} className="text-red-600" />
-              )}
+        {/* Gross Margin */}
 
-              <span className="text-sm text-gray-600">
-                Gross Profit
-              </span>
+        <div className="rounded-xl border border-purple-200 bg-purple-50 p-5">
 
-            </div>
+          <div className="flex items-center gap-2">
 
-            <h3
-              className={`mt-3 text-2xl font-bold ${
-                isProfit ? "text-green-700" : "text-red-700"
-              }`}
-            >
-              {formatIndianCurrency(grossProfit)}
-            </h3>
+            <TrendingUp
+              size={18}
+              className="text-purple-600"
+            />
+
+            <span className="text-sm font-medium text-slate-600">
+              Gross Margin
+            </span>
 
           </div>
 
-          {/* Margin */}
-
-          <div
-            className={`rounded-xl p-5 ${
-              isProfit ? "bg-purple-50" : "bg-red-50"
+          <h3
+            className={`mt-3 text-2xl font-bold ${
+              grossMargin >= 0
+                ? "text-purple-700"
+                : "text-red-700"
             }`}
           >
-
-            <div className="flex items-center gap-2">
-
-              {isProfit ? (
-                <TrendingUp size={18} className="text-purple-600" />
-              ) : (
-                <TrendingDown size={18} className="text-red-600" />
-              )}
-
-              <span className="text-sm text-gray-600">
-                Gross Margin
-              </span>
-
-            </div>
-
-            <h3
-              className={`mt-3 text-2xl font-bold ${
-                isProfit ? "text-purple-700" : "text-red-700"
-              }`}
-            >
-              {formatIndianNumber(profitMargin)}%
-            </h3>
-
-          </div>
+            {grossMargin.toFixed(2)}%
+          </h3>
 
         </div>
 

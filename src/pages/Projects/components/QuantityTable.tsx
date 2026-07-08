@@ -1,124 +1,185 @@
-import type { QuantityItem } from "../../../types/QuantityItem";
+import { Clock, Package, Receipt, Wallet } from "lucide-react";
+
+import type { Project } from "../../../types/Project";
+
+import {
+  formatIndianCurrency,
+  formatIndianNumber,
+} from "../../../utils/quantityCalculations";
 
 interface Props {
-  items: QuantityItem[];
+  project: Project;
 }
 
-const QuantityTable = ({ items }: Props) => {
+interface QuantityKpiCardProps {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  accent: "blue" | "purple" | "orange" | "green";
+}
+
+const ACCENT_STYLES: Record<
+  QuantityKpiCardProps["accent"],
+  { iconBg: string; iconText: string; valueText: string }
+> = {
+  blue: { iconBg: "bg-blue-50", iconText: "text-blue-600", valueText: "text-slate-800" },
+  purple: { iconBg: "bg-purple-50", iconText: "text-purple-600", valueText: "text-slate-800" },
+  orange: { iconBg: "bg-orange-50", iconText: "text-orange-600", valueText: "text-slate-800" },
+  green: { iconBg: "bg-green-50", iconText: "text-green-600", valueText: "text-green-600" },
+};
+
+const QuantityKpiCard = ({ icon, label, value, accent }: QuantityKpiCardProps) => {
+  const styles = ACCENT_STYLES[accent];
+
   return (
-    <div className="bg-white rounded-xl shadow-md p-6">
+    <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
+      <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${styles.iconBg} ${styles.iconText}`}>
+        {icon}
+      </div>
+      <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className={`mt-1 text-2xl font-bold ${styles.valueText}`}>{value}</p>
+    </div>
+  );
+};
 
-      <h2 className="text-2xl font-semibold mb-6">
-        Quantity Details
-      </h2>
+const QuantityTable = ({ project }: Props) => {
+  const items = project.quantityItems;
 
-      <div className="overflow-x-auto">
+  return (
+    <div className="space-y-6">
 
-        <table className="min-w-full border border-gray-300">
+      <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
 
-          <thead className="bg-slate-100">
+        <div className="border-b border-gray-100 px-6 py-5">
+          <h3 className="text-base font-semibold text-slate-800">
+            Quantity Details
+          </h3>
+          <p className="text-sm text-slate-500">
+            Work order quantities, invoice progress and pending values.
+          </p>
+        </div>
 
-            <tr>
+        <div className="max-h-[28rem] overflow-auto">
 
-              <th className="border p-3">
-                #
-              </th>
+          <table className="w-full min-w-[680px] table-fixed border-collapse text-sm">
 
-              <th className="border p-3 text-left">
-                Description
-              </th>
-
-              <th className="border p-3">
-                WO Qty
-              </th>
-
-              <th className="border p-3">
-                Invoice Qty
-              </th>
-
-              <th className="border p-3">
-                Pending Qty
-              </th>
-
-              <th className="border p-3">
-                Unit Rate
-              </th>
-
-              <th className="border p-3">
-                Pending Amount
-              </th>
-
-            </tr>
-
-          </thead>
-
-          <tbody>
-
-            {items.length === 0 ? (
+            <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
 
               <tr>
+                <th className="w-14 border-b border-slate-200 px-3 py-3 text-center font-semibold">
+                  Sl No
+                </th>
 
-                <td
-                  colSpan={7}
-                  className="text-center p-6 text-gray-500"
-                >
-                  No Quantity Details Available
-                </td>
+                <th className="border-b border-slate-200 px-3 py-3 text-left font-semibold">
+                  Description
+                </th>
 
+                <th className="w-28 border-b border-slate-200 px-3 py-3 text-right font-semibold">
+                  WO Qty
+                </th>
+
+                <th className="w-24 border-b border-slate-200 px-3 py-3 text-center font-semibold">
+                  Currency
+                </th>
+
+                <th className="w-28 border-b border-slate-200 px-3 py-3 text-right font-semibold">
+                  Unit Rate
+                </th>
+
+                <th className="w-36 border-b border-slate-200 px-3 py-3 text-right font-semibold">
+                  Pending Amount
+                </th>
               </tr>
 
-            ) : (
+            </thead>
 
-              items.map((item, index) => (
+            <tbody className="divide-y divide-gray-100">
 
-                <tr
-                  key={item.id}
-                  className="border-b"
-                >
+              {items.length === 0 ? (
 
-                  <td className="border p-3 text-center">
-                    {index + 1}
+                <tr>
+                  <td colSpan={6} className="py-14 text-center text-slate-400">
+                    No Quantity Details Available
                   </td>
-
-                  <td className="border p-3">
-                    {item.description || "-"}
-                  </td>
-
-                  <td className="border p-3 text-center">
-                    {item.woQty}
-                  </td>
-
-                  <td className="border p-3 text-center">
-                    {item.invoiceQty}
-                  </td>
-
-                  <td className="border p-3 text-center">
-                    {item.pendingQty}
-                  </td>
-
-                  <td className="border p-3 text-right">
-                    ₹{" "}
-                    {item.unitRate.toLocaleString(
-                      "en-IN"
-                    )}
-                  </td>
-
-                  <td className="border p-3 text-right font-semibold text-red-600">
-                    ₹{" "}
-                    {item.pendingAmount.toLocaleString(
-                      "en-IN"
-                    )}
-                  </td>
-
                 </tr>
 
-              ))
+              ) : (
 
-            )}
+                items.map((item, index) => (
 
-          </tbody>
+                  <tr key={item.id} className="text-sm text-gray-700 hover:bg-gray-50">
 
-        </table>
+                    <td className="px-3 py-3 text-center text-slate-500">
+                      {index + 1}
+                    </td>
+
+                    <td className="px-3 py-3 font-medium text-gray-800">
+                      {item.description || "—"}
+                    </td>
+
+                    <td className="px-3 py-3 text-right">
+                      {formatIndianNumber(item.woQty)}
+                    </td>
+
+                    <td className="px-3 py-3 text-center">
+                      {item.currency || "INR"}
+                    </td>
+
+                    <td className="px-3 py-3 text-right">
+                      {formatIndianNumber(item.unitRate)}
+                    </td>
+
+                    <td className="px-3 py-3 text-right font-semibold text-green-600">
+                      {formatIndianCurrency(item.pendingAmount)}
+                    </td>
+
+                  </tr>
+
+                ))
+
+              )}
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+      </div>
+
+      {/* KPI Cards */}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+
+        <QuantityKpiCard
+          icon={<Package size={18} strokeWidth={2.25} />}
+          label="Total WO Qty"
+          value={formatIndianNumber(project.totalWOQty)}
+          accent="blue"
+        />
+
+        <QuantityKpiCard
+          icon={<Receipt size={18} strokeWidth={2.25} />}
+          label="Total Invoice Qty"
+          value={formatIndianNumber(project.totalInvoiceQty)}
+          accent="purple"
+        />
+
+        <QuantityKpiCard
+          icon={<Clock size={18} strokeWidth={2.25} />}
+          label="Total Pending Qty"
+          value={formatIndianNumber(project.totalPendingQty)}
+          accent="orange"
+        />
+
+        <QuantityKpiCard
+          icon={<Wallet size={18} strokeWidth={2.25} />}
+          label="Total Pending Amount"
+          value={formatIndianCurrency(project.pendingAmount)}
+          accent="green"
+        />
 
       </div>
 

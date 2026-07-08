@@ -9,7 +9,6 @@ import {
   createEmptyQuantityItem,
   formatIndianCurrency,
   formatIndianNumber,
-  getInvoiceQtyError,
   parseNumericInput,
   recalcQuantityItem,
 } from "../../../utils/quantityCalculations";
@@ -344,7 +343,7 @@ const QuantityCard = ({ project, setProject }: Props) => {
 
       {/* Table */}
       <div className="max-h-[28rem] overflow-auto rounded-xl border border-slate-200">
-        <table className="w-full min-w-[1360px] table-fixed border-collapse text-sm">
+        <table className="w-full min-w-[1150px] table-fixed border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="w-14 border-b border-slate-200 px-3 py-2.5 text-center font-semibold">
@@ -357,14 +356,6 @@ const QuantityCard = ({ project, setProject }: Props) => {
 
               <th className="w-24 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
                 WO Qty
-              </th>
-
-              <th className="w-24 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
-                Invoice Qty
-              </th>
-
-              <th className="w-28 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
-                Pending Qty
               </th>
 
               <th className="w-24 border-b border-slate-200 px-3 py-2.5 text-center font-semibold">
@@ -396,14 +387,13 @@ const QuantityCard = ({ project, setProject }: Props) => {
           <tbody className="divide-y divide-slate-100">
             {project.quantityItems.length === 0 ? (
               <tr>
-                <td colSpan={11} className="py-10 text-center text-slate-400">
+                <td colSpan={9} className="py-10 text-center text-slate-400">
                   No quantity items added. Click "Add Quantity" to get
                   started.
                 </td>
               </tr>
             ) : (
               project.quantityItems.map((item, index) => {
-                const invoiceQtyError = getInvoiceQtyError(item);
                 const canRemove = canRemoveQuantityItem(project.quantityItems);
                 const currency = item.currency || DEFAULT_CURRENCY;
                 const isInr = currency === DEFAULT_CURRENCY;
@@ -442,31 +432,6 @@ const QuantityCard = ({ project, setProject }: Props) => {
                           handleFieldChange(index, "woQty", value)
                         }
                       />
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <NumericInput
-                        value={item.invoiceQty}
-                        ariaLabel={`Invoice Qty for row ${index + 1}`}
-                        hasError={Boolean(invoiceQtyError)}
-                        onChange={(value) =>
-                          handleFieldChange(index, "invoiceQty", value)
-                        }
-                      />
-                      {invoiceQtyError && (
-                        <p
-                          role="alert"
-                          className="mt-1 text-right text-xs font-medium text-red-600"
-                        >
-                          {invoiceQtyError}
-                        </p>
-                      )}
-                    </td>
-
-                    <td className="px-3 py-3 text-right">
-                      <span className="inline-flex min-w-[3rem] justify-center rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600">
-                        {formatIndianNumber(item.pendingQty)}
-                      </span>
                     </td>
 
                     <td className="px-3 py-3">

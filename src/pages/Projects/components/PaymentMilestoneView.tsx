@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   CalendarClock,
   CircleDollarSign,
   ListChecks,
@@ -78,17 +79,33 @@ const PaymentMilestoneView = ({ project }: Props) => {
     0
   );
 
+  const isPercentageMismatch =
+    Math.abs(totalPaymentPercentage - 100) > 0.01;
+
   return (
     <div className="space-y-6">
       {/* Title */}
-      <div>
-        <h2 className="text-lg font-semibold text-slate-800">
-          Payment Milestones
-        </h2>
-        <p className="text-sm text-slate-500">
-          Review project payment schedule.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-800">
+            Payment Milestones
+          </h2>
+          <p className="text-sm text-slate-500">
+            Review project payment schedule.
+          </p>
+        </div>
+
+        <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-4 py-1.5 text-sm font-semibold text-blue-700">
+          Payment Type: {project.paymentType}
+        </span>
       </div>
+
+      {isPercentageMismatch && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
+          <AlertTriangle size={16} strokeWidth={2.25} />
+          Total payment percentage does not equal 100%.
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
