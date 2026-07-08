@@ -2,17 +2,12 @@ import { NavLink } from "react-router-dom";
 import {
   BarChart3,
   Building2,
-  Briefcase,
   Clock3,
   Droplet,
-  FileText,
   FolderKanban,
-  FolderOpen,
   LayoutDashboard,
-  PackageCheck,
   Settings,
   Users,
-  Wallet,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -26,14 +21,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", to: "/", icon: LayoutDashboard },
   { label: "Projects", to: "/projects", icon: FolderKanban },
   { label: "Customer Master", to: "/customers", icon: Building2 },
-  { label: "Deliverables", to: "/deliverables", icon: PackageCheck },
-  { label: "Invoices", to: "/invoices", icon: FileText },
-  { label: "Expenses", to: "/expenses", icon: Wallet },
   { label: "Manpower", to: "/manpower", icon: Users },
   { label: "Timesheets", to: "/timesheets", icon: Clock3 },
   { label: "Reports", to: "/reports", icon: BarChart3 },
-  { label: "Documents", to: "/documents", icon: FolderOpen },
-  { label: "Resources", to: "/resources", icon: Briefcase },
   { label: "Settings", to: "/settings", icon: Settings },
 ];
 

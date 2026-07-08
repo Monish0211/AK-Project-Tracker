@@ -1,5 +1,9 @@
 import { getProjects } from "./projectService";
 import { getGrossProfit, getTotalProjectCost } from "./expenseService";
+import {
+  getOutstandingCollection,
+  getTotalInvoiceRaised,
+} from "./invoiceProgressService";
 
 export interface DashboardMetrics {
   totalProjects: number;
@@ -27,7 +31,7 @@ export const getDashboardMetrics = (): DashboardMetrics => {
   );
 
   const totalInvoiceRaised = projects.reduce(
-    (sum, project) => sum + project.invoiceRaised,
+    (sum, project) => sum + getTotalInvoiceRaised(project.invoiceItems),
     0
   );
 
@@ -37,7 +41,12 @@ export const getDashboardMetrics = (): DashboardMetrics => {
   );
 
   const totalOutstanding = projects.reduce(
-    (sum, project) => sum + project.outstanding,
+    (sum, project) =>
+      sum +
+      getOutstandingCollection(
+        getTotalInvoiceRaised(project.invoiceItems),
+        project.paymentReceived
+      ),
     0
   );
 

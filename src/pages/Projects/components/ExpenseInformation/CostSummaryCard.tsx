@@ -8,6 +8,7 @@ import {
   getTotalNonManhourCost,
   getTotalProjectCost,
 } from "../../../../services/expenseService";
+
 import { formatIndianCurrency } from "../../../../utils/quantityCalculations";
 
 interface Props {
@@ -15,38 +16,46 @@ interface Props {
   nonManhourExpenses: NonManhourExpense[];
 }
 
-const CostSummaryCard = ({ manhourExpenses, nonManhourExpenses }: Props) => {
-  const totalManhourCost = getTotalManhourCost(manhourExpenses);
+const CostSummaryCard = ({
+  manhourExpenses,
+  nonManhourExpenses,
+}: Props) => {
+  const totalManhourCost =
+    getTotalManhourCost(manhourExpenses);
 
-  const totalNonManhourCost = getTotalNonManhourCost(nonManhourExpenses);
+  const totalOtherExpenses =
+    getTotalNonManhourCost(nonManhourExpenses);
 
-  const totalProjectCost = getTotalProjectCost(
-    manhourExpenses,
-    nonManhourExpenses
-  );
+  const totalProjectCost =
+    getTotalProjectCost(
+      manhourExpenses,
+      nonManhourExpenses
+    );
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-200">
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
 
       {/* Header */}
 
-      <div className="flex items-center gap-3 border-b px-6 py-5">
+      <div className="flex items-center gap-3 border-b border-slate-200 px-6 py-5">
 
-        <div className="h-11 w-11 rounded-xl bg-green-100 flex items-center justify-center">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-100">
+
           <IndianRupee
             size={22}
             className="text-green-600"
           />
+
         </div>
 
         <div>
 
-          <h2 className="text-lg font-semibold text-gray-800">
+          <h2 className="text-lg font-semibold text-slate-800">
             Cost Breakdown Summary
           </h2>
 
-          <p className="text-sm text-gray-500">
-            Auto calculated from manpower and project expenses.
+          <p className="text-sm text-slate-500">
+            Automatically calculated from project expenses.
           </p>
 
         </div>
@@ -55,43 +64,41 @@ const CostSummaryCard = ({ manhourExpenses, nonManhourExpenses }: Props) => {
 
       {/* Body */}
 
-      <div className="p-6">
+      <div className="space-y-5 p-6">
 
-        <div className="space-y-4">
+        <div className="flex items-center justify-between">
 
-          <div className="flex justify-between">
+          <span className="text-sm text-slate-600">
+            Total Man-Hour Cost
+          </span>
 
-            <span className="text-gray-600">
-              Total Man-Hour Cost
-            </span>
+          <span className="text-lg font-semibold text-blue-700">
+            {formatIndianCurrency(totalManhourCost)}
+          </span>
 
-            <span className="font-semibold">
-              {formatIndianCurrency(totalManhourCost)}
-            </span>
+        </div>
 
-          </div>
+        <div className="flex items-center justify-between">
 
-          <div className="flex justify-between">
+          <span className="text-sm text-slate-600">
+            Total Other Expenses
+          </span>
 
-            <span className="text-gray-600">
-              Total Other Expenses
-            </span>
+          <span className="text-lg font-semibold text-orange-700">
+            {formatIndianCurrency(totalOtherExpenses)}
+          </span>
 
-            <span className="font-semibold">
-              {formatIndianCurrency(totalNonManhourCost)}
-            </span>
+        </div>
 
-          </div>
+        <div className="border-t border-slate-200 pt-5">
 
-          <hr />
+          <div className="flex items-center justify-between">
 
-          <div className="flex justify-between text-lg font-bold text-green-700">
-
-            <span>
+            <span className="text-lg font-bold text-slate-800">
               Total Project Cost
             </span>
 
-            <span>
+            <span className="text-2xl font-bold text-green-700">
               {formatIndianCurrency(totalProjectCost)}
             </span>
 

@@ -1,6 +1,7 @@
 import type { QuantityItem } from "./QuantityItem";
 import type { ManhourExpense } from "./ManhourExpense";
 import type { NonManhourExpense } from "./NonManhourExpense";
+import type { InvoiceItem } from "./InvoiceItem";
 
 export interface Project {
   id: string;
@@ -75,19 +76,13 @@ export interface Project {
   // INVOICE INFORMATION
   // ==========================
 
-  invoiceRaised: number;
-  invoiceRaisedINR: number;
+  invoiceItems: InvoiceItem[];
 
-  balanceToBeRaised: number;
-  balanceToBeRaisedINR: number;
-
+  // Collection received against raised invoices.
+  // Not yet editable from the UI — kept ready for backend/payment
+  // gateway integration so Outstanding Collection can be computed today.
   paymentReceived: number;
   paymentReceivedINR: number;
-
-  outstanding: number;
-  outstandingINR: number;
-
-  paymentStatus: string;
 
   // ==========================
   // EXPENSE INFORMATION

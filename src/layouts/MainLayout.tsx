@@ -21,12 +21,10 @@ import ViewInvoice from "../pages/Invoices/ViewInvoice";
 import EditInvoice from "../pages/Invoices/EditInvoice";
 
 /* Other Modules */
-import Deliverables from "../pages/Deliverables/Deliverables";
 import Manpower from "../pages/Manpower/Manpower";
 import Timesheets from "../pages/Timesheets/Timesheets";
 import Expenses from "../pages/Expenses/Expenses";
 import Reports from "../pages/Reports/Reports";
-import Documents from "../pages/Documents/Documents";
 import Resources from "../pages/Resources/Resources";
 import Settings from "../pages/Settings/Settings";
 
@@ -116,11 +114,6 @@ const MainLayout = () => {
             ============================ */}
 
             <Route
-              path="/deliverables"
-              element={<Deliverables />}
-            />
-
-            <Route
               path="/manpower"
               element={<Manpower />}
             />
@@ -138,11 +131,6 @@ const MainLayout = () => {
             <Route
               path="/reports"
               element={<Reports />}
-            />
-
-            <Route
-              path="/documents"
-              element={<Documents />}
             />
 
             <Route

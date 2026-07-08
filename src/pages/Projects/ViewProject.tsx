@@ -1,67 +1,43 @@
-import { useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Eye,
-  ArrowLeft,
-  Pencil,
-  LayoutGrid,
-  Package,
-  CreditCard,
-  Receipt,
-  Wallet,
-  FolderOpen,
-  Users,
-  Building2,
-  Hash,
-  Briefcase,
-  Layers,
   Activity,
-  IndianRupee,
-  TrendingUp,
+  ArrowLeft,
+  Building2,
+  Briefcase,
+  CalendarRange,
   Clock,
+  Eye,
+  Hash,
+  IndianRupee,
+  Layers,
+  Pencil,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
 } from "lucide-react";
 
 import { getProjectById } from "../../services/projectService";
+import {
+  getGrossProfit,
+  getProfitMargin,
+  getTotalProjectCost,
+} from "../../services/expenseService";
 
 import GeneralView from "./components/GeneralView";
 import QuantityTable from "./components/QuantityTable";
-import BillingSection from "./components/BillingSection";
-import CostSection from "./components/CostSection";
-import DocumentsSection from "./components/DocumentsSection";
-import TeamSection from "./components/TeamSection";
 import PaymentMilestoneView from "./components/PaymentMilestoneView";
-
-type TabKey =
-  | "general"
-  | "quantity"
-  | "payments"
-  | "invoices"
-  | "expenses"
-  | "documents"
-  | "team";
-
-interface TabConfig {
-  key: TabKey;
-  label: string;
-  icon: typeof LayoutGrid;
-}
-
-const TABS: TabConfig[] = [
-  { key: "general", label: "General", icon: LayoutGrid },
-  { key: "quantity", label: "Quantity", icon: Package },
-  { key: "payments", label: "Payments", icon: CreditCard },
-  { key: "invoices", label: "Invoices", icon: Receipt },
-  { key: "expenses", label: "Expenses", icon: Wallet },
-  { key: "documents", label: "Documents", icon: FolderOpen },
-  { key: "team", label: "Team", icon: Users },
-];
+import ManhourExpenseView from "./components/ManhourExpenseView";
+import NonManhourExpenseView from "./components/NonManhourExpenseView";
+import CostSummaryCard from "./components/ExpenseInformation/CostSummaryCard";
+import ProfitAnalysisCard from "./components/ExpenseInformation/ProfitAnalysisCard";
+import InvoiceProgressView from "./components/InvoiceProgressView";
 
 interface KpiCardProps {
   icon: ReactNode;
   label: string;
   value: string;
-  accent: "blue" | "green" | "orange" | "purple" | "slate";
+  accent: "blue" | "green" | "orange" | "purple" | "slate" | "red";
 }
 
 const ACCENT_STYLES: Record<KpiCardProps["accent"], { bg: string; text: string }> = {
@@ -70,6 +46,7 @@ const ACCENT_STYLES: Record<KpiCardProps["accent"], { bg: string; text: string }
   orange: { bg: "bg-orange-50", text: "text-orange-600" },
   purple: { bg: "bg-purple-50", text: "text-purple-600" },
   slate: { bg: "bg-slate-50", text: "text-slate-600" },
+  red: { bg: "bg-red-50", text: "text-red-600" },
 };
 
 const KpiCard = ({ icon, label, value, accent }: KpiCardProps) => {
@@ -88,13 +65,39 @@ const KpiCard = ({ icon, label, value, accent }: KpiCardProps) => {
   );
 };
 
+const SectionLabel = ({ children }: { children: ReactNode }) => (
+  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+    {children}
+  </h2>
+);
+
+const STATUS_ACCENT: Record<string, KpiCardProps["accent"]> = {
+  Active: "green",
+  Completed: "blue",
+  "On Hold": "orange",
+  Cancelled: "red",
+};
+
 const formatINR = (value: number): string =>
   `₹${(value || 0).toLocaleString("en-IN")}`;
+
+const formatShortDate = (value: string): string => {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
 
 const ViewProject = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<TabKey>("general");
 
   if (!id) {
     return (
@@ -123,8 +126,40 @@ const ViewProject = () => {
     );
   }
 
+  // -------- Health Dashboard calculations (reusing existing services) --------
+
+  const totalProjectCost = getTotalProjectCost(
+    project.manhourExpenses,
+    project.nonManhourExpenses
+  );
+
+  const grossProfit = getGrossProfit(project.workOrderValue, totalProjectCost);
+
+  const profitMargin = getProfitMargin(project.workOrderValue, grossProfit);
+
+  const hasRevenue = project.workOrderValue > 0;
+
+  const isProfit = grossProfit >= 0;
+
+  const hasWoQty = project.totalWOQty > 0;
+
+  const pendingQtyPercentage = hasWoQty
+    ? (project.totalPendingQty / project.totalWOQty) * 100
+    : 0;
+
+  const hasDuration =
+    Boolean(project.projectStartDate) && Boolean(project.projectEndDate);
+
+  const durationLabel = hasDuration
+    ? `${formatShortDate(project.projectStartDate)} → ${formatShortDate(
+        project.projectEndDate
+      )}`
+    : "—";
+
+  const statusAccent = STATUS_ACCENT[project.projectStatus] ?? "slate";
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* ================= Header ================= */}
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6">
         <div className="flex justify-between items-center">
@@ -140,7 +175,8 @@ const ViewProject = () => {
               </h1>
 
               <p className="text-gray-500 mt-1">
-                Review complete project information including quantities, payment milestones, invoices, expenses, documents and project team.
+                Read-only executive summary of quantities, payment
+                milestones and expenses.
               </p>
             </div>
           </div>
@@ -166,184 +202,201 @@ const ViewProject = () => {
         </div>
       </div>
 
-      {/* ================= Project Summary Card ================= */}
-      <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-5">
-          Project Summary
-        </h2>
+      {/* ================= Project Health Dashboard ================= */}
+      <div className="space-y-4">
+        <SectionLabel>Project Health Dashboard</SectionLabel>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <Hash size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">PR Number</p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {project.prNo || "-"}
-              </p>
-            </div>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5">
+          <KpiCard
+            icon={<Activity size={22} strokeWidth={2.25} />}
+            label="Project Status"
+            value={project.projectStatus || "—"}
+            accent={statusAccent}
+          />
 
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <Building2 size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">Client</p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {project.client || "-"}
-              </p>
-            </div>
-          </div>
+          <KpiCard
+            icon={<IndianRupee size={22} strokeWidth={2.25} />}
+            label="Work Order Value"
+            value={formatINR(project.workOrderValue)}
+            accent="blue"
+          />
 
-          <div className="flex items-start gap-3 sm:col-span-2 lg:col-span-2">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <Briefcase size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">Project Title</p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {project.projectTitle || "-"}
-              </p>
-            </div>
-          </div>
+          <KpiCard
+            icon={<Wallet size={22} strokeWidth={2.25} />}
+            label="Total Project Expenses"
+            value={formatINR(totalProjectCost)}
+            accent="red"
+          />
 
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <Layers size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">PR Category</p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {project.prCategory || "-"}
-              </p>
-            </div>
-          </div>
+          <KpiCard
+            icon={
+              isProfit ? (
+                <TrendingUp size={22} strokeWidth={2.25} />
+              ) : (
+                <TrendingDown size={22} strokeWidth={2.25} />
+              )
+            }
+            label="Profit Margin"
+            value={hasRevenue ? `${profitMargin.toFixed(2)}%` : "—"}
+            accent={hasRevenue ? (isProfit ? "green" : "red") : "slate"}
+          />
 
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <Layers size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">Department</p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {project.department || "-"}
-              </p>
-            </div>
-          </div>
+          <KpiCard
+            icon={<Clock size={22} strokeWidth={2.25} />}
+            label="Pending Quantity %"
+            value={hasWoQty ? `${pendingQtyPercentage.toFixed(2)}%` : "—"}
+            accent="orange"
+          />
 
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <Activity size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">Project Status</p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {project.projectStatus || "-"}
-              </p>
-            </div>
-          </div>
+          <KpiCard
+            icon={<CalendarRange size={22} strokeWidth={2.25} />}
+            label="Project Duration"
+            value={durationLabel}
+            accent="slate"
+          />
+        </div>
+      </div>
 
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <IndianRupee size={16} />
+      {/* ================= Project Overview ================= */}
+      <div className="space-y-4">
+        <SectionLabel>Project Overview</SectionLabel>
+
+        <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                <Hash size={16} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-400">PR Number</p>
+                <p className="mt-0.5 text-sm font-semibold text-slate-800">
+                  {project.prNo || "-"}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">Work Order Value</p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {formatINR(project.workOrderValue)}
-              </p>
+
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                <Building2 size={16} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-400">Client</p>
+                <p className="mt-0.5 text-sm font-semibold text-slate-800">
+                  {project.client || "-"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 sm:col-span-2 lg:col-span-2">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                <Briefcase size={16} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-400">Project Title</p>
+                <p className="mt-0.5 text-sm font-semibold text-slate-800">
+                  {project.projectTitle || "-"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                <Layers size={16} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-400">PR Category</p>
+                <p className="mt-0.5 text-sm font-semibold text-slate-800">
+                  {project.prCategory || "-"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                <Layers size={16} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-400">Department</p>
+                <p className="mt-0.5 text-sm font-semibold text-slate-800">
+                  {project.department || "-"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                <Activity size={16} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-400">Project Status</p>
+                <p className="mt-0.5 text-sm font-semibold text-slate-800">
+                  {project.projectStatus || "-"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                <IndianRupee size={16} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-400">Work Order Value</p>
+                <p className="mt-0.5 text-sm font-semibold text-slate-800">
+                  {formatINR(project.workOrderValue)}
+                </p>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ================= Summary KPI Cards ================= */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
-        <KpiCard
-          icon={<IndianRupee size={22} strokeWidth={2.25} />}
-          label="Project Value"
-          value={formatINR(project.workOrderValue)}
-          accent="blue"
-        />
+      {/* ================= General Information ================= */}
+      <GeneralView project={project} />
 
-        <KpiCard
-          icon={<Receipt size={22} strokeWidth={2.25} />}
-          label="Invoice Raised"
-          value={formatINR(project.invoiceRaisedINR)}
-          accent="purple"
-        />
-
-        <KpiCard
-          icon={<Clock size={22} strokeWidth={2.25} />}
-          label="Outstanding"
-          value={formatINR(project.outstandingINR)}
-          accent="orange"
-        />
-
-        <KpiCard
-          icon={<TrendingUp size={22} strokeWidth={2.25} />}
-          label="Collection Received"
-          value={formatINR(project.paymentReceivedINR)}
-          accent="green"
-        />
-
-        <KpiCard
-          icon={<Package size={22} strokeWidth={2.25} />}
-          label="Pending Qty"
-          value={String(project.totalPendingQty ?? 0)}
-          accent="slate"
-        />
+      {/* ================= Quantity Summary ================= */}
+      <div className="space-y-4">
+        <SectionLabel>Quantity Summary</SectionLabel>
+        <QuantityTable project={project} />
       </div>
 
-      {/* ================= Tabs ================= */}
-      <div className="bg-white rounded-2xl shadow-md border border-gray-100">
-        <div className="p-4 border-b border-gray-100 overflow-x-auto">
-          <div className="flex gap-2 min-w-max">
-            {TABS.map(({ key, label, icon: Icon }) => {
-              const isActive = activeTab === key;
+      {/* ================= Payment Milestones ================= */}
+      <div className="space-y-4">
+        <SectionLabel>Payment Milestones</SectionLabel>
+        <PaymentMilestoneView project={project} />
+      </div>
 
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setActiveTab(key)}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                    isActive
-                      ? "bg-blue-600 text-white shadow-sm"
-                      : "bg-white text-gray-500 hover:bg-blue-50 hover:text-blue-600"
-                  }`}
-                >
-                  <Icon size={16} strokeWidth={2.25} />
-                  {label}
-                </button>
-              );
-            })}
-          </div>
+      {/* ================= Expense Information ================= */}
+      <div className="space-y-4">
+        <SectionLabel>Expense Information</SectionLabel>
+
+        <div className="space-y-6">
+          <ManhourExpenseView expenses={project.manhourExpenses} />
+          <NonManhourExpenseView expenses={project.nonManhourExpenses} />
         </div>
+      </div>
 
-        <div className="p-6">
-          {activeTab === "general" && <GeneralView project={project} />}
+      {/* ================= Cost Summary & Profit Analysis ================= */}
+      <div className="space-y-4">
+        <SectionLabel>Cost Summary &amp; Profit Analysis</SectionLabel>
 
-          {activeTab === "quantity" && (
-            <QuantityTable items={project.quantityItems} />
-          )}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <CostSummaryCard
+            manhourExpenses={project.manhourExpenses}
+            nonManhourExpenses={project.nonManhourExpenses}
+          />
 
-          {activeTab === "payments" && (
-  <PaymentMilestoneView project={project} />
-)}
-
-          {activeTab === "invoices" && <BillingSection project={project} />}
-
-          {activeTab === "expenses" && <CostSection project={project} />}
-
-          {activeTab === "documents" && (
-            <DocumentsSection project={project} />
-          )}
-
-          {activeTab === "team" && <TeamSection project={project} />}
+          <ProfitAnalysisCard
+            manhourExpenses={project.manhourExpenses}
+            nonManhourExpenses={project.nonManhourExpenses}
+            revenue={project.workOrderValue}
+          />
         </div>
+      </div>
+
+      {/* ================= Invoice Progress ================= */}
+      <div className="space-y-4">
+        <SectionLabel>Invoice Progress</SectionLabel>
+        <InvoiceProgressView project={project} />
       </div>
     </div>
   );

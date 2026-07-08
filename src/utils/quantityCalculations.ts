@@ -88,16 +88,6 @@ export function createEmptyQuantityItem(): QuantityItem {
   };
 }
 
-export function getInvoiceQtyError(
-  item: QuantityItem
-): string | null {
-  if (item.invoiceQty > item.woQty) {
-    return "Invoice Quantity cannot exceed Work Order Quantity.";
-  }
-
-  return null;
-}
-
 export function canRemoveQuantityItem(
   items: QuantityItem[]
 ): boolean {
