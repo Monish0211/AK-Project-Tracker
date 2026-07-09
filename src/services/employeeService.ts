@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import type { Employee } from "../types/EmployeeModel";
 import { employeeMasterData } from "../data/EmployeeMasterData";
 
-const STORAGE_KEY = "employees";
+const STORAGE_KEY = "employees_v2";
 
 export function getEmployees(): Employee[] {
   const stored = localStorage.getItem(STORAGE_KEY);
