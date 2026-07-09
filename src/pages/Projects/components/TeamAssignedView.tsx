@@ -117,7 +117,7 @@ export default function TeamAssignedView({ project }: Props) {
             Total Project Budget
           </p>
           <p className="mt-1 text-2xl font-bold text-slate-800">
-            ₹{(project.totalProjectBudget || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+            ₹{(project.workOrderValueINR || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
           </p>
         </div>
 
