@@ -90,42 +90,107 @@ function normalizeHeaderText(value: unknown): string {
     .replace(/\s+/g, " "); // collapse multiple spaces to a single space
 }
 
-function buildHeaderIndexMap(headerRow: unknown[]): Map<string, number> {
-  const headerIndexMap = new Map<string, number>();
+const FIELD_SYNONYMS = {
+  employeeNo: [
+    "employee number",
+    "employee no",
+    "employee code",
+    "emp no",
+    "emp code",
+  ],
+  employeeName: [
+    "employee name",
+    "full name",
+    "name",
+    "employee",
+  ],
+  designation: [
+    "designation",
+    "job title",
+    "position",
+    "role",
+  ],
+  department: [
+    "department",
+    "dept",
+  ],
+  reportingManager: [
+    "reporting manager",
+    "reporting to",
+    "manager",
+    "supervisor",
+  ],
+  location: [
+    "location",
+    "work location",
+    "office",
+  ],
+  grade: [
+    "grade",
+    "employee grade",
+    "band",
+  ],
+  status: [
+    "status",
+  ],
+  remarks: [
+    "remarks",
+    "remark",
+    "comments",
+    "comment",
+  ],
+} as const;
 
-  headerRow.forEach((header, index) => {
-    headerIndexMap.set(normalizeHeaderText(header), index);
-  });
+const REQUIRED_FIELDS = [
+  { key: "employeeNo", label: "Employee Number", synonyms: FIELD_SYNONYMS.employeeNo },
+  { key: "employeeName", label: "Employee Name", synonyms: FIELD_SYNONYMS.employeeName },
+  { key: "designation", label: "Designation", synonyms: FIELD_SYNONYMS.designation },
+  { key: "department", label: "Department", synonyms: FIELD_SYNONYMS.department },
+  { key: "location", label: "Location", synonyms: FIELD_SYNONYMS.location },
+  { key: "reportingManager", label: "Reporting Manager", synonyms: FIELD_SYNONYMS.reportingManager },
+  { key: "grade", label: "Employee Grade", synonyms: FIELD_SYNONYMS.grade },
+] as const;
 
-  return headerIndexMap;
+function findColumnIndex(headerRow: unknown[], synonyms: readonly string[]): number {
+  const normalizedHeaders = headerRow.map((h) => normalizeHeaderText(h));
+
+  for (const synonym of synonyms) {
+    const normSynonym = normalizeHeaderText(synonym);
+    const index = normalizedHeaders.indexOf(normSynonym);
+
+    if (index !== -1) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
-function validateImportHeaders(headerRow: unknown[]): Map<string, number> {
-  const headerIndexMap = buildHeaderIndexMap(headerRow);
+function resolveImportColumnIndices(headerRow: unknown[]): Record<string, number> {
+  const indices: Record<string, number> = {};
+  const missingLabels: string[] = [];
 
-  const checkHeader = (primary: string, alias: string): string | null => {
-    if (headerIndexMap.has(normalizeHeaderText(primary))) return normalizeHeaderText(primary);
-    if (headerIndexMap.has(normalizeHeaderText(alias))) return normalizeHeaderText(alias);
-    return null;
-  };
+  for (const field of REQUIRED_FIELDS) {
+    const idx = findColumnIndex(headerRow, field.synonyms);
 
-  const missing: string[] = [];
+    if (idx === -1) {
+      missingLabels.push(field.label);
+    } else {
+      indices[field.key] = idx;
+    }
+  }
 
-  if (!checkHeader("Employee Number", "Employee No")) missing.push("Employee Number");
-  if (!checkHeader("Full Name", "Employee Name")) missing.push("Full Name");
-  if (!checkHeader("Job Title", "Designation")) missing.push("Job Title");
-  if (!headerIndexMap.has(normalizeHeaderText("Department"))) missing.push("Department");
-  if (!headerIndexMap.has(normalizeHeaderText("Location"))) missing.push("Location");
-  if (!checkHeader("Reporting To", "Reporting Manager")) missing.push("Reporting To");
-  if (!headerIndexMap.has(normalizeHeaderText("Employee Grade"))) missing.push("Employee Grade");
-
-  if (missing.length > 0) {
+  if (missingLabels.length > 0) {
     throw new Error(
-      `Invalid template. Missing column(s): ${missing.join(", ")}`
+      `Could not import excel. The following required columns could not be found: ${missingLabels.join(", ")}`
     );
   }
 
-  return headerIndexMap;
+  // Find optional fields
+  indices["status"] = findColumnIndex(headerRow, FIELD_SYNONYMS.status);
+  indices["remarks"] = findColumnIndex(headerRow, FIELD_SYNONYMS.remarks);
+
+  return indices;
 }
 
 function isRowBlank(row: unknown[]): boolean {
@@ -133,7 +198,7 @@ function isRowBlank(row: unknown[]): boolean {
 }
 
 function getCellText(row: unknown[], columnIndex: number | undefined): string {
-  if (columnIndex === undefined) {
+  if (columnIndex === undefined || columnIndex === -1) {
     return "";
   }
 
@@ -170,17 +235,17 @@ export async function importEmployeesFromExcel(
 
   const [headerRow, ...dataRows] = rows;
 
-  const headerIndexMap = validateImportHeaders(headerRow);
+  const indices = resolveImportColumnIndices(headerRow);
 
-  const employeeNoIndex = headerIndexMap.get("employee number") ?? headerIndexMap.get("employee no");
-  const employeeNameIndex = headerIndexMap.get("full name") ?? headerIndexMap.get("employee name");
-  const designationIndex = headerIndexMap.get("job title") ?? headerIndexMap.get("designation");
-  const departmentIndex = headerIndexMap.get("department");
-  const locationIndex = headerIndexMap.get("location");
-  const reportingManagerIndex = headerIndexMap.get("reporting to") ?? headerIndexMap.get("reporting manager");
-  const gradeIndex = headerIndexMap.get("employee grade");
-  const remarksIndex = headerIndexMap.get("remarks");
-  const statusIndex = headerIndexMap.get("status");
+  const employeeNoIndex = indices["employeeNo"];
+  const employeeNameIndex = indices["employeeName"];
+  const designationIndex = indices["designation"];
+  const departmentIndex = indices["department"];
+  const locationIndex = indices["location"];
+  const reportingManagerIndex = indices["reportingManager"];
+  const gradeIndex = indices["grade"];
+  const statusIndex = indices["status"];
+  const remarksIndex = indices["remarks"];
 
   let added = 0;
   let updated = 0;
@@ -202,8 +267,8 @@ export async function importEmployeesFromExcel(
     const location = getCellText(row, locationIndex);
     const reportingManager = getCellText(row, reportingManagerIndex);
     const grade = getCellText(row, gradeIndex);
-    const remarks = remarksIndex !== undefined ? getCellText(row, remarksIndex) : "";
-    const statusText = statusIndex !== undefined ? getCellText(row, statusIndex) : "Active";
+    const remarks = remarksIndex !== -1 ? getCellText(row, remarksIndex) : "";
+    const statusText = statusIndex !== -1 ? getCellText(row, statusIndex) : "Active";
 
     if (!employeeNo || !employeeName || !department || !designation) {
       invalid += 1;
