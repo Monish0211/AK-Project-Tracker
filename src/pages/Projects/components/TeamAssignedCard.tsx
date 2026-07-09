@@ -377,23 +377,9 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
               Total Project Budget
             </p>
           </div>
-          <div className="mt-2 relative">
-            <span className="absolute left-3 top-2 text-sm text-slate-400 font-semibold">₹</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={project.totalProjectBudget === 0 ? "" : project.totalProjectBudget}
-              onChange={(e) => {
-                const val = Number(e.target.value.replace(/[^0-9]/g, "")) || 0;
-                onChange({
-                  ...project,
-                  totalProjectBudget: val,
-                });
-              }}
-              placeholder="0"
-              className="w-full border border-gray-300 rounded-xl pl-7 pr-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-800 text-right"
-            />
-          </div>
+          <p className="mt-2 text-2xl font-bold text-slate-800">
+            ₹{(project.workOrderValueINR || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+          </p>
         </div>
 
         {/* Total Man-Hours */}
