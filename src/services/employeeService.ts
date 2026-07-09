@@ -77,6 +77,7 @@ export function deleteEmployee(id: string): void {
 export interface ImportResult {
   added: number;
   updated: number;
+  totalImported: number;
   invalid: number;
   blank: number;
 }
@@ -147,7 +148,7 @@ export async function importEmployeesFromExcel(
   const firstSheetName = workbook.SheetNames[0];
 
   if (!firstSheetName) {
-    return { added: 0, updated: 0, invalid: 0, blank: 0 };
+    return { added: 0, updated: 0, totalImported: 0, invalid: 0, blank: 0 };
   }
 
   const worksheet = workbook.Sheets[firstSheetName];
@@ -158,7 +159,7 @@ export async function importEmployeesFromExcel(
   });
 
   if (rows.length === 0) {
-    return { added: 0, updated: 0, invalid: 0, blank: 0 };
+    return { added: 0, updated: 0, totalImported: 0, invalid: 0, blank: 0 };
   }
 
   const [headerRow, ...dataRows] = rows;
@@ -220,7 +221,7 @@ export async function importEmployeesFromExcel(
         reportingManager,
         grade,
         status,
-        // Preserve manhourRate and createdAt
+        // Preserve createdAt
       };
       updated += 1;
     } else {
@@ -234,7 +235,6 @@ export async function importEmployeesFromExcel(
         location,
         reportingManager,
         grade,
-        manhourRate: 0, // billing rate managed inside PMO
         status,
         createdAt: new Date().toISOString(),
       });
@@ -247,6 +247,7 @@ export async function importEmployeesFromExcel(
   return {
     added,
     updated,
+    totalImported: added + updated,
     invalid,
     blank,
   };
@@ -262,7 +263,6 @@ export function exportEmployeesToExcel(employees: Employee[]): void {
     Location: employee.location,
     "Reporting Manager": employee.reportingManager,
     "Employee Grade": employee.grade,
-    "Manhour Rate": employee.manhourRate,
     Status: employee.status,
   }));
 
