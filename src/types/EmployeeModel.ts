@@ -8,6 +8,7 @@ export interface Employee {
   location: string;
   reportingManager: string;
   grade: string;
+  remarks?: string;
 
   status: "Active" | "Inactive";
 
