@@ -36,12 +36,16 @@ export function createEmptyProject(): Project {
         invoiceQty: 0,
         pendingQty: 0,
 
+        uom: "DAY",
+        assignedTo: "",
+
         currency: "INR",
 
         unitRate: 0,
         exchangeRate: 1,
         unitRateINR: 0,
 
+        woValue: 0,
         pendingAmount: 0,
       },
     ],

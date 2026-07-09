@@ -6,16 +6,44 @@ const STORAGE_KEY = "projects";
 function normalizeProject(project: Project): Project {
   const defaults = createEmptyProject();
 
+  const normalizedCurrency = project.currency || "INR";
+  const normalizedCurrentExchangeRate = typeof project.currentExchangeRate === "number" ? project.currentExchangeRate : 1;
+  const normalizedContractExchangeRate = typeof project.contractExchangeRate === "number" ? project.contractExchangeRate : 1;
+
+  const normalizedQuantityItems = Array.isArray(project.quantityItems)
+    ? project.quantityItems.map((item: any) => {
+        const uom = item.uom || "DAY";
+        const assignedTo = item.assignedTo || "";
+        const currency = item.currency || normalizedCurrency;
+        const exchangeRate = typeof item.exchangeRate === "number" ? item.exchangeRate : normalizedCurrentExchangeRate;
+        const unitRate = typeof item.unitRate === "number" ? item.unitRate : 0;
+        const unitRateINR = currency === "INR" ? unitRate : unitRate * exchangeRate;
+        const woValue = typeof item.woValue === "number" ? item.woValue : (item.woQty || 0) * unitRateINR;
+        const pendingQty = Math.max((item.woQty || 0) - (item.invoiceQty || 0), 0);
+        const pendingAmount = pendingQty * unitRateINR;
+
+        return {
+          ...item,
+          uom,
+          assignedTo,
+          currency,
+          exchangeRate,
+          unitRate,
+          unitRateINR,
+          woValue,
+          pendingQty,
+          pendingAmount,
+        };
+      })
+    : defaults.quantityItems;
+
   return {
     ...defaults,
     ...project,
-    // Older projects were saved before these array fields existed (or
-    // before they were converted from flat numbers to arrays). Merge in
-    // safe defaults so every array field is guaranteed to be an array,
-    // never undefined/null, no matter how old the stored record is.
-    quantityItems: Array.isArray(project.quantityItems)
-      ? project.quantityItems
-      : defaults.quantityItems,
+    currency: normalizedCurrency,
+    currentExchangeRate: normalizedCurrentExchangeRate,
+    contractExchangeRate: normalizedContractExchangeRate,
+    quantityItems: normalizedQuantityItems,
     paymentMilestones: Array.isArray(project.paymentMilestones)
       ? project.paymentMilestones
       : defaults.paymentMilestones,

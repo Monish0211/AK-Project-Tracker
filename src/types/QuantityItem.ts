@@ -9,6 +9,10 @@ export interface QuantityItem {
   invoiceQty: number;
   pendingQty: number;
 
+  // Unit of Measure & Assignment
+  uom: string;
+  assignedTo?: string;
+
   // Currency
   currency: string;
 
@@ -18,5 +22,6 @@ export interface QuantityItem {
   unitRateINR: number;
 
   // Amount
+  woValue: number;
   pendingAmount: number;
 }
