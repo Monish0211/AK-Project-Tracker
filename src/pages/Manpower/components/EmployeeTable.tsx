@@ -46,17 +46,17 @@ const EmployeeTable = ({
 
         <div className="overflow-x-auto">
 
-          <table className="w-full">
+          <table className="w-full min-w-[1200px] border-collapse">
 
-            <thead className="bg-slate-100">
+            <thead className="bg-slate-100 text-slate-600 text-sm font-semibold uppercase tracking-wide">
 
               <tr>
 
-                <th className="px-6 py-4 text-center">
+                <th className="px-6 py-4 text-center w-16">
                   Sl No
                 </th>
 
-                <th className="px-6 py-4 text-left">
+                <th className="px-6 py-4 text-left w-32">
                   Employee No
                 </th>
 
@@ -65,23 +65,35 @@ const EmployeeTable = ({
                 </th>
 
                 <th className="px-6 py-4 text-left">
-                  Reporting Manager
+                  Designation
                 </th>
 
                 <th className="px-6 py-4 text-left">
                   Department
                 </th>
 
-                <th className="px-6 py-4 text-right">
+                <th className="px-6 py-4 text-left">
+                  Location
+                </th>
+
+                <th className="px-6 py-4 text-left">
+                  Reporting Manager
+                </th>
+
+                <th className="px-6 py-4 text-center w-28">
+                  Employee Grade
+                </th>
+
+                <th className="px-6 py-4 text-right w-36">
                   Manhour Rate
                 </th>
 
-                <th className="px-6 py-4 text-center">
+                <th className="px-6 py-4 text-center w-28">
                   Status
                 </th>
 
-                <th className="px-6 py-4 text-center">
-                  Actions
+                <th className="px-6 py-4 text-center w-32">
+                  Action
                 </th>
 
               </tr>
@@ -95,7 +107,7 @@ const EmployeeTable = ({
                 <tr>
 
                   <td
-                    colSpan={8}
+                    colSpan={11}
                     className="py-12 text-center text-gray-500"
                   >
                     No Employees Found

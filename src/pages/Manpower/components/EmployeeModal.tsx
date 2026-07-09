@@ -18,10 +18,13 @@ interface Props {
 }
 
 const DEPARTMENT_OPTIONS = [
-  "Design Engineering Services",
-  "Environment",
-  "Risk Management",
+  "Process",
+  "Mechanical",
+  "Civil",
+  "Instrumentation",
+  "Electrical",
   "Training",
+  "Design Engineering Services",
   "Others",
 ];
 
@@ -45,8 +48,8 @@ const EmployeeModal = ({
     employee?.employeeName ?? ""
   );
 
-  const [reportingManager, setReportingManager] = useState(
-    employee?.reportingManager ?? ""
+  const [designation, setDesignation] = useState(
+    employee?.designation ?? ""
   );
 
   const [department, setDepartment] = useState(
@@ -59,6 +62,18 @@ const EmployeeModal = ({
 
   const [otherDepartment, setOtherDepartment] = useState(
     employee && !isKnownDepartment ? employee.department : ""
+  );
+
+  const [location, setLocation] = useState(
+    employee?.location ?? ""
+  );
+
+  const [reportingManager, setReportingManager] = useState(
+    employee?.reportingManager ?? ""
+  );
+
+  const [grade, setGrade] = useState(
+    employee?.grade ?? ""
   );
 
   const [manhourRate, setManhourRate] = useState(
@@ -82,8 +97,8 @@ const EmployeeModal = ({
       return;
     }
 
-    if (!reportingManager.trim()) {
-      setError("Reporting manager is required.");
+    if (!designation.trim()) {
+      setError("Designation is required.");
       return;
     }
 
@@ -99,8 +114,13 @@ const EmployeeModal = ({
 
     const rate = Number(manhourRate);
 
-    if (!manhourRate.trim() || Number.isNaN(rate) || rate <= 0) {
-      setError("Manhour rate must be greater than 0.");
+    if (manhourRate.trim() === "" || Number.isNaN(rate) || rate < 0) {
+      setError("Manhour rate must be greater than or equal to 0.");
+      return;
+    }
+
+    if (!status) {
+      setError("Status is required.");
       return;
     }
 
@@ -128,8 +148,11 @@ const EmployeeModal = ({
               ...e,
               employeeNo: employeeNo.trim(),
               employeeName: employeeName.trim(),
-              reportingManager: reportingManager.trim(),
+              designation: designation.trim(),
               department: finalDepartment,
+              location: location.trim(),
+              reportingManager: reportingManager.trim(),
+              grade: grade.trim(),
               manhourRate: rate,
               status,
             }
@@ -144,8 +167,11 @@ const EmployeeModal = ({
           id: crypto.randomUUID(),
           employeeNo: employeeNo.trim(),
           employeeName: employeeName.trim(),
-          reportingManager: reportingManager.trim(),
+          designation: designation.trim(),
           department: finalDepartment,
+          location: location.trim(),
+          reportingManager: reportingManager.trim(),
+          grade: grade.trim(),
           manhourRate: rate,
           status,
           createdAt: new Date().toISOString(),
@@ -161,13 +187,13 @@ const EmployeeModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
 
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
 
         {/* Header */}
 
-        <div className="flex justify-between items-center border-b p-6">
+        <div className="flex justify-between items-center border-b p-6 shrink-0">
 
           <div>
 
@@ -194,8 +220,9 @@ const EmployeeModal = ({
 
         {/* Body */}
 
-        <div className="p-6 space-y-5">
+        <div className="p-6 space-y-5 overflow-y-auto flex-1">
 
+          {/* Employee Number */}
           <div>
 
             <label className="block text-sm font-medium mb-2">
@@ -205,6 +232,7 @@ const EmployeeModal = ({
             <input
               type="text"
               value={employeeNo}
+              disabled={isEditMode}
               onChange={(e) => {
                 setEmployeeNo(e.target.value);
                 setError("");
@@ -218,11 +246,15 @@ const EmployeeModal = ({
                 focus:ring-2
                 focus:ring-blue-500
                 outline-none
+                disabled:bg-slate-50
+                disabled:text-slate-400
+                disabled:cursor-not-allowed
               "
             />
 
           </div>
 
+          {/* Employee Name */}
           <div>
 
             <label className="block text-sm font-medium mb-2">
@@ -250,20 +282,21 @@ const EmployeeModal = ({
 
           </div>
 
+          {/* Designation */}
           <div>
 
             <label className="block text-sm font-medium mb-2">
-              Reporting Manager
+              Designation
             </label>
 
             <input
               type="text"
-              value={reportingManager}
+              value={designation}
               onChange={(e) => {
-                setReportingManager(e.target.value);
+                setDesignation(e.target.value);
                 setError("");
               }}
-              placeholder="Enter Reporting Manager"
+              placeholder="Enter Designation (e.g. Lead Engineer)"
               className="
                 w-full
                 border
@@ -277,6 +310,7 @@ const EmployeeModal = ({
 
           </div>
 
+          {/* Department */}
           <div>
 
             <label className="block text-sm font-medium mb-2">
@@ -343,10 +377,95 @@ const EmployeeModal = ({
 
           </div>
 
+          {/* Location */}
           <div>
 
             <label className="block text-sm font-medium mb-2">
-              Manhour Rate
+              Location
+            </label>
+
+            <input
+              type="text"
+              value={location}
+              onChange={(e) => {
+                setLocation(e.target.value);
+                setError("");
+              }}
+              placeholder="Enter Location (e.g. Chennai, Bangalore, Site)"
+              className="
+                w-full
+                border
+                rounded-xl
+                p-3
+                focus:ring-2
+                focus:ring-blue-500
+                outline-none
+              "
+            />
+
+          </div>
+
+          {/* Reporting Manager */}
+          <div>
+
+            <label className="block text-sm font-medium mb-2">
+              Reporting Manager
+            </label>
+
+            <input
+              type="text"
+              value={reportingManager}
+              onChange={(e) => {
+                setReportingManager(e.target.value);
+                setError("");
+              }}
+              placeholder="Enter Reporting Manager"
+              className="
+                w-full
+                border
+                rounded-xl
+                p-3
+                focus:ring-2
+                focus:ring-blue-500
+                outline-none
+              "
+            />
+
+          </div>
+
+          {/* Employee Grade */}
+          <div>
+
+            <label className="block text-sm font-medium mb-2">
+              Employee Grade
+            </label>
+
+            <input
+              type="text"
+              value={grade}
+              onChange={(e) => {
+                setGrade(e.target.value);
+                setError("");
+              }}
+              placeholder="Enter Employee Grade (e.g. MG1, SG2)"
+              className="
+                w-full
+                border
+                rounded-xl
+                p-3
+                focus:ring-2
+                focus:ring-blue-500
+                outline-none
+              "
+            />
+
+          </div>
+
+          {/* Manhour Rate */}
+          <div>
+
+            <label className="block text-sm font-medium mb-2">
+              Manhour Rate (₹)
             </label>
 
             <input
@@ -370,6 +489,7 @@ const EmployeeModal = ({
 
           </div>
 
+          {/* Status */}
           <div>
 
             <label className="block text-sm font-medium mb-2">
@@ -408,7 +528,7 @@ const EmployeeModal = ({
 
         {/* Footer */}
 
-        <div className="flex justify-end gap-3 border-t p-6">
+        <div className="flex justify-end gap-3 border-t p-6 shrink-0">
 
           <button
             onClick={onClose}
