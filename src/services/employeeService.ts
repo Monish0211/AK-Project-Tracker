@@ -83,18 +83,11 @@ export interface ImportResult {
   blank: number;
 }
 
-const REQUIRED_IMPORT_HEADERS = [
-  "Employee No",
-  "Employee Name",
-  "Designation",
-  "Department",
-  "Location",
-  "Reporting Manager",
-  "Employee Grade",
-] as const;
-
 function normalizeHeaderText(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " "); // collapse multiple spaces to a single space
 }
 
 function buildHeaderIndexMap(headerRow: unknown[]): Map<string, number> {
@@ -110,13 +103,25 @@ function buildHeaderIndexMap(headerRow: unknown[]): Map<string, number> {
 function validateImportHeaders(headerRow: unknown[]): Map<string, number> {
   const headerIndexMap = buildHeaderIndexMap(headerRow);
 
-  const missingHeaders = REQUIRED_IMPORT_HEADERS.filter(
-    (header) => !headerIndexMap.has(header.toLowerCase())
-  );
+  const checkHeader = (primary: string, alias: string): string | null => {
+    if (headerIndexMap.has(normalizeHeaderText(primary))) return normalizeHeaderText(primary);
+    if (headerIndexMap.has(normalizeHeaderText(alias))) return normalizeHeaderText(alias);
+    return null;
+  };
 
-  if (missingHeaders.length > 0) {
+  const missing: string[] = [];
+
+  if (!checkHeader("Employee Number", "Employee No")) missing.push("Employee Number");
+  if (!checkHeader("Full Name", "Employee Name")) missing.push("Full Name");
+  if (!checkHeader("Job Title", "Designation")) missing.push("Job Title");
+  if (!headerIndexMap.has(normalizeHeaderText("Department"))) missing.push("Department");
+  if (!headerIndexMap.has(normalizeHeaderText("Location"))) missing.push("Location");
+  if (!checkHeader("Reporting To", "Reporting Manager")) missing.push("Reporting To");
+  if (!headerIndexMap.has(normalizeHeaderText("Employee Grade"))) missing.push("Employee Grade");
+
+  if (missing.length > 0) {
     throw new Error(
-      `Invalid template. Missing column(s): ${missingHeaders.join(", ")}`
+      `Invalid template. Missing column(s): ${missing.join(", ")}`
     );
   }
 
@@ -167,12 +172,12 @@ export async function importEmployeesFromExcel(
 
   const headerIndexMap = validateImportHeaders(headerRow);
 
-  const employeeNoIndex = headerIndexMap.get("employee no");
-  const employeeNameIndex = headerIndexMap.get("employee name");
-  const designationIndex = headerIndexMap.get("designation");
+  const employeeNoIndex = headerIndexMap.get("employee number") ?? headerIndexMap.get("employee no");
+  const employeeNameIndex = headerIndexMap.get("full name") ?? headerIndexMap.get("employee name");
+  const designationIndex = headerIndexMap.get("job title") ?? headerIndexMap.get("designation");
   const departmentIndex = headerIndexMap.get("department");
   const locationIndex = headerIndexMap.get("location");
-  const reportingManagerIndex = headerIndexMap.get("reporting manager");
+  const reportingManagerIndex = headerIndexMap.get("reporting to") ?? headerIndexMap.get("reporting manager");
   const gradeIndex = headerIndexMap.get("employee grade");
   const remarksIndex = headerIndexMap.get("remarks");
   const statusIndex = headerIndexMap.get("status");
@@ -261,12 +266,12 @@ export async function importEmployeesFromExcel(
 export function exportEmployeesToExcel(employees: Employee[]): void {
   const rows = employees.map((employee, index) => ({
     "Sl No": index + 1,
-    "Employee No": employee.employeeNo,
-    "Employee Name": employee.employeeName,
-    Designation: employee.designation,
+    "Employee Number": employee.employeeNo,
+    "Full Name": employee.employeeName,
+    "Job Title": employee.designation,
     Department: employee.department,
     Location: employee.location,
-    "Reporting Manager": employee.reportingManager,
+    "Reporting To": employee.reportingManager,
     "Employee Grade": employee.grade,
     Remarks: employee.remarks || "",
     Status: employee.status,
@@ -281,8 +286,17 @@ export function exportEmployeesToExcel(employees: Employee[]): void {
 }
 
 export function downloadEmployeeTemplate(): void {
-  // Remarks and Status columns are optional, but included in the template
-  const headers = [...REQUIRED_IMPORT_HEADERS, "Remarks", "Status"];
+  const headers = [
+    "Employee Number",
+    "Full Name",
+    "Job Title",
+    "Department",
+    "Location",
+    "Reporting To",
+    "Employee Grade",
+    "Remarks",
+    "Status",
+  ];
   const worksheet = XLSX.utils.aoa_to_sheet([headers]);
   const workbook = XLSX.utils.book_new();
 
