@@ -17,6 +17,7 @@ export function getEmployees(): Employee[] {
         designation: emp.designation || "Engineer",
         location: emp.location || "Chennai",
         grade: emp.grade || "SG1",
+        remarks: emp.remarks || "",
       }));
     } catch {
       // Fallback if parsing fails
@@ -173,6 +174,7 @@ export async function importEmployeesFromExcel(
   const locationIndex = headerIndexMap.get("location");
   const reportingManagerIndex = headerIndexMap.get("reporting manager");
   const gradeIndex = headerIndexMap.get("employee grade");
+  const remarksIndex = headerIndexMap.get("remarks");
   const statusIndex = headerIndexMap.get("status");
 
   let added = 0;
@@ -195,6 +197,7 @@ export async function importEmployeesFromExcel(
     const location = getCellText(row, locationIndex);
     const reportingManager = getCellText(row, reportingManagerIndex);
     const grade = getCellText(row, gradeIndex);
+    const remarks = remarksIndex !== undefined ? getCellText(row, remarksIndex) : "";
     const statusText = statusIndex !== undefined ? getCellText(row, statusIndex) : "Active";
 
     if (!employeeNo || !employeeName || !department || !designation) {
@@ -220,6 +223,7 @@ export async function importEmployeesFromExcel(
         location,
         reportingManager,
         grade,
+        remarks,
         status,
         // Preserve createdAt
       };
@@ -235,6 +239,7 @@ export async function importEmployeesFromExcel(
         location,
         reportingManager,
         grade,
+        remarks,
         status,
         createdAt: new Date().toISOString(),
       });
@@ -263,6 +268,7 @@ export function exportEmployeesToExcel(employees: Employee[]): void {
     Location: employee.location,
     "Reporting Manager": employee.reportingManager,
     "Employee Grade": employee.grade,
+    Remarks: employee.remarks || "",
     Status: employee.status,
   }));
 
@@ -275,8 +281,8 @@ export function exportEmployeesToExcel(employees: Employee[]): void {
 }
 
 export function downloadEmployeeTemplate(): void {
-  // Status column is optional, but included in the template
-  const headers = [...REQUIRED_IMPORT_HEADERS, "Status"];
+  // Remarks and Status columns are optional, but included in the template
+  const headers = [...REQUIRED_IMPORT_HEADERS, "Remarks", "Status"];
   const worksheet = XLSX.utils.aoa_to_sheet([headers]);
   const workbook = XLSX.utils.book_new();
 

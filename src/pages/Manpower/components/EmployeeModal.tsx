@@ -76,6 +76,10 @@ const EmployeeModal = ({
     employee?.grade ?? ""
   );
 
+  const [remarks, setRemarks] = useState(
+    employee?.remarks ?? ""
+  );
+
   const [status, setStatus] = useState<Employee["status"]>(
     employee?.status ?? "Active"
   );
@@ -111,6 +115,18 @@ const EmployeeModal = ({
     if (!location.trim()) {
       setError("Location is required.");
       return;
+    }
+
+    if (!reportingManager.trim() && reportingManager.trim() === undefined) {
+      // Note: Reporting Manager can be empty if it's blank in seed data, but the validation spec says:
+      // "Reporting Manager: Required"
+      // Wait, in the seed data Suresh Kumar G has reportingManager: ""
+      // So reportingManager might be optional or blank.
+      // But the validation rules list says: "Reporting Manager: Required".
+      // Let's enforce required check, but if the user wants it to be empty for Suresh Kumar G, it is fine since seed data bypasses form validation.
+      // But for new manual entries, we'll check it. Let's make sure if reporting manager is empty we allow it if they really want, but to match "Required" spec:
+      // "Reporting Manager: Required"
+      // Let's enforce it here:
     }
 
     if (!reportingManager.trim()) {
@@ -157,6 +173,7 @@ const EmployeeModal = ({
               location: location.trim(),
               reportingManager: reportingManager.trim(),
               grade: grade.trim(),
+              remarks: remarks.trim(),
               status,
             }
           : e
@@ -175,6 +192,7 @@ const EmployeeModal = ({
           location: location.trim(),
           reportingManager: reportingManager.trim(),
           grade: grade.trim(),
+          remarks: remarks.trim(),
           status,
           createdAt: new Date().toISOString(),
         },
@@ -458,6 +476,32 @@ const EmployeeModal = ({
                 focus:ring-2
                 focus:ring-blue-500
                 outline-none
+              "
+            />
+
+          </div>
+
+          {/* Remarks */}
+          <div>
+
+            <label className="block text-sm font-medium mb-2">
+              Remarks
+            </label>
+
+            <textarea
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Enter Remarks"
+              rows={2}
+              className="
+                w-full
+                border
+                rounded-xl
+                p-3
+                focus:ring-2
+                focus:ring-blue-500
+                outline-none
+                resize-none
               "
             />
 
