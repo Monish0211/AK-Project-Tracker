@@ -9,7 +9,18 @@ export function getEmployees(): Employee[] {
   const stored = localStorage.getItem(STORAGE_KEY);
 
   if (stored) {
-    return JSON.parse(stored) as Employee[];
+    try {
+      const parsed = JSON.parse(stored) as Employee[];
+      // Normalize legacy data by ensuring new fields exist
+      return parsed.map((emp) => ({
+        ...emp,
+        designation: emp.designation || "Engineer",
+        location: emp.location || "Chennai",
+        grade: emp.grade || "SG1",
+      }));
+    } catch {
+      // Fallback if parsing fails
+    }
   }
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(employeeMasterData));
@@ -64,60 +75,20 @@ export function deleteEmployee(id: string): void {
 }
 
 export interface ImportResult {
-  imported: number;
-  duplicates: number;
+  added: number;
+  updated: number;
   invalid: number;
   blank: number;
-}
-
-export function bulkAddEmployees(
-  employeesToImport: Omit<Employee, "id" | "createdAt">[]
-): ImportResult {
-  const employees = getEmployees();
-
-  const existingEmployeeNos = new Set(
-    employees.map((e) => e.employeeNo.trim().toLowerCase())
-  );
-
-  let imported = 0;
-  let duplicates = 0;
-
-  employeesToImport.forEach((employee) => {
-    const key = employee.employeeNo.trim().toLowerCase();
-
-    if (existingEmployeeNos.has(key)) {
-      duplicates += 1;
-      return;
-    }
-
-    existingEmployeeNos.add(key);
-
-    employees.push({
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
-      ...employee,
-    });
-
-    imported += 1;
-  });
-
-  saveEmployees(employees);
-
-  return {
-    imported,
-    duplicates,
-    invalid: 0,
-    blank: 0,
-  };
 }
 
 const REQUIRED_IMPORT_HEADERS = [
   "Employee No",
   "Employee Name",
-  "Reporting Manager",
+  "Designation",
   "Department",
-  "Manhour Rate",
-  "Status",
+  "Location",
+  "Reporting Manager",
+  "Employee Grade",
 ] as const;
 
 function normalizeHeaderText(value: unknown): string {
@@ -162,20 +133,6 @@ function getCellText(row: unknown[], columnIndex: number | undefined): string {
   return String(row[columnIndex] ?? "").trim();
 }
 
-function parseManhourRate(rawValue: string): number | null {
-  if (rawValue === "") {
-    return null;
-  }
-
-  const parsed = Number(rawValue);
-
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null;
-  }
-
-  return parsed;
-}
-
 function resolveEmployeeStatus(rawValue: string): Employee["status"] {
   return rawValue.trim().toLowerCase() === "inactive" ? "Inactive" : "Active";
 }
@@ -190,7 +147,7 @@ export async function importEmployeesFromExcel(
   const firstSheetName = workbook.SheetNames[0];
 
   if (!firstSheetName) {
-    return { imported: 0, duplicates: 0, invalid: 0, blank: 0 };
+    return { added: 0, updated: 0, invalid: 0, blank: 0 };
   }
 
   const worksheet = workbook.Sheets[firstSheetName];
@@ -201,7 +158,7 @@ export async function importEmployeesFromExcel(
   });
 
   if (rows.length === 0) {
-    return { imported: 0, duplicates: 0, invalid: 0, blank: 0 };
+    return { added: 0, updated: 0, invalid: 0, blank: 0 };
   }
 
   const [headerRow, ...dataRows] = rows;
@@ -210,15 +167,19 @@ export async function importEmployeesFromExcel(
 
   const employeeNoIndex = headerIndexMap.get("employee no");
   const employeeNameIndex = headerIndexMap.get("employee name");
-  const reportingManagerIndex = headerIndexMap.get("reporting manager");
+  const designationIndex = headerIndexMap.get("designation");
   const departmentIndex = headerIndexMap.get("department");
-  const manhourRateIndex = headerIndexMap.get("manhour rate");
+  const locationIndex = headerIndexMap.get("location");
+  const reportingManagerIndex = headerIndexMap.get("reporting manager");
+  const gradeIndex = headerIndexMap.get("employee grade");
   const statusIndex = headerIndexMap.get("status");
 
-  let blank = 0;
+  let added = 0;
+  let updated = 0;
   let invalid = 0;
+  let blank = 0;
 
-  const validEmployees: Omit<Employee, "id" | "createdAt">[] = [];
+  const employees = getEmployees();
 
   dataRows.forEach((row) => {
     if (isRowBlank(row)) {
@@ -228,38 +189,64 @@ export async function importEmployeesFromExcel(
 
     const employeeNo = getCellText(row, employeeNoIndex);
     const employeeName = getCellText(row, employeeNameIndex);
-    const reportingManager = getCellText(row, reportingManagerIndex);
+    const designation = getCellText(row, designationIndex);
     const department = getCellText(row, departmentIndex);
-    const manhourRateText = getCellText(row, manhourRateIndex);
-    const statusText = getCellText(row, statusIndex);
+    const location = getCellText(row, locationIndex);
+    const reportingManager = getCellText(row, reportingManagerIndex);
+    const grade = getCellText(row, gradeIndex);
+    const statusText = statusIndex !== undefined ? getCellText(row, statusIndex) : "Active";
 
-    if (!employeeNo || !employeeName || !department) {
+    if (!employeeNo || !employeeName || !department || !designation) {
       invalid += 1;
       return;
     }
 
-    const manhourRate = parseManhourRate(manhourRateText);
+    const status = resolveEmployeeStatus(statusText);
 
-    if (manhourRate === null) {
-      invalid += 1;
-      return;
+    // Look for existing employee by Employee Number
+    const existingIndex = employees.findIndex(
+      (e) => e.employeeNo.trim().toLowerCase() === employeeNo.trim().toLowerCase()
+    );
+
+    if (existingIndex !== -1) {
+      // Update existing record
+      const existing = employees[existingIndex];
+      employees[existingIndex] = {
+        ...existing,
+        employeeName,
+        designation,
+        department,
+        location,
+        reportingManager,
+        grade,
+        status,
+        // Preserve manhourRate and createdAt
+      };
+      updated += 1;
+    } else {
+      // Create new record
+      employees.push({
+        id: crypto.randomUUID(),
+        employeeNo,
+        employeeName,
+        designation,
+        department,
+        location,
+        reportingManager,
+        grade,
+        manhourRate: 0, // billing rate managed inside PMO
+        status,
+        createdAt: new Date().toISOString(),
+      });
+      added += 1;
     }
-
-    validEmployees.push({
-      employeeNo,
-      employeeName,
-      reportingManager,
-      department,
-      manhourRate,
-      status: resolveEmployeeStatus(statusText),
-    });
   });
 
-  const { imported, duplicates } = bulkAddEmployees(validEmployees);
+  saveEmployees(employees);
 
   return {
-    imported,
-    duplicates,
+    added,
+    updated,
     invalid,
     blank,
   };
@@ -270,11 +257,13 @@ export function exportEmployeesToExcel(employees: Employee[]): void {
     "Sl No": index + 1,
     "Employee No": employee.employeeNo,
     "Employee Name": employee.employeeName,
-    "Reporting Manager": employee.reportingManager,
+    Designation: employee.designation,
     Department: employee.department,
+    Location: employee.location,
+    "Reporting Manager": employee.reportingManager,
+    "Employee Grade": employee.grade,
     "Manhour Rate": employee.manhourRate,
     Status: employee.status,
-    "Created Date": new Date(employee.createdAt).toLocaleDateString("en-IN"),
   }));
 
   const worksheet = XLSX.utils.json_to_sheet(rows);
@@ -286,7 +275,9 @@ export function exportEmployeesToExcel(employees: Employee[]): void {
 }
 
 export function downloadEmployeeTemplate(): void {
-  const worksheet = XLSX.utils.aoa_to_sheet([[...REQUIRED_IMPORT_HEADERS]]);
+  // Status column is optional, but included in the template
+  const headers = [...REQUIRED_IMPORT_HEADERS, "Status"];
+  const worksheet = XLSX.utils.aoa_to_sheet([headers]);
   const workbook = XLSX.utils.book_new();
 
   XLSX.utils.book_append_sheet(workbook, worksheet, "Template");

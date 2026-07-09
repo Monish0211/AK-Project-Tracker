@@ -2,15 +2,14 @@ export interface Employee {
   id: string;
 
   employeeNo: string;
-
   employeeName: string;
-
-  reportingManager: string;
-
+  designation: string;
   department: string;
+  location: string;
+  reportingManager: string;
+  grade: string;
 
   manhourRate: number;
-
   status: "Active" | "Inactive";
 
   createdAt: string;

@@ -23,7 +23,7 @@ const EmployeeFilter = ({
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by Employee No, Employee Name or Reporting Manager..."
+          placeholder="Search by Employee No, Name, Designation, Department, Manager, Location, Grade..."
           className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 

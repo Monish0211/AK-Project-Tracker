@@ -5,6 +5,9 @@ import {
   Plus,
   Upload,
   Download,
+  CheckCircle,
+  Layers,
+  IndianRupee,
 } from "lucide-react";
 
 import type { Employee } from "../../types/EmployeeModel";
@@ -21,6 +24,39 @@ import EmployeeTable from "./components/EmployeeTable";
 import EmployeeModal from "./components/EmployeeModal";
 import EmployeeImportModal from "./components/EmployeeImportModal";
 
+interface KpiCardProps {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  accent: "blue" | "green" | "purple" | "orange";
+}
+
+const ACCENT_STYLES: Record<
+  KpiCardProps["accent"],
+  { iconBg: string; iconText: string; valueText: string }
+> = {
+  blue: { iconBg: "bg-blue-50", iconText: "text-blue-600", valueText: "text-slate-800" },
+  green: { iconBg: "bg-green-50", iconText: "text-green-600", valueText: "text-green-600" },
+  purple: { iconBg: "bg-purple-50", iconText: "text-purple-600", valueText: "text-slate-800" },
+  orange: { iconBg: "bg-orange-50", iconText: "text-orange-600", valueText: "text-slate-800" },
+};
+
+const KpiCard = ({ icon, label, value, accent }: KpiCardProps) => {
+  const styles = ACCENT_STYLES[accent];
+
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
+      <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${styles.iconBg} ${styles.iconText}`}>
+        {icon}
+      </div>
+      <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className={`mt-1 text-2xl font-bold ${styles.valueText}`}>{value}</p>
+    </div>
+  );
+};
+
 const Manpower = () => {
   const [employees, setEmployees] = useState<Employee[]>(
     getEmployees()
@@ -36,9 +72,13 @@ const Manpower = () => {
     const value = search.toLowerCase();
 
     return (
-      employee.employeeNo.toLowerCase().includes(value) ||
-      employee.employeeName.toLowerCase().includes(value) ||
-      employee.reportingManager.toLowerCase().includes(value)
+      (employee.employeeNo || "").toLowerCase().includes(value) ||
+      (employee.employeeName || "").toLowerCase().includes(value) ||
+      (employee.designation || "").toLowerCase().includes(value) ||
+      (employee.department || "").toLowerCase().includes(value) ||
+      (employee.reportingManager || "").toLowerCase().includes(value) ||
+      (employee.location || "").toLowerCase().includes(value) ||
+      (employee.grade || "").toLowerCase().includes(value)
     );
   });
 
@@ -57,7 +97,7 @@ const Manpower = () => {
       setEmployees(getEmployees());
 
       alert(
-        `Import Completed\n\nImported : ${result.imported}\nDuplicates : ${result.duplicates}\nInvalid : ${result.invalid}\nBlank : ${result.blank}`
+        `Imported Successfully\n\nEmployees Added: ${result.added}\nEmployees Updated: ${result.updated}\nInvalid Rows: ${result.invalid}\nBlank Rows: ${result.blank}`
       );
 
       setShowImportModal(false);
@@ -71,6 +111,16 @@ const Manpower = () => {
     }
   };
 
+  // KPI Calculations
+  const totalEmployees = employees.length;
+  const activeEmployees = employees.filter((e) => e.status === "Active").length;
+  const uniqueDepartments = Array.from(
+    new Set(employees.map((e) => e.department).filter(Boolean))
+  ).length;
+  const averageRate = employees.length
+    ? employees.reduce((sum, e) => sum + (e.manhourRate || 0), 0) / employees.length
+    : 0;
+
   return (
     <div className="space-y-6">
 
@@ -78,11 +128,11 @@ const Manpower = () => {
 
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6">
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 
           <div className="flex items-center gap-4">
 
-            <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center">
+            <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center shrink-0">
 
               <Users
                 size={28}
@@ -105,7 +155,7 @@ const Manpower = () => {
 
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
 
             <button
               onClick={() => setShowImportModal(true)}
@@ -135,6 +185,40 @@ const Manpower = () => {
 
         </div>
 
+      </div>
+
+      {/* Summary KPI Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          icon={<Users size={18} strokeWidth={2.25} />}
+          label="Total Employees"
+          value={String(totalEmployees)}
+          accent="blue"
+        />
+
+        <KpiCard
+          icon={<CheckCircle size={18} strokeWidth={2.25} />}
+          label="Active Employees"
+          value={String(activeEmployees)}
+          accent="green"
+        />
+
+        <KpiCard
+          icon={<Layers size={18} strokeWidth={2.25} />}
+          label="Departments"
+          value={String(uniqueDepartments)}
+          accent="purple"
+        />
+
+        <KpiCard
+          icon={<IndianRupee size={18} strokeWidth={2.25} />}
+          label="Average Manhour Rate"
+          value={`₹ ${averageRate.toLocaleString("en-IN", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`}
+          accent="orange"
+        />
       </div>
 
       {/* Search */}
