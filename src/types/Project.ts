@@ -56,6 +56,8 @@ export interface Project {
 
   workOrderValueINR: number;
 
+  contractType: string;
+
   // ==========================
   // PAYMENT MILESTONES
   // ==========================
@@ -107,6 +109,16 @@ nonManhourExpenses: NonManhourExpense[];
   projectManager: string;
   projectEngineer: string;
   projectCoordinator: string;
+  clientCoordinator: string;
+
+  resources: ProjectResource[];
+
+  totalHoursBudget?: number;
+  totalProjectBudget?: number;
+
+  lastImportedDate?: string;
+  lastImportedBy?: string;
+  lastImportedRowsCount?: number;
 
   clientReferenceNo: string;
   remarks: string;
@@ -117,4 +129,19 @@ nonManhourExpenses: NonManhourExpense[];
 
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface ProjectResource {
+  id: string;
+  employeeNo: string;
+  employeeName: string;
+  reportingManager: string;
+  department: string;
+  designation: string;
+  startDate: string;
+  endDate: string;
+  workingDays: number;
+  totalHours: number;
+  status: "Active" | "Released";
+  location?: string;
 }

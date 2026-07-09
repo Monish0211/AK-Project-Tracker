@@ -376,6 +376,27 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
           />
         </div>
 
+        {/* Contract Type */}
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            Contract Type
+          </label>
+
+          <select
+            value={project.contractType || "LUMP SUM"}
+            onChange={(e) =>
+              setProject({
+                ...project,
+                contractType: e.target.value,
+              })
+            }
+            className="w-full border rounded-lg p-3 font-medium text-slate-800"
+          >
+            <option value="LUMP SUM">LUMP SUM</option>
+            <option value="ARC">ARC</option>
+          </select>
+        </div>
+
         {/* Project Status */}
         <div>
           <label className="block text-sm font-medium mb-2">

@@ -56,6 +56,21 @@ function normalizeProject(project: Project): Project {
     invoiceItems: Array.isArray(project.invoiceItems)
       ? project.invoiceItems
       : [],
+    resources: Array.isArray(project.resources)
+      ? project.resources.map((res: any) => ({
+          ...res,
+          workingDays: typeof res.workingDays === "number" ? res.workingDays : 0,
+          totalHours: typeof res.totalHours === "number" ? res.totalHours : 0,
+          status: res.status || "Active",
+        }))
+      : [],
+    clientCoordinator: project.clientCoordinator || "",
+    lastImportedDate: project.lastImportedDate || "",
+    lastImportedBy: project.lastImportedBy || "",
+    lastImportedRowsCount: typeof project.lastImportedRowsCount === "number" ? project.lastImportedRowsCount : 0,
+    contractType: project.contractType || "LUMP SUM",
+    totalHoursBudget: typeof project.totalHoursBudget === "number" ? project.totalHoursBudget : 0,
+    totalProjectBudget: typeof project.totalProjectBudget === "number" ? project.totalProjectBudget : 0,
   };
 }
 
