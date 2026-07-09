@@ -75,6 +75,8 @@ export function createEmptyProject(): Project {
 
     workOrderValueINR: 0,
 
+    contractType: "LUMP SUM",
+
     // ==========================
     // PAYMENT MILESTONES
     // ==========================
@@ -131,6 +133,16 @@ export function createEmptyProject(): Project {
     projectManager: "",
     projectEngineer: "",
     projectCoordinator: "",
+    clientCoordinator: "",
+
+    resources: [],
+
+    totalHoursBudget: 0,
+    totalProjectBudget: 0,
+
+    lastImportedDate: "",
+    lastImportedBy: "",
+    lastImportedRowsCount: 0,
 
     clientReferenceNo: "",
     remarks: "",

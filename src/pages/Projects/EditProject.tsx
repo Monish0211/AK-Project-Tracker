@@ -15,6 +15,7 @@ import {
   Layers,
   Activity,
   IndianRupee,
+  Users,
 } from "lucide-react";
 
 import type { Project } from "../../types/Project";
@@ -28,11 +29,13 @@ import CommercialCard from "./components/PaymentMilestoneCard";
 import InvoiceCard from "./components/InvoiceCard";
 import ExpSection from "./components/ExpenseInformation/ExpSection";
 import FormButtons from "./components/FormButtons";
+import TeamAssignedCard from "./components/TeamAssignedCard";
 
 type TabKey =
   | "general"
   | "quantity"
   | "payments"
+  | "team"
   | "expenses"
   | "invoices";
 
@@ -46,6 +49,7 @@ const TABS: TabConfig[] = [
   { key: "general", label: "General", icon: LayoutGrid },
   { key: "quantity", label: "Quantity", icon: Package },
   { key: "payments", label: "Payments", icon: CreditCard },
+  { key: "team", label: "Team Assigned", icon: Users },
   { key: "expenses", label: "Expenses", icon: Wallet },
   { key: "invoices", label: "Invoices", icon: Receipt },
 ];
@@ -275,6 +279,10 @@ const EditProject = () => {
 
           {activeTab === "payments" && (
             <CommercialCard project={project} setProject={setProject} />
+          )}
+
+          {activeTab === "team" && (
+            <TeamAssignedCard project={project} onChange={setProject} />
           )}
 
           {activeTab === "expenses" && (

@@ -66,6 +66,11 @@ const GeneralView = ({ project }: Props) => {
       />
 
       <InfoField
+        label="Contract Type"
+        value={project.contractType || "LUMP SUM"}
+      />
+
+      <InfoField
         label="Currency"
         value={project.currency}
       />

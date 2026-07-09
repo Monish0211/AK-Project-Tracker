@@ -32,6 +32,7 @@ import NonManhourExpenseView from "./components/NonManhourExpenseView";
 import CostSummaryCard from "./components/ExpenseInformation/CostSummaryCard";
 import ProfitAnalysisCard from "./components/ExpenseInformation/ProfitAnalysisCard";
 import InvoiceProgressView from "./components/InvoiceProgressView";
+import TeamAssignedView from "./components/TeamAssignedView";
 
 interface KpiCardProps {
   icon: ReactNode;
@@ -363,6 +364,12 @@ const ViewProject = () => {
       <div className="space-y-4">
         <SectionLabel>Payment Milestones</SectionLabel>
         <PaymentMilestoneView project={project} />
+      </div>
+
+      {/* ================= Team Assigned ================= */}
+      <div className="space-y-4">
+        <SectionLabel>Team Assigned</SectionLabel>
+        <TeamAssignedView project={project} />
       </div>
 
       {/* ================= Expense Information ================= */}

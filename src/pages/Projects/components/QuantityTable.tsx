@@ -13,7 +13,7 @@ interface Props {
 interface QuantityKpiCardProps {
   icon: React.ReactNode;
   label: string;
-  value: string;
+  value: React.ReactNode;
   accent: "blue" | "purple" | "orange" | "green";
 }
 
@@ -38,7 +38,9 @@ const QuantityKpiCard = ({ icon, label, value, accent }: QuantityKpiCardProps) =
       <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-500">
         {label}
       </p>
-      <p className={`mt-1 text-2xl font-bold ${styles.valueText}`}>{value}</p>
+      <div className={`mt-1 ${typeof value === "string" ? "text-2xl font-bold " + styles.valueText : ""}`}>
+        {value}
+      </div>
     </div>
   );
 };
@@ -153,35 +155,89 @@ const QuantityTable = ({ project }: Props) => {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <QuantityKpiCard
-          icon={<Package size={18} strokeWidth={2.25} />}
-          label="Activities"
-          value={formatIndianNumber(items.length)}
-          accent="blue"
-        />
+      {(() => {
+        const uomGroups: Record<string, number> = {};
+        items.forEach((item) => {
+          const uom = (item.uom || "DAY").trim().toUpperCase();
+          uomGroups[uom] = (uomGroups[uom] || 0) + (item.woQty || 0);
+        });
 
-        <QuantityKpiCard
-          icon={<Layers size={18} strokeWidth={2.25} />}
-          label="Total Quantity"
-          value={formatIndianNumber(project.totalWOQty || 0)}
-          accent="purple"
-        />
+        const UOM_SORT_ORDER = [
+          "LUMP SUM",
+          "MAN-HOUR",
+          "MAN-DAY",
+          "DAY",
+          "MONTH",
+          "VISIT",
+          "PERSON",
+          "JOB",
+          "PACKAGE",
+          "NOS",
+          "LOT",
+          "SET",
+          "TRIP",
+        ];
 
-        <QuantityKpiCard
-          icon={<Clock size={18} strokeWidth={2.25} />}
-          label="Project Duration"
-          value={projectDuration}
-          accent="orange"
-        />
+        const sortedUomEntries = Object.entries(uomGroups).sort(([a], [b]) => {
+          const idxA = UOM_SORT_ORDER.indexOf(a);
+          const idxB = UOM_SORT_ORDER.indexOf(b);
+          if (idxA === -1 && idxB === -1) return a.localeCompare(b);
+          if (idxA === -1) return 1;
+          if (idxB === -1) return -1;
+          return idxA - idxB;
+        });
 
-        <QuantityKpiCard
-          icon={<Wallet size={18} strokeWidth={2.25} />}
-          label="Total WO Value"
-          value={formatIndianCurrency(project.workOrderValueINR || 0)}
-          accent="green"
-        />
-      </div>
+        const uomSummaryNode = (
+          <div className="flex flex-wrap gap-1.5 mt-1 max-h-[4.5rem] overflow-y-auto pr-1">
+            {sortedUomEntries.length === 0 ? (
+              <span className="text-slate-400 text-sm">No UOM</span>
+            ) : (
+              sortedUomEntries.map(([uom, qty]) => (
+                <span
+                  key={uom}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-700 shadow-sm"
+                >
+                  <span>{uom}</span>
+                  <span className="h-4 w-px bg-purple-250/50" />
+                  <span className="font-bold text-slate-800">{formatIndianNumber(qty)}</span>
+                </span>
+              ))
+            )}
+          </div>
+        );
+
+        return (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <QuantityKpiCard
+              icon={<Package size={18} strokeWidth={2.25} />}
+              label="Activities"
+              value={formatIndianNumber(items.length)}
+              accent="blue"
+            />
+
+            <QuantityKpiCard
+              icon={<Layers size={18} strokeWidth={2.25} />}
+              label="UOM Summary"
+              value={uomSummaryNode}
+              accent="purple"
+            />
+
+            <QuantityKpiCard
+              icon={<Clock size={18} strokeWidth={2.25} />}
+              label="Project Duration"
+              value={projectDuration}
+              accent="orange"
+            />
+
+            <QuantityKpiCard
+              icon={<Wallet size={18} strokeWidth={2.25} />}
+              label="Total WO Value"
+              value={formatIndianCurrency(project.workOrderValueINR || 0)}
+              accent="green"
+            />
+          </div>
+        );
+      })()}
     </div>
   );
 };
