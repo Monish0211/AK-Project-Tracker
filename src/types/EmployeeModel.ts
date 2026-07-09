@@ -9,7 +9,6 @@ export interface Employee {
   reportingManager: string;
   grade: string;
 
-  manhourRate: number;
   status: "Active" | "Inactive";
 
   createdAt: string;

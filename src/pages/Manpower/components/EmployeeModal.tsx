@@ -76,10 +76,6 @@ const EmployeeModal = ({
     employee?.grade ?? ""
   );
 
-  const [manhourRate, setManhourRate] = useState(
-    employee ? String(employee.manhourRate) : ""
-  );
-
   const [status, setStatus] = useState<Employee["status"]>(
     employee?.status ?? "Active"
   );
@@ -112,10 +108,18 @@ const EmployeeModal = ({
       return;
     }
 
-    const rate = Number(manhourRate);
+    if (!location.trim()) {
+      setError("Location is required.");
+      return;
+    }
 
-    if (manhourRate.trim() === "" || Number.isNaN(rate) || rate < 0) {
-      setError("Manhour rate must be greater than or equal to 0.");
+    if (!reportingManager.trim()) {
+      setError("Reporting manager is required.");
+      return;
+    }
+
+    if (!grade.trim()) {
+      setError("Employee grade is required.");
       return;
     }
 
@@ -153,7 +157,6 @@ const EmployeeModal = ({
               location: location.trim(),
               reportingManager: reportingManager.trim(),
               grade: grade.trim(),
-              manhourRate: rate,
               status,
             }
           : e
@@ -172,7 +175,6 @@ const EmployeeModal = ({
           location: location.trim(),
           reportingManager: reportingManager.trim(),
           grade: grade.trim(),
-          manhourRate: rate,
           status,
           createdAt: new Date().toISOString(),
         },
@@ -448,34 +450,6 @@ const EmployeeModal = ({
                 setError("");
               }}
               placeholder="Enter Employee Grade (e.g. MG1, SG2)"
-              className="
-                w-full
-                border
-                rounded-xl
-                p-3
-                focus:ring-2
-                focus:ring-blue-500
-                outline-none
-              "
-            />
-
-          </div>
-
-          {/* Manhour Rate */}
-          <div>
-
-            <label className="block text-sm font-medium mb-2">
-              Manhour Rate (₹)
-            </label>
-
-            <input
-              type="number"
-              value={manhourRate}
-              onChange={(e) => {
-                setManhourRate(e.target.value);
-                setError("");
-              }}
-              placeholder="Enter Manhour Rate"
               className="
                 w-full
                 border

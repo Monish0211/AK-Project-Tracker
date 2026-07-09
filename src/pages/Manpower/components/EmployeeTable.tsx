@@ -84,10 +84,6 @@ const EmployeeTable = ({
                   Employee Grade
                 </th>
 
-                <th className="px-6 py-4 text-right w-36">
-                  Manhour Rate
-                </th>
-
                 <th className="px-6 py-4 text-center w-28">
                   Status
                 </th>
@@ -107,7 +103,7 @@ const EmployeeTable = ({
                 <tr>
 
                   <td
-                    colSpan={11}
+                    colSpan={10}
                     className="py-12 text-center text-gray-500"
                   >
                     No Employees Found

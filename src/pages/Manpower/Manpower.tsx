@@ -7,7 +7,7 @@ import {
   Download,
   CheckCircle,
   Layers,
-  IndianRupee,
+  MapPin,
 } from "lucide-react";
 
 import type { Employee } from "../../types/EmployeeModel";
@@ -97,7 +97,7 @@ const Manpower = () => {
       setEmployees(getEmployees());
 
       alert(
-        `Imported Successfully\n\nEmployees Added: ${result.added}\nEmployees Updated: ${result.updated}\nInvalid Rows: ${result.invalid}\nBlank Rows: ${result.blank}`
+        `Imported Successfully\n\nEmployees Added: ${result.added}\nEmployees Updated: ${result.updated}\nTotal Imported: ${result.totalImported}`
       );
 
       setShowImportModal(false);
@@ -117,9 +117,9 @@ const Manpower = () => {
   const uniqueDepartments = Array.from(
     new Set(employees.map((e) => e.department).filter(Boolean))
   ).length;
-  const averageRate = employees.length
-    ? employees.reduce((sum, e) => sum + (e.manhourRate || 0), 0) / employees.length
-    : 0;
+  const uniqueLocations = Array.from(
+    new Set(employees.map((e) => e.location).filter(Boolean))
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -211,12 +211,9 @@ const Manpower = () => {
         />
 
         <KpiCard
-          icon={<IndianRupee size={18} strokeWidth={2.25} />}
-          label="Average Manhour Rate"
-          value={`₹ ${averageRate.toLocaleString("en-IN", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}`}
+          icon={<MapPin size={18} strokeWidth={2.25} />}
+          label="Locations"
+          value={String(uniqueLocations)}
           accent="orange"
         />
       </div>
