@@ -1,10 +1,9 @@
-import { Clock, Package, Receipt, Wallet } from "lucide-react";
-
+import { Clock, Package, Wallet, Layers } from "lucide-react";
 import type { Project } from "../../../types/Project";
-
 import {
   formatIndianCurrency,
   formatIndianNumber,
+  calculateProjectDuration,
 } from "../../../utils/quantityCalculations";
 
 interface Props {
@@ -46,143 +45,143 @@ const QuantityKpiCard = ({ icon, label, value, accent }: QuantityKpiCardProps) =
 
 const QuantityTable = ({ project }: Props) => {
   const items = project.quantityItems;
+  const projectDuration = calculateProjectDuration(
+    project.projectStartDate,
+    project.projectEndDate
+  );
 
   return (
     <div className="space-y-6">
-
       <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-
-        <div className="border-b border-gray-100 px-6 py-5">
-          <h3 className="text-base font-semibold text-slate-800">
-            Quantity Details
-          </h3>
-          <p className="text-sm text-slate-500">
-            Work order quantities, invoice progress and pending values.
-          </p>
+        {/* Header with Currency info */}
+        <div className="border-b border-gray-100 px-6 py-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-slate-800">
+              Quantity Details
+            </h3>
+            <p className="text-sm text-slate-500">
+              Work order quantities, units, and assignment details.
+            </p>
+          </div>
+          <div className="flex gap-6 text-sm text-slate-600 bg-slate-50 px-4 py-2 rounded-lg border border-slate-100">
+            <div>
+              <span className="font-semibold text-slate-500 uppercase tracking-wider text-xs mr-2">Currency:</span>
+              <span className="font-bold text-slate-800">{project.currency || "INR"}</span>
+            </div>
+            {(project.currency || "INR") !== "INR" && (
+              <div>
+                <span className="font-semibold text-slate-500 uppercase tracking-wider text-xs mr-2">Exchange Rate:</span>
+                <span className="font-bold text-slate-800">{formatIndianNumber(project.currentExchangeRate || 1)}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="max-h-[28rem] overflow-auto">
-
-          <table className="w-full min-w-[680px] table-fixed border-collapse text-sm">
-
+          <table className="w-full min-w-[900px] table-fixed border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
-
               <tr>
                 <th className="w-14 border-b border-slate-200 px-3 py-3 text-center font-semibold">
                   Sl No
                 </th>
-
                 <th className="border-b border-slate-200 px-3 py-3 text-left font-semibold">
                   Description
                 </th>
-
-                <th className="w-28 border-b border-slate-200 px-3 py-3 text-right font-semibold">
-                  WO Qty
+                <th className="w-24 border-b border-slate-200 px-3 py-3 text-right font-semibold">
+                  Qty
                 </th>
-
-                <th className="w-24 border-b border-slate-200 px-3 py-3 text-center font-semibold">
-                  Currency
+                <th className="w-28 border-b border-slate-200 px-3 py-3 text-center font-semibold">
+                  UOM
                 </th>
-
                 <th className="w-28 border-b border-slate-200 px-3 py-3 text-right font-semibold">
                   Unit Rate
                 </th>
-
-                <th className="w-36 border-b border-slate-200 px-3 py-3 text-right font-semibold">
-                  Pending Amount
+                <th className="w-32 border-b border-slate-200 px-3 py-3 text-right font-semibold">
+                  Unit Rate (INR)
+                </th>
+                <th className="w-32 border-b border-slate-200 px-3 py-3 text-right font-semibold">
+                  WO Value
+                </th>
+                <th className="w-40 border-b border-slate-200 px-3 py-3 text-left font-semibold">
+                  Assigned To
                 </th>
               </tr>
-
             </thead>
 
             <tbody className="divide-y divide-gray-100">
-
               {items.length === 0 ? (
-
                 <tr>
-                  <td colSpan={6} className="py-14 text-center text-slate-400">
+                  <td colSpan={8} className="py-14 text-center text-slate-400">
                     No Quantity Details Available
                   </td>
                 </tr>
-
               ) : (
-
                 items.map((item, index) => (
-
                   <tr key={item.id} className="text-sm text-gray-700 hover:bg-gray-50">
-
                     <td className="px-3 py-3 text-center text-slate-500">
                       {index + 1}
                     </td>
-
-                    <td className="px-3 py-3 font-medium text-gray-800">
+                    <td className="px-3 py-3 font-medium text-gray-800 truncate" title={item.description}>
                       {item.description || "—"}
                     </td>
-
                     <td className="px-3 py-3 text-right">
-                      {formatIndianNumber(item.woQty)}
+                      {formatIndianNumber(item.woQty || 0)}
                     </td>
-
                     <td className="px-3 py-3 text-center">
-                      {item.currency || "INR"}
+                      <span className="inline-flex items-center rounded-md bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
+                        {item.uom || "DAY"}
+                      </span>
                     </td>
-
                     <td className="px-3 py-3 text-right">
-                      {formatIndianNumber(item.unitRate)}
+                      {formatIndianNumber(item.unitRate || 0)}
                     </td>
-
+                    <td className="px-3 py-3 text-right">
+                      {formatIndianNumber(item.unitRateINR || 0)}
+                    </td>
                     <td className="px-3 py-3 text-right font-semibold text-green-600">
-                      {formatIndianCurrency(item.pendingAmount)}
+                      {formatIndianCurrency(item.woValue || 0)}
                     </td>
-
+                    <td className="px-3 py-3 text-left font-medium text-slate-600 truncate" title={item.assignedTo}>
+                      {item.assignedTo || "—"}
+                    </td>
                   </tr>
-
                 ))
-
               )}
-
             </tbody>
-
           </table>
-
         </div>
-
       </div>
 
       {/* KPI Cards */}
-
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-
         <QuantityKpiCard
           icon={<Package size={18} strokeWidth={2.25} />}
-          label="Total WO Qty"
-          value={formatIndianNumber(project.totalWOQty)}
+          label="Activities"
+          value={formatIndianNumber(items.length)}
           accent="blue"
         />
 
         <QuantityKpiCard
-          icon={<Receipt size={18} strokeWidth={2.25} />}
-          label="Total Invoice Qty"
-          value={formatIndianNumber(project.totalInvoiceQty)}
+          icon={<Layers size={18} strokeWidth={2.25} />}
+          label="Total Quantity"
+          value={formatIndianNumber(project.totalWOQty || 0)}
           accent="purple"
         />
 
         <QuantityKpiCard
           icon={<Clock size={18} strokeWidth={2.25} />}
-          label="Total Pending Qty"
-          value={formatIndianNumber(project.totalPendingQty)}
+          label="Project Duration"
+          value={projectDuration}
           accent="orange"
         />
 
         <QuantityKpiCard
           icon={<Wallet size={18} strokeWidth={2.25} />}
-          label="Total Pending Amount"
-          value={formatIndianCurrency(project.pendingAmount)}
+          label="Total WO Value"
+          value={formatIndianCurrency(project.workOrderValueINR || 0)}
           accent="green"
         />
-
       </div>
-
     </div>
   );
 };
