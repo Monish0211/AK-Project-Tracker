@@ -1,5 +1,6 @@
 import type { Project } from "../types/Project";
 import { createEmptyProject } from "../utils/createEmptyProject";
+import { calculateQuantity } from "../utils/quantityCalculations";
 
 const STORAGE_KEY = "projects";
 
@@ -18,7 +19,7 @@ function normalizeProject(project: Project): Project {
         const exchangeRate = typeof item.exchangeRate === "number" ? item.exchangeRate : normalizedCurrentExchangeRate;
         const unitRate = typeof item.unitRate === "number" ? item.unitRate : 0;
         const unitRateINR = currency === "INR" ? unitRate : unitRate * exchangeRate;
-        const woValue = typeof item.woValue === "number" ? item.woValue : (item.woQty || 0) * unitRateINR;
+        const woValue = (item.woQty || 0) * unitRateINR;
         const pendingQty = Math.max((item.woQty || 0) - (item.invoiceQty || 0), 0);
         const pendingAmount = pendingQty * unitRateINR;
 
@@ -37,6 +38,8 @@ function normalizeProject(project: Project): Project {
       })
     : defaults.quantityItems;
 
+  const totals = calculateQuantity(normalizedQuantityItems, normalizedCurrency, normalizedCurrentExchangeRate);
+
   return {
     ...defaults,
     ...project,
@@ -44,6 +47,7 @@ function normalizeProject(project: Project): Project {
     currentExchangeRate: normalizedCurrentExchangeRate,
     contractExchangeRate: normalizedContractExchangeRate,
     quantityItems: normalizedQuantityItems,
+    ...totals,
     paymentMilestones: Array.isArray(project.paymentMilestones)
       ? project.paymentMilestones
       : defaults.paymentMilestones,
@@ -64,13 +68,15 @@ function normalizeProject(project: Project): Project {
           status: res.status || "Active",
         }))
       : [],
+    primaryProjectManager: project.primaryProjectManager || (project as any).projectManager || "",
+    secondaryProjectManager: project.secondaryProjectManager || "",
     clientCoordinator: project.clientCoordinator || "",
     lastImportedDate: project.lastImportedDate || "",
     lastImportedBy: project.lastImportedBy || "",
     lastImportedRowsCount: typeof project.lastImportedRowsCount === "number" ? project.lastImportedRowsCount : 0,
     contractType: project.contractType || "LUMP SUM",
     totalHoursBudget: typeof project.totalHoursBudget === "number" ? project.totalHoursBudget : 0,
-    totalProjectBudget: typeof project.totalProjectBudget === "number" ? project.totalProjectBudget : 0,
+    totalProjectBudget: totals.workOrderValueINR,
   };
 }
 
@@ -93,7 +99,7 @@ export const getProjects = (): Project[] => {
 export const saveProjects = (projects: Project[]): void => {
   localStorage.setItem(
     STORAGE_KEY,
-    JSON.stringify(projects)
+    JSON.stringify(projects.map(normalizeProject))
   );
 };
 

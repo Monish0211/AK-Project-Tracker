@@ -28,10 +28,11 @@ const FormButtons = ({
     if (
       project.prNo.trim() === "" ||
       project.client.trim() === "" ||
-      project.projectTitle.trim() === ""
+      project.projectTitle.trim() === "" ||
+      project.primaryProjectManager.trim() === ""
     ) {
       alert(
-        "Please fill PR Number, Client and Project Title."
+        "Please fill PR Number, Client, Project Title and Primary Project Manager."
       );
       return;
     }
@@ -102,7 +103,7 @@ const FormButtons = ({
       <button
         type="button"
         onClick={handleSave}
-        className="flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+        className="flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition save-project-btn"
       >
         <Save size={18} />
         {mode === "add"

@@ -61,6 +61,9 @@ const ProjectTable = () => {
           .includes(search.toLowerCase()) ||
         project.projectTitle
           ?.toLowerCase()
+          .includes(search.toLowerCase()) ||
+        project.primaryProjectManager
+          ?.toLowerCase()
           .includes(search.toLowerCase());
 
       const matchesCategory =
@@ -234,6 +237,10 @@ const ProjectTable = () => {
 
                 <th className="px-4 py-4 text-left">
                   Project Title
+                </th>
+
+                <th className="px-4 py-4 text-left">
+                  Primary Manager
                 </th>
 
                 <th className="px-4 py-4 text-left">

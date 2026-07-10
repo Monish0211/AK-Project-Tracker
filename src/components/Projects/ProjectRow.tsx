@@ -140,6 +140,13 @@ const ProjectRow = ({
         </div>
       </td>
 
+      {/* Primary Manager */}
+      <td className="px-4 py-4 max-w-[150px]">
+        <div className="truncate">
+          {project.primaryProjectManager || "--"}
+        </div>
+      </td>
+
       {/* Department */}
       <td className="px-4 py-4">
         {project.department}

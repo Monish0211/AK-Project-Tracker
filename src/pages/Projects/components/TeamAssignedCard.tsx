@@ -21,15 +21,128 @@ import {
   TimesheetImportError,
   type ImportReport,
 } from "../../../services/timesheetImportService";
+import CostSummaryCard from "./ExpenseInformation/CostSummaryCard";
+import ProfitAnalysisCard from "./ExpenseInformation/ProfitAnalysisCard";
+import NonManhourExpenseCard from "./ExpenseInformation/NonManhourExpenseCard";
 
 interface Props {
   project: Project;
   onChange: (updatedProject: Project) => void;
 }
 
+interface AutocompleteInputProps {
+  value: string;
+  onChange: (val: string) => void;
+  suggestionsList: string[];
+  placeholder: string;
+  required?: boolean;
+}
+
+const AutocompleteInput = ({
+  value,
+  onChange,
+  suggestionsList,
+  placeholder,
+  required,
+}: AutocompleteInputProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const getFilteredSuggestions = (val: string) => {
+    if (!val.trim()) {
+      return suggestionsList;
+    }
+    return suggestionsList.filter((name) =>
+      name.toLowerCase().includes(val.toLowerCase())
+    );
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    onChange(val);
+    const filtered = getFilteredSuggestions(val);
+    setSuggestions(filtered);
+    setIsOpen(true);
+  };
+
+  const handleFocus = () => {
+    const filtered = getFilteredSuggestions(value);
+    setSuggestions(filtered);
+    setIsOpen(true);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      setIsOpen(false);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <input
+        type="text"
+        value={value}
+        onChange={handleChange}
+        onFocus={handleFocus}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        required={required}
+        className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+      />
+      {isOpen && suggestions.length > 0 && (
+        <div className="absolute left-0 right-0 z-50 mt-1 max-h-36 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+          {suggestions.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => {
+                onChange(name);
+                setIsOpen(false);
+              }}
+              className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-blue-50 transition-colors duration-100"
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function TeamAssignedCard({ project, onChange }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const masterEmployees = getEmployees();
+
+  const employeeNames = Array.from(
+    new Set(
+      masterEmployees
+        .map((emp) => emp.employeeName?.trim())
+        .filter((name): name is string => typeof name === "string" && name !== "")
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
+  const setProject: React.Dispatch<React.SetStateAction<Project>> = (value) => {
+    if (typeof value === "function") {
+      onChange(value(project));
+    } else {
+      onChange(value);
+    }
+  };
 
   // Dialog State
   const [showImportModal, setShowImportModal] = useState(false);
@@ -237,8 +350,13 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
   };
 
   // KPI calculations
-  const totalTeamCount = project.resources.length;
+  const uniqueEmployeesCount = new Set(project.resources.map(r => r.employeeNo.trim().toLowerCase())).size;
   const totalHoursSum = project.resources.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+  const totalManpowerBudget = project.resources.reduce((sum, r) => {
+    const emp = masterEmployees.find(e => e.employeeNo.trim().toLowerCase() === r.employeeNo.trim().toLowerCase());
+    const rate = emp ? (emp.manhourExpenses || 0) : 0;
+    return sum + (r.totalHours || 0) * rate;
+  }, 0);
 
   return (
     <div className="space-y-6">
@@ -249,24 +367,33 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
           Project Leadership
         </h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Project Manager */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          {/* Primary Project Manager */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-              Project Manager
+              Primary Project Manager <span className="text-red-500">*</span>
             </label>
-            <select
-              value={project.projectManager}
-              onChange={(e) => handleLeadershipChange("projectManager", e.target.value)}
-              className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-            >
-              <option value="">Select Project Manager</option>
-              {masterEmployees.map((e) => (
-                <option key={e.id} value={e.employeeName}>
-                  {e.employeeName} ({e.designation})
-                </option>
-              ))}
-            </select>
+            <input
+              type="text"
+              value={project.primaryProjectManager || ""}
+              readOnly
+              placeholder="Assigned in General Info"
+              className="w-full border border-gray-300 bg-slate-50 rounded-xl p-3 text-sm text-slate-500 cursor-not-allowed outline-none"
+            />
+          </div>
+
+          {/* Secondary Project Manager */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+              Secondary Project Manager
+            </label>
+            <input
+              type="text"
+              value={project.secondaryProjectManager || ""}
+              readOnly
+              placeholder="Assigned in General Info"
+              className="w-full border border-gray-300 bg-slate-50 rounded-xl p-3 text-sm text-slate-500 cursor-not-allowed outline-none"
+            />
           </div>
 
           {/* Project Coordinator */}
@@ -274,18 +401,12 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
               Project Coordinator
             </label>
-            <select
+            <AutocompleteInput
               value={project.projectCoordinator}
-              onChange={(e) => handleLeadershipChange("projectCoordinator", e.target.value)}
-              className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-            >
-              <option value="">Select Coordinator</option>
-              {masterEmployees.map((e) => (
-                <option key={e.id} value={e.employeeName}>
-                  {e.employeeName} ({e.designation})
-                </option>
-              ))}
-            </select>
+              onChange={(val) => handleLeadershipChange("projectCoordinator", val)}
+              suggestionsList={employeeNames}
+              placeholder="Search or enter Coordinator"
+            />
           </div>
 
           {/* Project Engineer */}
@@ -293,18 +414,12 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
               Project Engineer
             </label>
-            <select
+            <AutocompleteInput
               value={project.projectEngineer}
-              onChange={(e) => handleLeadershipChange("projectEngineer", e.target.value)}
-              className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-            >
-              <option value="">Select Project Engineer</option>
-              {masterEmployees.map((e) => (
-                <option key={e.id} value={e.employeeName}>
-                  {e.employeeName} ({e.designation})
-                </option>
-              ))}
-            </select>
+              onChange={(val) => handleLeadershipChange("projectEngineer", val)}
+              suggestionsList={employeeNames}
+              placeholder="Search or enter Project Engineer"
+            />
           </div>
 
           {/* Client Coordinator */}
@@ -335,7 +450,7 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
               Team Members
             </p>
           </div>
-          <p className="mt-2 text-2xl font-bold text-slate-800">{totalTeamCount}</p>
+          <p className="mt-2 text-2xl font-bold text-slate-800">{uniqueEmployeesCount}</p>
         </div>
 
         {/* Total Hours Budget */}
@@ -348,23 +463,9 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
               Total Hours Budget
             </p>
           </div>
-          <div className="mt-2 relative">
-            <input
-              type="text"
-              inputMode="numeric"
-              value={project.totalHoursBudget === 0 ? "" : project.totalHoursBudget}
-              onChange={(e) => {
-                const val = Number(e.target.value.replace(/[^0-9]/g, "")) || 0;
-                onChange({
-                  ...project,
-                  totalHoursBudget: val,
-                });
-              }}
-              placeholder="0"
-              className="w-full border border-gray-300 rounded-xl px-3 py-1.5 pr-10 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-800 text-right"
-            />
-            <span className="absolute right-3 top-2 text-xs text-slate-400 font-semibold">Hrs</span>
-          </div>
+          <p className="mt-2 text-2xl font-bold text-slate-800">
+            {totalHoursSum.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Hrs
+          </p>
         </div>
 
         {/* Total Project Budget */}
@@ -382,18 +483,18 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
           </p>
         </div>
 
-        {/* Total Man-Hours */}
+        {/* Total Manpower Budget */}
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-              <Clock size={18} strokeWidth={2.25} />
+              <IndianRupee size={18} strokeWidth={2.25} />
             </div>
             <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Total Man-Hours
+              Total Manpower Budget
             </p>
           </div>
-          <p className="mt-2 text-2xl font-bold text-slate-850">
-            {totalHoursSum.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Hrs
+          <p className="mt-2 text-2xl font-bold text-slate-800">
+            ₹{totalManpowerBudget.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
           </p>
         </div>
       </div>
@@ -469,6 +570,8 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
                 <th className="px-4 py-3 w-32">End Date</th>
                 <th className="px-4 py-3 text-center w-28">Working Days</th>
                 <th className="px-4 py-3 text-right w-28">Total Hours</th>
+                <th className="px-4 py-3 text-right w-32">Man-hour Expenses</th>
+                <th className="px-4 py-3 text-right w-36">Employee Cost</th>
                 <th className="px-4 py-3 text-center w-28">Status</th>
                 <th className="px-4 py-3 text-center w-24">Action</th>
               </tr>
@@ -476,13 +579,19 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
             <tbody>
               {project.resources.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-10 text-center text-gray-500 font-medium">
+                  <td colSpan={13} className="py-10 text-center text-gray-500 font-medium">
                     No Team Members Assigned. Import a Timesheet or Add manually.
                   </td>
                 </tr>
               ) : (
                 project.resources.map((res) => {
                   const isEditing = editingResourceId === res.id;
+                  const empMaster = masterEmployees.find(
+                    (e) => e.employeeNo.trim().toLowerCase() === res.employeeNo.trim().toLowerCase()
+                  );
+                  const rate = empMaster ? (empMaster.manhourExpenses || 0) : 0;
+                  const cost = (res.totalHours || 0) * rate;
+
                   return (
                     <tr key={res.id} className="border-b last:border-0 hover:bg-slate-50 transition">
                       {/* Emp No */}
@@ -595,6 +704,16 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
                         ) : (
                           `${(res.totalHours || 0).toLocaleString("en-IN")} Hrs`
                         )}
+                      </td>
+
+                      {/* Man-hour Expenses */}
+                      <td className="px-4 py-3 text-right font-medium">
+                        ₹{rate.toLocaleString("en-IN")}
+                      </td>
+
+                      {/* Employee Cost */}
+                      <td className="px-4 py-3 text-right font-semibold text-slate-800">
+                        ₹{cost.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
                       {/* Status */}
@@ -961,6 +1080,25 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
           </div>
         </div>
       )}
+
+      {/* ================= Other Project Expenses ================= */}
+      <div className="mt-6">
+        <NonManhourExpenseCard project={project} setProject={setProject} />
+      </div>
+
+      {/* ================= Cost Summary & Profit Analysis ================= */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-6">
+        <CostSummaryCard
+          manpowerCost={totalManpowerBudget}
+          nonManhourExpenses={project.nonManhourExpenses}
+        />
+
+        <ProfitAnalysisCard
+          manpowerCost={totalManpowerBudget}
+          nonManhourExpenses={project.nonManhourExpenses}
+          revenue={project.workOrderValueINR}
+        />
+      </div>
     </div>
   );
 }

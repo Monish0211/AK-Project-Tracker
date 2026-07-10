@@ -130,7 +130,8 @@ export function createEmptyProject(): Project {
     // PROJECT TEAM
     // ==========================
 
-    projectManager: "",
+    primaryProjectManager: "",
+    secondaryProjectManager: "",
     projectEngineer: "",
     projectCoordinator: "",
     clientCoordinator: "",

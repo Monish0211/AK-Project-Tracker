@@ -76,8 +76,8 @@ const EmployeeModal = ({
     employee?.grade ?? ""
   );
 
-  const [remarks, setRemarks] = useState(
-    employee?.remarks ?? ""
+  const [manhourExpenses, setManhourExpenses] = useState(
+    employee?.manhourExpenses ?? 0
   );
 
   const [status, setStatus] = useState<Employee["status"]>(
@@ -173,7 +173,7 @@ const EmployeeModal = ({
               location: location.trim(),
               reportingManager: reportingManager.trim(),
               grade: grade.trim(),
-              remarks: remarks.trim(),
+              manhourExpenses,
               status,
             }
           : e
@@ -192,7 +192,7 @@ const EmployeeModal = ({
           location: location.trim(),
           reportingManager: reportingManager.trim(),
           grade: grade.trim(),
-          remarks: remarks.trim(),
+          manhourExpenses,
           status,
           createdAt: new Date().toISOString(),
         },
@@ -481,18 +481,16 @@ const EmployeeModal = ({
 
           </div>
 
-          {/* Remarks */}
+          {/* Man-hour Expenses */}
           <div>
-
             <label className="block text-sm font-medium mb-2">
-              Remarks
+              Man-hour Expenses
             </label>
-
-            <textarea
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Enter Remarks"
-              rows={2}
+            <input
+              type="number"
+              value={manhourExpenses === 0 ? "" : manhourExpenses}
+              onChange={(e) => setManhourExpenses(Number(e.target.value) || 0)}
+              placeholder="Enter Hourly Cost (₹ / Hour)"
               className="
                 w-full
                 border
@@ -501,10 +499,8 @@ const EmployeeModal = ({
                 focus:ring-2
                 focus:ring-blue-500
                 outline-none
-                resize-none
               "
             />
-
           </div>
 
           {/* Status */}

@@ -58,6 +58,11 @@ const EmployeeRow = ({
         {employee.grade || "—"}
       </td>
 
+      {/* Man-hour Expenses */}
+      <td className="px-6 py-4 text-right font-medium text-slate-800">
+        ₹{(employee.manhourExpenses || 0).toLocaleString("en-IN")}
+      </td>
+
       {/* Status */}
       <td className="px-6 py-4 text-center">
         <span
