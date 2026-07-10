@@ -1,41 +1,30 @@
 import { IndianRupee, TrendingUp } from "lucide-react";
 
-import type { ManhourExpense } from "../../../../types/ManhourExpense";
 import type { NonManhourExpense } from "../../../../types/NonManhourExpense";
 
 import {
-  getTotalProjectCost,
-  getGrossProfit,
-  getProfitMargin,
+  getTotalNonManhourCost,
 } from "../../../../services/expenseService";
 
 import { formatIndianCurrency } from "../../../../utils/quantityCalculations";
 
 interface Props {
-  manhourExpenses: ManhourExpense[];
+  manpowerCost: number;
   nonManhourExpenses: NonManhourExpense[];
   revenue: number;
 }
 
 const ProfitAnalysisCard = ({
-  manhourExpenses,
+  manpowerCost,
   nonManhourExpenses,
   revenue,
 }: Props) => {
-  const totalCost = getTotalProjectCost(
-    manhourExpenses,
-    nonManhourExpenses
-  );
+  const totalOtherExpenses = getTotalNonManhourCost(nonManhourExpenses);
+  const totalCost = manpowerCost + totalOtherExpenses;
 
-  const grossProfit = getGrossProfit(
-    revenue,
-    totalCost
-  );
+  const grossProfit = revenue - totalCost;
 
-  const grossMargin = getProfitMargin(
-    revenue,
-    grossProfit
-  );
+  const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -106,7 +95,7 @@ const ProfitAnalysisCard = ({
             />
 
             <span className="text-sm font-medium text-slate-600">
-              Total Cost
+              Total Project Cost
             </span>
 
           </div>

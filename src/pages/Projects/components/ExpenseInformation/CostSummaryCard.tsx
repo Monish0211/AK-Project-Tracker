@@ -1,36 +1,25 @@
 import { IndianRupee } from "lucide-react";
-
-import type { ManhourExpense } from "../../../../types/ManhourExpense";
 import type { NonManhourExpense } from "../../../../types/NonManhourExpense";
 
 import {
-  getTotalManhourCost,
   getTotalNonManhourCost,
-  getTotalProjectCost,
 } from "../../../../services/expenseService";
 
 import { formatIndianCurrency } from "../../../../utils/quantityCalculations";
 
 interface Props {
-  manhourExpenses: ManhourExpense[];
+  manpowerCost: number;
   nonManhourExpenses: NonManhourExpense[];
 }
 
 const CostSummaryCard = ({
-  manhourExpenses,
+  manpowerCost,
   nonManhourExpenses,
 }: Props) => {
-  const totalManhourCost =
-    getTotalManhourCost(manhourExpenses);
-
   const totalOtherExpenses =
     getTotalNonManhourCost(nonManhourExpenses);
 
-  const totalProjectCost =
-    getTotalProjectCost(
-      manhourExpenses,
-      nonManhourExpenses
-    );
+  const totalProjectCost = manpowerCost + totalOtherExpenses;
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -69,11 +58,11 @@ const CostSummaryCard = ({
         <div className="flex items-center justify-between">
 
           <span className="text-sm text-slate-600">
-            Total Man-Hour Cost
+            Total Manpower Budget
           </span>
 
           <span className="text-lg font-semibold text-blue-700">
-            {formatIndianCurrency(totalManhourCost)}
+            {formatIndianCurrency(manpowerCost)}
           </span>
 
         </div>

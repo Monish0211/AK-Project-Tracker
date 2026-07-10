@@ -303,6 +303,7 @@ const QuantityCard = ({ project, setProject }: Props) => {
           ...prev,
           quantityItems: updatedItems,
           ...totals,
+          totalProjectBudget: totals.workOrderValueINR,
         };
       });
 
@@ -327,6 +328,7 @@ const QuantityCard = ({ project, setProject }: Props) => {
           contractExchangeRate: nextExchangeRate,
           quantityItems: updatedItems,
           ...totals,
+          totalProjectBudget: totals.workOrderValueINR,
         };
       });
     },
@@ -347,6 +349,7 @@ const QuantityCard = ({ project, setProject }: Props) => {
           contractExchangeRate: exchangeRate,
           quantityItems: updatedItems,
           ...totals,
+          totalProjectBudget: totals.workOrderValueINR,
         };
       });
     },
@@ -367,6 +370,7 @@ const QuantityCard = ({ project, setProject }: Props) => {
         ...prev,
         quantityItems: updatedItems,
         ...totals,
+        totalProjectBudget: totals.workOrderValueINR,
       };
     });
   }, [setProject]);
@@ -385,6 +389,7 @@ const QuantityCard = ({ project, setProject }: Props) => {
           ...prev,
           quantityItems: updatedItems,
           ...totals,
+          totalProjectBudget: totals.workOrderValueINR,
         };
       });
     },

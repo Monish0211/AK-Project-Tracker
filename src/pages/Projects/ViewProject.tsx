@@ -27,10 +27,6 @@ import {
 import GeneralView from "./components/GeneralView";
 import QuantityTable from "./components/QuantityTable";
 import PaymentMilestoneView from "./components/PaymentMilestoneView";
-import ManhourExpenseView from "./components/ManhourExpenseView";
-import NonManhourExpenseView from "./components/NonManhourExpenseView";
-import CostSummaryCard from "./components/ExpenseInformation/CostSummaryCard";
-import ProfitAnalysisCard from "./components/ExpenseInformation/ProfitAnalysisCard";
 import InvoiceProgressView from "./components/InvoiceProgressView";
 import TeamAssignedView from "./components/TeamAssignedView";
 
@@ -370,34 +366,6 @@ const ViewProject = () => {
       <div className="space-y-4">
         <SectionLabel>Team Assigned</SectionLabel>
         <TeamAssignedView project={project} />
-      </div>
-
-      {/* ================= Expense Information ================= */}
-      <div className="space-y-4">
-        <SectionLabel>Expense Information</SectionLabel>
-
-        <div className="space-y-6">
-          <ManhourExpenseView expenses={project.manhourExpenses} />
-          <NonManhourExpenseView expenses={project.nonManhourExpenses} />
-        </div>
-      </div>
-
-      {/* ================= Cost Summary & Profit Analysis ================= */}
-      <div className="space-y-4">
-        <SectionLabel>Cost Summary &amp; Profit Analysis</SectionLabel>
-
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <CostSummaryCard
-            manhourExpenses={project.manhourExpenses}
-            nonManhourExpenses={project.nonManhourExpenses}
-          />
-
-          <ProfitAnalysisCard
-            manhourExpenses={project.manhourExpenses}
-            nonManhourExpenses={project.nonManhourExpenses}
-            revenue={project.workOrderValue}
-          />
-        </div>
       </div>
 
       {/* ================= Invoice Progress ================= */}

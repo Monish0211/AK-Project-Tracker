@@ -10,9 +10,16 @@ const TeamSection = ({ project }: Props) => {
   return (
     <InfoSection title="Project Team Information">
       <InfoField
-        label="Project Manager"
-        value={project.projectManager}
+        label="Primary Project Manager"
+        value={project.primaryProjectManager}
       />
+
+      {project.secondaryProjectManager && (
+        <InfoField
+          label="Secondary Project Manager"
+          value={project.secondaryProjectManager}
+        />
+      )}
 
       <InfoField
         label="Project Engineer"

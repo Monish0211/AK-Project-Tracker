@@ -106,7 +106,8 @@ nonManhourExpenses: NonManhourExpense[];
   // PROJECT TEAM
   // ==========================
 
-  projectManager: string;
+  primaryProjectManager: string;
+  secondaryProjectManager: string;
   projectEngineer: string;
   projectCoordinator: string;
   clientCoordinator: string;

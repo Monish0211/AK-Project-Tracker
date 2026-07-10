@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import type { Employee } from "../types/EmployeeModel";
 import { employeeMasterData } from "../data/EmployeeMasterData";
 
-const STORAGE_KEY = "employees_v4";
+const STORAGE_KEY = "employees_v5";
 
 export function getEmployees(): Employee[] {
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -17,7 +17,7 @@ export function getEmployees(): Employee[] {
         designation: emp.designation || "Engineer",
         location: emp.location || "Chennai",
         grade: emp.grade || "SG1",
-        remarks: emp.remarks || "",
+        manhourExpenses: typeof emp.manhourExpenses === "number" ? emp.manhourExpenses : 0,
       }));
     } catch {
       // Fallback if parsing fails
@@ -94,6 +94,7 @@ const FIELD_SYNONYMS = {
   employeeNo: [
     "employee number",
     "employee no",
+    "employee no.",
     "employee code",
     "emp no",
     "emp code",
@@ -130,26 +131,18 @@ const FIELD_SYNONYMS = {
     "employee grade",
     "band",
   ],
+  manhourExpenses: [
+    "man-hour expenses",
+    "manhour expenses",
+    "employee hourly cost",
+    "hourly cost",
+    "hourly rate",
+    "rate",
+  ],
   status: [
     "status",
   ],
-  remarks: [
-    "remarks",
-    "remark",
-    "comments",
-    "comment",
-  ],
 } as const;
-
-const REQUIRED_FIELDS = [
-  { key: "employeeNo", label: "Employee Number", synonyms: FIELD_SYNONYMS.employeeNo },
-  { key: "employeeName", label: "Employee Name", synonyms: FIELD_SYNONYMS.employeeName },
-  { key: "designation", label: "Designation", synonyms: FIELD_SYNONYMS.designation },
-  { key: "department", label: "Department", synonyms: FIELD_SYNONYMS.department },
-  { key: "location", label: "Location", synonyms: FIELD_SYNONYMS.location },
-  { key: "reportingManager", label: "Reporting Manager", synonyms: FIELD_SYNONYMS.reportingManager },
-  { key: "grade", label: "Employee Grade", synonyms: FIELD_SYNONYMS.grade },
-] as const;
 
 function findColumnIndex(headerRow: unknown[], synonyms: readonly string[]): number {
   const normalizedHeaders = headerRow.map((h) => normalizeHeaderText(h));
@@ -168,27 +161,41 @@ function findColumnIndex(headerRow: unknown[], synonyms: readonly string[]): num
 
 function resolveImportColumnIndices(headerRow: unknown[]): Record<string, number> {
   const indices: Record<string, number> = {};
-  const missingLabels: string[] = [];
+  const missingRequiredLabels: string[] = [];
 
-  for (const field of REQUIRED_FIELDS) {
+  const requiredFields = [
+    { key: "employeeNo", label: "Employee Number", synonyms: FIELD_SYNONYMS.employeeNo },
+    { key: "employeeName", label: "Employee Name", synonyms: FIELD_SYNONYMS.employeeName },
+  ];
+
+  const optionalFields = [
+    { key: "designation", label: "Designation", synonyms: FIELD_SYNONYMS.designation },
+    { key: "department", label: "Department", synonyms: FIELD_SYNONYMS.department },
+    { key: "location", label: "Location", synonyms: FIELD_SYNONYMS.location },
+    { key: "reportingManager", label: "Reporting Manager", synonyms: FIELD_SYNONYMS.reportingManager },
+    { key: "grade", label: "Employee Grade", synonyms: FIELD_SYNONYMS.grade },
+    { key: "manhourExpenses", label: "Man-hour Expenses", synonyms: FIELD_SYNONYMS.manhourExpenses },
+    { key: "status", label: "Status", synonyms: FIELD_SYNONYMS.status },
+  ];
+
+  for (const field of requiredFields) {
     const idx = findColumnIndex(headerRow, field.synonyms);
-
     if (idx === -1) {
-      missingLabels.push(field.label);
+      missingRequiredLabels.push(field.label);
     } else {
       indices[field.key] = idx;
     }
   }
 
-  if (missingLabels.length > 0) {
+  if (missingRequiredLabels.length > 0) {
     throw new Error(
-      `Could not import excel. The following required columns could not be found: ${missingLabels.join(", ")}`
+      `Could not import excel. The following required columns could not be found: ${missingRequiredLabels.join(", ")}`
     );
   }
 
-  // Find optional fields
-  indices["status"] = findColumnIndex(headerRow, FIELD_SYNONYMS.status);
-  indices["remarks"] = findColumnIndex(headerRow, FIELD_SYNONYMS.remarks);
+  for (const field of optionalFields) {
+    indices[field.key] = findColumnIndex(headerRow, field.synonyms);
+  }
 
   return indices;
 }
@@ -244,8 +251,8 @@ export async function importEmployeesFromExcel(
   const locationIndex = indices["location"];
   const reportingManagerIndex = indices["reportingManager"];
   const gradeIndex = indices["grade"];
+  const manhourExpensesIndex = indices["manhourExpenses"];
   const statusIndex = indices["status"];
-  const remarksIndex = indices["remarks"];
 
   let added = 0;
   let updated = 0;
@@ -267,14 +274,15 @@ export async function importEmployeesFromExcel(
     const location = getCellText(row, locationIndex);
     const reportingManager = getCellText(row, reportingManagerIndex);
     const grade = getCellText(row, gradeIndex);
-    const remarks = remarksIndex !== -1 ? getCellText(row, remarksIndex) : "";
+    const rawManhourExpenses = getCellText(row, manhourExpensesIndex);
     const statusText = statusIndex !== -1 ? getCellText(row, statusIndex) : "Active";
 
-    if (!employeeNo || !employeeName || !department || !designation) {
+    if (!employeeNo || !employeeName) {
       invalid += 1;
       return;
     }
 
+    const manhourExpenses = Number(rawManhourExpenses.replace(/[^0-9.]/g, "")) || 0;
     const status = resolveEmployeeStatus(statusText);
 
     // Look for existing employee by Employee Number
@@ -293,7 +301,7 @@ export async function importEmployeesFromExcel(
         location,
         reportingManager,
         grade,
-        remarks,
+        manhourExpenses,
         status,
         // Preserve createdAt
       };
@@ -309,7 +317,7 @@ export async function importEmployeesFromExcel(
         location,
         reportingManager,
         grade,
-        remarks,
+        manhourExpenses,
         status,
         createdAt: new Date().toISOString(),
       });
@@ -331,14 +339,14 @@ export async function importEmployeesFromExcel(
 export function exportEmployeesToExcel(employees: Employee[]): void {
   const rows = employees.map((employee, index) => ({
     "Sl No": index + 1,
-    "Employee Number": employee.employeeNo,
-    "Full Name": employee.employeeName,
-    "Job Title": employee.designation,
+    "Employee No": employee.employeeNo,
+    "Employee Name": employee.employeeName,
+    Designation: employee.designation,
     Department: employee.department,
     Location: employee.location,
-    "Reporting To": employee.reportingManager,
+    "Reporting Manager": employee.reportingManager,
     "Employee Grade": employee.grade,
-    Remarks: employee.remarks || "",
+    "Man-hour Expenses": employee.manhourExpenses,
     Status: employee.status,
   }));
 
@@ -352,14 +360,15 @@ export function exportEmployeesToExcel(employees: Employee[]): void {
 
 export function downloadEmployeeTemplate(): void {
   const headers = [
-    "Employee Number",
-    "Full Name",
-    "Job Title",
+    "Sl No",
+    "Employee No",
+    "Employee Name",
+    "Designation",
     "Department",
     "Location",
-    "Reporting To",
+    "Reporting Manager",
     "Employee Grade",
-    "Remarks",
+    "Man-hour Expenses",
     "Status",
   ];
   const worksheet = XLSX.utils.aoa_to_sheet([headers]);

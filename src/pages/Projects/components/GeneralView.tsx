@@ -71,6 +71,16 @@ const GeneralView = ({ project }: Props) => {
       />
 
       <InfoField
+        label="Primary Team Manager"
+        value={project.primaryProjectManager || "—"}
+      />
+
+      <InfoField
+        label="Secondary Team Manager"
+        value={project.secondaryProjectManager || "—"}
+      />
+
+      <InfoField
         label="Currency"
         value={project.currency}
       />
