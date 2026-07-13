@@ -1,6 +1,31 @@
 import type { Project } from "../types/Project";
+import { syncInvoiceItemsWithQuantity } from "../services/invoiceSyncService";
 
 export function createEmptyProject(): Project {
+  const quantityItems = [
+    {
+      id: crypto.randomUUID(),
+
+      description: "",
+
+      woQty: 0,
+      invoiceQty: 0,
+      pendingQty: 0,
+
+      uom: "DAY",
+      assignedTo: "",
+
+      currency: "INR",
+
+      unitRate: 0,
+      exchangeRate: 1,
+      unitRateINR: 0,
+
+      woValue: 0,
+      pendingAmount: 0,
+    },
+  ];
+
   return {
     id: crypto.randomUUID(),
 
@@ -26,29 +51,7 @@ export function createEmptyProject(): Project {
     // QUANTITY INFORMATION
     // ==========================
 
-    quantityItems: [
-      {
-        id: crypto.randomUUID(),
-
-        description: "",
-
-        woQty: 0,
-        invoiceQty: 0,
-        pendingQty: 0,
-
-        uom: "DAY",
-        assignedTo: "",
-
-        currency: "INR",
-
-        unitRate: 0,
-        exchangeRate: 1,
-        unitRateINR: 0,
-
-        woValue: 0,
-        pendingAmount: 0,
-      },
-    ],
+    quantityItems,
 
     totalWOQty: 0,
     totalInvoiceQty: 0,
@@ -56,6 +59,15 @@ export function createEmptyProject(): Project {
 
     pendingAmount: 0,
     pendingInvoicePercentage: 0,
+
+    // ==========================
+    // GST / COMMERCIAL SUMMARY (Quantity Details)
+    // ==========================
+
+    gstApplicable: false,
+    gstRate: 0,
+    gstAmount: 0,
+    grandTotal: 0,
 
     // ==========================
     // COMMERCIAL INFORMATION
@@ -96,17 +108,7 @@ export function createEmptyProject(): Project {
     // INVOICE INFORMATION
     // ==========================
 
-    invoiceItems: [
-      {
-        id: crypto.randomUUID(),
-        description: "",
-        numberOfDays: 0,
-        location: "",
-        unitPrice: 0,
-        totalPrice: 0,
-        invoices: [],
-      },
-    ],
+    invoiceItems: syncInvoiceItemsWithQuantity(quantityItems, []),
 
     paymentReceived: 0,
     paymentReceivedINR: 0,
@@ -144,6 +146,12 @@ export function createEmptyProject(): Project {
     lastImportedDate: "",
     lastImportedBy: "",
     lastImportedRowsCount: 0,
+
+    manhourBudgetAmount: 0,
+    manhourBudgetHours: 0,
+    manhourBudgetRemarks: "",
+    nonManhourBudgetAmount: 0,
+    nonManhourBudgetRemarks: "",
 
     clientReferenceNo: "",
     remarks: "",

@@ -5,6 +5,7 @@ import {
   formatIndianNumber,
   calculateProjectDuration,
 } from "../../../utils/quantityCalculations";
+import CommercialSummaryCard from "./CommercialSummaryCard";
 
 interface Props {
   project: Project;
@@ -238,6 +239,16 @@ const QuantityTable = ({ project }: Props) => {
           </div>
         );
       })()}
+
+      <CommercialSummaryCard
+        currency={project.currency}
+        workOrderValueINR={project.workOrderValueINR}
+        gstApplicable={project.gstApplicable}
+        gstRate={project.gstRate}
+        gstAmount={project.gstAmount}
+        grandTotal={project.grandTotal}
+        editable={false}
+      />
     </div>
   );
 };

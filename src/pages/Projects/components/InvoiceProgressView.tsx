@@ -10,11 +10,7 @@ interface Props {
 const InvoiceProgressView = ({ project }: Props) => {
   return (
     <div className="space-y-6">
-      <InvoiceSummaryCards
-        workOrderValueINR={project.workOrderValueINR}
-        invoiceItems={project.invoiceItems}
-        collectionReceived={project.paymentReceived}
-      />
+      <InvoiceSummaryCards project={project} />
 
       <InvoiceProgressTable items={project.invoiceItems} readOnly />
     </div>

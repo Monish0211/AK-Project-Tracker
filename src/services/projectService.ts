@@ -1,6 +1,7 @@
 import type { Project } from "../types/Project";
 import { createEmptyProject } from "../utils/createEmptyProject";
 import { calculateQuantity } from "../utils/quantityCalculations";
+import { syncInvoiceItemsWithQuantity } from "./invoiceSyncService";
 
 const STORAGE_KEY = "projects";
 
@@ -19,8 +20,11 @@ function normalizeProject(project: Project): Project {
         const exchangeRate = typeof item.exchangeRate === "number" ? item.exchangeRate : normalizedCurrentExchangeRate;
         const unitRate = typeof item.unitRate === "number" ? item.unitRate : 0;
         const unitRateINR = currency === "INR" ? unitRate : unitRate * exchangeRate;
-        const woValue = (item.woQty || 0) * unitRateINR;
-        const pendingQty = Math.max((item.woQty || 0) - (item.invoiceQty || 0), 0);
+        const isLumpSum = (uom || "").trim().toUpperCase() === "LUMP SUM";
+        const woValue = isLumpSum ? unitRateINR : (item.woQty || 0) * unitRateINR;
+        const pendingQty = isLumpSum
+          ? Math.max(1 - (item.invoiceQty || 0), 0)
+          : Math.max((item.woQty || 0) - (item.invoiceQty || 0), 0);
         const pendingAmount = pendingQty * unitRateINR;
 
         return {
@@ -38,7 +42,15 @@ function normalizeProject(project: Project): Project {
       })
     : defaults.quantityItems;
 
-  const totals = calculateQuantity(normalizedQuantityItems, normalizedCurrency, normalizedCurrentExchangeRate);
+  const normalizedGstApplicable =
+    typeof project.gstApplicable === "boolean" ? project.gstApplicable : false;
+
+  const totals = calculateQuantity(
+    normalizedQuantityItems,
+    normalizedCurrency,
+    normalizedCurrentExchangeRate,
+    normalizedGstApplicable
+  );
 
   return {
     ...defaults,
@@ -47,6 +59,7 @@ function normalizeProject(project: Project): Project {
     currentExchangeRate: normalizedCurrentExchangeRate,
     contractExchangeRate: normalizedContractExchangeRate,
     quantityItems: normalizedQuantityItems,
+    gstApplicable: normalizedGstApplicable,
     ...totals,
     paymentMilestones: Array.isArray(project.paymentMilestones)
       ? project.paymentMilestones
@@ -57,9 +70,10 @@ function normalizeProject(project: Project): Project {
     nonManhourExpenses: Array.isArray(project.nonManhourExpenses)
       ? project.nonManhourExpenses
       : [],
-    invoiceItems: Array.isArray(project.invoiceItems)
-      ? project.invoiceItems
-      : [],
+    invoiceItems: syncInvoiceItemsWithQuantity(
+      normalizedQuantityItems,
+      Array.isArray(project.invoiceItems) ? project.invoiceItems : []
+    ),
     resources: Array.isArray(project.resources)
       ? project.resources.map((res: any) => ({
           ...res,
@@ -77,6 +91,12 @@ function normalizeProject(project: Project): Project {
     contractType: project.contractType || "LUMP SUM",
     totalHoursBudget: typeof project.totalHoursBudget === "number" ? project.totalHoursBudget : 0,
     totalProjectBudget: totals.workOrderValueINR,
+
+    manhourBudgetAmount: typeof project.manhourBudgetAmount === "number" ? project.manhourBudgetAmount : 0,
+    manhourBudgetHours: typeof project.manhourBudgetHours === "number" ? project.manhourBudgetHours : 0,
+    manhourBudgetRemarks: project.manhourBudgetRemarks || "",
+    nonManhourBudgetAmount: typeof project.nonManhourBudgetAmount === "number" ? project.nonManhourBudgetAmount : 0,
+    nonManhourBudgetRemarks: project.nonManhourBudgetRemarks || "",
   };
 }
 

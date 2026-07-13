@@ -1,33 +1,39 @@
+/** How a billing progress entry's amount was derived — see BillingProgressDrawer. */
+export type BillingMethod = "quantity" | "milestone" | "manhour" | "others";
+
 export interface InvoiceEntry {
   id: string;
 
-  invoiceNumber: string;
+  billingMethod: BillingMethod;
 
+  /** Auto-recorded (today's date) — no longer entered manually. */
   invoiceDate: string;
 
-  invoiceAmount: number;
-
+  /** The calculated invoice amount for this progress increment (INR). */
   invoiceAmountINR: number;
 
-  invoiceReference: string;
+  /** Quantity covered by this entry — only set when billingMethod is "quantity". */
+  quantityBilled?: number;
 
-  remarks: string;
+  /** Hours covered by this entry — only set when billingMethod is "manhour". */
+  hoursBilled?: number;
 
-  currency: string;
-
-  exchangeRate: number;
-
-  attachmentName: string;
+  /** Payment milestone billed against — only set when billingMethod is "milestone". */
+  milestoneId?: string;
+  milestoneLabel?: string;
 }
 
 export interface InvoiceItem {
   id: string;
 
+  // Description, Qty, UOM and Unit Price are derived from the matching
+  // Quantity Details activity (same id) and kept in sync automatically —
+  // see services/invoiceSyncService.ts.
   description: string;
 
-  numberOfDays: number;
+  qty: number;
 
-  location: string;
+  uom: string;
 
   unitPrice: number;
 

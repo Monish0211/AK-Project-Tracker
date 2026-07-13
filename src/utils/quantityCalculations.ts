@@ -1,5 +1,7 @@
 import type { QuantityItem } from "../types/QuantityItem";
 
+export const GST_RATE_PERCENT = 18;
+
 export interface QuantityTotals {
   totalWOQty: number;
   totalInvoiceQty: number;
@@ -8,6 +10,9 @@ export interface QuantityTotals {
   pendingInvoicePercentage: number;
   workOrderValue: number;
   workOrderValueINR: number;
+  gstRate: number;
+  gstAmount: number;
+  grandTotal: number;
 }
 
 export const UOM_OPTIONS = [
@@ -45,7 +50,8 @@ export function calculateProjectDuration(
 export function calculateQuantity(
   items: QuantityItem[],
   currency: string = "INR",
-  _exchangeRate: number = 1
+  _exchangeRate: number = 1,
+  gstApplicable: boolean = false
 ): QuantityTotals {
   const totalWOQty = items.reduce(
     (sum, item) => sum + (item.woQty || 0),
@@ -78,12 +84,23 @@ export function calculateQuantity(
   );
 
   const totalWOValueProjectCurrency = items.reduce(
-    (sum, item) => sum + ((item.woQty || 0) * (item.unitRate || 0)),
+    (sum, item) => {
+      const isLumpSum = (item.uom || "").trim().toUpperCase() === "LUMP SUM";
+      const val = isLumpSum ? (item.unitRate || 0) : ((item.woQty || 0) * (item.unitRate || 0));
+      return sum + val;
+    },
     0
   );
 
   const workOrderValue = currency === "INR" ? totalWOValueINR : totalWOValueProjectCurrency;
   const workOrderValueINR = totalWOValueINR;
+
+  // GST is only ever applicable for INR projects, always calculated on the
+  // Total Work Order Value (INR).
+  const isGstEffective = currency === "INR" && gstApplicable;
+  const gstRate = isGstEffective ? GST_RATE_PERCENT : 0;
+  const gstAmount = isGstEffective ? (workOrderValueINR * GST_RATE_PERCENT) / 100 : 0;
+  const grandTotal = workOrderValueINR + gstAmount;
 
   return {
     totalWOQty,
@@ -93,6 +110,9 @@ export function calculateQuantity(
     pendingInvoicePercentage,
     workOrderValue,
     workOrderValueINR,
+    gstRate,
+    gstAmount,
+    grandTotal,
   };
 }
 
@@ -108,12 +128,12 @@ export function recalcQuantityItem(
       ? item.unitRate
       : item.unitRate * exchangeRate;
 
-  const woValue = item.woQty * unitRateINR;
+  const isLumpSum = (item.uom || "").trim().toUpperCase() === "LUMP SUM";
+  const woValue = isLumpSum ? unitRateINR : item.woQty * unitRateINR;
 
-  const pendingQty = Math.max(
-    item.woQty - (item.invoiceQty || 0),
-    0
-  );
+  const pendingQty = isLumpSum
+    ? Math.max(1 - (item.invoiceQty || 0), 0)
+    : Math.max(item.woQty - (item.invoiceQty || 0), 0);
 
   const pendingAmount = pendingQty * unitRateINR;
 

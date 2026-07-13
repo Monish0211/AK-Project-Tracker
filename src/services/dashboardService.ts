@@ -1,9 +1,7 @@
 import { getProjects } from "./projectService";
 import { getGrossProfit, getTotalProjectCost } from "./expenseService";
-import {
-  getOutstandingCollection,
-  getTotalInvoiceRaised,
-} from "./invoiceProgressService";
+import { getProjectCommercialSummary } from "./invoiceProgressService";
+import { getInvoices } from "./invoiceService";
 
 export interface DashboardMetrics {
   totalProjects: number;
@@ -30,25 +28,20 @@ export const getDashboardMetrics = (): DashboardMetrics => {
     0
   );
 
-  const totalInvoiceRaised = projects.reduce(
-    (sum, project) => sum + getTotalInvoiceRaised(project.invoiceItems),
-    0
-  );
+  let totalInvoiceRaised = 0;
+  let totalOutstanding = 0;
 
-  const totalPaymentReceived = projects.reduce(
-    (sum, project) => sum + project.paymentReceived,
-    0
-  );
+  projects.forEach((project) => {
+    const summary = getProjectCommercialSummary(project);
+    totalInvoiceRaised += summary.totalInvoiceRaised;
+    totalOutstanding += summary.outstandingCollection;
+  });
 
-  const totalOutstanding = projects.reduce(
-    (sum, project) =>
-      sum +
-      getOutstandingCollection(
-        getTotalInvoiceRaised(project.invoiceItems),
-        project.paymentReceived
-      ),
-    0
-  );
+  // Payment Received is tracked separately in the standalone Invoices module
+  // (project.invoiceItems / Invoice History has no payment-collection data).
+  const totalPaymentReceived = getInvoices()
+    .filter((invoice) => invoice.status !== "Cancelled")
+    .reduce((sum, invoice) => sum + (invoice.receivedAmount || 0), 0);
 
   const totalExpenses = projects.reduce(
     (sum, project) =>
@@ -97,30 +90,24 @@ export const getDashboardMetrics = (): DashboardMetrics => {
 export const getProjectStatusData = () => {
   const projects = getProjects();
 
+  // Always General Information → Project Status. Never derived from Invoice
+  // History / commercial calculations.
   const status = {
     Active: 0,
-    Completed: 0,
     "On Hold": 0,
+    Completed: 0,
     Cancelled: 0,
   };
 
   projects.forEach((project) => {
-    switch (project.projectStatus) {
-      case "Active":
-        status.Active++;
-        break;
-
-      case "Completed":
-        status.Completed++;
-        break;
-
-      case "On Hold":
-        status["On Hold"]++;
-        break;
-
-      case "Cancelled":
-        status.Cancelled++;
-        break;
+    if (project.projectStatus === "Active") {
+      status.Active++;
+    } else if (project.projectStatus === "On Hold") {
+      status["On Hold"]++;
+    } else if (project.projectStatus === "Completed") {
+      status.Completed++;
+    } else if (project.projectStatus === "Cancelled") {
+      status.Cancelled++;
     }
   });
 
@@ -130,12 +117,12 @@ export const getProjectStatusData = () => {
       value: status.Active,
     },
     {
-      name: "Completed",
-      value: status.Completed,
-    },
-    {
       name: "On Hold",
       value: status["On Hold"],
+    },
+    {
+      name: "Completed",
+      value: status.Completed,
     },
     {
       name: "Cancelled",

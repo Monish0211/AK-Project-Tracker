@@ -15,6 +15,7 @@ import {
   calculateProjectDuration,
   UOM_OPTIONS,
 } from "../../../utils/quantityCalculations";
+import CommercialSummaryCard from "./CommercialSummaryCard";
 
 interface Props {
   project: Project;
@@ -291,13 +292,16 @@ const QuantityCard = ({ project, setProject }: Props) => {
             updatedItem.unitRate = Number(value);
           } else if (field === "uom") {
             updatedItem.uom = String(value);
+            if (updatedItem.uom === "LUMP SUM") {
+              updatedItem.woQty = 1;
+            }
           } else if (field === "assignedTo") {
             updatedItem.assignedTo = String(value);
           }
           return recalcQuantityItem(updatedItem, prev.currency, prev.currentExchangeRate);
         });
 
-        const totals = calculateQuantity(updatedItems, prev.currency, prev.currentExchangeRate);
+        const totals = calculateQuantity(updatedItems, prev.currency, prev.currentExchangeRate, prev.gstApplicable);
 
         return {
           ...prev,
@@ -319,7 +323,7 @@ const QuantityCard = ({ project, setProject }: Props) => {
         const updatedItems = prev.quantityItems.map((item) =>
           recalcQuantityItem(item, currency, nextExchangeRate)
         );
-        const totals = calculateQuantity(updatedItems, currency, nextExchangeRate);
+        const totals = calculateQuantity(updatedItems, currency, nextExchangeRate, prev.gstApplicable);
 
         return {
           ...prev,
@@ -341,7 +345,7 @@ const QuantityCard = ({ project, setProject }: Props) => {
         const updatedItems = prev.quantityItems.map((item) =>
           recalcQuantityItem(item, prev.currency, exchangeRate)
         );
-        const totals = calculateQuantity(updatedItems, prev.currency, exchangeRate);
+        const totals = calculateQuantity(updatedItems, prev.currency, exchangeRate, prev.gstApplicable);
 
         return {
           ...prev,
@@ -383,11 +387,32 @@ const QuantityCard = ({ project, setProject }: Props) => {
         }
 
         const updatedItems = prev.quantityItems.filter((_, i) => i !== index);
-        const totals = calculateQuantity(updatedItems, prev.currency, prev.currentExchangeRate);
+        const totals = calculateQuantity(updatedItems, prev.currency, prev.currentExchangeRate, prev.gstApplicable);
 
         return {
           ...prev,
           quantityItems: updatedItems,
+          ...totals,
+          totalProjectBudget: totals.workOrderValueINR,
+        };
+      });
+    },
+    [setProject]
+  );
+
+  const handleGstApplicableChange = useCallback(
+    (gstApplicable: boolean) => {
+      setProject((prev) => {
+        const totals = calculateQuantity(
+          prev.quantityItems,
+          prev.currency,
+          prev.currentExchangeRate,
+          gstApplicable
+        );
+
+        return {
+          ...prev,
+          gstApplicable,
           ...totals,
           totalProjectBudget: totals.workOrderValueINR,
         };
@@ -717,6 +742,20 @@ const QuantityCard = ({ project, setProject }: Props) => {
           </div>
         );
       })()}
+
+      {/* GST & Commercial Summary */}
+      <div className="mt-6">
+        <CommercialSummaryCard
+          currency={project.currency}
+          workOrderValueINR={project.workOrderValueINR}
+          gstApplicable={project.gstApplicable}
+          gstRate={project.gstRate}
+          gstAmount={project.gstAmount}
+          grandTotal={project.grandTotal}
+          editable
+          onGstApplicableChange={handleGstApplicableChange}
+        />
+      </div>
     </div>
   );
 };

@@ -16,19 +16,8 @@ import InvoiceProgressRow from "./InvoiceProgressRow";
 interface Props {
   items: InvoiceItem[];
   readOnly: boolean;
-  onFieldChange?: (
-    itemId: string,
-    field: "description" | "location",
-    value: string
-  ) => void;
-  onNumericFieldChange?: (
-    itemId: string,
-    field: "numberOfDays" | "unitPrice",
-    value: number
-  ) => void;
   onRaiseInvoice?: (itemId: string) => void;
   onViewHistory?: (itemId: string) => void;
-  onDeleteRow?: (itemId: string) => void;
 }
 
 const noop = () => {};
@@ -36,11 +25,8 @@ const noop = () => {};
 const InvoiceProgressTable = ({
   items,
   readOnly,
-  onFieldChange = noop,
-  onNumericFieldChange = noop,
   onRaiseInvoice = noop,
   onViewHistory = noop,
-  onDeleteRow = noop,
 }: Props) => {
   const totalWorkPackageValue = getTotalWorkPackageValue(items);
   const totalInvoiceRaised = getTotalInvoiceRaised(items);
@@ -72,11 +58,11 @@ const InvoiceProgressTable = ({
               <th className="border-b border-slate-200 px-3 py-3 text-left font-semibold">
                 Description
               </th>
-              <th className="w-28 border-b border-slate-200 px-3 py-3 text-right font-semibold">
-                No. Of Days
+              <th className="w-24 border-b border-slate-200 px-3 py-3 text-right font-semibold">
+                Qty
               </th>
-              <th className="w-32 border-b border-slate-200 px-3 py-3 text-left font-semibold">
-                Location
+              <th className="w-28 border-b border-slate-200 px-3 py-3 text-center font-semibold">
+                UOM
               </th>
               <th className="w-32 border-b border-slate-200 px-3 py-3 text-right font-semibold">
                 Unit Price
@@ -124,24 +110,16 @@ const InvoiceProgressTable = ({
                 </td>
               </tr>
             ) : (
-              items.map((item, index) => {
-                const canRemove = items.length > 1;
-
-                return (
-                  <InvoiceProgressRow
-                    key={item.id}
-                    item={item}
-                    index={index}
-                    readOnly={readOnly}
-                    canRemove={canRemove}
-                    onFieldChange={onFieldChange}
-                    onNumericFieldChange={onNumericFieldChange}
-                    onRaiseInvoice={onRaiseInvoice}
-                    onViewHistory={onViewHistory}
-                    onDeleteRow={onDeleteRow}
-                  />
-                );
-              })
+              items.map((item, index) => (
+                <InvoiceProgressRow
+                  key={item.id}
+                  item={item}
+                  index={index}
+                  readOnly={readOnly}
+                  onRaiseInvoice={onRaiseInvoice}
+                  onViewHistory={onViewHistory}
+                />
+              ))
             )}
           </tbody>
         </table>

@@ -2,107 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { Project } from "../../../types/Project";
 import { getCustomers } from "../../../services/customerService";
-import { getEmployees } from "../../../services/employeeService";
-import React from "react";
 
 interface Props {
   project: Project;
   setProject: Dispatch<SetStateAction<Project>>;
 }
 
-interface AutocompleteInputProps {
-  value: string;
-  onChange: (val: string) => void;
-  suggestionsList: string[];
-  placeholder: string;
-  required?: boolean;
-}
-
-const AutocompleteInput = ({
-  value,
-  onChange,
-  suggestionsList,
-  placeholder,
-  required,
-}: AutocompleteInputProps) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const getFilteredSuggestions = (val: string) => {
-    if (!val.trim()) {
-      return suggestionsList;
-    }
-    return suggestionsList.filter((name) =>
-      name.toLowerCase().includes(val.toLowerCase())
-    );
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    onChange(val);
-    const filtered = getFilteredSuggestions(val);
-    setSuggestions(filtered);
-    setIsOpen(true);
-  };
-
-  const handleFocus = () => {
-    const filtered = getFilteredSuggestions(value);
-    setSuggestions(filtered);
-    setIsOpen(true);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      setIsOpen(false);
-    }
-  };
-
-  return (
-    <div ref={containerRef} className="relative w-full">
-      <input
-        type="text"
-        value={value}
-        onChange={handleChange}
-        onFocus={handleFocus}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        required={required}
-        className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-      />
-      {isOpen && suggestions.length > 0 && (
-        <div className="absolute left-0 right-0 z-50 mt-1 max-h-36 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-          {suggestions.map((name) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => {
-                onChange(name);
-                setIsOpen(false);
-              }}
-              className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-blue-50 transition-colors duration-100"
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
 
 const prCategories = [
   "Malaysia",
@@ -146,16 +51,6 @@ const applyPrNoPrefix = (rawValue: string, prefix: string) => {
 };
 
 const GeneralInfoCard = ({ project, setProject }: Props) => {
-  const masterEmployees = getEmployees();
-  const reportingManagers = useMemo(() => {
-    return Array.from(
-      new Set(
-        masterEmployees
-          .map((emp) => emp.reportingManager?.trim())
-          .filter((name): name is string => typeof name === "string" && name !== "")
-      )
-    ).sort((a, b) => a.localeCompare(b));
-  }, [masterEmployees]);
 
   const clientDropdownRef = useRef<HTMLDivElement>(null);
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
@@ -528,52 +423,6 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
           </select>
         </div>
 
-      </div>
-
-      {/* ================= Assigned Team Managers ================= */}
-      <div className="border-t border-slate-100 mt-6 pt-6">
-        <h3 className="text-lg font-semibold text-slate-800 mb-4">
-          Assigned Team Managers
-        </h3>
-
-        <div className="grid grid-cols-2 gap-6">
-          {/* Primary Team Manager */}
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              Primary Team Manager <span className="text-red-500">*</span>
-            </label>
-            <AutocompleteInput
-              value={project.primaryProjectManager}
-              onChange={(val) =>
-                setProject((prev) => ({
-                  ...prev,
-                  primaryProjectManager: val,
-                }))
-              }
-              suggestionsList={reportingManagers}
-              placeholder="Search or enter Primary Team Manager"
-              required
-            />
-          </div>
-
-          {/* Secondary Team Manager */}
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              Secondary Team Manager
-            </label>
-            <AutocompleteInput
-              value={project.secondaryProjectManager}
-              onChange={(val) =>
-                setProject((prev) => ({
-                  ...prev,
-                  secondaryProjectManager: val,
-                }))
-              }
-              suggestionsList={reportingManagers}
-              placeholder="Search or enter Secondary Team Manager (Optional)"
-            />
-          </div>
-        </div>
       </div>
     </div>
   );

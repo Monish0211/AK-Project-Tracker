@@ -10,10 +10,10 @@ import {
 import { getProjectStatusData } from "../../../services/dashboardService";
 
 const COLORS = [
-  "#22C55E", // Active
-  "#3B82F6", // Completed
-  "#F59E0B", // On Hold
-  "#EF4444", // Cancelled
+  "#3B82F6", // Active (Blue)
+  "#EAB308", // On Hold (Yellow)
+  "#22C55E", // Completed (Green)
+  "#EF4444", // Cancelled (Red)
 ];
 
 const ProjectStatusChart = () => {
