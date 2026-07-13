@@ -39,6 +39,15 @@ export interface Project {
   pendingInvoicePercentage: number;
 
   // ==========================
+  // GST / COMMERCIAL SUMMARY (Quantity Details)
+  // ==========================
+
+  gstApplicable: boolean;
+  gstRate: number;
+  gstAmount: number;
+  grandTotal: number;
+
+  // ==========================
   // COMMERCIAL INFORMATION
   // ==========================
 
@@ -120,6 +129,15 @@ nonManhourExpenses: NonManhourExpense[];
   lastImportedDate?: string;
   lastImportedBy?: string;
   lastImportedRowsCount?: number;
+
+  // ==========================
+  // EXPENSE BUDGET INFORMATION
+  // ==========================
+  manhourBudgetAmount?: number;
+  manhourBudgetHours?: number;
+  manhourBudgetRemarks?: string;
+  nonManhourBudgetAmount?: number;
+  nonManhourBudgetRemarks?: string;
 
   clientReferenceNo: string;
   remarks: string;

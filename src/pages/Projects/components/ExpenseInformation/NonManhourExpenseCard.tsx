@@ -7,7 +7,6 @@ import type { NonManhourExpense } from "../../../../types/NonManhourExpense";
 
 import {
   calculateNonManhourCost,
-  getTotalNonManhourCost,
 } from "../../../../services/expenseService";
 import { formatIndianCurrency } from "../../../../utils/quantityCalculations";
 
@@ -27,7 +26,8 @@ const NonManhourExpenseCard = ({ project, setProject }: Props) => {
   const [editingExpense, setEditingExpense] =
     useState<NonManhourExpense | null>(null);
 
-  const totalNonManhourCost = getTotalNonManhourCost(expenses);
+  // Total Other Expenses = Non Man-Hour Budget Amount (planned budget)
+  const totalOtherExpenses = project.nonManhourBudgetAmount || 0;
 
   const handleAddClick = () => {
     setEditingExpense(null);
@@ -133,7 +133,7 @@ const NonManhourExpenseCard = ({ project, setProject }: Props) => {
             </p>
 
             <h3 className="text-2xl font-bold text-orange-700">
-              {formatIndianCurrency(totalNonManhourCost)}
+              {formatIndianCurrency(totalOtherExpenses)}
             </h3>
 
           </div>

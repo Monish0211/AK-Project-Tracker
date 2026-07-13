@@ -6,21 +6,14 @@ import {
   Wallet,
 } from "lucide-react";
 
-import type { InvoiceItem } from "../../../../types/InvoiceItem";
-
+import type { Project } from "../../../../types/Project";
 import {
-  getBalanceAmount,
-  getInvoiceCompletionPercentage,
-  getInvoiceCount,
-  getOutstandingCollection,
-  getTotalInvoiceRaised,
+  getProjectCommercialSummary,
 } from "../../../../services/invoiceProgressService";
 import { formatIndianCurrency } from "../../../../utils/quantityCalculations";
 
 interface Props {
-  workOrderValueINR: number;
-  invoiceItems: InvoiceItem[];
-  collectionReceived: number;
+  project: Project;
 }
 
 interface KpiCardProps {
@@ -58,71 +51,50 @@ const KpiCard = ({ icon, label, value, accent }: KpiCardProps) => {
   );
 };
 
-const InvoiceSummaryCards = ({
-  workOrderValueINR,
-  invoiceItems,
-  collectionReceived,
-}: Props) => {
-  const totalInvoiceRaised = getTotalInvoiceRaised(invoiceItems);
-
-  const balanceRemaining = getBalanceAmount(
-    workOrderValueINR,
-    totalInvoiceRaised
-  );
-
-  const completionPercentage = getInvoiceCompletionPercentage(
-    workOrderValueINR,
-    totalInvoiceRaised
-  );
-
-  const invoiceCount = getInvoiceCount(invoiceItems);
-
-  const outstandingCollection = getOutstandingCollection(
-    totalInvoiceRaised,
-    collectionReceived
-  );
+const InvoiceSummaryCards = ({ project }: Props) => {
+  const summary = getProjectCommercialSummary(project);
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       <KpiCard
         icon={<IndianRupee size={18} strokeWidth={2.25} />}
         label="Total Project Value"
-        value={formatIndianCurrency(workOrderValueINR)}
+        value={formatIndianCurrency(summary.projectValueINR)}
         accent="blue"
       />
 
       <KpiCard
         icon={<FileText size={18} strokeWidth={2.25} />}
         label="Total Invoice Raised"
-        value={formatIndianCurrency(totalInvoiceRaised)}
+        value={formatIndianCurrency(summary.totalInvoiceRaised)}
         accent="purple"
       />
 
       <KpiCard
         icon={<Wallet size={18} strokeWidth={2.25} />}
         label="Balance Remaining"
-        value={formatIndianCurrency(balanceRemaining)}
+        value={formatIndianCurrency(summary.pendingDue)}
         accent="orange"
       />
 
       <KpiCard
         icon={<TrendingUp size={18} strokeWidth={2.25} />}
         label="Invoice Completion %"
-        value={`${completionPercentage.toFixed(2)}%`}
+        value={`${summary.invoiceCompletionPercent.toFixed(2)}%`}
         accent="green"
       />
 
       <KpiCard
         icon={<FileText size={18} strokeWidth={2.25} />}
         label="Invoices Raised"
-        value={String(invoiceCount)}
+        value={String(summary.invoicesRaisedCount)}
         accent="slate"
       />
 
       <KpiCard
         icon={<Clock size={18} strokeWidth={2.25} />}
         label="Outstanding Collection"
-        value={formatIndianCurrency(outstandingCollection)}
+        value={formatIndianCurrency(summary.outstandingCollection)}
         accent="red"
       />
     </div>

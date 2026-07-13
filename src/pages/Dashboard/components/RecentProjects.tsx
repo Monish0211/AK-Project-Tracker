@@ -4,30 +4,25 @@ import { getRecentProjects } from "../../../services/dashboardService";
 const RecentProjects = () => {
   const projects = getRecentProjects();
 
+  // Project Status (General Information) — never derived from invoices.
   const getStatusStyle = (status: string) => {
     switch (status) {
-      case "Completed":
-        return {
-          badge: "bg-green-100 text-green-700 border border-green-200",
-          dot: "bg-green-500",
-        };
-
       case "Active":
         return {
           badge: "bg-blue-100 text-blue-700 border border-blue-200",
           dot: "bg-blue-500",
         };
 
+      case "Completed":
+        return {
+          badge: "bg-green-100 text-green-700 border border-green-200",
+          dot: "bg-green-500",
+        };
+
       case "On Hold":
         return {
           badge: "bg-yellow-100 text-yellow-700 border border-yellow-200",
           dot: "bg-yellow-500",
-        };
-
-      case "In Progress":
-        return {
-          badge: "bg-purple-100 text-purple-700 border border-purple-200",
-          dot: "bg-purple-500",
         };
 
       case "Cancelled":
@@ -38,8 +33,8 @@ const RecentProjects = () => {
 
       default:
         return {
-          badge: "bg-gray-100 text-gray-700 border border-gray-200",
-          dot: "bg-gray-500",
+          badge: "bg-slate-100 text-slate-700 border border-slate-200",
+          dot: "bg-slate-500",
         };
     }
   };
@@ -123,10 +118,7 @@ const RecentProjects = () => {
             <tbody>
 
               {projects.map((project) => {
-
-                const status = getStatusStyle(
-                  project.projectStatus
-                );
+                const status = getStatusStyle(project.projectStatus);
 
                 return (
 
@@ -160,7 +152,7 @@ const RecentProjects = () => {
                           className={`w-2 h-2 rounded-full ${status.dot}`}
                         />
 
-                        {project.projectStatus}
+                        {project.projectStatus || "—"}
 
                       </span>
 

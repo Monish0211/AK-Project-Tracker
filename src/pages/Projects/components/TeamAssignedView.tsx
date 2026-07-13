@@ -8,10 +8,7 @@ import {
 } from "lucide-react";
 
 import type { Project } from "../../../types/Project";
-import CostSummaryCard from "./ExpenseInformation/CostSummaryCard";
-import ProfitAnalysisCard from "./ExpenseInformation/ProfitAnalysisCard";
 import { getEmployees } from "../../../services/employeeService";
-import NonManhourExpenseView from "./NonManhourExpenseView";
 
 interface Props {
   project: Project;
@@ -231,23 +228,6 @@ export default function TeamAssignedView({ project }: Props) {
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* ================= Other Project Expenses ================= */}
-      <NonManhourExpenseView expenses={project.nonManhourExpenses} />
-
-      {/* ================= Cost Summary & Profit Analysis ================= */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-6">
-        <CostSummaryCard
-          manpowerCost={totalManpowerBudget}
-          nonManhourExpenses={project.nonManhourExpenses}
-        />
-
-        <ProfitAnalysisCard
-          manpowerCost={totalManpowerBudget}
-          nonManhourExpenses={project.nonManhourExpenses}
-          revenue={project.workOrderValueINR}
-        />
       </div>
     </div>
   );

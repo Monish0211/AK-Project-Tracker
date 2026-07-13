@@ -19,7 +19,6 @@ const ProjectTable = () => {
   );
 
   const [search, setSearch] = useState("");
-  const [prCategory, setPrCategory] = useState("All");
   const [department, setDepartment] = useState("All");
   const [status, setStatus] = useState("All");
 
@@ -43,13 +42,6 @@ const ProjectTable = () => {
     ),
   ];
 
-  const prCategories = [
-    "All",
-    ...new Set(
-      projects.map((p) => p.prCategory).filter(Boolean)
-    ),
-  ];
-
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
       const matchesSearch =
@@ -66,10 +58,6 @@ const ProjectTable = () => {
           ?.toLowerCase()
           .includes(search.toLowerCase());
 
-      const matchesCategory =
-        prCategory === "All" ||
-        project.prCategory === prCategory;
-
       const matchesDepartment =
         department === "All" ||
         project.department === department;
@@ -80,7 +68,6 @@ const ProjectTable = () => {
 
       return (
         matchesSearch &&
-        matchesCategory &&
         matchesDepartment &&
         matchesStatus
       );
@@ -88,7 +75,6 @@ const ProjectTable = () => {
   }, [
     projects,
     search,
-    prCategory,
     department,
     status,
   ]);
@@ -129,7 +115,7 @@ const ProjectTable = () => {
 
       {/* Filters */}
 
-      <div className="grid grid-cols-4 gap-4 p-6 border-b">
+      <div className="grid grid-cols-3 gap-4 p-6 border-b">
 
         {/* Search */}
 
@@ -151,25 +137,6 @@ const ProjectTable = () => {
           />
 
         </div>
-
-        {/* PR Category */}
-
-        <select
-          value={prCategory}
-          onChange={(e) =>
-            setPrCategory(e.target.value)
-          }
-          className="border rounded-xl px-3 py-2"
-        >
-          {prCategories.map((category) => (
-            <option
-              key={category}
-              value={category}
-            >
-              {category}
-            </option>
-          ))}
-        </select>
 
         {/* Department */}
 
@@ -201,8 +168,8 @@ const ProjectTable = () => {
         >
           <option value="All">All Status</option>
           <option value="Active">Active</option>
-          <option value="Completed">Completed</option>
           <option value="On Hold">On Hold</option>
+          <option value="Completed">Completed</option>
           <option value="Cancelled">Cancelled</option>
         </select>
 
@@ -222,10 +189,6 @@ const ProjectTable = () => {
             <thead className="bg-slate-50 sticky top-0">
 
               <tr className="text-sm text-slate-700">
-
-                <th className="px-4 py-4 text-left">
-                  PR Category
-                </th>
 
                 <th className="px-4 py-4 text-left">
                   PR No
@@ -248,20 +211,20 @@ const ProjectTable = () => {
                 </th>
 
                 <th className="px-4 py-4 text-center">
-                  Status
+                  Project Status
+                </th>
+
+                <th className="px-4 py-4 text-center">
+                  Invoice Status
                 </th>
 
                 <th className="px-4 py-4 text-right">
-  WO Value
-</th>
+                  WO Value
+                </th>
 
-<th className="px-4 py-4 text-center">
-  Next Payment
-</th>
-
-<th className="px-4 py-4 text-right">
-  Pending Due
-</th>
+                <th className="px-4 py-4 text-right">
+                  Pending Due
+                </th>
 
 <th className="px-4 py-4 text-center">
   Actions

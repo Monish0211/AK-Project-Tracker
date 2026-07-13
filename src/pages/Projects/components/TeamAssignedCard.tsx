@@ -21,9 +21,7 @@ import {
   TimesheetImportError,
   type ImportReport,
 } from "../../../services/timesheetImportService";
-import CostSummaryCard from "./ExpenseInformation/CostSummaryCard";
-import ProfitAnalysisCard from "./ExpenseInformation/ProfitAnalysisCard";
-import NonManhourExpenseCard from "./ExpenseInformation/NonManhourExpenseCard";
+
 
 interface Props {
   project: Project;
@@ -136,13 +134,16 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
     )
   ).sort((a, b) => a.localeCompare(b));
 
-  const setProject: React.Dispatch<React.SetStateAction<Project>> = (value) => {
-    if (typeof value === "function") {
-      onChange(value(project));
-    } else {
-      onChange(value);
-    }
-  };
+  const reportingManagers = React.useMemo(() => {
+    return Array.from(
+      new Set(
+        masterEmployees
+          .map((emp) => emp.reportingManager?.trim())
+          .filter((name): name is string => typeof name === "string" && name !== "")
+      )
+    ).sort((a, b) => a.localeCompare(b));
+  }, [masterEmployees]);
+
 
   // Dialog State
   const [showImportModal, setShowImportModal] = useState(false);
@@ -373,12 +374,12 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
               Primary Project Manager <span className="text-red-500">*</span>
             </label>
-            <input
-              type="text"
-              value={project.primaryProjectManager || ""}
-              readOnly
-              placeholder="Assigned in General Info"
-              className="w-full border border-gray-300 bg-slate-50 rounded-xl p-3 text-sm text-slate-500 cursor-not-allowed outline-none"
+            <AutocompleteInput
+              value={project.primaryProjectManager}
+              onChange={(val) => handleLeadershipChange("primaryProjectManager", val)}
+              suggestionsList={reportingManagers}
+              placeholder="Search or enter Primary Project Manager"
+              required
             />
           </div>
 
@@ -387,12 +388,11 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
               Secondary Project Manager
             </label>
-            <input
-              type="text"
-              value={project.secondaryProjectManager || ""}
-              readOnly
-              placeholder="Assigned in General Info"
-              className="w-full border border-gray-300 bg-slate-50 rounded-xl p-3 text-sm text-slate-500 cursor-not-allowed outline-none"
+            <AutocompleteInput
+              value={project.secondaryProjectManager}
+              onChange={(val) => handleLeadershipChange("secondaryProjectManager", val)}
+              suggestionsList={reportingManagers}
+              placeholder="Search or enter Secondary Project Manager"
             />
           </div>
 
@@ -1081,24 +1081,6 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
         </div>
       )}
 
-      {/* ================= Other Project Expenses ================= */}
-      <div className="mt-6">
-        <NonManhourExpenseCard project={project} setProject={setProject} />
-      </div>
-
-      {/* ================= Cost Summary & Profit Analysis ================= */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-6">
-        <CostSummaryCard
-          manpowerCost={totalManpowerBudget}
-          nonManhourExpenses={project.nonManhourExpenses}
-        />
-
-        <ProfitAnalysisCard
-          manpowerCost={totalManpowerBudget}
-          nonManhourExpenses={project.nonManhourExpenses}
-          revenue={project.workOrderValueINR}
-        />
-      </div>
     </div>
   );
 }
