@@ -21,7 +21,8 @@ interface HistoryRow {
   date: string;
   billingType: "Quantity Based" | "Payment Milestone";
   activity: string | null;
-  completedQty: number | null;
+  /** e.g. "125 / 250 MAN-HOUR" — cumulative completed qty after this entry, out of the activity's total. Null for Payment Milestone rows. */
+  quantityProgress: string | null;
   milestone: string | null;
   amount: number;
   onView: () => void;
@@ -54,27 +55,36 @@ const BillingHistoryModal = ({
   onEditMilestoneBilling,
   readOnly = false,
 }: Props) => {
-  const quantityRows: HistoryRow[] = project.invoiceItems.flatMap((item) =>
-    (item.invoices ?? []).map((invoice) => ({
-      key: `qty-${invoice.id}`,
-      date: invoice.invoiceDate,
-      billingType: "Quantity Based" as const,
-      activity: item.description || "—",
-      completedQty: invoice.quantityBilled,
-      milestone: null,
-      amount: invoice.invoiceAmountINR,
-      onView: () => onViewQuantityEntry?.(item.id, invoice.id),
-      onEdit: () => onEditQuantityEntry?.(item.id, invoice.id),
-      onDelete: () => onDeleteQuantityEntry?.(item.id, invoice.id),
-    }))
-  );
+  const quantityRows: HistoryRow[] = project.invoiceItems.flatMap((item) => {
+    // Running total in chronological (save) order, so each entry shows the
+    // cumulative completed qty as of that entry — always matching what was
+    // actually saved.
+    let runningCompleted = 0;
+
+    return (item.invoices ?? []).map((invoice) => {
+      runningCompleted += invoice.quantityBilled || 0;
+
+      return {
+        key: `qty-${invoice.id}`,
+        date: invoice.invoiceDate,
+        billingType: "Quantity Based" as const,
+        activity: item.description || "—",
+        quantityProgress: `${runningCompleted} / ${item.qty} ${item.uom}`,
+        milestone: null,
+        amount: invoice.invoiceAmountINR,
+        onView: () => onViewQuantityEntry?.(item.id, invoice.id),
+        onEdit: () => onEditQuantityEntry?.(item.id, invoice.id),
+        onDelete: () => onDeleteQuantityEntry?.(item.id, invoice.id),
+      };
+    });
+  });
 
   const milestoneRows: HistoryRow[] = (project.milestoneBillings ?? []).map((billing) => ({
     key: `milestone-${billing.id}`,
     date: billing.invoiceDate,
     billingType: "Payment Milestone" as const,
     activity: null,
-    completedQty: null,
+    quantityProgress: null,
     milestone: `${billing.milestoneName} (${billing.milestonePercentage}%)`,
     amount: billing.amount,
     onView: () => onViewMilestoneBilling?.(billing.id),
@@ -120,7 +130,7 @@ const BillingHistoryModal = ({
                   <th className="px-4 py-3 text-left">Date</th>
                   <th className="px-4 py-3 text-left">Billing Type</th>
                   <th className="px-4 py-3 text-left">Activity / Milestone</th>
-                  <th className="px-4 py-3 text-right">Completed Qty</th>
+                  <th className="px-4 py-3 text-right">Quantity Progress</th>
                   <th className="px-4 py-3 text-right">Amount</th>
                   <th className="px-4 py-3 text-center">Status</th>
                   {!readOnly && (
@@ -169,7 +179,7 @@ const BillingHistoryModal = ({
                       </td>
 
                       <td className="px-4 py-3 text-right">
-                        {row.completedQty !== null ? row.completedQty : "—"}
+                        {row.quantityProgress ?? "—"}
                       </td>
 
                       <td className="px-4 py-3 text-right font-semibold text-blue-700">

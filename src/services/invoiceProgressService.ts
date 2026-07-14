@@ -159,15 +159,29 @@ export function getProjectCommercialSummary(
     : [];
 
   const projectValueINR = getTotalWorkPackageValue(invoiceItems);
-  const totalInvoiceRaised =
-    getTotalInvoiceRaised(invoiceItems) + getTotalMilestoneBilled(project);
+
+  // Quantity Based Billing and Payment Milestone Billing are two independent
+  // ways of measuring progress against the SAME Work Order Value — never
+  // additive. Whichever track has billed further represents the project's
+  // actual commercial progress; the other track's amount must not be summed
+  // on top of it (that would double-count the same work).
+  const quantityBasedTotal = getTotalInvoiceRaised(invoiceItems);
+  const milestoneBasedTotal = getTotalMilestoneBilled(project);
+  const totalInvoiceRaised = Math.min(
+    Math.max(quantityBasedTotal, milestoneBasedTotal),
+    projectValueINR
+  );
+
   const pendingDue = Math.max(
     getBalanceAmount(projectValueINR, totalInvoiceRaised),
     0
   );
-  const invoiceCompletionPercent = getInvoiceCompletionPercentage(
-    projectValueINR,
-    totalInvoiceRaised
+  const invoiceCompletionPercent = Math.min(
+    Math.max(
+      getInvoiceCompletionPercentage(projectValueINR, totalInvoiceRaised),
+      0
+    ),
+    100
   );
   const invoicesRaisedCount =
     getInvoiceCount(invoiceItems) + (project.milestoneBillings?.length ?? 0);

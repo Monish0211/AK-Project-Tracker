@@ -24,7 +24,7 @@ export const getDashboardMetrics = (): DashboardMetrics => {
   const totalProjects = projects.length;
 
   const totalWOValue = projects.reduce(
-    (sum, project) => sum + project.workOrderValue,
+    (sum, project) => sum + (project.workOrderValueINR || 0),
     0
   );
 
@@ -57,7 +57,7 @@ export const getDashboardMetrics = (): DashboardMetrics => {
     (sum, project) =>
       sum +
       getGrossProfit(
-        project.workOrderValue,
+        project.workOrderValueINR || 0,
         getTotalProjectCost(
           project.manhourExpenses,
           project.nonManhourExpenses
@@ -175,7 +175,7 @@ export const getTopClients = () => {
 
     clients[client] =
       (clients[client] || 0) +
-      project.workOrderValue;
+      (project.workOrderValueINR || 0);
   });
 
   return Object.entries(clients)

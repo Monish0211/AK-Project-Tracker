@@ -26,7 +26,7 @@ const BusinessSection = ({ project }: Props) => {
 
       <InfoField
         label="Work Order Value"
-        value={`₹ ${project.workOrderValue.toLocaleString("en-IN", {
+        value={`${project.currency || "INR"} ${project.workOrderValue.toLocaleString("en-IN", {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         })}`}

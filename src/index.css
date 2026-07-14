@@ -1,1 +1,15 @@
 @import "tailwindcss";
+
+@keyframes ecg-heartbeat {
+  0% {
+    stroke-dashoffset: 100;
+  }
+  100% {
+    stroke-dashoffset: -90;
+  }
+}
+
+.animate-ecg-heartbeat {
+  stroke-dasharray: 30 70;
+  animation: ecg-heartbeat 2.8s linear infinite;
+}

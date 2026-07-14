@@ -28,7 +28,7 @@ const InvoiceProgressView = ({ project }: Props) => {
 
       <InvoiceSummaryCards project={project} />
 
-      <InvoiceProgressTable items={project.invoiceItems} />
+      <InvoiceProgressTable project={project} />
 
       {isHistoryOpen && (
         <BillingHistoryModal

@@ -116,7 +116,7 @@ const ProjectRow = ({
 
       {/* WO Value */}
       <td className="px-4 py-4 text-right font-semibold whitespace-nowrap">
-        ₹ {project.workOrderValue.toLocaleString("en-IN")}
+        ₹ {project.workOrderValueINR.toLocaleString("en-IN")}
       </td>
 
       {/* Pending Due (Invoice History: Project Value − Invoice Raised) */}

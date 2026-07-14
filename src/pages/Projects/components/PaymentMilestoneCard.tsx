@@ -228,7 +228,7 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
             id: firstMilestone?.id ?? crypto.randomUUID(),
             paymentPercentage: 100,
             dueDate: firstMilestone?.dueDate ?? "",
-            amount: calculateAmount(prev.workOrderValue, 100),
+            amount: calculateAmount(prev.workOrderValueINR, 100),
           };
 
           return {
@@ -255,7 +255,7 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
             ? {
                 ...milestone,
                 paymentPercentage: value,
-                amount: calculateAmount(prev.workOrderValue, value),
+                amount: calculateAmount(prev.workOrderValueINR, value),
               }
             : milestone
         );
@@ -367,8 +367,9 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
           </label>
 
           <NumericInput
-            value={project.workOrderValue}
+            value={project.workOrderValueINR}
             ariaLabel="Work Order Value"
+            disabled={true}
             onChange={handleWorkOrderValueChange}
           />
         </div>
@@ -461,7 +462,7 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
 
                 <td className="px-3 py-3 text-right">
                   <span className="text-base font-bold text-green-600">
-                    {formatIndianCurrency(singleMilestone?.amount ?? 0)}
+                    {formatIndianCurrency(calculateAmount(project.workOrderValueINR, singleMilestone?.paymentPercentage ?? 100))}
                   </span>
                 </td>
               </tr>
@@ -558,7 +559,7 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
 
                       <td className="px-3 py-3 text-right">
                         <span className="text-base font-bold text-green-600">
-                          {formatIndianCurrency(milestone.amount)}
+                          {formatIndianCurrency(calculateAmount(project.workOrderValueINR, milestone.paymentPercentage))}
                         </span>
                       </td>
 
