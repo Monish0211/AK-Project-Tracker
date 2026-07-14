@@ -15,19 +15,9 @@ import InvoiceProgressRow from "./InvoiceProgressRow";
 
 interface Props {
   items: InvoiceItem[];
-  readOnly: boolean;
-  onRaiseInvoice?: (itemId: string) => void;
-  onViewHistory?: (itemId: string) => void;
 }
 
-const noop = () => {};
-
-const InvoiceProgressTable = ({
-  items,
-  readOnly,
-  onRaiseInvoice = noop,
-  onViewHistory = noop,
-}: Props) => {
+const InvoiceProgressTable = ({ items }: Props) => {
   const totalWorkPackageValue = getTotalWorkPackageValue(items);
   const totalInvoiceRaised = getTotalInvoiceRaised(items);
   const balanceRemaining = getBalanceAmount(
@@ -43,13 +33,11 @@ const InvoiceProgressTable = ({
     totalInvoiceRaised
   );
 
-  const columnCount = readOnly ? 10 : 11;
-
   return (
     <div className="space-y-4">
 
       <div className="max-h-[30rem] overflow-auto rounded-xl border border-gray-100">
-        <table className="w-full min-w-[1280px] table-fixed border-collapse text-sm">
+        <table className="w-full min-w-[1150px] table-fixed border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="w-14 border-b border-slate-200 px-3 py-3 text-center font-semibold">
@@ -82,18 +70,13 @@ const InvoiceProgressTable = ({
               <th className="w-36 border-b border-slate-200 px-3 py-3 text-center font-semibold">
                 Status
               </th>
-              {!readOnly && (
-                <th className="w-32 border-b border-slate-200 px-3 py-3 text-center font-semibold">
-                  Action
-                </th>
-              )}
             </tr>
           </thead>
 
           <tbody className="divide-y divide-gray-100">
             {items.length === 0 ? (
               <tr>
-                <td colSpan={columnCount} className="py-14 text-center">
+                <td colSpan={10} className="py-14 text-center">
                   <div className="flex flex-col items-center">
                     <div className="h-16 w-16 rounded-full bg-blue-50 flex items-center justify-center">
                       <ClipboardList size={30} className="text-blue-500" />
@@ -102,23 +85,14 @@ const InvoiceProgressTable = ({
                       No Work Packages Added
                     </h3>
                     <p className="mt-2 text-sm text-gray-500 max-w-md">
-                      {readOnly
-                        ? "No invoice line items have been recorded for this project."
-                        : "Click \"Add Work Package\" to start tracking invoice progress."}
+                      Add activities in Quantity Details to start tracking invoice progress.
                     </p>
                   </div>
                 </td>
               </tr>
             ) : (
               items.map((item, index) => (
-                <InvoiceProgressRow
-                  key={item.id}
-                  item={item}
-                  index={index}
-                  readOnly={readOnly}
-                  onRaiseInvoice={onRaiseInvoice}
-                  onViewHistory={onViewHistory}
-                />
+                <InvoiceProgressRow key={item.id} item={item} index={index} />
               ))
             )}
           </tbody>

@@ -1,5 +1,3 @@
-import { History, Plus } from "lucide-react";
-
 import type { InvoiceItem } from "../../../../types/InvoiceItem";
 import type { InvoiceStatus } from "../../../../services/invoiceProgressService";
 
@@ -23,18 +21,9 @@ const STATUS_BADGE_STYLES: Record<InvoiceStatus, string> = {
 interface Props {
   item: InvoiceItem;
   index: number;
-  readOnly: boolean;
-  onRaiseInvoice: (itemId: string) => void;
-  onViewHistory: (itemId: string) => void;
 }
 
-const InvoiceProgressRow = ({
-  item,
-  index,
-  readOnly,
-  onRaiseInvoice,
-  onViewHistory,
-}: Props) => {
+const InvoiceProgressRow = ({ item, index }: Props) => {
   const invoiceRaised = getInvoiceRaisedAmount(item);
   const invoicePercentage = getRowInvoicePercentage(item);
   const balancePercentage = getRowBalancePercentage(item);
@@ -87,29 +76,6 @@ const InvoiceProgressRow = ({
           {status}
         </span>
       </td>
-
-      {!readOnly && (
-        <td className="px-3 py-3">
-          <div className="flex items-center justify-center gap-2">
-            <button
-              onClick={() => onRaiseInvoice(item.id)}
-              title="Update Billing Progress"
-              className="p-2 rounded-lg text-blue-600 hover:bg-blue-50 transition"
-            >
-              <Plus size={16} />
-            </button>
-
-            <button
-              onClick={() => onViewHistory(item.id)}
-              title="Billing History"
-              disabled={item.invoices.length === 0}
-              className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
-            >
-              <History size={16} />
-            </button>
-          </div>
-        </td>
-      )}
     </tr>
   );
 };

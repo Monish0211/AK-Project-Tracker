@@ -62,8 +62,14 @@ function normalizeProject(project: Project): Project {
     gstApplicable: normalizedGstApplicable,
     ...totals,
     paymentMilestones: Array.isArray(project.paymentMilestones)
-      ? project.paymentMilestones
+      ? project.paymentMilestones.map((milestone) => ({
+          ...milestone,
+          milestoneName: milestone.milestoneName || "",
+        }))
       : defaults.paymentMilestones,
+    milestoneBillings: Array.isArray(project.milestoneBillings)
+      ? project.milestoneBillings
+      : [],
     manhourExpenses: Array.isArray(project.manhourExpenses)
       ? project.manhourExpenses
       : [],
@@ -73,7 +79,15 @@ function normalizeProject(project: Project): Project {
     invoiceItems: syncInvoiceItemsWithQuantity(
       normalizedQuantityItems,
       Array.isArray(project.invoiceItems) ? project.invoiceItems : []
-    ),
+    ).map((item) => ({
+      ...item,
+      invoices: (Array.isArray(item.invoices) ? item.invoices : []).map((invoice) => ({
+        id: invoice.id,
+        invoiceDate: invoice.invoiceDate || "",
+        quantityBilled: typeof invoice.quantityBilled === "number" ? invoice.quantityBilled : 0,
+        invoiceAmountINR: typeof invoice.invoiceAmountINR === "number" ? invoice.invoiceAmountINR : 0,
+      })),
+    })),
     resources: Array.isArray(project.resources)
       ? project.resources.map((res: any) => ({
           ...res,

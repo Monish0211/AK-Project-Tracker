@@ -7,6 +7,7 @@ import {
   Wallet,
 } from "lucide-react";
 import type { Project } from "../../../types/Project";
+import { isMilestoneBilled } from "../../../services/milestoneBillingService";
 
 interface Props {
   project: Project;
@@ -166,6 +167,9 @@ const PaymentMilestoneView = ({ project }: Props) => {
               <th className="w-16 border-b border-slate-200 px-3 py-3 text-center font-semibold">
                 Sl No
               </th>
+              <th className="border-b border-slate-200 px-3 py-3 text-left font-semibold">
+                Milestone Name
+              </th>
               <th className="w-28 border-b border-slate-200 px-3 py-3 text-right font-semibold">
                 Payment %
               </th>
@@ -178,6 +182,9 @@ const PaymentMilestoneView = ({ project }: Props) => {
               <th className="w-32 border-b border-slate-200 px-3 py-3 text-center font-semibold">
                 Status
               </th>
+              <th className="w-32 border-b border-slate-200 px-3 py-3 text-center font-semibold">
+                Billing Status
+              </th>
               <th className="w-40 border-b border-slate-200 px-3 py-3 text-right font-semibold">
                 Amount
               </th>
@@ -187,7 +194,7 @@ const PaymentMilestoneView = ({ project }: Props) => {
           <tbody className="divide-y divide-gray-100">
             {milestones.length === 0 ? (
               <tr>
-                <td colSpan={6} className="py-10 text-center text-slate-400">
+                <td colSpan={8} className="py-10 text-center text-slate-400">
                   No payment milestones have been added for this project.
                 </td>
               </tr>
@@ -195,6 +202,7 @@ const PaymentMilestoneView = ({ project }: Props) => {
               milestones.map((milestone, index) => {
                 const daysLeft = getDaysDifference(milestone.dueDate);
                 const status = getStatus(daysLeft);
+                const billed = isMilestoneBilled(project, milestone.id);
 
                 return (
                   <tr
@@ -203,6 +211,10 @@ const PaymentMilestoneView = ({ project }: Props) => {
                   >
                     <td className="px-3 py-3 text-center text-slate-500">
                       {index + 1}
+                    </td>
+
+                    <td className="px-3 py-3 font-medium text-slate-800">
+                      {milestone.milestoneName?.trim() || `Milestone ${index + 1}`}
                     </td>
 
                     <td className="px-3 py-3 text-right font-medium text-slate-700">
@@ -228,6 +240,18 @@ const PaymentMilestoneView = ({ project }: Props) => {
                         className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_BADGE_STYLES[status]}`}
                       >
                         {status}
+                      </span>
+                    </td>
+
+                    <td className="px-3 py-3 text-center">
+                      <span
+                        className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                          billed
+                            ? "border-green-200 bg-green-50 text-green-700"
+                            : "border-gray-200 bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {billed ? "Completed" : "Pending"}
                       </span>
                     </td>
 

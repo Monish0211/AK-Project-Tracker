@@ -1,6 +1,7 @@
 import type { InvoiceItem } from "../types/InvoiceItem";
 import type { Project } from "../types/Project";
 import { getNextPayment } from "../utils/paymentUtils";
+import { getTotalMilestoneBilled } from "./milestoneBillingService";
 
 export type InvoiceStatus = "Pending" | "Partially Invoiced" | "Completed";
 
@@ -63,36 +64,6 @@ export function getTotalInvoiceRaised(items: InvoiceItem[]): number {
     (sum, item) => sum + getInvoiceRaisedAmount(item),
     0
   );
-}
-
-/** Quantity already billed against this activity via the "quantity" billing method. */
-export function getQuantityBilled(item: InvoiceItem): number {
-  const invoices = Array.isArray(item.invoices) ? item.invoices : [];
-
-  return invoices.reduce((sum, invoice) => sum + (invoice.quantityBilled || 0), 0);
-}
-
-/** Hours already billed against this activity via the "manhour" billing method. */
-export function getHoursBilled(item: InvoiceItem): number {
-  const invoices = Array.isArray(item.invoices) ? item.invoices : [];
-
-  return invoices.reduce((sum, invoice) => sum + (invoice.hoursBilled || 0), 0);
-}
-
-/** Payment milestone ids already billed against any activity in the project. */
-export function getBilledMilestoneIds(items: InvoiceItem[]): Set<string> {
-  const ids = new Set<string>();
-  const safeItems = Array.isArray(items) ? items : [];
-
-  safeItems.forEach((item) => {
-    (Array.isArray(item.invoices) ? item.invoices : []).forEach((invoice) => {
-      if (invoice.milestoneId) {
-        ids.add(invoice.milestoneId);
-      }
-    });
-  });
-
-  return ids;
 }
 
 export function getInvoiceCount(items: InvoiceItem[]): number {
@@ -164,17 +135,21 @@ export interface ProjectCommercialSummary {
 /**
  * The single source of truth for a project's commercial figures (Pending Due,
  * Next Payment, Invoice Completion, Invoice Raised, Outstanding Collection,
- * Invoice Status). Derived entirely from Invoice History (project.invoiceItems)
- * so every page — Repository, Dashboard, View Project, Edit Project — shows
- * identical numbers to the Invoice Progress Tracker tab.
+ * Invoice Status). Combines BOTH independent billing tracks — Quantity Based
+ * Billing (project.invoiceItems) and Payment Milestone Billing
+ * (project.milestoneBillings) — into one project-wide total, so every page
+ * (Repository, Dashboard, View Project, Edit Project) shows a consistent
+ * combined figure. The two tracks are still calculated completely separately
+ * (see quantityBillingService.ts / milestoneBillingService.ts) — only their
+ * resulting totals are added together here, never their calculation logic.
  *
  * Deliberately never reads project.workOrderValue(INR), payment-received
  * fields, or the standalone Invoices module — those are a different concept
  * (operational Project Status) or unrelated legacy/parallel data.
  *
- * The one narrow exception is Next Payment's due date: Invoice History has no
- * per-invoice due date, so the nearest Payment Milestone due date is used —
- * but only while the project isn't fully invoiced yet (see rule below).
+ * The one narrow exception is Next Payment's due date: neither billing track
+ * has a per-entry due date, so the nearest Payment Milestone due date is used
+ * — but only while the project isn't fully invoiced yet (see rule below).
  */
 export function getProjectCommercialSummary(
   project: Project
@@ -184,7 +159,8 @@ export function getProjectCommercialSummary(
     : [];
 
   const projectValueINR = getTotalWorkPackageValue(invoiceItems);
-  const totalInvoiceRaised = getTotalInvoiceRaised(invoiceItems);
+  const totalInvoiceRaised =
+    getTotalInvoiceRaised(invoiceItems) + getTotalMilestoneBilled(project);
   const pendingDue = Math.max(
     getBalanceAmount(projectValueINR, totalInvoiceRaised),
     0
@@ -193,7 +169,8 @@ export function getProjectCommercialSummary(
     projectValueINR,
     totalInvoiceRaised
   );
-  const invoicesRaisedCount = getInvoiceCount(invoiceItems);
+  const invoicesRaisedCount =
+    getInvoiceCount(invoiceItems) + (project.milestoneBillings?.length ?? 0);
 
   let invoiceStatus: ProjectInvoiceStatus;
   if (totalInvoiceRaised <= 0) {
