@@ -30,9 +30,9 @@ const CostSection = ({ project }: Props) => {
     project.nonManhourExpenses
   );
 
-  const grossProfit = getGrossProfit(project.workOrderValue, totalCost);
+  const grossProfit = getGrossProfit(project.workOrderValueINR || 0, totalCost);
 
-  const profitMargin = getProfitMargin(project.workOrderValue, grossProfit);
+  const profitMargin = getProfitMargin(project.workOrderValueINR || 0, grossProfit);
 
   return (
     <InfoSection title="Expense Information">

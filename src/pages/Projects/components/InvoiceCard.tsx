@@ -24,6 +24,13 @@ const InvoiceCard = ({ project, setProject }: Props) => {
   const [selectedEntryId, setSelectedEntryId] = useState<string | undefined>(undefined);
   const [selectedMilestoneBillingId, setSelectedMilestoneBillingId] = useState<string | undefined>(undefined);
 
+  // Forces BillingProgressDrawer to fully remount (resetting its internal
+  // input state) whenever it's asked to show a different record, even if a
+  // drawer instance already happened to be mounted. Without this, reopening
+  // it for a different entry while one is already open would reuse stale
+  // useState initializers instead of reflecting the newly selected record.
+  const drawerKey = `${drawerMode}-${selectedEntryId ?? selectedMilestoneBillingId ?? selectedItemId ?? "new"}`;
+
   const handleSaveBillingProgress = (updatedProject: Project) => {
     setProject(updatedProject);
     setIsDrawerOpen(false);
@@ -118,7 +125,10 @@ const InvoiceCard = ({ project, setProject }: Props) => {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsHistoryOpen(true)}
+              onClick={() => {
+                setIsDrawerOpen(false);
+                setIsHistoryOpen(true);
+              }}
               className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-slate-700 px-4 py-2 rounded-xl transition"
             >
               <History size={16} />
@@ -139,12 +149,13 @@ const InvoiceCard = ({ project, setProject }: Props) => {
         <div className="p-6 space-y-6">
           <InvoiceSummaryCards project={project} />
 
-          <InvoiceProgressTable items={project.invoiceItems} />
+          <InvoiceProgressTable project={project} />
         </div>
       </div>
 
       {isDrawerOpen && (
         <BillingProgressDrawer
+          key={drawerKey}
           project={project}
           mode={drawerMode}
           initialItemId={selectedItemId}

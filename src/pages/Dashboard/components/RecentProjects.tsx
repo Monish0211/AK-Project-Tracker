@@ -161,7 +161,7 @@ const RecentProjects = () => {
                     <td className="text-right text-sm font-semibold text-slate-800">
 
                       ₹{" "}
-                      {project.workOrderValue.toLocaleString(
+                      {project.workOrderValueINR.toLocaleString(
                         "en-IN"
                       )}
 

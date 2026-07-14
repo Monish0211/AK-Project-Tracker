@@ -10,6 +10,7 @@ import {
 import type { Project } from "../../../../types/Project";
 import type { InvoiceEntry } from "../../../../types/InvoiceItem";
 
+import { getTotalWorkPackageValue } from "../../../../services/invoiceProgressService";
 import { formatIndianCurrency, formatIndianNumber } from "../../../../utils/quantityCalculations";
 
 interface Props {
@@ -161,15 +162,67 @@ const BillingProgressDrawer = ({
 
   const selectedMilestone = milestones.find((m) => m.id === selectedMilestoneId) ?? null;
 
-  const currentInvoiceAmount = selectedMilestone ? selectedMilestone.amount : 0;
-  const totalAfter = alreadyInvoiced + currentInvoiceAmount;
-  const remainingBalance = Math.max(packageValue - totalAfter, 0);
-  const completionPercent =
-    packageValue > 0 ? Math.min((totalAfter / packageValue) * 100, 100) : 0;
-  const autoStatus = getAutoStatus(totalAfter, packageValue);
+  // Project-wide commercial totals. Quantity Based Billing and Payment
+  // Milestone Billing are independent tracks measuring progress against the
+  // SAME Work Order Value — combined with MAX, never summed, so raising a
+  // milestone can never be blocked by (or double-count with) quantity
+  // progress on unrelated activities, and vice versa.
+  const projectValueINR = getTotalWorkPackageValue(project.invoiceItems);
 
-  const isOverbilled = totalAfter > packageValue + 0.01;
-  const canSave = !isViewMode && (selectedMilestone !== null || quantityValue > 0) && !isOverbilled;
+  const quantityTrackTotal = useMemo(() => {
+    let total = 0;
+    project.invoiceItems.forEach((item) => {
+      (item.invoices ?? []).forEach((inv) => {
+        if ((isEditMode || isViewMode) && inv.id === initialInvoiceId) return;
+        total += inv.invoiceAmountINR || 0;
+      });
+    });
+    return total;
+  }, [project.invoiceItems, isEditMode, isViewMode, initialInvoiceId]);
+
+  const milestoneTrackTotal = useMemo(() => {
+    const billings = project.milestoneBillings ?? [];
+    return billings.reduce((sum, b) => {
+      if ((isEditMode || isViewMode) && b.id === initialMilestoneBillingId) {
+        return sum;
+      }
+      return sum + (b.amount || 0);
+    }, 0);
+  }, [project.milestoneBillings, isEditMode, isViewMode, initialMilestoneBillingId]);
+
+  const projectAlreadyInvoiced = Math.max(quantityTrackTotal, milestoneTrackTotal);
+
+  const currentQuantityAmount = quantityValue * (selectedItem?.unitPrice || 0);
+  const currentMilestoneAmount = selectedMilestone ? selectedMilestone.amount : 0;
+  const currentInvoiceAmount = currentQuantityAmount + currentMilestoneAmount;
+
+  const totalAfter = Math.min(
+    Math.max(
+      quantityTrackTotal + currentQuantityAmount,
+      milestoneTrackTotal + currentMilestoneAmount
+    ),
+    projectValueINR
+  );
+  const remainingBalance = Math.max(projectValueINR - totalAfter, 0);
+  const completionPercent =
+    projectValueINR > 0
+      ? Math.min(Math.max((totalAfter / projectValueINR) * 100, 0), 100)
+      : 0;
+  const autoStatus = getAutoStatus(totalAfter, projectValueINR);
+
+  // Overbilling is only meaningful within the Quantity Based track — an
+  // activity's own remaining quantity. Milestone billing is separately
+  // guarded by disabling already-billed milestones, so the two checks must
+  // never be cross-compared against each other's totals.
+  const isQuantityOverbilled =
+    quantityValue > 0 &&
+    Boolean(selectedItem) &&
+    completedQty + quantityValue > (selectedItem?.qty || 0) + 0.0001;
+
+  const canSave =
+    !isViewMode &&
+    (selectedMilestone !== null || quantityValue > 0) &&
+    !isQuantityOverbilled;
 
   const handleNumberChange =
     (setter: (value: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
@@ -197,7 +250,7 @@ const BillingProgressDrawer = ({
               return {
                 ...inv,
                 quantityBilled: quantityValue,
-                invoiceAmountINR: 0,
+                invoiceAmountINR: quantityValue * (selectedItem.unitPrice || 0),
               };
             }),
           };
@@ -240,7 +293,7 @@ const BillingProgressDrawer = ({
         const newInvoiceEntry: InvoiceEntry = {
           id: crypto.randomUUID(),
           invoiceDate: todayISODate(),
-          invoiceAmountINR: 0,
+          invoiceAmountINR: quantityValue * (selectedItem.unitPrice || 0),
           quantityBilled: quantityValue,
         };
         updatedProject = {
@@ -532,15 +585,15 @@ const BillingProgressDrawer = ({
 
             <div className="divide-y divide-slate-100">
               <div className="flex items-center justify-between py-2.5">
-                <span className="text-sm text-slate-500">Package Value</span>
+                <span className="text-sm text-slate-500">Work Order Value</span>
                 <span className="text-sm font-semibold text-slate-800">
-                  {formatIndianCurrency(packageValue)}
+                  {formatIndianCurrency(projectValueINR)}
                 </span>
               </div>
               <div className="flex items-center justify-between py-2.5">
                 <span className="text-sm text-slate-500">Already Invoiced</span>
                 <span className="text-sm font-semibold text-slate-800">
-                  {formatIndianCurrency(alreadyInvoiced)}
+                  {formatIndianCurrency(projectAlreadyInvoiced)}
                 </span>
               </div>
               <div className="flex items-center justify-between py-2.5">
@@ -579,10 +632,10 @@ const BillingProgressDrawer = ({
             </p>
           </div>
 
-          {isOverbilled && !isViewMode && (
+          {isQuantityOverbilled && !isViewMode && (
             <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
               <AlertTriangle size={16} strokeWidth={2.25} className="shrink-0" />
-              Already Invoiced + Current Invoice cannot exceed the Package Value.
+              Current Entry Qty cannot exceed the remaining quantity for this activity.
             </div>
           )}
         </div>

@@ -75,10 +75,7 @@ const PaymentMilestoneView = ({ project }: Props) => {
 
   const remainingPercentage = 100 - totalPaymentPercentage;
 
-  const totalAmount = milestones.reduce(
-    (sum, milestone) => sum + (milestone.amount || 0),
-    0
-  );
+  const totalAmount = (project.workOrderValueINR * totalPaymentPercentage) / 100;
 
   const isPercentageMismatch =
     Math.abs(totalPaymentPercentage - 100) > 0.01;
@@ -257,7 +254,9 @@ const PaymentMilestoneView = ({ project }: Props) => {
 
                     <td className="px-3 py-3 text-right">
                       <span className="text-base font-bold text-green-600">
-                        {formatCurrency(milestone.amount)}
+                        {formatCurrency(
+                          (project.workOrderValueINR * (milestone.paymentPercentage || 0)) / 100
+                        )}
                       </span>
                     </td>
                   </tr>

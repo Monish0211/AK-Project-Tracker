@@ -1,10 +1,10 @@
 import {
-  Activity,
   CalendarDays,
   Clock3,
   Plus,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import SystemStatus from "../../../components/Dashboard/SystemStatus";
 
 const WelcomeCard = () => {
   const now = new Date();
@@ -45,26 +45,7 @@ const WelcomeCard = () => {
           {/* Status */}
           <div className="flex flex-wrap gap-8 mt-6">
 
-            <div className="flex items-center gap-3">
-
-              <Activity
-                size={18}
-                className="text-green-400"
-              />
-
-              <div>
-
-                <p className="text-[11px] uppercase tracking-wider text-blue-200">
-                  System Status
-                </p>
-
-                <p className="font-semibold text-sm">
-                  Online
-                </p>
-
-              </div>
-
-            </div>
+            <SystemStatus status="Online" />
 
             <div className="flex items-center gap-3">
 

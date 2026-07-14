@@ -1,37 +1,27 @@
 import { ClipboardList } from "lucide-react";
 
-import type { InvoiceItem } from "../../../../types/InvoiceItem";
+import type { Project } from "../../../../types/Project";
 
-import {
-  getBalanceAmount,
-  getBalancePercentage,
-  getInvoiceCompletionPercentage,
-  getTotalInvoiceRaised,
-  getTotalWorkPackageValue,
-} from "../../../../services/invoiceProgressService";
+import { getProjectCommercialSummary } from "../../../../services/invoiceProgressService";
 import { formatIndianCurrency } from "../../../../utils/quantityCalculations";
 
 import InvoiceProgressRow from "./InvoiceProgressRow";
 
 interface Props {
-  items: InvoiceItem[];
+  project: Project;
 }
 
-const InvoiceProgressTable = ({ items }: Props) => {
-  const totalWorkPackageValue = getTotalWorkPackageValue(items);
-  const totalInvoiceRaised = getTotalInvoiceRaised(items);
-  const balanceRemaining = getBalanceAmount(
-    totalWorkPackageValue,
-    totalInvoiceRaised
-  );
-  const balancePercentage = getBalancePercentage(
-    totalWorkPackageValue,
-    totalInvoiceRaised
-  );
-  const completionPercentage = getInvoiceCompletionPercentage(
-    totalWorkPackageValue,
-    totalInvoiceRaised
-  );
+const InvoiceProgressTable = ({ project }: Props) => {
+  const items = project.invoiceItems;
+
+  // Single source of truth — must always match the top KPI cards
+  // (InvoiceSummaryCards), Project Repository and Dashboard.
+  const summary = getProjectCommercialSummary(project);
+  const totalWorkPackageValue = summary.projectValueINR;
+  const totalInvoiceRaised = summary.totalInvoiceRaised;
+  const balanceRemaining = summary.pendingDue;
+  const completionPercentage = summary.invoiceCompletionPercent;
+  const balancePercentage = 100 - completionPercentage;
 
   return (
     <div className="space-y-4">

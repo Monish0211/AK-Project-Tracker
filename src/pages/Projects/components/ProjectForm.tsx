@@ -243,7 +243,7 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
                 Work Order Value
               </p>
               <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {formatINR(project.workOrderValue)}
+                {formatINR(project.workOrderValueINR || 0)}
               </p>
             </div>
           </div>

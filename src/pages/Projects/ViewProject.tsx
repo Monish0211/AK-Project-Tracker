@@ -149,9 +149,9 @@ const ViewProject = () => {
     project.manhourExpenses,
     project.nonManhourExpenses
   );
-  const grossProfit    = getGrossProfit(project.workOrderValue, totalProjectCost);
-  const profitMargin   = getProfitMargin(project.workOrderValue, grossProfit);
-  const hasRevenue     = project.workOrderValue > 0;
+  const grossProfit    = getGrossProfit(project.workOrderValueINR || 0, totalProjectCost);
+  const profitMargin   = getProfitMargin(project.workOrderValueINR || 0, grossProfit);
+  const hasRevenue     = (project.workOrderValueINR || 0) > 0;
   const isProfit       = grossProfit >= 0;
   const hasWoQty       = project.totalWOQty > 0;
   const pendingQtyPercentage = hasWoQty
@@ -213,7 +213,7 @@ const ViewProject = () => {
           <KpiCard
             icon={<IndianRupee size={22} strokeWidth={2.25} />}
             label="Work Order Value"
-            value={formatINR(project.workOrderValue)}
+            value={formatINR(project.workOrderValueINR || 0)}
             accent="blue"
           />
           <KpiCard

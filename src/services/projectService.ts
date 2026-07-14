@@ -65,6 +65,7 @@ function normalizeProject(project: Project): Project {
       ? project.paymentMilestones.map((milestone) => ({
           ...milestone,
           milestoneName: milestone.milestoneName || "",
+          amount: (totals.workOrderValueINR * (milestone.paymentPercentage || 0)) / 100,
         }))
       : defaults.paymentMilestones,
     milestoneBillings: Array.isArray(project.milestoneBillings)
