@@ -50,9 +50,9 @@ const Sidebar = () => {
         w-[260px]
         flex-shrink-0
         bg-gradient-to-b
-        from-[#0F172A]
-        via-[#12284C]
-        to-[#0B1F3A]
+        from-[var(--sidebar-from)]
+        via-[var(--sidebar-via)]
+        to-[var(--sidebar-to)]
         text-white
         shadow-2xl
         flex
@@ -119,7 +119,7 @@ const Sidebar = () => {
                   duration-300
                   ${
                     isActive
-                      ? "bg-gradient-to-r from-blue-600 to-cyan-500 shadow-lg shadow-blue-900/40"
+                      ? "bg-gradient-to-r from-blue-600 to-cyan-500 shadow-lg shadow-blue-900/40 active-nav-link"
                       : "text-slate-300 hover:bg-white/10 hover:text-white hover:translate-x-1"
                   }
                 `
