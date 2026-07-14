@@ -1,26 +1,19 @@
-/** How a billing progress entry's amount was derived — see BillingProgressDrawer. */
-export type BillingMethod = "quantity" | "milestone" | "manhour" | "others";
-
+/**
+ * A Quantity Based Billing entry — physical engineering progress recorded
+ * against one activity. Completely independent of Payment Milestone billing
+ * (see types/MilestoneBilling.ts) — never merge the two.
+ */
 export interface InvoiceEntry {
   id: string;
-
-  billingMethod: BillingMethod;
 
   /** Auto-recorded (today's date) — no longer entered manually. */
   invoiceDate: string;
 
-  /** The calculated invoice amount for this progress increment (INR). */
+  /** Quantity completed and billed in this entry. */
+  quantityBilled: number;
+
+  /** quantityBilled × the activity's unit rate at the time of billing (INR). */
   invoiceAmountINR: number;
-
-  /** Quantity covered by this entry — only set when billingMethod is "quantity". */
-  quantityBilled?: number;
-
-  /** Hours covered by this entry — only set when billingMethod is "manhour". */
-  hoursBilled?: number;
-
-  /** Payment milestone billed against — only set when billingMethod is "milestone". */
-  milestoneId?: string;
-  milestoneLabel?: string;
 }
 
 export interface InvoiceItem {

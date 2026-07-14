@@ -2,43 +2,26 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import {
   AlertTriangle,
-  Clock,
   CreditCard,
-  MoreHorizontal,
   Package,
   X,
 } from "lucide-react";
 
 import type { Project } from "../../../../types/Project";
-import type { BillingMethod, InvoiceEntry, InvoiceItem } from "../../../../types/InvoiceItem";
+import type { InvoiceEntry } from "../../../../types/InvoiceItem";
 
-import {
-  getBilledMilestoneIds,
-  getHoursBilled,
-  getInvoiceRaisedAmount,
-  getQuantityBilled,
-} from "../../../../services/invoiceProgressService";
 import { formatIndianCurrency, formatIndianNumber } from "../../../../utils/quantityCalculations";
 
 interface Props {
   project: Project;
-  item: InvoiceItem;
   onClose: () => void;
-  onSave: (invoice: InvoiceEntry) => void;
+  onSave: (updatedProject: Project) => void;
+  // View/Edit mode props
+  mode?: "create" | "view" | "edit";
+  initialItemId?: string;
+  initialInvoiceId?: string;
+  initialMilestoneBillingId?: string;
 }
-
-interface BillingMethodOption {
-  key: BillingMethod;
-  label: string;
-  icon: typeof Package;
-}
-
-const BILLING_METHODS: BillingMethodOption[] = [
-  { key: "quantity", label: "Quantity Progress", icon: Package },
-  { key: "milestone", label: "Payment Milestone", icon: CreditCard },
-  { key: "manhour", label: "Man-Hour Progress", icon: Clock },
-  { key: "others", label: "Others", icon: MoreHorizontal },
-];
 
 const NUMBER_INPUT_PATTERN = /^\d*\.?\d*$/;
 
@@ -59,12 +42,59 @@ const STATUS_BADGE_STYLES: Record<string, string> = {
   Completed: "bg-green-50 text-green-700 border-green-200",
 };
 
-const BillingProgressDrawer = ({ project, item, onClose, onSave }: Props) => {
+const BillingProgressDrawer = ({
+  project,
+  onClose,
+  onSave,
+  mode = "create",
+  initialItemId,
+  initialInvoiceId,
+  initialMilestoneBillingId,
+}: Props) => {
   const [show, setShow] = useState(false);
-  const [billingMethod, setBillingMethod] = useState<BillingMethod>("quantity");
-  const [quantityInput, setQuantityInput] = useState("");
-  const [hoursInput, setHoursInput] = useState("");
-  const [selectedMilestoneId, setSelectedMilestoneId] = useState<string | null>(null);
+
+  const isViewMode = mode === "view";
+  const isEditMode = mode === "edit";
+  const isMilestoneOnlyView = Boolean(initialMilestoneBillingId);
+
+  // 1. Selected Item ID (preselected or dropdown)
+  const [selectedItemId, setSelectedItemId] = useState<string>(() => {
+    if (initialItemId) return initialItemId;
+    if (initialInvoiceId) {
+      const foundItem = project.invoiceItems.find(item =>
+        item.invoices?.some(inv => inv.id === initialInvoiceId)
+      );
+      if (foundItem) return foundItem.id;
+    }
+    return project.invoiceItems[0]?.id || "";
+  });
+
+  const selectedItem = useMemo(() => {
+    if (isMilestoneOnlyView) return null;
+    return project.invoiceItems.find(item => item.id === selectedItemId) || null;
+  }, [project.invoiceItems, selectedItemId, isMilestoneOnlyView]);
+
+  // 2. Quantity Input
+  const [quantityInput, setQuantityInput] = useState(() => {
+    if ((isViewMode || isEditMode) && initialInvoiceId && selectedItem) {
+      const entry = selectedItem.invoices?.find(inv => inv.id === initialInvoiceId);
+      if (entry && entry.quantityBilled !== undefined) {
+        return String(entry.quantityBilled);
+      }
+    }
+    return "";
+  });
+
+  // 3. Selected Milestone ID
+  const [selectedMilestoneId, setSelectedMilestoneId] = useState<string | null>(() => {
+    if ((isViewMode || isEditMode) && initialMilestoneBillingId) {
+      const mb = project.milestoneBillings?.find(b => b.id === initialMilestoneBillingId);
+      if (mb) {
+        return mb.milestoneId;
+      }
+    }
+    return null;
+  });
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setShow(true));
@@ -76,44 +106,62 @@ const BillingProgressDrawer = ({ project, item, onClose, onSave }: Props) => {
     window.setTimeout(onClose, 200);
   };
 
-  const packageValue = item.totalPrice || 0;
-  const alreadyInvoiced = getInvoiceRaisedAmount(item);
+  const packageValue = selectedItem
+    ? (selectedItem.totalPrice || 0)
+    : (project.workOrderValueINR || 0);
+
+  // Already Invoiced (exclude current entry to avoid double counting)
+  const alreadyInvoiced = useMemo(() => {
+    if (selectedItem) {
+      const invoicesToSum = selectedItem.invoices ?? [];
+      const filtered = (isEditMode || isViewMode) && initialInvoiceId
+        ? invoicesToSum.filter(inv => inv.id !== initialInvoiceId)
+        : invoicesToSum;
+      return filtered.reduce((sum, inv) => sum + (inv.invoiceAmountINR || 0), 0);
+    } else {
+      // Milestone-only view
+      const billings = project.milestoneBillings ?? [];
+      const filtered = (isEditMode || isViewMode) && initialMilestoneBillingId
+        ? billings.filter(b => b.id !== initialMilestoneBillingId)
+        : billings;
+      return filtered.reduce((sum, b) => sum + (b.amount || 0), 0);
+    }
+  }, [selectedItem, project.milestoneBillings, isEditMode, isViewMode, initialInvoiceId, initialMilestoneBillingId]);
+
   const balanceBeforeThis = Math.max(packageValue - alreadyInvoiced, 0);
 
   // Quantity Progress
-  const totalQty = item.qty || 0;
-  const completedQty = getQuantityBilled(item);
-  const remainingQty = Math.max(totalQty - completedQty, 0);
-  const unitRate = item.unitPrice || 0;
+  const totalQty = selectedItem ? (selectedItem.qty || 0) : 0;
+  
+  // Completed Qty (exclude current entry to avoid double counting)
+  const completedQty = useMemo(() => {
+    if (!selectedItem) return 0;
+    const invoicesToSum = selectedItem.invoices ?? [];
+    const filtered = (isEditMode || isViewMode) && initialInvoiceId
+      ? invoicesToSum.filter(inv => inv.id !== initialInvoiceId)
+      : invoicesToSum;
+    return filtered.reduce((sum, inv) => sum + (inv.quantityBilled || 0), 0);
+  }, [selectedItem, isEditMode, isViewMode, initialInvoiceId]);
+
   const quantityValue = quantityInput.trim() === "" ? 0 : Number(quantityInput);
+  const remainingQty = Math.max(totalQty - (completedQty + quantityValue), 0);
 
-  // Man-Hour Progress (reuses the same activity qty/rate, framed as hours)
-  const budgetHours = item.qty || 0;
-  const consumedHours = getHoursBilled(item);
-  const remainingHours = Math.max(budgetHours - consumedHours, 0);
-  const hourlyRate = item.unitPrice || 0;
-  const hoursValue = hoursInput.trim() === "" ? 0 : Number(hoursInput);
-
-  // Payment Milestone
+  // Payment Milestones
   const milestones = project.paymentMilestones ?? [];
-  const billedMilestoneIds = useMemo(
-    () => getBilledMilestoneIds(project.invoiceItems),
-    [project.invoiceItems]
-  );
+  
+  // Billed Milestone IDs (exclude current billing milestone to keep it selectable)
+  const billedMilestoneIds = useMemo(() => {
+    const ids = new Set<string>();
+    project.milestoneBillings?.forEach(mb => {
+      if (initialMilestoneBillingId && mb.id === initialMilestoneBillingId) return;
+      if (mb.milestoneId) ids.add(mb.milestoneId);
+    });
+    return ids;
+  }, [project.milestoneBillings, initialMilestoneBillingId]);
+
   const selectedMilestone = milestones.find((m) => m.id === selectedMilestoneId) ?? null;
-  const remainingMilestonesCount = milestones.filter(
-    (m) => !billedMilestoneIds.has(m.id) && m.id !== selectedMilestoneId
-  ).length;
 
-  const currentInvoiceAmount =
-    billingMethod === "quantity"
-      ? quantityValue * unitRate
-      : billingMethod === "manhour"
-      ? hoursValue * hourlyRate
-      : billingMethod === "milestone"
-      ? selectedMilestone?.amount ?? 0
-      : 0;
-
+  const currentInvoiceAmount = selectedMilestone ? selectedMilestone.amount : 0;
   const totalAfter = alreadyInvoiced + currentInvoiceAmount;
   const remainingBalance = Math.max(packageValue - totalAfter, 0);
   const completionPercent =
@@ -121,15 +169,11 @@ const BillingProgressDrawer = ({ project, item, onClose, onSave }: Props) => {
   const autoStatus = getAutoStatus(totalAfter, packageValue);
 
   const isOverbilled = totalAfter > packageValue + 0.01;
-  const hasAmount = currentInvoiceAmount > 0;
-  const canSave =
-    hasAmount &&
-    !isOverbilled &&
-    billingMethod !== "others" &&
-    (billingMethod !== "milestone" || Boolean(selectedMilestoneId));
+  const canSave = !isViewMode && (selectedMilestone !== null || quantityValue > 0) && !isOverbilled;
 
   const handleNumberChange =
     (setter: (value: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
+      if (isViewMode) return;
       const raw = e.target.value;
       if (raw !== "" && !NUMBER_INPUT_PATTERN.test(raw)) return;
       setter(raw);
@@ -138,32 +182,95 @@ const BillingProgressDrawer = ({ project, item, onClose, onSave }: Props) => {
   const handleSave = () => {
     if (!canSave) return;
 
-    const entry: InvoiceEntry = {
-      id: crypto.randomUUID(),
-      billingMethod,
-      invoiceDate: todayISODate(),
-      invoiceAmountINR: currentInvoiceAmount,
-      ...(billingMethod === "quantity" ? { quantityBilled: quantityValue } : {}),
-      ...(billingMethod === "manhour" ? { hoursBilled: hoursValue } : {}),
-      ...(billingMethod === "milestone"
-        ? {
-            milestoneId: selectedMilestone?.id,
-            milestoneLabel: selectedMilestone
-              ? `${formatIndianNumber(selectedMilestone.paymentPercentage)}% Milestone`
-              : undefined,
-          }
-        : {}),
-    };
+    let updatedProject = { ...project };
 
-    onSave(entry);
+    // 1. Edit existing quantity based entry
+    if (initialInvoiceId && selectedItem) {
+      updatedProject = {
+        ...project,
+        invoiceItems: project.invoiceItems.map(item => {
+          if (item.id !== selectedItem.id) return item;
+          return {
+            ...item,
+            invoices: (item.invoices ?? []).map(inv => {
+              if (inv.id !== initialInvoiceId) return inv;
+              return {
+                ...inv,
+                quantityBilled: quantityValue,
+                invoiceAmountINR: 0,
+              };
+            }),
+          };
+        }),
+      };
+    }
+    // 2. Edit existing milestone billing
+    else if (initialMilestoneBillingId && selectedMilestone) {
+      updatedProject = {
+        ...project,
+        milestoneBillings: (project.milestoneBillings ?? []).map(mb => {
+          if (mb.id !== initialMilestoneBillingId) return mb;
+          return {
+            ...mb,
+            milestoneId: selectedMilestone.id,
+            milestoneName: `Milestone ${milestones.findIndex(m => m.id === selectedMilestone.id) + 1}`,
+            milestonePercentage: selectedMilestone.paymentPercentage,
+            amount: selectedMilestone.amount,
+          };
+        }),
+      };
+    }
+    // 3. Create mode
+    else {
+      if (selectedMilestone) {
+        const newMilestoneBilling = {
+          id: crypto.randomUUID(),
+          milestoneId: selectedMilestone.id,
+          milestoneName: `Milestone ${milestones.findIndex(m => m.id === selectedMilestone.id) + 1}`,
+          milestonePercentage: selectedMilestone.paymentPercentage,
+          amount: selectedMilestone.amount,
+          invoiceDate: todayISODate(),
+        };
+        updatedProject = {
+          ...project,
+          milestoneBillings: [...(project.milestoneBillings ?? []), newMilestoneBilling],
+        };
+      }
+      if (quantityValue > 0 && selectedItem) {
+        const newInvoiceEntry: InvoiceEntry = {
+          id: crypto.randomUUID(),
+          invoiceDate: todayISODate(),
+          invoiceAmountINR: 0,
+          quantityBilled: quantityValue,
+        };
+        updatedProject = {
+          ...updatedProject,
+          invoiceItems: updatedProject.invoiceItems.map(item => {
+            if (item.id !== selectedItem.id) return item;
+            return {
+              ...item,
+              invoices: [...(item.invoices ?? []), newInvoiceEntry],
+            };
+          }),
+        };
+      }
+    }
+
+    onSave(updatedProject);
   };
+
+  const drawerTitle = isViewMode
+    ? "View Billing Progress"
+    : isEditMode
+    ? "Edit Billing Progress"
+    : "Raise Invoice";
 
   return (
     <>
-      {/* Backdrop — Invoice Progress Tracker remains visible behind it */}
+      {/* Backdrop */}
       <div
         role="button"
-        aria-label="Close billing progress drawer"
+        aria-label="Close raise invoice drawer"
         tabIndex={-1}
         onClick={handleClose}
         className={`fixed inset-0 z-40 bg-slate-900/20 transition-opacity duration-200 ${
@@ -181,10 +288,12 @@ const BillingProgressDrawer = ({ project, item, onClose, onSave }: Props) => {
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
           <div>
             <h2 className="text-xl font-bold text-slate-800">
-              Update Billing Progress
+              {drawerTitle}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Update project execution progress and generate billing automatically.
+              {isViewMode
+                ? "Reviewing details of this billing record."
+                : "Record physical progress and select payment milestones to bill."}
             </p>
           </div>
 
@@ -198,256 +307,226 @@ const BillingProgressDrawer = ({ project, item, onClose, onSave }: Props) => {
 
         {/* Scrollable body */}
         <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
-          {/* Activity Information */}
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
-            <h3 className="text-base font-semibold text-slate-800">
-              {item.description || "Work Package"}
-            </h3>
-
-            <div className="mt-4 grid grid-cols-3 gap-4">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Package Value
-                </p>
-                <p className="mt-1 text-sm font-bold text-blue-600">
-                  {formatIndianCurrency(packageValue)}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Already Invoiced
-                </p>
-                <p className="mt-1 text-sm font-bold text-slate-700">
-                  {formatIndianCurrency(alreadyInvoiced)}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Balance
-                </p>
-                <p className="mt-1 text-sm font-bold text-orange-600">
-                  {formatIndianCurrency(balanceBeforeThis)}
-                </p>
-              </div>
+          {/* Dropdown for Work Package selection (Create Mode & Global drawer only) */}
+          {mode === "create" && !initialItemId && !isMilestoneOnlyView && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Select Work Package / Activity
+              </label>
+              <select
+                value={selectedItemId}
+                onChange={(e) => setSelectedItemId(e.target.value)}
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              >
+                {project.invoiceItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.description}
+                  </option>
+                ))}
+              </select>
             </div>
-          </div>
+          )}
 
-          {/* Billing Method */}
-          <div>
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Billing Method
-            </p>
+          {/* Package Summary (Read Only) - Hidden if milestone billing only */}
+          {!isMilestoneOnlyView && selectedItem && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
+              <h3 className="text-base font-semibold text-slate-800">
+                {selectedItem.description || "Work Package"}
+              </h3>
 
-            <div className="grid grid-cols-2 gap-3">
-              {BILLING_METHODS.map(({ key, label, icon: Icon }) => {
-                const isSelected = billingMethod === key;
-
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setBillingMethod(key)}
-                    className={`flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-all duration-150 ${
-                      isSelected
-                        ? "border-blue-600 bg-blue-50 shadow-sm"
-                        : "border-slate-200 bg-white hover:border-blue-200 hover:bg-slate-50"
-                    }`}
-                  >
-                    <div
-                      className={`flex h-9 w-9 items-center justify-center rounded-lg ${
-                        isSelected
-                          ? "bg-blue-600 text-white"
-                          : "bg-slate-100 text-slate-500"
-                      }`}
-                    >
-                      <Icon size={16} strokeWidth={2.25} />
-                    </div>
-                    <span
-                      className={`text-sm font-semibold ${
-                        isSelected ? "text-blue-700" : "text-slate-700"
-                      }`}
-                    >
-                      {label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Dynamic section */}
-          {billingMethod === "quantity" && (
-            <div className="rounded-2xl border border-slate-200 p-5">
-              <h4 className="mb-4 text-sm font-semibold text-slate-700">
-                Quantity Progress
-              </h4>
-
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div className="mt-4 grid grid-cols-3 gap-4">
                 <div>
-                  <p className="text-xs text-slate-400">Total Quantity</p>
-                  <p className="mt-1 text-sm font-bold text-slate-800">
-                    {formatIndianNumber(totalQty)} {item.uom}
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Package Value
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-blue-600">
+                    {formatIndianCurrency(packageValue)}
                   </p>
                 </div>
+
                 <div>
-                  <p className="text-xs text-slate-400">Completed</p>
-                  <p className="mt-1 text-sm font-bold text-green-600">
-                    {formatIndianNumber(completedQty)} {item.uom}
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Already Invoiced
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-slate-700">
+                    {formatIndianCurrency(alreadyInvoiced)}
                   </p>
                 </div>
+
                 <div>
-                  <p className="text-xs text-slate-400">Remaining</p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Balance
+                  </p>
                   <p className="mt-1 text-sm font-bold text-orange-600">
-                    {formatIndianNumber(remainingQty)} {item.uom}
+                    {formatIndianCurrency(balanceBeforeThis)}
                   </p>
                 </div>
-                <div>
-                  <p className="text-xs text-slate-400">Unit Rate</p>
-                  <p className="mt-1 text-sm font-bold text-slate-800">
-                    {formatIndianCurrency(unitRate)}
+              </div>
+            </div>
+          )}
+
+          {/* Section 1 - Quantity Progress (Hidden if milestone billing only) */}
+          {!isMilestoneOnlyView && selectedItem && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <Package size={18} className="text-blue-600" />
+                <h4 className="text-sm font-bold text-slate-800">
+                  Quantity Progress
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 mb-4 text-center">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total Qty</p>
+                  <p className="mt-1 text-sm font-bold text-slate-700">
+                    {formatIndianNumber(totalQty)} {selectedItem.uom}
+                  </p>
+                </div>
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Already Completed</p>
+                  <p className="mt-1 text-sm font-bold text-green-600">
+                    {formatIndianNumber(completedQty)} {selectedItem.uom}
+                  </p>
+                </div>
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Remaining Qty</p>
+                  <p className="mt-1 text-sm font-bold text-orange-600">
+                    {formatIndianNumber(remainingQty)} {selectedItem.uom}
                   </p>
                 </div>
               </div>
 
-              <div className="mt-5">
-                <label className="mb-2 block text-sm font-medium text-slate-700">
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Current Quantity Completed
                 </label>
                 <input
                   type="text"
                   inputMode="decimal"
-                  placeholder="0"
+                  placeholder={isViewMode ? "—" : "Enter completed quantity..."}
                   value={quantityInput}
                   onChange={handleNumberChange(setQuantityInput)}
-                  className="h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  disabled={isViewMode}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-50 disabled:text-slate-500"
                 />
               </div>
             </div>
           )}
 
-          {billingMethod === "milestone" && (
-            <div className="rounded-2xl border border-slate-200 p-5">
-              <h4 className="mb-4 text-sm font-semibold text-slate-700">
+          {isMilestoneOnlyView && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 text-center text-sm text-slate-400">
+              Quantity progress is not applicable for project milestone billing.
+            </div>
+          )}
+
+          {/* Section 2 - Payment Milestone */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <CreditCard size={18} className="text-blue-600" />
+              <h4 className="text-sm font-bold text-slate-800">
                 Payment Milestone
               </h4>
+            </div>
 
-              {milestones.length === 0 ? (
-                <p className="text-sm text-slate-400">
-                  No payment milestones have been configured for this project.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {milestones.map((milestone, index) => {
-                    const isBilled = billedMilestoneIds.has(milestone.id);
-                    const isSelected = selectedMilestoneId === milestone.id;
+            {milestones.length === 0 ? (
+              <p className="text-sm text-slate-400">
+                No payment milestones have been configured for this project.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {milestones.map((milestone, index) => {
+                  const isBilled = billedMilestoneIds.has(milestone.id);
+                  const isSelected = selectedMilestoneId === milestone.id;
 
-                    return (
-                      <button
-                        key={milestone.id}
-                        type="button"
-                        disabled={isBilled}
-                        onClick={() => setSelectedMilestoneId(milestone.id)}
-                        className={`flex w-full items-center justify-between rounded-xl border-2 px-4 py-3 text-left transition-all duration-150 ${
-                          isSelected
-                            ? "border-blue-600 bg-blue-50"
-                            : isBilled
-                            ? "cursor-not-allowed border-slate-100 bg-slate-50 opacity-60"
-                            : "border-slate-200 bg-white hover:border-blue-200"
-                        }`}
-                      >
+                  return (
+                    <button
+                      key={milestone.id}
+                      type="button"
+                      disabled={isBilled || isViewMode}
+                      onClick={() => {
+                        if (isViewMode) return;
+                        if (isSelected) {
+                          setSelectedMilestoneId(null);
+                        } else {
+                          setSelectedMilestoneId(milestone.id);
+                        }
+                      }}
+                      className={`flex w-full items-center justify-between rounded-xl border-2 px-4 py-3 text-left transition-all duration-150 ${
+                        isSelected
+                          ? "border-blue-600 bg-blue-50/60"
+                          : isBilled
+                          ? "cursor-not-allowed border-slate-100 bg-slate-50/50 opacity-60"
+                          : isViewMode
+                          ? "border-slate-100 bg-white"
+                          : "border-slate-100 bg-white hover:border-slate-200"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-all ${
+                            isSelected
+                              ? "border-blue-600 bg-blue-600 text-white"
+                              : isBilled
+                              ? "border-slate-300 bg-slate-200"
+                              : "border-slate-300 bg-white"
+                          }`}
+                        >
+                          {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                        </span>
+
                         <div>
                           <p className="text-sm font-semibold text-slate-800">
                             Milestone {index + 1}
-                            {isBilled && (
-                              <span className="ml-2 text-xs font-medium text-slate-400">
-                                (Already Billed)
-                              </span>
-                            )}
                           </p>
                           <p className="text-xs text-slate-500">
                             {formatIndianNumber(milestone.paymentPercentage)}% of Work Order Value
                           </p>
                         </div>
-                        <p className="text-sm font-bold text-blue-600">
-                          {formatIndianCurrency(milestone.amount)}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+                      </div>
 
-              <p className="mt-4 text-xs text-slate-400">
-                Remaining Milestones: {remainingMilestonesCount}
-              </p>
-            </div>
-          )}
+                      <div className="flex items-center gap-3">
+                        {isBilled ? (
+                          <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700">
+                            Completed
+                          </span>
+                        ) : (
+                          <p className="text-sm font-bold text-blue-600">
+                            {formatIndianCurrency(milestone.amount)}
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-          {billingMethod === "manhour" && (
-            <div className="rounded-2xl border border-slate-200 p-5">
-              <h4 className="mb-4 text-sm font-semibold text-slate-700">
-                Man-Hour Progress
-              </h4>
-
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {/* Display Auto Populated Milestone Info if Selected */}
+            {selectedMilestone && (
+              <div className="mt-4 grid grid-cols-2 gap-4 rounded-xl border border-slate-100 bg-slate-50/60 p-3.5">
                 <div>
-                  <p className="text-xs text-slate-400">Budget Hours</p>
-                  <p className="mt-1 text-sm font-bold text-slate-800">
-                    {formatIndianNumber(budgetHours)}
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Milestone Percentage
+                  </p>
+                  <p className="mt-0.5 text-sm font-bold text-slate-800">
+                    {formatIndianNumber(selectedMilestone.paymentPercentage)}%
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-400">Consumed</p>
-                  <p className="mt-1 text-sm font-bold text-green-600">
-                    {formatIndianNumber(consumedHours)}
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Milestone Amount
                   </p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-400">Remaining</p>
-                  <p className="mt-1 text-sm font-bold text-orange-600">
-                    {formatIndianNumber(remainingHours)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-400">Hourly Rate</p>
-                  <p className="mt-1 text-sm font-bold text-slate-800">
-                    {formatIndianCurrency(hourlyRate)}
+                  <p className="mt-0.5 text-sm font-bold text-blue-600">
+                    {formatIndianCurrency(selectedMilestone.amount)}
                   </p>
                 </div>
               </div>
+            )}
+          </div>
 
-              <div className="mt-5">
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Current Billable Hours
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="0"
-                  value={hoursInput}
-                  onChange={handleNumberChange(setHoursInput)}
-                  className="h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-            </div>
-          )}
-
-          {billingMethod === "others" && (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center">
-              <p className="text-sm font-semibold text-slate-600">
-                Additional Billing Method
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                (Reserved for future implementation)
-              </p>
-            </div>
-          )}
-
-          {/* Billing Summary */}
+          {/* Billing Summary Card */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h4 className="mb-4 text-sm font-semibold text-slate-700">
+            <h4 className="mb-4 text-sm font-bold text-slate-800">
               Billing Summary
             </h4>
 
@@ -468,12 +547,6 @@ const BillingProgressDrawer = ({ project, item, onClose, onSave }: Props) => {
                 <span className="text-sm text-slate-500">Current Invoice</span>
                 <span className="text-sm font-semibold text-blue-600">
                   {formatIndianCurrency(currentInvoiceAmount)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-2.5">
-                <span className="text-sm text-slate-500">Total Invoice After This</span>
-                <span className="text-sm font-semibold text-slate-800">
-                  {formatIndianCurrency(totalAfter)}
                 </span>
               </div>
               <div className="flex items-center justify-between py-2.5">
@@ -506,7 +579,7 @@ const BillingProgressDrawer = ({ project, item, onClose, onSave }: Props) => {
             </p>
           </div>
 
-          {isOverbilled && (
+          {isOverbilled && !isViewMode && (
             <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
               <AlertTriangle size={16} strokeWidth={2.25} className="shrink-0" />
               Already Invoiced + Current Invoice cannot exceed the Package Value.
@@ -523,13 +596,15 @@ const BillingProgressDrawer = ({ project, item, onClose, onSave }: Props) => {
             Cancel
           </button>
 
-          <button
-            onClick={handleSave}
-            disabled={!canSave}
-            className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
-            Save Progress
-          </button>
+          {!isViewMode && (
+            <button
+              onClick={handleSave}
+              disabled={!canSave}
+              className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {isEditMode ? "Update Progress" : "Save Invoice"}
+            </button>
+          )}
         </div>
       </aside>
     </>

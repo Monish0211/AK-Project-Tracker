@@ -98,6 +98,7 @@ export function createEmptyProject(): Project {
     paymentMilestones: [
       {
         id: crypto.randomUUID(),
+        milestoneName: "",
         paymentPercentage: 100,
         dueDate: "",
         amount: 0,
@@ -109,6 +110,7 @@ export function createEmptyProject(): Project {
     // ==========================
 
     invoiceItems: syncInvoiceItemsWithQuantity(quantityItems, []),
+    milestoneBillings: [],
 
     paymentReceived: 0,
     paymentReceivedINR: 0,

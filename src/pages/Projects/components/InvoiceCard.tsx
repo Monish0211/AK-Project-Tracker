@@ -1,14 +1,13 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Receipt } from "lucide-react";
+import { History, Plus, Receipt } from "lucide-react";
 
 import type { Project } from "../../../types/Project";
-import type { InvoiceEntry } from "../../../types/InvoiceItem";
 
 import InvoiceSummaryCards from "./Invoice/InvoiceSummaryCards";
 import InvoiceProgressTable from "./Invoice/InvoiceProgressTable";
 import BillingProgressDrawer from "./Invoice/BillingProgressDrawer";
-import InvoiceHistoryModal from "./Invoice/InvoiceHistoryModal";
+import BillingHistoryModal from "./Invoice/BillingHistoryModal";
 
 interface Props {
   project: Project;
@@ -16,78 +15,90 @@ interface Props {
 }
 
 const InvoiceCard = ({ project, setProject }: Props) => {
-  const [drawerItemId, setDrawerItemId] = useState<string | null>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  const [historyItemId, setHistoryItemId] = useState<string | null>(null);
+  // Drawer View/Edit state
+  const [drawerMode, setDrawerMode] = useState<"create" | "view" | "edit">("create");
+  const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
+  const [selectedEntryId, setSelectedEntryId] = useState<string | undefined>(undefined);
+  const [selectedMilestoneBillingId, setSelectedMilestoneBillingId] = useState<string | undefined>(undefined);
 
-  const historyItem =
-    project.invoiceItems.find((item) => item.id === historyItemId) ?? null;
-
-  const drawerItem =
-    project.invoiceItems.find((item) => item.id === drawerItemId) ?? null;
-
-  const handleRaiseInvoice = (itemId: string) => {
-    setDrawerItemId(itemId);
+  const handleSaveBillingProgress = (updatedProject: Project) => {
+    setProject(updatedProject);
+    setIsDrawerOpen(false);
   };
 
-  const handleViewHistory = (itemId: string) => {
-    setHistoryItemId(itemId);
-  };
-
-  const handleAddInvoiceFromHistory = () => {
-    if (!historyItem) return;
-
-    setHistoryItemId(null);
-    setDrawerItemId(historyItem.id);
-  };
-
-  const handleDeleteInvoice = (invoiceId: string) => {
-    if (!historyItemId) return;
-
+  const handleDeleteQuantityEntry = (itemId: string, invoiceId: string) => {
     setProject((prev) => ({
       ...prev,
       invoiceItems: prev.invoiceItems.map((item) =>
-        item.id === historyItemId
-          ? {
-              ...item,
-              invoices: item.invoices.filter(
-                (entry) => entry.id !== invoiceId
-              ),
-            }
+        item.id === itemId
+          ? { ...item, invoices: item.invoices.filter((entry) => entry.id !== invoiceId) }
           : item
       ),
     }));
   };
 
-  const handleCloseDrawer = () => {
-    setDrawerItemId(null);
-  };
-
-  const handleSaveInvoice = (invoice: InvoiceEntry) => {
-    if (!drawerItemId) return;
-
+  const handleDeleteMilestoneBilling = (billingId: string) => {
     setProject((prev) => ({
       ...prev,
-      invoiceItems: prev.invoiceItems.map((item) =>
-        item.id === drawerItemId
-          ? { ...item, invoices: [...item.invoices, invoice] }
-          : item
+      milestoneBillings: (prev.milestoneBillings ?? []).filter(
+        (billing) => billing.id !== billingId
       ),
     }));
+  };
 
-    setDrawerItemId(null);
+  const handleOpenCreateDrawer = () => {
+    setDrawerMode("create");
+    setSelectedItemId(undefined);
+    setSelectedEntryId(undefined);
+    setSelectedMilestoneBillingId(undefined);
+    setIsDrawerOpen(true);
+  };
+
+  const handleViewQuantityEntry = (itemId: string, entryId: string) => {
+    setIsHistoryOpen(false);
+    setDrawerMode("view");
+    setSelectedItemId(itemId);
+    setSelectedEntryId(entryId);
+    setSelectedMilestoneBillingId(undefined);
+    setIsDrawerOpen(true);
+  };
+
+  const handleEditQuantityEntry = (itemId: string, entryId: string) => {
+    setIsHistoryOpen(false);
+    setDrawerMode("edit");
+    setSelectedItemId(itemId);
+    setSelectedEntryId(entryId);
+    setSelectedMilestoneBillingId(undefined);
+    setIsDrawerOpen(true);
+  };
+
+  const handleViewMilestoneBilling = (billingId: string) => {
+    setIsHistoryOpen(false);
+    setDrawerMode("view");
+    setSelectedItemId(undefined);
+    setSelectedEntryId(undefined);
+    setSelectedMilestoneBillingId(billingId);
+    setIsDrawerOpen(true);
+  };
+
+  const handleEditMilestoneBilling = (billingId: string) => {
+    setIsHistoryOpen(false);
+    setDrawerMode("edit");
+    setSelectedItemId(undefined);
+    setSelectedEntryId(undefined);
+    setSelectedMilestoneBillingId(billingId);
+    setIsDrawerOpen(true);
   };
 
   return (
     <>
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-
         {/* Header */}
-
         <div className="flex items-center justify-between px-6 py-5 border-b">
-
           <div className="flex items-center gap-3">
-
             <div className="h-11 w-11 rounded-xl bg-blue-100 flex items-center justify-center">
               <Receipt className="text-blue-600" size={22} />
             </div>
@@ -103,43 +114,57 @@ const InvoiceCard = ({ project, setProject }: Props) => {
                 progress.
               </p>
             </div>
-
           </div>
 
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsHistoryOpen(true)}
+              className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-slate-700 px-4 py-2 rounded-xl transition"
+            >
+              <History size={16} />
+              Billing History
+            </button>
+
+            <button
+              onClick={handleOpenCreateDrawer}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl transition"
+            >
+              <Plus size={16} />
+              Update Billing Progress
+            </button>
+          </div>
         </div>
 
         {/* Body */}
-
         <div className="p-6 space-y-6">
-
           <InvoiceSummaryCards project={project} />
 
-          <InvoiceProgressTable
-            items={project.invoiceItems}
-            readOnly={false}
-            onRaiseInvoice={handleRaiseInvoice}
-            onViewHistory={handleViewHistory}
-          />
-
+          <InvoiceProgressTable items={project.invoiceItems} />
         </div>
-
       </div>
 
-      {drawerItem && (
+      {isDrawerOpen && (
         <BillingProgressDrawer
           project={project}
-          item={drawerItem}
-          onClose={handleCloseDrawer}
-          onSave={handleSaveInvoice}
+          mode={drawerMode}
+          initialItemId={selectedItemId}
+          initialInvoiceId={selectedEntryId}
+          initialMilestoneBillingId={selectedMilestoneBillingId}
+          onClose={() => setIsDrawerOpen(false)}
+          onSave={handleSaveBillingProgress}
         />
       )}
 
-      {historyItem && (
-        <InvoiceHistoryModal
-          item={historyItem}
-          onClose={() => setHistoryItemId(null)}
-          onAddInvoice={handleAddInvoiceFromHistory}
-          onDeleteInvoice={handleDeleteInvoice}
+      {isHistoryOpen && (
+        <BillingHistoryModal
+          project={project}
+          onClose={() => setIsHistoryOpen(false)}
+          onDeleteQuantityEntry={handleDeleteQuantityEntry}
+          onDeleteMilestoneBilling={handleDeleteMilestoneBilling}
+          onViewQuantityEntry={handleViewQuantityEntry}
+          onEditQuantityEntry={handleEditQuantityEntry}
+          onViewMilestoneBilling={handleViewMilestoneBilling}
+          onEditMilestoneBilling={handleEditMilestoneBilling}
         />
       )}
     </>

@@ -52,6 +52,7 @@ function calculateAmount(
 function createEmptyMilestone(): PaymentMilestone {
   return {
     id: crypto.randomUUID(),
+    milestoneName: "",
     paymentPercentage: 0,
     dueDate: "",
     amount: 0,
@@ -268,6 +269,22 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
     [setProject]
   );
 
+  const handleMilestoneNameChange = useCallback(
+    (index: number, value: string) => {
+      setProject((prev) => {
+        const updatedMilestones = prev.paymentMilestones.map((milestone, i) =>
+          i === index ? { ...milestone, milestoneName: value } : milestone
+        );
+
+        return {
+          ...prev,
+          paymentMilestones: updatedMilestones,
+        };
+      });
+    },
+    [setProject]
+  );
+
   const handleDueDateChange = useCallback(
     (index: number, value: string) => {
       setProject((prev) => {
@@ -395,11 +412,15 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
           <table className="w-full min-w-[640px] table-fixed border-collapse text-sm">
             <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
               <tr>
+                <th className="border-b border-slate-200 px-3 py-2.5 text-left font-semibold">
+                  Milestone Name
+                </th>
+
                 <th className="w-32 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
                   Payment %
                 </th>
 
-                <th className="border-b border-slate-200 px-3 py-2.5 text-left font-semibold">
+                <th className="w-40 border-b border-slate-200 px-3 py-2.5 text-left font-semibold">
                   Due Date
                 </th>
 
@@ -411,6 +432,17 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
 
             <tbody className="divide-y divide-slate-100">
               <tr className="bg-white">
+                <td className="px-3 py-3">
+                  <input
+                    type="text"
+                    value={singleMilestone?.milestoneName ?? ""}
+                    placeholder="e.g. Submission Draft"
+                    aria-label="Milestone Name"
+                    onChange={(e) => handleMilestoneNameChange(0, e.target.value)}
+                    className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </td>
+
                 <td className="px-3 py-3 text-right">
                   <span className="inline-flex min-w-[3rem] justify-center rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600">
                     100%
@@ -445,11 +477,15 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
                   Sl No
                 </th>
 
+                <th className="border-b border-slate-200 px-3 py-2.5 text-left font-semibold">
+                  Milestone Name
+                </th>
+
                 <th className="w-32 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
                   Payment %
                 </th>
 
-                <th className="border-b border-slate-200 px-3 py-2.5 text-left font-semibold">
+                <th className="w-40 border-b border-slate-200 px-3 py-2.5 text-left font-semibold">
                   Due Date
                 </th>
 
@@ -466,7 +502,7 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
             <tbody className="divide-y divide-slate-100">
               {project.paymentMilestones.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-10 text-center text-slate-400">
+                  <td colSpan={6} className="py-10 text-center text-slate-400">
                     No payment milestones added. Click "Add Payment" to get
                     started.
                   </td>
@@ -482,6 +518,19 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
                     >
                       <td className="px-3 py-3 text-center text-slate-500">
                         {index + 1}
+                      </td>
+
+                      <td className="px-3 py-3">
+                        <input
+                          type="text"
+                          value={milestone.milestoneName ?? ""}
+                          placeholder={`e.g. Submission Draft`}
+                          aria-label={`Milestone Name for row ${index + 1}`}
+                          onChange={(e) =>
+                            handleMilestoneNameChange(index, e.target.value)
+                          }
+                          className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                        />
                       </td>
 
                       <td className="px-3 py-3">

@@ -2,6 +2,7 @@ import type { QuantityItem } from "./QuantityItem";
 import type { ManhourExpense } from "./ManhourExpense";
 import type { NonManhourExpense } from "./NonManhourExpense";
 import type { InvoiceItem } from "./InvoiceItem";
+import type { MilestoneBilling } from "./MilestoneBilling";
 
 export interface Project {
   id: string;
@@ -76,6 +77,9 @@ export interface Project {
   paymentMilestones: {
     id: string;
 
+    /** e.g. "Submission Draft", "Submission Final". Optional for backward compatibility with existing projects. */
+    milestoneName?: string;
+
     paymentPercentage: number;
 
     dueDate: string;
@@ -88,6 +92,10 @@ export interface Project {
   // ==========================
 
   invoiceItems: InvoiceItem[];
+
+  // Payment Milestone (commercial) billing history — entirely independent of
+  // Quantity Based Billing recorded on invoiceItems[].invoices.
+  milestoneBillings: MilestoneBilling[];
 
   // Collection received against raised invoices.
   // Not yet editable from the UI — kept ready for backend/payment
