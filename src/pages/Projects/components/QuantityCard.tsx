@@ -1,5 +1,5 @@
 import { Clock, Package, Plus, Trash2, Wallet, Layers } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import type { ChangeEvent, Dispatch, SetStateAction } from "react";
 import type { Project } from "../../../types/Project";
 import type { QuantityItem } from "../../../types/QuantityItem";
@@ -133,9 +133,13 @@ interface AssignedToInputProps {
 }
 
 const AssignedToInput = ({ value, onChange, ariaLabel }: AssignedToInputProps) => {
-  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [filterQuery, setFilterQuery] = useState(value);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setFilterQuery(value);
+  }, [value]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -150,43 +154,49 @@ const AssignedToInput = ({ value, onChange, ariaLabel }: AssignedToInputProps) =
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const employeeNames = useMemo<string[]>(() => {
+    try {
+      const list = getEmployees()
+        .map((emp) => emp.employeeName?.trim())
+        .filter((name): name is string => typeof name === "string" && name !== "");
+      return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b));
+    } catch (e) {
+      console.error(e);
+      return [];
+    }
+  }, [isOpen]);
+
+  const suggestions = useMemo(() => {
+    const q = filterQuery.trim().toLowerCase();
+    if (!q) {
+      return [];
+    }
+    return employeeNames
+      .filter((name) => name.toLowerCase().includes(q))
+      .slice(0, 10);
+  }, [filterQuery, employeeNames]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
+    setFilterQuery(val);
     onChange(val);
-    if (!val.trim()) {
-      setSuggestions([]);
-      setIsOpen(false);
-      return;
-    }
-    const list = getEmployees()
-      .map((emp) => emp.employeeName)
-      .filter((name) => name.toLowerCase().includes(val.toLowerCase()));
-    const uniqueList = Array.from(new Set(list));
-    setSuggestions(uniqueList);
     setIsOpen(true);
   };
 
   const handleFocus = () => {
-    if (value.trim()) {
-      const list = getEmployees()
-        .map((emp) => emp.employeeName)
-        .filter((name) => name.toLowerCase().includes(value.toLowerCase()));
-      const uniqueList = Array.from(new Set(list));
-      setSuggestions(uniqueList);
-      setIsOpen(true);
-    }
+    setIsOpen(true);
   };
 
   return (
     <div ref={containerRef} className="relative w-full">
       <input
         type="text"
-        value={value}
+        value={filterQuery}
         onChange={handleChange}
         onFocus={handleFocus}
         aria-label={ariaLabel}
-        className={`${fieldClass} px-2`}
-        placeholder="Search employee..."
+        className={fieldClass + " px-2"}
+        placeholder="Type or select manager..."
       />
       {isOpen && suggestions.length > 0 && (
         <div className="absolute left-0 right-0 z-50 mt-1 max-h-36 overflow-y-auto nu-scrollbar rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] py-1 shadow-[var(--nu-shadow-md)]">
@@ -195,6 +205,7 @@ const AssignedToInput = ({ value, onChange, ariaLabel }: AssignedToInputProps) =
               key={name}
               type="button"
               onClick={() => {
+                setFilterQuery(name);
                 onChange(name);
                 setIsOpen(false);
               }}
@@ -499,7 +510,7 @@ const QuantityCard = ({ project, setProject }: Props) => {
             </div>
           </div>
 
-          <div className="max-h-[26rem] overflow-auto nu-scrollbar rounded-[var(--nu-radius-md)] border border-[var(--nu-border)]">
+          <div className="max-h-[26rem] min-h-[200px] overflow-auto nu-scrollbar rounded-[var(--nu-radius-md)] border border-[var(--nu-border)]">
             <table className="w-full min-w-[1100px] table-fixed border-collapse text-[12.5px]">
               <thead className="sticky top-0 z-10 bg-[var(--nu-surface-alt)] text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)]">
                 <tr>
