@@ -1,12 +1,17 @@
 import type { Dispatch, SetStateAction } from "react";
-import { Clock, FileText, IndianRupee } from "lucide-react";
+import { Briefcase, Clock, FileText, IndianRupee, Wallet } from "lucide-react";
 import type { Project } from "../../../types/Project";
-
+import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
+import { StatTile } from "../../../components/ui/StatTile";
 
 interface Props {
   project: Project;
   setProject: Dispatch<SetStateAction<Project>>;
 }
+
+const fieldClass =
+  "w-full h-10 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] px-3 text-[13px] text-[var(--nu-text)] outline-none transition-shadow focus:ring-2 focus:ring-[var(--nu-accent)]/25 focus:border-[var(--nu-accent)]";
+const labelClass = "block text-[11.5px] font-medium text-[var(--nu-text-secondary)] mb-1.5";
 
 export default function ExpenseBudgetCard({ project, setProject }: Props) {
   const manhourBudgetAmount = project.manhourBudgetAmount || 0;
@@ -18,87 +23,57 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
 
   const totalProjectBudget = project.workOrderValueINR || 0;
   const totalProjectCost = manhourBudgetAmount + nonManhourBudgetAmount;
+  const formatINR = (value: number) =>
+    `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
-    <div className="space-y-6">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Man-Hour Budget */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-              <IndianRupee size={18} strokeWidth={2.25} />
-            </div>
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Total Man-Hour Budget
-            </p>
-          </div>
-          <p className="mt-2 text-2xl font-bold text-slate-800">
-            ₹{manhourBudgetAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-        </div>
-
-        {/* Total Non Man-Hour Budget */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-600">
-              <IndianRupee size={18} strokeWidth={2.25} />
-            </div>
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Total Non Man-Hour Budget
-            </p>
-          </div>
-          <p className="mt-2 text-2xl font-bold text-slate-800">
-            ₹{nonManhourBudgetAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-        </div>
-
-        {/* Total Project Budget */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-50 text-green-600">
-              <IndianRupee size={18} strokeWidth={2.25} />
-            </div>
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Total Project Budget
-            </p>
-          </div>
-          <p className="mt-2 text-2xl font-bold text-slate-800">
-            ₹{totalProjectBudget.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-        </div>
-
-        {/* Total Project Cost */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-              <IndianRupee size={18} strokeWidth={2.25} />
-            </div>
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Total Project Cost
-            </p>
-          </div>
-          <p className="mt-2 text-2xl font-bold text-slate-800">
-            ₹{totalProjectCost.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-        </div>
+    <div className="space-y-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatTile
+          emphasis="secondary"
+          label="Man-Hour Budget"
+          value={formatINR(manhourBudgetAmount)}
+          icon={<Clock size={14} />}
+          tint="accent"
+        />
+        <StatTile
+          emphasis="secondary"
+          label="Non Man-Hour Budget"
+          value={formatINR(nonManhourBudgetAmount)}
+          icon={<FileText size={14} />}
+          tint="info"
+        />
+        <StatTile
+          emphasis="secondary"
+          label="Total Project Budget (WO)"
+          value={formatINR(totalProjectBudget)}
+          icon={<IndianRupee size={14} />}
+          tint="success"
+        />
+        <StatTile
+          emphasis="secondary"
+          label="Total Project Cost"
+          value={formatINR(totalProjectCost)}
+          icon={<Wallet size={14} />}
+          tint="warning"
+        />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
         {/* Man-Hour Expense Budget */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm space-y-4">
-          <h3 className="text-lg font-bold text-slate-800 border-b pb-3 flex items-center gap-2">
-            <Clock size={20} className="text-blue-500" />
-            Man-Hour Expense Budget
-          </h3>
-
-          <div className="space-y-4">
+        <Card padded={false} elevated>
+          <CardHeader
+            icon={<Clock size={15} />}
+            title="Man-Hour Expense Budget"
+            subtitle="Engineering man-hour cost allocation"
+          />
+          <CardBody className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                Budget Amount (INR)
-              </label>
+              <label className={labelClass}>Budget Amount (INR)</label>
               <div className="relative">
-                <span className="absolute left-3 top-3 text-slate-400 text-sm font-semibold">₹</span>
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--nu-text-muted)] text-[13px] font-semibold">
+                  ₹
+                </span>
                 <input
                   type="number"
                   value={manhourBudgetAmount || ""}
@@ -109,15 +84,13 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                     }))
                   }
                   placeholder="Enter Man-Hour Budget Amount"
-                  className="w-full border border-gray-300 rounded-xl pl-8 pr-3 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  className={fieldClass + " pl-7"}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                Budget Hours
-              </label>
+              <label className={labelClass}>Budget Hours</label>
               <input
                 type="number"
                 value={manhourBudgetHours || ""}
@@ -128,14 +101,12 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                   }))
                 }
                 placeholder="Enter Budget Hours"
-                className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                className={fieldClass}
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                Remarks
-              </label>
+              <label className={labelClass}>Remarks</label>
               <textarea
                 value={manhourBudgetRemarks}
                 onChange={(e) =>
@@ -146,26 +117,27 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                 }
                 placeholder="Enter remarks (e.g. Engineering Estimate)"
                 rows={3}
-                className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                className={fieldClass + " !h-auto py-2 resize-none"}
               />
             </div>
-          </div>
-        </div>
+          </CardBody>
+        </Card>
 
         {/* Non Man-Hour Expense Budget */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm space-y-4">
-          <h3 className="text-lg font-bold text-slate-800 border-b pb-3 flex items-center gap-2">
-            <FileText size={20} className="text-purple-500" />
-            Non Man-Hour Expense Budget
-          </h3>
-
-          <div className="space-y-4">
+        <Card padded={false} elevated>
+          <CardHeader
+            icon={<Briefcase size={15} />}
+            title="Non Man-Hour Expense Budget"
+            subtitle="Travel, logistics and other cost allocation"
+            iconTint="info"
+          />
+          <CardBody className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                Non Man-Hour Budget Amount (INR)
-              </label>
+              <label className={labelClass}>Non Man-Hour Budget Amount (INR)</label>
               <div className="relative">
-                <span className="absolute left-3 top-3 text-slate-400 text-sm font-semibold">₹</span>
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--nu-text-muted)] text-[13px] font-semibold">
+                  ₹
+                </span>
                 <input
                   type="number"
                   value={nonManhourBudgetAmount || ""}
@@ -176,15 +148,13 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                     }))
                   }
                   placeholder="Enter Non Man-Hour Budget Amount"
-                  className="w-full border border-gray-300 rounded-xl pl-8 pr-3 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  className={fieldClass + " pl-7"}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                Remarks
-              </label>
+              <label className={labelClass}>Remarks</label>
               <textarea
                 value={nonManhourBudgetRemarks}
                 onChange={(e) =>
@@ -195,11 +165,11 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                 }
                 placeholder="Enter remarks (e.g. Travel, Hotel, Accommodation)"
                 rows={7}
-                className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                className={fieldClass + " !h-auto py-2 resize-none"}
               />
             </div>
-          </div>
-        </div>
+          </CardBody>
+        </Card>
       </div>
     </div>
   );

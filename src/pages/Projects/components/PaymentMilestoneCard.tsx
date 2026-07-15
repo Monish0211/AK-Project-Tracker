@@ -2,6 +2,9 @@ import { AlertTriangle, CreditCard, Percent, Plus, Trash2, Wallet } from "lucide
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, Dispatch, SetStateAction } from "react";
 import type { Project } from "../../../types/Project";
+import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
+import { StatTile } from "../../../components/ui/StatTile";
+import { Button } from "../../../components/ui/Button";
 
 interface Props {
   project: Project;
@@ -59,6 +62,9 @@ function createEmptyMilestone(): PaymentMilestone {
   };
 }
 
+const fieldClass =
+  "h-9 w-full rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] px-2.5 text-[12.5px] text-[var(--nu-text)] outline-none transition-shadow focus:ring-2 focus:ring-[var(--nu-accent)]/25 focus:border-[var(--nu-accent)]";
+
 interface NumericInputProps {
   value: number;
   ariaLabel: string;
@@ -110,12 +116,10 @@ const NumericInput = ({
       value={rawValue}
       disabled={disabled}
       onChange={handleChange}
-      className={`h-10 w-full rounded-lg border text-right text-sm outline-none transition-all duration-150 placeholder:text-slate-300 focus:ring-2 ${
-        suffix ? "pl-3 pr-8" : "px-3"
-      } ${
+      className={`${fieldClass} text-right ${suffix ? "pr-6" : ""} ${
         disabled
-          ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
-          : "border-gray-200 bg-white text-slate-800 focus:border-blue-500 focus:ring-blue-500/20"
+          ? "bg-[var(--nu-surface-alt)] text-[var(--nu-text-muted)] cursor-not-allowed"
+          : ""
       }`}
     />
   );
@@ -127,70 +131,9 @@ const NumericInput = ({
   return (
     <div className="relative">
       {input}
-      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-slate-400">
+      <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-[12px] text-[var(--nu-text-muted)]">
         {suffix}
       </span>
-    </div>
-  );
-};
-
-interface KpiCardProps {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  accent: "blue" | "purple" | "orange" | "green" | "red";
-  highlight?: boolean;
-}
-
-const ACCENT_STYLES: Record<
-  KpiCardProps["accent"],
-  { iconBg: string; iconText: string; valueText: string }
-> = {
-  blue: {
-    iconBg: "bg-blue-50",
-    iconText: "text-blue-600",
-    valueText: "text-slate-800",
-  },
-  purple: {
-    iconBg: "bg-purple-50",
-    iconText: "text-purple-600",
-    valueText: "text-slate-800",
-  },
-  orange: {
-    iconBg: "bg-orange-50",
-    iconText: "text-orange-600",
-    valueText: "text-slate-800",
-  },
-  green: {
-    iconBg: "bg-green-50",
-    iconText: "text-green-600",
-    valueText: "text-green-600",
-  },
-  red: {
-    iconBg: "bg-red-50",
-    iconText: "text-red-600",
-    valueText: "text-red-600",
-  },
-};
-
-const KpiCard = ({ icon, label, value, accent, highlight = false }: KpiCardProps) => {
-  const styles = ACCENT_STYLES[accent];
-
-  return (
-    <div
-      className={`rounded-2xl border bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${
-        highlight ? "border-green-200 ring-1 ring-green-100" : "border-slate-200"
-      }`}
-    >
-      <div
-        className={`flex h-10 w-10 items-center justify-center rounded-xl ${styles.iconBg} ${styles.iconText}`}
-      >
-        {icon}
-      </div>
-      <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-        {label}
-      </p>
-      <p className={`mt-1 text-2xl font-bold ${styles.valueText}`}>{value}</p>
     </div>
   );
 };
@@ -203,20 +146,6 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
 
   const remainingPercentage = 100 - totalPaymentPercentage;
   const isPercentageMismatch = totalPaymentPercentage !== 100;
-
-  const handleWorkOrderValueChange = useCallback(
-    (value: number) => {
-      setProject((prev) => ({
-        ...prev,
-        workOrderValue: value,
-        paymentMilestones: prev.paymentMilestones.map((milestone) => ({
-          ...milestone,
-          amount: calculateAmount(value, milestone.paymentPercentage),
-        })),
-      }));
-    },
-    [setProject]
-  );
 
   const handlePaymentTypeChange = useCallback(
     (paymentType: Project["paymentType"]) => {
@@ -327,305 +256,241 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
   );
 
   const singleMilestone = project.paymentMilestones[0];
+  const canRemove = project.paymentMilestones.length > 1;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      {/* Header */}
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
-            <CreditCard size={20} strokeWidth={2.25} />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-slate-800">
-              Payment Milestones
-            </h2>
-            <p className="text-sm text-slate-500">
-              Manage project payment schedules and milestone payments.
-            </p>
-          </div>
-        </div>
-
-        {project.paymentType === "Multiple" && (
-          <button
-            type="button"
-            onClick={handleAddPayment}
-            title="Add a new payment milestone"
-            className="inline-flex items-center justify-center gap-2 self-start rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all duration-150 hover:bg-blue-700 hover:shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:bg-blue-800 sm:self-auto"
-          >
-            <Plus size={16} strokeWidth={2.5} />
-            Add Payment
-          </button>
-        )}
-      </div>
-
-      {/* Top Section */}
-      <div className="mb-6 grid grid-cols-1 gap-6 rounded-xl border border-slate-200 bg-slate-50/50 p-5 sm:grid-cols-2">
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Work Order Value
-          </label>
-
-          <NumericInput
-            value={project.workOrderValueINR}
-            ariaLabel="Work Order Value"
-            disabled={true}
-            onChange={handleWorkOrderValueChange}
-          />
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Payment Type
-          </label>
-
-          <div className="flex h-10 items-center gap-6">
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-              <input
-                type="radio"
-                name="paymentType"
-                value="Single"
-                checked={project.paymentType === "Single"}
-                onChange={() => handlePaymentTypeChange("Single")}
-                className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              Single Payment
-            </label>
-
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-              <input
-                type="radio"
-                name="paymentType"
-                value="Multiple"
-                checked={project.paymentType === "Multiple"}
-                onChange={() => handlePaymentTypeChange("Multiple")}
-                className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              Multiple Payments
-            </label>
-          </div>
-        </div>
-      </div>
-
-      {/* Table */}
-      {project.paymentType === "Single" ? (
-        <div className="overflow-auto rounded-xl border border-slate-200">
-          <table className="w-full min-w-[640px] table-fixed border-collapse text-sm">
-            <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="border-b border-slate-200 px-3 py-2.5 text-left font-semibold">
-                  Milestone Name
-                </th>
-
-                <th className="w-32 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
-                  Payment %
-                </th>
-
-                <th className="w-40 border-b border-slate-200 px-3 py-2.5 text-left font-semibold">
-                  Due Date
-                </th>
-
-                <th className="w-48 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
-                  Amount
-                </th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-slate-100">
-              <tr className="bg-white">
-                <td className="px-3 py-3">
-                  <input
-                    type="text"
-                    value={singleMilestone?.milestoneName ?? ""}
-                    placeholder="e.g. Submission Draft"
-                    aria-label="Milestone Name"
-                    onChange={(e) => handleMilestoneNameChange(0, e.target.value)}
-                    className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                  />
-                </td>
-
-                <td className="px-3 py-3 text-right">
-                  <span className="inline-flex min-w-[3rem] justify-center rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600">
-                    100%
-                  </span>
-                </td>
-
-                <td className="px-3 py-3">
-                  <input
-                    type="date"
-                    value={singleMilestone?.dueDate ?? ""}
-                    aria-label="Due Date"
-                    onChange={(e) => handleDueDateChange(0, e.target.value)}
-                    className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                  />
-                </td>
-
-                <td className="px-3 py-3 text-right">
-                  <span className="text-base font-bold text-green-600">
-                    {formatIndianCurrency(calculateAmount(project.workOrderValueINR, singleMilestone?.paymentPercentage ?? 100))}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="max-h-[28rem] overflow-auto rounded-xl border border-slate-200">
-          <table className="w-full min-w-[760px] table-fixed border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="w-14 border-b border-slate-200 px-3 py-2.5 text-center font-semibold">
-                  Sl No
-                </th>
-
-                <th className="border-b border-slate-200 px-3 py-2.5 text-left font-semibold">
-                  Milestone Name
-                </th>
-
-                <th className="w-32 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
-                  Payment %
-                </th>
-
-                <th className="w-40 border-b border-slate-200 px-3 py-2.5 text-left font-semibold">
-                  Due Date
-                </th>
-
-                <th className="w-48 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
-                  Amount
-                </th>
-
-                <th className="w-16 border-b border-slate-200 px-3 py-2.5 text-center font-semibold">
-                  Delete
-                </th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-slate-100">
-              {project.paymentMilestones.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-10 text-center text-slate-400">
-                    No payment milestones added. Click "Add Payment" to get
-                    started.
-                  </td>
-                </tr>
-              ) : (
-                project.paymentMilestones.map((milestone, index) => {
-                  const canRemove = project.paymentMilestones.length > 1;
-
-                  return (
-                    <tr
-                      key={milestone.id}
-                      className="bg-white transition-colors duration-150 hover:bg-slate-50"
-                    >
-                      <td className="px-3 py-3 text-center text-slate-500">
-                        {index + 1}
-                      </td>
-
-                      <td className="px-3 py-3">
-                        <input
-                          type="text"
-                          value={milestone.milestoneName ?? ""}
-                          placeholder={`e.g. Submission Draft`}
-                          aria-label={`Milestone Name for row ${index + 1}`}
-                          onChange={(e) =>
-                            handleMilestoneNameChange(index, e.target.value)
-                          }
-                          className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                        />
-                      </td>
-
-                      <td className="px-3 py-3">
-                        <NumericInput
-                          value={milestone.paymentPercentage}
-                          ariaLabel={`Payment % for row ${index + 1}`}
-                          suffix="%"
-                          onChange={(value) =>
-                            handlePercentageChange(index, value)
-                          }
-                        />
-                      </td>
-
-                      <td className="px-3 py-3">
-                        <input
-                          type="date"
-                          value={milestone.dueDate}
-                          aria-label={`Due Date for row ${index + 1}`}
-                          onChange={(e) =>
-                            handleDueDateChange(index, e.target.value)
-                          }
-                          className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                        />
-                      </td>
-
-                      <td className="px-3 py-3 text-right">
-                        <span className="text-base font-bold text-green-600">
-                          {formatIndianCurrency(calculateAmount(project.workOrderValueINR, milestone.paymentPercentage))}
-                        </span>
-                      </td>
-
-                      <td className="px-3 py-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleRemovePayment(index)}
-                          disabled={!canRemove}
-                          aria-label={
-                            canRemove
-                              ? `Delete row ${index + 1}`
-                              : LAST_ROW_WARNING
-                          }
-                          title={canRemove ? "Delete row" : LAST_ROW_WARNING}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-600 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:bg-red-100 hover:shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400 disabled:cursor-not-allowed disabled:translate-y-0 disabled:bg-transparent disabled:text-slate-300 disabled:shadow-none"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {project.paymentType === "Multiple" &&
-        project.paymentMilestones.length === 1 && (
-          <p className="mt-2 text-xs font-medium text-slate-400">
-            {LAST_ROW_WARNING}
-          </p>
-        )}
-
-      {isPercentageMismatch && (
-        <div className="mt-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
-          <AlertTriangle size={16} strokeWidth={2.25} />
-          {PERCENTAGE_MISMATCH_WARNING}
-        </div>
-      )}
-
-      {/* Summary KPI cards */}
-      <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <KpiCard
-          icon={<Wallet size={18} strokeWidth={2.25} />}
+    <div className="space-y-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <StatTile
+          emphasis="secondary"
           label="Total Payments"
           value={formatIndianNumber(project.paymentMilestones.length)}
-          accent="blue"
+          icon={<Wallet size={14} />}
+          tint="accent"
         />
-
-        <KpiCard
-          icon={<Percent size={18} strokeWidth={2.25} />}
+        <StatTile
+          emphasis="secondary"
           label="Total Payment %"
           value={`${formatIndianNumber(totalPaymentPercentage)}%`}
-          accent={isPercentageMismatch ? "red" : "green"}
-          highlight={!isPercentageMismatch}
+          icon={<Percent size={14} />}
+          tint={isPercentageMismatch ? "danger" : "success"}
         />
-
-        <KpiCard
-          icon={<Percent size={18} strokeWidth={2.25} />}
+        <StatTile
+          emphasis="secondary"
           label="Remaining %"
           value={`${formatIndianNumber(remainingPercentage)}%`}
-          accent="orange"
+          icon={<Percent size={14} />}
+          tint="warning"
         />
       </div>
+
+      <Card padded={false} elevated>
+        <CardHeader
+          icon={<CreditCard size={15} />}
+          title="Payment Milestones"
+          subtitle="Project payment schedule"
+          action={
+            project.paymentType === "Multiple" ? (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Plus size={14} />}
+                onClick={handleAddPayment}
+              >
+                Add Payment
+              </Button>
+            ) : undefined
+          }
+        />
+        <CardBody className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] px-4 py-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)] mb-1">
+                Work Order Value
+              </p>
+              <p className="text-[15px] font-bold text-[var(--nu-text)]">
+                {formatIndianCurrency(project.workOrderValueINR)}
+              </p>
+            </div>
+
+            <div className="sm:ml-auto flex items-center gap-1 bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-full p-1">
+              {(["Single", "Multiple"] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => handlePaymentTypeChange(type)}
+                  className={`px-3.5 py-1.5 rounded-full text-[12px] font-semibold transition-colors ${
+                    project.paymentType === type
+                      ? "bg-[var(--nu-accent)] text-white"
+                      : "text-[var(--nu-text-secondary)] hover:bg-[var(--nu-surface-alt)]"
+                  }`}
+                >
+                  {type} Payment{type === "Multiple" ? "s" : ""}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Milestone cards / timeline */}
+          <div className="space-y-0">
+            {project.paymentType === "Single" ? (
+              <div className="milestone-connector relative flex gap-3.5 pb-1">
+                <div className="w-8 h-8 rounded-full bg-[var(--nu-accent)] text-white flex items-center justify-center text-[12px] font-bold shrink-0 z-10">
+                  1
+                </div>
+                <div className="flex-1 grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_1.2fr] gap-3 items-end pb-4">
+                  <div>
+                    <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
+                      Milestone Name
+                    </label>
+                    <input
+                      type="text"
+                      value={singleMilestone?.milestoneName ?? ""}
+                      placeholder="e.g. Submission Draft"
+                      aria-label="Milestone Name"
+                      onChange={(e) => handleMilestoneNameChange(0, e.target.value)}
+                      className={fieldClass}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
+                      Payment %
+                    </label>
+                    <div className="h-9 flex items-center justify-center rounded-[var(--nu-radius-md)] bg-[var(--nu-surface-alt)] text-[12.5px] font-semibold text-[var(--nu-text-secondary)]">
+                      100%
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
+                      Due Date
+                    </label>
+                    <input
+                      type="date"
+                      value={singleMilestone?.dueDate ?? ""}
+                      aria-label="Due Date"
+                      onChange={(e) => handleDueDateChange(0, e.target.value)}
+                      className={fieldClass}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
+                      Amount
+                    </label>
+                    <p className="text-[14px] font-bold text-[var(--nu-success)]">
+                      {formatIndianCurrency(
+                        calculateAmount(
+                          project.workOrderValueINR,
+                          singleMilestone?.paymentPercentage ?? 100
+                        )
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : project.paymentMilestones.length === 0 ? (
+              <p className="text-center py-8 text-[var(--nu-text-muted)] text-[12.5px]">
+                No payment milestones added. Click &quot;Add Payment&quot; to get started.
+              </p>
+            ) : (
+              project.paymentMilestones.map((milestone, index) => (
+                <div
+                  key={milestone.id}
+                  className="milestone-connector relative flex gap-3.5"
+                >
+                  <div className="w-8 h-8 rounded-full bg-[var(--nu-accent)] text-white flex items-center justify-center text-[12px] font-bold shrink-0 z-10">
+                    {index + 1}
+                  </div>
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-[2fr_0.8fr_1fr_1.2fr_auto] gap-3 items-end pb-5">
+                    <div>
+                      <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
+                        Milestone Name
+                      </label>
+                      <input
+                        type="text"
+                        value={milestone.milestoneName ?? ""}
+                        placeholder="e.g. Submission Draft"
+                        aria-label={`Milestone Name for row ${index + 1}`}
+                        onChange={(e) =>
+                          handleMilestoneNameChange(index, e.target.value)
+                        }
+                        className={fieldClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
+                        Payment %
+                      </label>
+                      <NumericInput
+                        value={milestone.paymentPercentage}
+                        ariaLabel={`Payment % for row ${index + 1}`}
+                        suffix="%"
+                        onChange={(value) =>
+                          handlePercentageChange(index, value)
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
+                        Due Date
+                      </label>
+                      <input
+                        type="date"
+                        value={milestone.dueDate}
+                        aria-label={`Due Date for row ${index + 1}`}
+                        onChange={(e) =>
+                          handleDueDateChange(index, e.target.value)
+                        }
+                        className={fieldClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
+                        Amount
+                      </label>
+                      <p className="text-[14px] font-bold text-[var(--nu-success)]">
+                        {formatIndianCurrency(
+                          calculateAmount(
+                            project.workOrderValueINR,
+                            milestone.paymentPercentage
+                          )
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePayment(index)}
+                      disabled={!canRemove}
+                      aria-label={
+                        canRemove
+                          ? `Delete row ${index + 1}`
+                          : LAST_ROW_WARNING
+                      }
+                      title={canRemove ? "Delete row" : LAST_ROW_WARNING}
+                      className="h-9 w-9 flex items-center justify-center rounded-[var(--nu-radius-md)] bg-[var(--nu-danger-soft)] text-[var(--nu-danger)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--nu-shadow-sm)] disabled:opacity-30 disabled:cursor-not-allowed disabled:translate-y-0"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {project.paymentType === "Multiple" &&
+            project.paymentMilestones.length === 1 && (
+              <p className="text-[11px] font-medium text-[var(--nu-text-muted)]">
+                {LAST_ROW_WARNING}
+              </p>
+            )}
+
+          {isPercentageMismatch && (
+            <div className="flex items-center gap-2 rounded-[var(--nu-radius-md)] border border-[var(--nu-danger)]/30 bg-[var(--nu-danger-soft)] px-3.5 py-2.5 text-[12.5px] font-medium text-[var(--nu-danger)]">
+              <AlertTriangle size={14} strokeWidth={2.25} />
+              {PERCENTAGE_MISMATCH_WARNING}
+            </div>
+          )}
+        </CardBody>
+      </Card>
     </div>
   );
 };

@@ -203,3 +203,150 @@ export const getRecentProjects = () => {
     )
     .slice(0, 5);
 };
+
+/* ===================================================
+   PROJECT HEALTH SUMMARY
+   Schedule-health lens derived from General Information dates and pending
+   quantity/invoice progress — independent of (and additional to) the
+   Active/On Hold/Completed/Cancelled Project Status field above.
+=================================================== */
+
+export interface ProjectHealthSummary {
+  onTrack: number;
+  atRisk: number;
+  delayed: number;
+  notStarted: number;
+  total: number;
+}
+
+const AT_RISK_WINDOW_DAYS = 14;
+
+export const getProjectHealthSummary = (): ProjectHealthSummary => {
+  // Completed/Cancelled projects are out of scope for an in-progress
+  // schedule-health rollup.
+  const projects = getProjects().filter(
+    (project) =>
+      project.projectStatus !== "Completed" &&
+      project.projectStatus !== "Cancelled"
+  );
+
+  const today = new Date();
+
+  let onTrack = 0;
+  let atRisk = 0;
+  let delayed = 0;
+  let notStarted = 0;
+
+  projects.forEach((project) => {
+    const start = project.projectStartDate ? new Date(project.projectStartDate) : null;
+    const end = project.projectEndDate ? new Date(project.projectEndDate) : null;
+    const hasPendingWork =
+      (project.totalPendingQty || 0) > 0 || (project.pendingInvoicePercentage || 0) > 0;
+
+    if (start && !Number.isNaN(start.getTime()) && start.getTime() > today.getTime()) {
+      notStarted++;
+      return;
+    }
+
+    if (end && !Number.isNaN(end.getTime())) {
+      const daysToEnd = (end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
+
+      if (daysToEnd < 0) {
+        delayed++;
+        return;
+      }
+
+      if (daysToEnd <= AT_RISK_WINDOW_DAYS && hasPendingWork) {
+        atRisk++;
+        return;
+      }
+    }
+
+    onTrack++;
+  });
+
+  return { onTrack, atRisk, delayed, notStarted, total: projects.length };
+};
+
+/* ===================================================
+   RECENT ACTIVITY
+   Derived from real, already-timestamped records (project audit fields,
+   project notes, standalone invoice records) — no synthetic/mock events.
+=================================================== */
+
+export interface ActivityEvent {
+  id: string;
+  category: "Project" | "Invoice" | "Payment" | "Notes";
+  title: string;
+  description: string;
+  projectRef: string;
+  timestamp: string;
+}
+
+export const getRecentActivity = (limit = 8): ActivityEvent[] => {
+  const projects = getProjects();
+  const invoices = getInvoices();
+  const events: ActivityEvent[] = [];
+
+  projects.forEach((project) => {
+    if (project.createdAt) {
+      events.push({
+        id: `${project.id}-created`,
+        category: "Project",
+        title: "Project Created",
+        description: `${project.projectTitle || project.prNo} added for ${project.client || "client"}.`,
+        projectRef: project.prNo,
+        timestamp: project.createdAt,
+      });
+    }
+
+    if (project.updatedAt && project.updatedAt !== project.createdAt) {
+      events.push({
+        id: `${project.id}-updated`,
+        category: "Project",
+        title: "Project Updated",
+        description: `${project.projectTitle || project.prNo} details were updated.`,
+        projectRef: project.prNo,
+        timestamp: project.updatedAt,
+      });
+    }
+
+    (project.notes || []).forEach((note) => {
+      events.push({
+        id: `note-${note.id}`,
+        category: "Notes",
+        title: "Project Note Added",
+        description: note.message,
+        projectRef: project.prNo,
+        timestamp: note.createdAt,
+      });
+    });
+  });
+
+  invoices.forEach((invoice) => {
+    events.push({
+      id: `invoice-${invoice.id}`,
+      category: "Invoice",
+      title: "Invoice Raised",
+      description: `${invoice.invoiceRef} raised for ${invoice.client}.`,
+      projectRef: invoice.prNo,
+      timestamp: invoice.createdAt,
+    });
+
+    if (invoice.receivedAmount > 0) {
+      events.push({
+        id: `payment-${invoice.id}`,
+        category: "Payment",
+        title: "Payment Received",
+        description: `${invoice.client} paid ₹ ${invoice.receivedAmount.toLocaleString("en-IN")} against ${invoice.invoiceRef}.`,
+        projectRef: invoice.prNo,
+        timestamp: invoice.updatedAt || invoice.createdAt,
+      });
+    }
+  });
+
+  return events
+    .filter((event) => !!event.timestamp)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, limit);
+};

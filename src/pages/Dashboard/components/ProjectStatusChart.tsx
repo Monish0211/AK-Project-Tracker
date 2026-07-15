@@ -1,138 +1,57 @@
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
+import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
+import { Badge } from "../../../components/ui/Badge";
+import { EmptyState } from "../../../components/ui/EmptyState";
+import { PieChart as PieIcon } from "lucide-react";
 import { getProjectStatusData } from "../../../services/dashboardService";
 import { useTheme } from "../../../context/ThemeContext";
 
-const COLORS = [
-  "#3B82F6", // Active (Blue)
-  "#EAB308", // On Hold (Yellow)
-  "#22C55E", // Completed (Green)
-  "#EF4444", // Cancelled (Red)
-];
+const COLORS = ["#2563eb", "#d97706", "#15803d", "#b91c1c"];
+const COLORS_DARK = ["#3b82f6", "#fbbf24", "#34d399", "#f87171"];
 
 const ProjectStatusChart = () => {
   const { theme } = useTheme();
   const data = getProjectStatusData();
-
-  const getFillColor = (name: string, index: number) => {
-    if (theme === "light") {
-      return COLORS[index % COLORS.length];
-    }
-    switch (name) {
-      case "Active":
-        return "url(#activeGrad)";
-      case "On Hold":
-        return "url(#onHoldGrad)";
-      case "Completed":
-        return "url(#completedGrad)";
-      case "Cancelled":
-        return "url(#cancelledGrad)";
-      default:
-        return COLORS[index % COLORS.length];
-    }
-  };
+  const palette = theme === "dark" ? COLORS_DARK : COLORS;
+  const axisColor = theme === "dark" ? "#a6afc4" : "#4b5565";
+  const hasData = data.some((entry) => entry.value > 0);
 
   return (
-    <div className="bg-white rounded-2xl shadow-md p-6">
-
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold text-slate-800">
-          Project Status
-        </h2>
-        <span className="text-sm text-gray-500">
-          Live Data
-        </span>
-      </div>
-
-      <ResponsiveContainer
-        width="100%"
-        height={350}
-      >
-        <PieChart>
-          <defs>
-            {/* Glow Filters */}
-            <filter id="donutGlow" x="-30%" y="-30%" width="160%" height="160%">
-              <feGaussianBlur stdDeviation="8" result="blur" />
-              <feComponentTransfer in="blur" result="glow">
-                <feFuncA type="linear" slope="0.45" />
-              </feComponentTransfer>
-              <feMerge>
-                <feMergeNode in="glow" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-
-            <filter id="donutGlowHover" x="-30%" y="-30%" width="160%" height="160%">
-              <feGaussianBlur stdDeviation="12" result="blur" />
-              <feComponentTransfer in="blur" result="glow">
-                <feFuncA type="linear" slope="0.75" />
-              </feComponentTransfer>
-              <feMerge>
-                <feMergeNode in="glow" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-
-            {/* Gradients */}
-            <linearGradient id="activeGrad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#3B82F6" />
-              <stop offset="100%" stopColor="#06B6D4" />
-            </linearGradient>
-            <linearGradient id="onHoldGrad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#F59E0B" />
-              <stop offset="100%" stopColor="#F97316" />
-            </linearGradient>
-            <linearGradient id="completedGrad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#22C55E" />
-              <stop offset="100%" stopColor="#10B981" />
-            </linearGradient>
-            <linearGradient id="cancelledGrad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#EF4444" />
-              <stop offset="100%" stopColor="#B91C1C" />
-            </linearGradient>
-          </defs>
-
-          <Pie
-            data={data}
-            dataKey="value"
-            nameKey="name"
-            cx="50%"
-            cy="50%"
-            outerRadius={120}
-            innerRadius={60}
-            paddingAngle={3}
-            label={theme === "dark" ? { fill: "#FFFFFF", fontSize: 13, fontWeight: 700 } : undefined}
-          >
-            {data.map((entry, index) => (
-              <Cell
-                key={index}
-                fill={getFillColor(entry.name, index)}
-                style={{
-                  filter: theme === "dark" ? "url(#donutGlow)" : "none",
-                  transition: "all 0.3s ease",
-                  outline: "none",
+    <Card padded={false} elevated className="h-full flex flex-col">
+      <CardHeader icon={<PieIcon size={15} />} title="Project Status" subtitle="By General Information status" action={<Badge tone="success">Live</Badge>} />
+      <CardBody className="flex-1 py-1.5 flex flex-col">
+        {hasData ? (
+          <ResponsiveContainer width="100%" height={320}>
+            <PieChart>
+              <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={110} innerRadius={60} paddingAngle={2}>
+                {data.map((entry, index) => (
+                  <Cell key={entry.name} fill={palette[index % palette.length]} stroke="none" />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={{
+                  fontSize: 12,
+                  borderRadius: 8,
+                  border: "1px solid var(--nu-border)",
+                  background: "var(--nu-surface)",
+                  color: "var(--nu-text)",
                 }}
               />
-            ))}
-          </Pie>
-
-          <Tooltip />
-          <Legend
-            verticalAlign="bottom"
-            iconType="circle"
-            wrapperStyle={{ paddingTop: "20px" }}
-          />
-        </PieChart>
-      </ResponsiveContainer>
-
-    </div>
+              <Legend verticalAlign="bottom" iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, color: axisColor, paddingTop: 8 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <EmptyState
+              icon={<PieIcon size={18} />}
+              title="No project status data available"
+              description="Import projects to see their status distribution here."
+            />
+          </div>
+        )}
+      </CardBody>
+    </Card>
   );
 };
 

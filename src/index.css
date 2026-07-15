@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
 @keyframes ecg-heartbeat {
   0% {
     stroke-dashoffset: 100;
@@ -507,6 +509,28 @@ html.dark .kpi-card-wrapper:hover {
 .kpi-card-wrapper:hover .kpi-accent-line {
   animation: kpiBorderSweep 0.8s ease-out forwards;
   filter: brightness(1.35);
+}
+/* Thin custom scrollbar for timeline list */
+.custom-scrollbar-timeline::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar-timeline::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar-timeline::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.15);
+  border-radius: 99px;
+  transition: background-color 0.2s ease-in-out;
+}
+.custom-scrollbar-timeline:hover::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.35);
+}
+html.dark .custom-scrollbar-timeline::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.06);
+}
+html.dark .custom-scrollbar-timeline:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 /* Scrollbar dark mode styling */

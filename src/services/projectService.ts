@@ -136,6 +136,10 @@ export const saveProjects = (projects: Project[]): void => {
     STORAGE_KEY,
     JSON.stringify(projects.map(normalizeProject))
   );
+
+  // Lets the Dashboard (and any other live view) know project data changed,
+  // without introducing a new store or altering any calculation.
+  window.dispatchEvent(new Event("pmo:data-changed"));
 };
 
 export const addProject = (project: Project): void => {

@@ -15,6 +15,7 @@ import {
   Wallet,
   Receipt,
   Lock,
+  Check,
 } from "lucide-react";
 
 import type { Project } from "../../../types/Project";
@@ -29,6 +30,8 @@ import ExpenseBudgetCard from "./ExpenseBudgetCard";
 import InvoiceCard from "./InvoiceCard";
 import NonManhourExpenseCard from "./ExpenseInformation/NonManhourExpenseCard";
 import { syncInvoiceItemsWithQuantity } from "../../../services/invoiceSyncService";
+import { ProjectNotesDrawer } from "../../../components/Dashboard/ProjectNotesDrawer";
+import "../project-workspace-theme.css";
 
 // All possible tab keys
 export type TabKey = "general" | "quantity" | "payments" | "budget" | "team" | "expenses" | "invoices";
@@ -70,6 +73,7 @@ interface Props {
 }
 
 const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
+  const [isNotesOpen, setIsNotesOpen] = useState(false);
   const TABS = mode === "add" ? TABS_ADD : TABS_EDIT;
   const [activeTab, setActiveTab] = useState<TabKey>(
     initialTab && TABS.some((tab) => tab.key === initialTab)
@@ -120,143 +124,102 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
     });
   }, [project.quantityItems, setProject]);
 
+  const overviewFields = [
+    { label: "PR Number", value: project.prNo, icon: Hash },
+    { label: "Client", value: project.client, icon: Building2 },
+    { label: "Project Title", value: project.projectTitle, icon: Briefcase },
+    { label: "PR Category", value: project.prCategory, icon: Layers },
+    { label: "Department", value: project.department, icon: Layers },
+    { label: "Project Status", value: project.projectStatus, icon: Activity },
+    {
+      label: "Work Order Value",
+      value: project.workOrderValueINR ? formatINR(project.workOrderValueINR) : "",
+      icon: IndianRupee,
+    },
+  ];
+
   return (
-    <div className="space-y-6">
+    <div className="project-form-shell -m-6 p-4 space-y-3.5 nu-fade-in">
       {/* ================= Header ================= */}
-      <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center">
-            {mode === "add" ? (
-              <Plus size={28} className="text-blue-600" />
-            ) : (
-              <Pencil size={28} className="text-blue-600" />
-            )}
+      <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-[var(--nu-shadow-sm)] p-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] flex items-center justify-center shrink-0">
+              {mode === "add" ? <Plus size={20} /> : <Pencil size={20} />}
+            </div>
+
+            <div className="min-w-0">
+              <h1 className="text-[19px] font-bold text-[var(--nu-text)] leading-tight">
+                {mode === "add" ? "Add New Project" : "Edit Project"}
+              </h1>
+              <p className="text-[12.5px] text-[var(--nu-text-muted)] mt-0.5">
+                {mode === "add"
+                  ? "Enter project information across General, Quantity, Payments and Expense Budget."
+                  : "Update project information including quantities, payment milestones, expenses and invoices."}
+              </p>
+            </div>
           </div>
 
-          <div>
-            <h1 className="text-3xl font-bold text-slate-800">
-              {mode === "add" ? "Add New Project" : "Edit Project"}
-            </h1>
+          {mode === "edit" && (
+            <button
+              type="button"
+              onClick={() => setIsNotesOpen(true)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] font-semibold bg-[var(--nu-accent)] hover:bg-[var(--nu-accent-strong)] text-white shadow-[var(--nu-shadow-sm)] transition-colors self-start sm:self-auto text-[12.5px] shrink-0"
+            >
+              <span>📝</span>
+              <span>Project Notes</span>
+              <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-[11px] font-bold ml-0.5">
+                {project.notes?.length || 0}
+              </span>
+            </button>
+          )}
+        </div>
 
-            <p className="text-gray-500 mt-1">
-              {mode === "add"
-                ? "Enter complete project information including quantities, payments and team assignment."
-                : "Update project information including quantities, payment milestones, expenses and invoices."}
+        {/* Compact live overview strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-x-5 gap-y-2.5 mt-4 pt-3.5 border-t border-[var(--nu-border)]">
+          {overviewFields.map((field) => (
+            <div key={field.label} className="min-w-0">
+              <p className="text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)] font-medium">
+                {field.label}
+              </p>
+              <p
+                className="text-[12.5px] font-semibold text-[var(--nu-text)] truncate"
+                title={field.value || undefined}
+              >
+                {field.value || "—"}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ================= Sticky section navigator ================= */}
+      <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-[var(--nu-shadow-sm)] overflow-hidden">
+        <div className="sticky top-0 z-20 bg-[var(--nu-surface)]/95 backdrop-blur-md border-b border-[var(--nu-border)] px-3 py-2.5">
+          <div className="flex items-center justify-between gap-3 mb-2 px-0.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]">
+              Section progress
+            </p>
+            <p className="text-[11.5px] font-semibold text-[var(--nu-text-secondary)]">
+              Step {activeIndex + 1} of {TABS.length}
             </p>
           </div>
-        </div>
-      </div>
 
-      {/* ================= Project Overview Card ================= */}
-      <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-5">
-          Project Overview
-        </h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <Hash size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">PR Number</p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {project.prNo || "-"}
-              </p>
-            </div>
+          {/* Progress bar */}
+          <div className="h-1 rounded-full bg-[var(--nu-surface-alt)] mb-2.5 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-[var(--nu-accent)] transition-all duration-300"
+              style={{
+                width: `${((unlockedIndex + 1) / TABS.length) * 100}%`,
+              }}
+            />
           </div>
 
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <Building2 size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">Client</p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {project.client || "-"}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3 sm:col-span-2 lg:col-span-2">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <Briefcase size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">
-                Project Title
-              </p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {project.projectTitle || "-"}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <Layers size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">
-                PR Category
-              </p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {project.prCategory || "-"}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <Layers size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">
-                Department
-              </p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {project.department || "-"}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <Activity size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">
-                Project Status
-              </p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {project.projectStatus || "-"}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <IndianRupee size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">
-                Work Order Value
-              </p>
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">
-                {formatINR(project.workOrderValueINR || 0)}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ================= Tabs ================= */}
-      <div className="bg-white rounded-2xl shadow-md border border-gray-100">
-        <div className="p-4 border-b border-gray-100 overflow-x-auto">
-          <div className="flex gap-2 min-w-max">
+          <div className="flex gap-1.5 min-w-max overflow-x-auto nu-scrollbar pb-0.5">
             {TABS.map(({ key, label, icon: Icon }, index) => {
               const isActive = activeTab === key;
               const isLocked = index > unlockedIndex;
+              const isComplete = index < unlockedIndex;
 
               return (
                 <button
@@ -264,6 +227,7 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
                   type="button"
                   disabled={isLocked}
                   aria-disabled={isLocked}
+                  aria-current={isActive ? "step" : undefined}
                   title={
                     isLocked
                       ? "Complete the previous step to unlock this tab"
@@ -272,27 +236,41 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
                   onClick={() => {
                     if (!isLocked) setActiveTab(key);
                   }}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-medium transition-all duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--nu-accent)] ${
                     isActive
-                      ? "bg-blue-600 text-white shadow-sm"
+                      ? "bg-[var(--nu-accent)] text-white shadow-[var(--nu-shadow-sm)]"
                       : isLocked
-                      ? "bg-white text-gray-300 cursor-not-allowed"
-                      : "bg-white text-gray-500 hover:bg-blue-50 hover:text-blue-600"
+                      ? "text-[var(--nu-text-muted)] cursor-not-allowed opacity-70"
+                      : isComplete
+                      ? "text-[var(--nu-success)] bg-[var(--nu-success-soft)] hover:opacity-90"
+                      : "text-[var(--nu-text-secondary)] hover:bg-[var(--nu-surface-alt)] hover:text-[var(--nu-text)]"
                   }`}
                 >
                   {isLocked ? (
-                    <Lock size={16} strokeWidth={2.25} />
+                    <Lock size={14} />
+                  ) : isComplete && !isActive ? (
+                    <Check size={14} strokeWidth={2.5} />
                   ) : (
-                    <Icon size={16} strokeWidth={2.25} />
+                    <Icon size={15} strokeWidth={2.25} />
                   )}
-                  {label}
+                  <span className="whitespace-nowrap">{label}</span>
+                  {index < TABS.length - 1 && (
+                    <span
+                      className={`hidden sm:inline text-[10px] ml-0.5 ${
+                        isActive ? "text-white/50" : "text-[var(--nu-text-muted)]"
+                      }`}
+                      aria-hidden
+                    >
+                      →
+                    </span>
+                  )}
                 </button>
               );
             })}
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="p-4">
           {activeTab === "general" && (
             <GeneralInfoCard project={project} setProject={setProject} />
           )}
@@ -324,18 +302,24 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
       </div>
 
       {/* ================= Form Buttons (always visible) ================= */}
-      <div>
-        <FormButtons
-          project={project}
-          setProject={setProject}
-          mode={mode}
-          activeTab={activeTab}
-          isLastTab={isLastTab}
-          isFirstTab={isFirstTab}
-          onSaveAndNext={goToNextTab}
-          onBack={goToPreviousTab}
-        />
-      </div>
+      <FormButtons
+        project={project}
+        setProject={setProject}
+        mode={mode}
+        activeTab={activeTab}
+        isLastTab={isLastTab}
+        isFirstTab={isFirstTab}
+        onSaveAndNext={goToNextTab}
+        onBack={goToPreviousTab}
+      />
+
+      {/* Project Notes Slide-over Drawer */}
+      <ProjectNotesDrawer
+        isOpen={isNotesOpen}
+        onClose={() => setIsNotesOpen(false)}
+        project={project}
+        setProject={setProject}
+      />
     </div>
   );
 };

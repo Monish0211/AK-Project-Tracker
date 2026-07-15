@@ -1,167 +1,54 @@
 import { Pencil, Trash2 } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
-
 import type { Customer } from "../../../types/CustomerModel";
-import {
-  deleteCustomer,
-  saveCustomers,
-} from "../../../services/customerService";
+import { Badge } from "../../../components/ui/Badge";
 
 interface Props {
   customer: Customer;
   index: number;
-  customers: Customer[];
-  setCustomers: Dispatch<SetStateAction<Customer[]>>;
+  onEdit: (customer: Customer) => void;
+  onDelete: (customer: Customer) => void;
 }
 
-const CustomerRow = ({
-  customer,
-  index,
-  customers,
-  setCustomers,
-}: Props) => {
-  const handleEdit = () => {
-    const newName = prompt(
-      "Edit Customer Name",
-      customer.customerName
-    );
-
-    if (!newName) return;
-
-    const updated = customers.map((c) =>
-      c.id === customer.id
-        ? {
-            ...c,
-            customerName: newName.trim(),
-          }
-        : c
-    );
-
-    saveCustomers(updated);
-    setCustomers(updated);
-  };
-
-  const handleDelete = () => {
-    if (
-      !window.confirm(
-        `Delete "${customer.customerName}" ?`
-      )
-    ) {
-      return;
-    }
-
-    deleteCustomer(customer.id);
-
-    setCustomers(
-      customers.filter((c) => c.id !== customer.id)
-    );
-  };
-
+const CustomerRow = ({ customer, index, onEdit, onDelete }: Props) => {
   return (
-    <tr className="border-b hover:bg-slate-50 transition">
-
-      {/* Sl No */}
-
-      <td className="px-6 py-4 text-center font-medium text-slate-600">
-        {index + 1}
-      </td>
-
-      {/* Customer Name */}
-
-      <td className="px-6 py-4">
-        <div className="font-medium text-slate-800">
-          {customer.customerName}
-        </div>
-      </td>
-
-      {/* Status */}
-
-      <td className="px-6 py-4 text-center">
-
-        <span
-          className={`
-            inline-flex
-            items-center
-            px-3
-            py-1
-            rounded-full
-            text-xs
-            font-semibold
-            ${
-              customer.status === "Active"
-                ? "bg-green-100 text-green-700"
-                : "bg-gray-100 text-gray-600"
-            }
-          `}
-        >
-          {customer.status}
-        </span>
-
-      </td>
-
-      {/* Created On */}
-
-      <td className="px-6 py-4 text-center text-slate-600">
-
-        {new Date(customer.createdAt).toLocaleDateString(
-          "en-IN",
-          {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          }
+    <tr
+      className={`border-b border-[var(--nu-border)] last:border-none hover:bg-[var(--nu-accent-soft)] transition-colors ${
+        index % 2 === 1 ? "bg-[var(--nu-surface-alt)]" : "bg-[var(--nu-surface)]"
+      }`}
+    >
+      <td className="px-4 py-3 text-center text-[12px] font-medium text-[var(--nu-text-secondary)]">{index + 1}</td>
+      <td className="px-4 py-3">
+        <p className="text-[12.5px] font-medium text-[var(--nu-text)] leading-snug break-words">{customer.customerName}</p>
+        {customer.companyName && (
+          <p className="text-[11px] text-[var(--nu-text-muted)] leading-snug break-words">{customer.companyName}</p>
         )}
-
       </td>
-
-      {/* Actions */}
-
-      <td className="px-6 py-4">
-
-        <div className="flex justify-center gap-2">
-
+      <td className="px-4 py-3 text-center">
+        <Badge tone={customer.status === "Active" ? "success" : "neutral"} dot>
+          {customer.status}
+        </Badge>
+      </td>
+      <td className="px-4 py-3 text-center text-[12px] text-[var(--nu-text-secondary)]">
+        {new Date(customer.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center justify-center gap-2">
           <button
             title="Edit Customer"
-            onClick={handleEdit}
-            className="
-              w-9
-              h-9
-              rounded-lg
-              bg-blue-50
-              hover:bg-blue-100
-              text-blue-600
-              flex
-              items-center
-              justify-center
-              transition
-            "
+            onClick={() => onEdit(customer)}
+            className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150"
           >
-            <Pencil size={18} />
+            <Pencil size={15} />
           </button>
-
           <button
             title="Delete Customer"
-            onClick={handleDelete}
-            className="
-              w-9
-              h-9
-              rounded-lg
-              bg-red-50
-              hover:bg-red-100
-              text-red-600
-              flex
-              items-center
-              justify-center
-              transition
-            "
+            onClick={() => onDelete(customer)}
+            className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-danger-soft)] text-[var(--nu-danger)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150"
           >
-            <Trash2 size={18} />
+            <Trash2 size={15} />
           </button>
-
         </div>
-
       </td>
-
     </tr>
   );
 };
