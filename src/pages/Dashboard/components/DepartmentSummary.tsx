@@ -1,164 +1,52 @@
-import { Building2, ChevronDown } from "lucide-react";
+import { Building2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Card, CardHeader, CardBody, CardFooter } from "../../../components/ui/Card";
+import { Button } from "../../../components/ui/Button";
+import { EmptyState } from "../../../components/ui/EmptyState";
 import { getDepartmentSummary } from "../../../services/dashboardService";
 
-const COLORS = [
-  "bg-blue-500",
-  "bg-green-500",
-  "bg-purple-500",
-  "bg-orange-500",
-  "bg-red-500",
-  "bg-cyan-500",
-];
+const BAR_COLORS = ["#2563eb", "#15803d", "#7c3aed", "#d97706", "#b91c1c", "#0e7490"];
 
 const DepartmentSummary = () => {
+  const navigate = useNavigate();
   const departments = getDepartmentSummary();
-
-  const maxCount = Math.max(
-    ...departments.map((dept) => dept.count),
-    1
-  );
+  const maxCount = Math.max(...departments.map((d) => d.count), 1);
 
   return (
-    <div className="bg-white rounded-2xl shadow-md border border-gray-100 min-h-[420px] flex flex-col">
-
-      {/* Header */}
-      <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100">
-
-        <div className="flex items-center gap-3">
-
-          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-
-            <Building2
-              size={20}
-              className="text-blue-600"
-            />
-
-          </div>
-
-          <div>
-
-            <h2 className="text-lg font-semibold text-slate-800">
-              Department Summary
-            </h2>
-
-            <p className="text-xs text-gray-500">
-              Projects by Department
-            </p>
-
-          </div>
-
-        </div>
-
-        <button
-          className="
-            flex
-            items-center
-            gap-1
-            px-3
-            py-1.5
-            text-xs
-            border
-            border-gray-200
-            rounded-lg
-            hover:bg-gray-50
-            transition
-          "
-        >
-          By Projects
-
-          <ChevronDown size={14} />
-
-        </button>
-
-      </div>
-
-      {/* Body */}
-      <div className="flex-1 px-6 py-5">
-
+    <Card padded={false} className="flex flex-col min-h-[360px]">
+      <CardHeader icon={<Building2 size={15} />} title="Department Summary" subtitle="Projects by department" iconTint="neutral" />
+      <CardBody className="flex-1">
         {departments.length === 0 ? (
-
-          <div className="h-full flex items-center justify-center text-gray-400">
-            No Department Data
-          </div>
-
+          <EmptyState
+            icon={<Building2 size={18} />}
+            title="No department data available"
+            description="Import projects to begin generating department analytics."
+          />
         ) : (
-
-          <div className="space-y-6">
-
+          <div className="space-y-3.5">
             {departments.map((dept, index) => (
-
               <div key={dept.department}>
-
-                <div className="flex justify-between items-center mb-2">
-
-                  <div className="flex items-center gap-3">
-
-                    <div
-                      className={`w-3 h-3 rounded-full ${
-                        COLORS[index % COLORS.length]
-                      }`}
-                    />
-
-                    <span className="text-sm font-medium text-slate-700">
-                      {dept.department}
-                    </span>
-
-                  </div>
-
-                  <span className="text-sm font-semibold text-slate-700">
-                    {dept.count}
-                  </span>
-
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[12px] font-medium text-[var(--nu-text-secondary)]">{dept.department}</span>
+                  <span className="text-[12px] font-semibold text-[var(--nu-text)]">{dept.count}</span>
                 </div>
-
-                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-
+                <div className="w-full h-1.5 bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-full overflow-hidden">
                   <div
-                    className={`h-2 rounded-full transition-all duration-500 ${
-                      COLORS[index % COLORS.length]
-                    }`}
-                    style={{
-                      width: `${
-                        (dept.count / maxCount) * 100
-                      }%`,
-                    }}
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${(dept.count / maxCount) * 100}%`, background: BAR_COLORS[index % BAR_COLORS.length] }}
                   />
-
                 </div>
-
               </div>
-
             ))}
-
           </div>
-
         )}
-
-      </div>
-
-      {/* Footer */}
-      <div className="px-6 pb-5 mt-auto">
-
-        <button
-          className="
-            w-full
-            py-3
-            rounded-xl
-            bg-slate-50
-            border
-            border-gray-200
-            text-blue-600
-            font-medium
-            hover:bg-blue-50
-            transition
-          "
-        >
+      </CardBody>
+      <CardFooter>
+        <Button variant="secondary" size="sm" className="w-full justify-center" onClick={() => navigate("/projects")}>
           View All Departments
-        </button>
-
-      </div>
-
-    </div>
+        </Button>
+      </CardFooter>
+    </Card>
   );
 };
 

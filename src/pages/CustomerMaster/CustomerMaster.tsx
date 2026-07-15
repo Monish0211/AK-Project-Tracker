@@ -1,297 +1,185 @@
-// src/pages/CustomerMaster/CustomerMaster.tsx
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import {
-  Users,
-  Plus,
-  Upload,
-  Download,
-  UserCheck,
-  UserX,
-  CalendarDays,
-} from "lucide-react";
+import { Building2 } from "lucide-react";
+import "./customer-master-theme.css";
 
 import type { Customer } from "../../types/CustomerModel";
-
 import {
   getCustomers,
-  importCustomersFromExcel,
-  exportCustomersToExcel,
+  deleteCustomer,
+  importCustomersFromFile,
+  downloadCustomerTemplate,
+  exportCustomers,
 } from "../../services/customerService";
+import { useLiveRefresh } from "../../hooks/useLiveRefresh";
+import { Card, CardHeader } from "../../components/ui/Card";
 
-import CustomerFilter from "./components/CustomerFilter";
+import CustomerHero from "./components/CustomerHero";
+import CustomerKPIStrip from "./components/CustomerKPIStrip";
+import CustomerToolbar from "./components/CustomerToolbar";
+import type { SortKey, StatusFilter } from "./components/CustomerToolbar";
 import CustomerTable from "./components/CustomerTable";
 import CustomerModal from "./components/CustomerModal";
+import ConfirmDeleteDialog from "./components/ConfirmDeleteDialog";
+import RecentCustomersPanel from "./components/RecentCustomersPanel";
+
+interface FormModalState {
+  mode: "add" | "edit";
+  customer?: Customer;
+}
 
 const CustomerMaster = () => {
-  const [customers, setCustomers] = useState<Customer[]>(getCustomers());
-
-  const [search, setSearch] = useState("");
-
-  const [showModal, setShowModal] = useState(false);
-
+  const { refreshKey } = useLiveRefresh();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const filteredCustomers = customers.filter((customer) =>
-    customer.customerName
-      .toLowerCase()
-      .includes(search.toLowerCase())
-  );
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
+  const [sortKey, setSortKey] = useState<SortKey>("newest");
 
-  const totalCustomers = customers.length;
+  const [formModal, setFormModal] = useState<FormModalState | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
 
-  const activeCustomers = customers.filter(
-    (customer) => customer.status === "Active"
-  ).length;
+  // Re-reads on every refresh tick — own saves and any other tab's saves alike.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const customers = useMemo(() => getCustomers(), [refreshKey]);
 
-  const inactiveCustomers = customers.filter(
-    (customer) => customer.status === "Inactive"
-  ).length;
+  const stats = useMemo(() => {
+    const today = new Date().toDateString();
+    return {
+      total: customers.length,
+      active: customers.filter((c) => c.status === "Active").length,
+      inactive: customers.filter((c) => c.status === "Inactive").length,
+      addedToday: customers.filter((c) => new Date(c.createdAt).toDateString() === today).length,
+    };
+  }, [customers]);
 
-  const today = new Date().toDateString();
+  const visibleCustomers = useMemo(() => {
+    const query = search.trim().toLowerCase();
 
-  const addedToday = customers.filter(
-    (customer) =>
-      new Date(customer.createdAt).toDateString() === today
-  ).length;
+    let result = customers.filter((c) => {
+      if (!query) return true;
+      return (
+        c.customerName.toLowerCase().includes(query) ||
+        (c.companyName || "").toLowerCase().includes(query) ||
+        (c.customerId || "").toLowerCase().includes(query)
+      );
+    });
 
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
+    if (statusFilter !== "All") {
+      result = result.filter((c) => c.status === statusFilter);
+    }
+
+    result = [...result].sort((a, b) => {
+      switch (sortKey) {
+        case "name-asc":
+          return a.customerName.localeCompare(b.customerName);
+        case "name-desc":
+          return b.customerName.localeCompare(a.customerName);
+        case "oldest":
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        case "newest":
+        default:
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+    });
+
+    return result;
+  }, [customers, search, statusFilter, sortKey]);
+
+  const handleReset = () => {
+    setSearch("");
+    setStatusFilter("All");
+    setSortKey("newest");
   };
 
-  const handleFileChange = async (
-    event: ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-
     event.target.value = "";
-
     if (!file) return;
 
     try {
-      const { imported, skipped } = await importCustomersFromExcel(file);
+      const result = await importCustomersFromFile(file);
 
-      setCustomers(getCustomers());
+      if (result.errors.length > 0) {
+        alert(
+          `Import aborted. Fix the following validation issues:\n\n${result.errors
+            .slice(0, 10)
+            .join("\n")}${result.errors.length > 10 ? `\n...and ${result.errors.length - 10} more` : ""}`
+        );
+        return;
+      }
 
-      alert(`Imported ${imported} Customers\nSkipped ${skipped} Duplicates`);
+      alert(`Imported ${result.imported} customer(s).\nSkipped ${result.skipped} duplicate(s).`);
     } catch {
-  alert("Failed to import Excel file. Please check the file format.");
-}
+      alert("Failed to read the file. Please check the file format and try again.");
+    }
   };
 
-  const handleExportClick = () => {
-    exportCustomersToExcel(customers);
+  const handleDeleteConfirm = () => {
+    if (!deleteTarget) return;
+    deleteCustomer(deleteTarget.id);
+    setDeleteTarget(null);
   };
 
   return (
-    <div className="space-y-6">
+    <div className="customer-master-shell -m-6">
+      <input ref={fileInputRef} type="file" accept=".xlsx,.csv" className="hidden" onChange={handleFileChange} />
 
-      {/* Hidden Import File Input */}
+      <div key={refreshKey} className="p-4 space-y-3.5 nu-fade-in">
+        <CustomerHero
+          total={stats.total}
+          active={stats.active}
+          inactive={stats.inactive}
+          addedToday={stats.addedToday}
+          onAddCustomer={() => setFormModal({ mode: "add" })}
+        />
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".xlsx"
-        className="hidden"
-        onChange={handleFileChange}
-      />
+        <CustomerKPIStrip total={stats.total} active={stats.active} inactive={stats.inactive} addedToday={stats.addedToday} />
 
-      {/* Header */}
-
-      <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6">
-
-        <div className="flex items-center justify-between">
-
-          <div className="flex items-center gap-4">
-
-            <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center">
-
-              <Users
-                size={28}
-                className="text-blue-600"
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-3.5 items-start">
+          <div className="xl:col-span-3">
+            <Card padded={false} elevated>
+              <CardHeader
+                icon={<Building2 size={15} />}
+                title="Customer Repository"
+                subtitle="Search, manage and maintain customer organizations."
               />
-
-            </div>
-
-            <div>
-
-              <h1 className="text-3xl font-bold text-slate-800">
-                Customer Master
-              </h1>
-
-              <p className="text-gray-500 mt-1">
-                Manage all customer records used across the PMO Portal.
-              </p>
-
-            </div>
-
+              <CustomerToolbar
+                search={search}
+                onSearchChange={setSearch}
+                statusFilter={statusFilter}
+                onStatusFilterChange={setStatusFilter}
+                sortKey={sortKey}
+                onSortChange={setSortKey}
+                onUploadClick={() => fileInputRef.current?.click()}
+                onDownloadTemplate={downloadCustomerTemplate}
+                onExport={(format) => exportCustomers(visibleCustomers, format)}
+                onReset={handleReset}
+                onAddCustomer={() => setFormModal({ mode: "add" })}
+              />
+              <CustomerTable
+                customers={visibleCustomers}
+                onEdit={(customer) => setFormModal({ mode: "edit", customer })}
+                onDelete={(customer) => setDeleteTarget(customer)}
+              />
+            </Card>
           </div>
 
-          <div className="flex gap-3">
-
-            <button
-              onClick={handleImportClick}
-              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-green-600 text-white hover:bg-green-700 transition"
-            >
-              <Upload size={18} />
-              Import Excel
-            </button>
-
-            <button
-              onClick={handleExportClick}
-              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition"
-            >
-              <Download size={18} />
-              Export Excel
-            </button>
-
-            <button
-              onClick={() => setShowModal(true)}
-              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition"
-            >
-              <Plus size={18} />
-              Add Customer
-            </button>
-
-          </div>
-
+          <RecentCustomersPanel customers={customers} />
         </div>
-
       </div>
 
-      {/* Statistics */}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
-
-        <div className="bg-white rounded-2xl border shadow-sm p-5">
-
-          <div className="flex justify-between items-center">
-
-            <div>
-
-              <p className="text-sm text-gray-500">
-                Total Customers
-              </p>
-
-              <h2 className="text-3xl font-bold text-slate-800 mt-2">
-                {totalCustomers}
-              </h2>
-
-            </div>
-
-            <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
-
-              <Users className="text-blue-600" />
-
-            </div>
-
-          </div>
-
-        </div>
-
-        <div className="bg-white rounded-2xl border shadow-sm p-5">
-
-          <div className="flex justify-between items-center">
-
-            <div>
-
-              <p className="text-sm text-gray-500">
-                Active Customers
-              </p>
-
-              <h2 className="text-3xl font-bold text-green-600 mt-2">
-                {activeCustomers}
-              </h2>
-
-            </div>
-
-            <div className="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center">
-
-              <UserCheck className="text-green-600" />
-
-            </div>
-
-          </div>
-
-        </div>
-
-        <div className="bg-white rounded-2xl border shadow-sm p-5">
-
-          <div className="flex justify-between items-center">
-
-            <div>
-
-              <p className="text-sm text-gray-500">
-                Inactive Customers
-              </p>
-
-              <h2 className="text-3xl font-bold text-red-600 mt-2">
-                {inactiveCustomers}
-              </h2>
-
-            </div>
-
-            <div className="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center">
-
-              <UserX className="text-red-600" />
-
-            </div>
-
-          </div>
-
-        </div>
-
-        <div className="bg-white rounded-2xl border shadow-sm p-5">
-
-          <div className="flex justify-between items-center">
-
-            <div>
-
-              <p className="text-sm text-gray-500">
-                Added Today
-              </p>
-
-              <h2 className="text-3xl font-bold text-purple-600 mt-2">
-                {addedToday}
-              </h2>
-
-            </div>
-
-            <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-
-              <CalendarDays className="text-purple-600" />
-
-            </div>
-
-          </div>
-
-        </div>
-
-      </div>
-
-      {/* Search */}
-
-      <CustomerFilter
-        search={search}
-        setSearch={setSearch}
-      />
-
-      {/* Table */}
-
-      <CustomerTable
-        customers={filteredCustomers}
-        setCustomers={setCustomers}
-      />
-
-      {/* Add Customer Modal */}
-
-      {showModal && (
-<CustomerModal
-    setCustomers={setCustomers}
-    onClose={() => setShowModal(false)}
-/>
+      {formModal && (
+        <CustomerModal mode={formModal.mode} customer={formModal.customer} onClose={() => setFormModal(null)} />
       )}
 
+      {deleteTarget && (
+        <ConfirmDeleteDialog
+          customerName={deleteTarget.customerName}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={handleDeleteConfirm}
+        />
+      )}
     </div>
   );
 };

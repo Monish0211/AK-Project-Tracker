@@ -16,6 +16,9 @@ import {
   UOM_OPTIONS,
 } from "../../../utils/quantityCalculations";
 import CommercialSummaryCard from "./CommercialSummaryCard";
+import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
+import { StatTile } from "../../../components/ui/StatTile";
+import { Button } from "../../../components/ui/Button";
 
 interface Props {
   project: Project;
@@ -37,6 +40,9 @@ const LAST_ROW_WARNING = "At least one quantity item is required.";
 const CURRENCY_OPTIONS = ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR"];
 
 const DEFAULT_CURRENCY = "INR";
+
+const fieldClass =
+  "h-9 w-full rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] text-[12.5px] text-[var(--nu-text)] outline-none transition-shadow focus:ring-2 focus:ring-[var(--nu-accent)]/25 focus:border-[var(--nu-accent)]";
 
 interface NumericInputProps {
   value: number;
@@ -96,14 +102,12 @@ const NumericInput = ({
       value={rawValue}
       disabled={disabled}
       onChange={handleChange}
-      className={`h-10 w-full rounded-lg border text-right text-sm outline-none transition-all duration-150 placeholder:text-slate-300 focus:ring-2 ${
-        prefix ? "pl-7 pr-3" : "px-3"
-      } ${
+      className={`${fieldClass} text-right ${prefix ? "pl-6 pr-2" : "px-2"} ${
         disabled
-          ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+          ? "bg-[var(--nu-surface-alt)] text-[var(--nu-text-muted)] cursor-not-allowed"
           : hasError
-          ? "border-red-300 bg-red-50 text-slate-800 focus:border-red-400 focus:ring-red-100"
-          : "border-gray-200 bg-white text-slate-800 focus:border-blue-500 focus:ring-blue-500/20"
+          ? "border-[var(--nu-danger)] bg-[var(--nu-danger-soft)] focus:border-[var(--nu-danger)] focus:ring-[var(--nu-danger)]/20"
+          : ""
       }`}
     />
   );
@@ -114,7 +118,7 @@ const NumericInput = ({
 
   return (
     <div className="relative">
-      <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-400">
+      <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-[12px] text-[var(--nu-text-muted)]">
         {prefix}
       </span>
       {input}
@@ -181,11 +185,11 @@ const AssignedToInput = ({ value, onChange, ariaLabel }: AssignedToInputProps) =
         onChange={handleChange}
         onFocus={handleFocus}
         aria-label={ariaLabel}
-        className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 placeholder:text-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+        className={`${fieldClass} px-2`}
         placeholder="Search employee..."
       />
       {isOpen && suggestions.length > 0 && (
-        <div className="absolute left-0 right-0 z-50 mt-1 max-h-36 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+        <div className="absolute left-0 right-0 z-50 mt-1 max-h-36 overflow-y-auto nu-scrollbar rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] py-1 shadow-[var(--nu-shadow-md)]">
           {suggestions.map((name) => (
             <button
               key={name}
@@ -194,71 +198,13 @@ const AssignedToInput = ({ value, onChange, ariaLabel }: AssignedToInputProps) =
                 onChange(name);
                 setIsOpen(false);
               }}
-              className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-blue-50 transition-colors duration-100"
+              className="w-full text-left px-3 py-1.5 text-[12.5px] text-[var(--nu-text)] hover:bg-[var(--nu-accent-soft)] transition-colors duration-100"
             >
               {name}
             </button>
           ))}
         </div>
       )}
-    </div>
-  );
-};
-
-interface KpiCardProps {
-  icon: React.ReactNode;
-  label: string;
-  value: React.ReactNode;
-  accent: "blue" | "purple" | "orange" | "green";
-  highlight?: boolean;
-}
-
-const ACCENT_STYLES: Record<
-  KpiCardProps["accent"],
-  { iconBg: string; iconText: string; valueText: string }
-> = {
-  blue: {
-    iconBg: "bg-blue-50",
-    iconText: "text-blue-600",
-    valueText: "text-slate-800",
-  },
-  purple: {
-    iconBg: "bg-purple-50",
-    iconText: "text-purple-600",
-    valueText: "text-slate-800",
-  },
-  orange: {
-    iconBg: "bg-orange-50",
-    iconText: "text-orange-600",
-    valueText: "text-slate-800",
-  },
-  green: {
-    iconBg: "bg-green-50",
-    iconText: "text-green-600",
-    valueText: "text-green-600",
-  },
-};
-
-const KpiCard = ({ icon, label, value, accent, highlight = false }: KpiCardProps) => {
-  const styles = ACCENT_STYLES[accent];
-
-  return (
-    <div
-      className={`rounded-2xl border bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${
-        highlight ? "border-green-200 ring-1 ring-green-100" : "border-slate-200"
-      }`}
-    >
-      <div
-        className={`flex h-10 w-10 items-center justify-center rounded-xl ${styles.iconBg} ${styles.iconText}`}
-      >
-        {icon}
-      </div>
-      <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-        {label}
-      </p>
-      <div className={`mt-1 ${typeof value === "string" ? "text-2xl font-bold " + styles.valueText : ""}`}>
-        {value}
-      </div>
     </div>
   );
 };
@@ -427,335 +373,301 @@ const QuantityCard = ({ project, setProject }: Props) => {
     project.projectEndDate
   );
 
+  // UOM summary badges (display only — same calculation as before)
+  const uomGroups: Record<string, number> = {};
+  project.quantityItems.forEach((item) => {
+    const uom = (item.uom || "DAY").trim().toUpperCase();
+    uomGroups[uom] = (uomGroups[uom] || 0) + (item.woQty || 0);
+  });
+
+  const UOM_SORT_ORDER = [
+    "LUMP SUM",
+    "MAN-HOUR",
+    "MAN-DAY",
+    "DAY",
+    "MONTH",
+    "VISIT",
+    "PERSON",
+    "JOB",
+    "PACKAGE",
+    "NOS",
+    "LOT",
+    "SET",
+    "TRIP",
+  ];
+
+  const sortedUomEntries = Object.entries(uomGroups).sort(([a], [b]) => {
+    const idxA = UOM_SORT_ORDER.indexOf(a);
+    const idxB = UOM_SORT_ORDER.indexOf(b);
+    if (idxA === -1 && idxB === -1) return a.localeCompare(b);
+    if (idxA === -1) return 1;
+    if (idxB === -1) return -1;
+    return idxA - idxB;
+  });
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      {/* Header Panel */}
-      <div className="mb-6 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between border-b border-slate-100 pb-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
-            <Package size={20} strokeWidth={2.25} />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-slate-800">
-              Quantity Details
-            </h2>
-            <p className="text-sm text-slate-500">
-              Manage engineering activities, work order quantities, and assignment details.
-            </p>
-          </div>
-        </div>
-
-        {/* Currency & Exchange Rate Controls */}
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="w-32">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Currency
-            </label>
-            <select
-              value={project.currency || DEFAULT_CURRENCY}
-              onChange={(e) => handleProjectCurrencyChange(e.target.value)}
-              className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-            >
-              {CURRENCY_OPTIONS.map((currencyOption) => (
-                <option key={currencyOption} value={currencyOption}>
-                  {currencyOption}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="w-36">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Exchange Rate
-            </label>
-            <NumericInput
-              value={project.currentExchangeRate}
-              ariaLabel="Project Exchange Rate"
-              disabled={isCurrencyINR}
-              onChange={(value) => handleProjectExchangeRateChange(value)}
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={handleAddItem}
-            title="Add a new quantity item"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white shadow-sm transition-all duration-150 hover:bg-blue-700 hover:shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:bg-blue-800"
-          >
-            <Plus size={16} strokeWidth={2.5} />
-            Add Activity
-          </button>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="max-h-[28rem] overflow-auto rounded-xl border border-slate-200">
-        <table className="w-full min-w-[1150px] table-fixed border-collapse text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="w-14 border-b border-slate-200 px-3 py-2.5 text-center font-semibold">
-                Sl No
-              </th>
-              <th className="border-b border-slate-200 px-3 py-2.5 text-left font-semibold">
-                Description
-              </th>
-              <th className="w-24 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
-                Qty
-              </th>
-              <th className="w-32 border-b border-slate-200 px-3 py-2.5 text-center font-semibold">
-                UOM
-              </th>
-              <th className="w-28 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
-                Unit Rate
-              </th>
-              <th className="w-32 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
-                Unit Rate (INR)
-              </th>
-              <th className="w-36 border-b border-slate-200 px-3 py-2.5 text-right font-semibold">
-                WO Value
-              </th>
-              <th className="w-48 border-b border-slate-200 px-3 py-2.5 text-left font-semibold">
-                Assigned To
-              </th>
-              <th className="w-16 border-b border-slate-200 px-3 py-2.5 text-center font-semibold">
-                Action
-              </th>
-            </tr>
-          </thead>
-
-          <tbody className="divide-y divide-slate-100">
-            {project.quantityItems.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="py-10 text-center text-slate-400">
-                  No activities added. Click "Add Activity" to get started.
-                </td>
-              </tr>
-            ) : (
-              project.quantityItems.map((item, index) => {
-                const canRemove = canRemoveQuantityItem(project.quantityItems);
-                return (
-                  <tr
-                    key={item.id}
-                    className="bg-white transition-colors duration-150 hover:bg-slate-50"
-                  >
-                    {/* Sl No */}
-                    <td className="px-3 py-3 text-center text-slate-500">
-                      {index + 1}
-                    </td>
-
-                    {/* Description */}
-                    <td className="px-3 py-3">
-                      <input
-                        type="text"
-                        value={item.description}
-                        placeholder={
-                          DESCRIPTION_PLACEHOLDERS[
-                            index % DESCRIPTION_PLACEHOLDERS.length
-                          ]
-                        }
-                        aria-label={`Description for row ${index + 1}`}
-                        onChange={(e) =>
-                          handleDescriptionChange(index, e.target.value)
-                        }
-                        className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 placeholder:text-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                      />
-                    </td>
-
-                    {/* Quantity */}
-                    <td className="px-3 py-3">
-                      <NumericInput
-                        value={item.woQty}
-                        ariaLabel={`Quantity for row ${index + 1}`}
-                        onChange={(value) =>
-                          handleFieldChange(index, "woQty", value)
-                        }
-                      />
-                    </td>
-
-                    {/* UOM */}
-                    <td className="px-3 py-3">
-                      <select
-                        value={item.uom || "DAY"}
-                        aria-label={`UOM for row ${index + 1}`}
-                        onChange={(e) =>
-                          handleFieldChange(index, "uom", e.target.value)
-                        }
-                        className="h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                      >
-                        {UOM_OPTIONS.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-
-                    {/* Unit Rate */}
-                    <td className="px-3 py-3">
-                      <NumericInput
-                        value={item.unitRate}
-                        ariaLabel={`Unit Rate for row ${index + 1}`}
-                        onChange={(value) =>
-                          handleFieldChange(index, "unitRate", value)
-                        }
-                      />
-                    </td>
-
-                    {/* Unit Rate (INR) */}
-                    <td className="px-3 py-3 text-right">
-                      <span className="inline-flex min-w-[3rem] justify-center rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600">
-                        {formatIndianNumber(item.unitRateINR)}
-                      </span>
-                    </td>
-
-                    {/* WO Value */}
-                    <td className="px-3 py-3 text-right">
-                      <span className="text-base font-bold text-green-600">
-                        {formatIndianCurrency(item.woValue || 0)}
-                      </span>
-                    </td>
-
-                    {/* Assigned To */}
-                    <td className="px-3 py-3">
-                      <AssignedToInput
-                        value={item.assignedTo || ""}
-                        onChange={(val) =>
-                          handleFieldChange(index, "assignedTo", val)
-                        }
-                        ariaLabel={`Assigned to employee for row ${index + 1}`}
-                      />
-                    </td>
-
-                    {/* Delete Action */}
-                    <td className="px-3 py-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveItem(index)}
-                        disabled={!canRemove}
-                        aria-label={
-                          canRemove
-                            ? `Delete row ${index + 1}`
-                            : LAST_ROW_WARNING
-                        }
-                        title={canRemove ? "Delete row" : LAST_ROW_WARNING}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-600 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:bg-red-100 hover:shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400 disabled:cursor-not-allowed disabled:translate-y-0 disabled:bg-transparent disabled:text-slate-300 disabled:shadow-none"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {project.quantityItems.length === 1 && (
-        <p className="mt-2 text-xs font-medium text-slate-400">
-          {LAST_ROW_WARNING}
-        </p>
-      )}
-
-      {/* Summary KPI cards */}
-      {(() => {
-        const uomGroups: Record<string, number> = {};
-        project.quantityItems.forEach((item) => {
-          const uom = (item.uom || "DAY").trim().toUpperCase();
-          uomGroups[uom] = (uomGroups[uom] || 0) + (item.woQty || 0);
-        });
-
-        const UOM_SORT_ORDER = [
-          "LUMP SUM",
-          "MAN-HOUR",
-          "MAN-DAY",
-          "DAY",
-          "MONTH",
-          "VISIT",
-          "PERSON",
-          "JOB",
-          "PACKAGE",
-          "NOS",
-          "LOT",
-          "SET",
-          "TRIP",
-        ];
-
-        const sortedUomEntries = Object.entries(uomGroups).sort(([a], [b]) => {
-          const idxA = UOM_SORT_ORDER.indexOf(a);
-          const idxB = UOM_SORT_ORDER.indexOf(b);
-          if (idxA === -1 && idxB === -1) return a.localeCompare(b);
-          if (idxA === -1) return 1;
-          if (idxB === -1) return -1;
-          return idxA - idxB;
-        });
-
-        const uomSummaryNode = (
-          <div className="flex flex-wrap gap-1.5 mt-1 max-h-[4.5rem] overflow-y-auto pr-1">
-            {sortedUomEntries.length === 0 ? (
-              <span className="text-slate-400 text-sm">No UOM</span>
-            ) : (
-              sortedUomEntries.map(([uom, qty]) => (
-                <span
-                  key={uom}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-700 shadow-sm"
-                >
-                  <span>{uom}</span>
-                  <span className="h-4 w-px bg-purple-250/50" />
-                  <span className="font-bold text-slate-800">{formatIndianNumber(qty)}</span>
-                </span>
-              ))
-            )}
-          </div>
-        );
-
-        return (
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard
-              icon={<Package size={18} strokeWidth={2.25} />}
-              label="Activities"
-              value={formatIndianNumber(project.quantityItems.length)}
-              accent="blue"
-            />
-
-            <KpiCard
-              icon={<Layers size={18} strokeWidth={2.25} />}
-              label="UOM Summary"
-              value={uomSummaryNode}
-              accent="purple"
-            />
-
-            <KpiCard
-              icon={<Clock size={18} strokeWidth={2.25} />}
-              label="Project Duration"
-              value={projectDuration}
-              accent="orange"
-            />
-
-            <KpiCard
-              icon={<Wallet size={18} strokeWidth={2.25} />}
-              label="Total WO Value"
-              value={formatIndianCurrency(project.workOrderValueINR)}
-              accent="green"
-              highlight
-            />
-          </div>
-        );
-      })()}
-
-      {/* GST & Commercial Summary */}
-      <div className="mt-6">
-        <CommercialSummaryCard
-          currency={project.currency}
-          workOrderValueINR={project.workOrderValueINR}
-          gstApplicable={project.gstApplicable}
-          gstRate={project.gstRate}
-          gstAmount={project.gstAmount}
-          grandTotal={project.grandTotal}
-          editable
-          onGstApplicableChange={handleGstApplicableChange}
+    <div className="space-y-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatTile
+          emphasis="secondary"
+          label="Activities"
+          value={formatIndianNumber(project.quantityItems.length)}
+          icon={<Package size={14} />}
+          tint="accent"
+        />
+        <StatTile
+          emphasis="secondary"
+          label="Project Duration"
+          value={projectDuration || "—"}
+          icon={<Clock size={14} />}
+          tint="warning"
+        />
+        <StatTile
+          emphasis="secondary"
+          label="Total WO Value"
+          value={formatIndianCurrency(project.workOrderValueINR)}
+          icon={<Wallet size={14} />}
+          tint="success"
+        />
+        <StatTile
+          emphasis="secondary"
+          label="Currency"
+          value={project.currency || DEFAULT_CURRENCY}
+          icon={<Layers size={14} />}
+          tint="info"
         />
       </div>
+
+      {sortedUomEntries.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-0.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)] mr-1">
+            UOM Summary
+          </span>
+          {sortedUomEntries.map(([uom, qty]) => (
+            <span
+              key={uom}
+              className="inline-flex items-center gap-1.5 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] px-2 py-0.5 text-[11px] font-semibold text-[var(--nu-text-secondary)] shadow-[var(--nu-shadow-sm)]"
+            >
+              <span>{uom}</span>
+              <span className="h-3 w-px bg-[var(--nu-border)]" />
+              <span className="font-bold text-[var(--nu-text)]">{formatIndianNumber(qty)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <Card padded={false} elevated>
+        <CardHeader
+          icon={<Layers size={15} />}
+          title="Quantity Details"
+          subtitle="Engineering activities, quantities and assignment"
+          action={
+            <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={handleAddItem}>
+              Add Activity
+            </Button>
+          }
+        />
+        <CardBody className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-32">
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]">
+                Currency
+              </label>
+              <select
+                value={project.currency || DEFAULT_CURRENCY}
+                onChange={(e) => handleProjectCurrencyChange(e.target.value)}
+                className={fieldClass + " px-2"}
+              >
+                {CURRENCY_OPTIONS.map((currencyOption) => (
+                  <option key={currencyOption} value={currencyOption}>
+                    {currencyOption}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="w-36">
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]">
+                Exchange Rate
+              </label>
+              <NumericInput
+                value={project.currentExchangeRate}
+                ariaLabel="Project Exchange Rate"
+                disabled={isCurrencyINR}
+                onChange={(value) => handleProjectExchangeRateChange(value)}
+              />
+            </div>
+          </div>
+
+          <div className="max-h-[26rem] overflow-auto nu-scrollbar rounded-[var(--nu-radius-md)] border border-[var(--nu-border)]">
+            <table className="w-full min-w-[1100px] table-fixed border-collapse text-[12.5px]">
+              <thead className="sticky top-0 z-10 bg-[var(--nu-surface-alt)] text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)]">
+                <tr>
+                  <th className="w-12 border-b border-[var(--nu-border)] px-2 py-2 text-center font-medium">
+                    Sl
+                  </th>
+                  <th className="border-b border-[var(--nu-border)] px-2 py-2 text-left font-medium">
+                    Description
+                  </th>
+                  <th className="w-20 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
+                    Qty
+                  </th>
+                  <th className="w-28 border-b border-[var(--nu-border)] px-2 py-2 text-center font-medium">
+                    UOM
+                  </th>
+                  <th className="w-24 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
+                    Unit Rate
+                  </th>
+                  <th className="w-28 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
+                    Rate (INR)
+                  </th>
+                  <th className="w-32 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
+                    WO Value
+                  </th>
+                  <th className="w-44 border-b border-[var(--nu-border)] px-2 py-2 text-left font-medium">
+                    Assigned To
+                  </th>
+                  <th className="w-14 border-b border-[var(--nu-border)] px-2 py-2 text-center font-medium">
+                    Del
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-[var(--nu-border)]">
+                {project.quantityItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-[var(--nu-text-muted)]">
+                      No activities added. Click &quot;Add Activity&quot; to get started.
+                    </td>
+                  </tr>
+                ) : (
+                  project.quantityItems.map((item, index) => {
+                    const canRemove = canRemoveQuantityItem(project.quantityItems);
+                    return (
+                      <tr
+                        key={item.id}
+                        className="bg-[var(--nu-surface)] hover:bg-[var(--nu-surface-alt)] transition-colors"
+                      >
+                        <td className="px-2 py-2 text-center text-[var(--nu-text-muted)]">
+                          {index + 1}
+                        </td>
+
+                        <td className="px-2 py-2">
+                          <input
+                            type="text"
+                            value={item.description}
+                            placeholder={
+                              DESCRIPTION_PLACEHOLDERS[
+                                index % DESCRIPTION_PLACEHOLDERS.length
+                              ]
+                            }
+                            aria-label={`Description for row ${index + 1}`}
+                            onChange={(e) =>
+                              handleDescriptionChange(index, e.target.value)
+                            }
+                            className={fieldClass + " px-2"}
+                          />
+                        </td>
+
+                        <td className="px-2 py-2">
+                          <NumericInput
+                            value={item.woQty}
+                            ariaLabel={`Quantity for row ${index + 1}`}
+                            onChange={(value) =>
+                              handleFieldChange(index, "woQty", value)
+                            }
+                          />
+                        </td>
+
+                        <td className="px-2 py-2">
+                          <select
+                            value={item.uom || "DAY"}
+                            aria-label={`UOM for row ${index + 1}`}
+                            onChange={(e) =>
+                              handleFieldChange(index, "uom", e.target.value)
+                            }
+                            className={fieldClass + " px-1.5"}
+                          >
+                            {UOM_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        <td className="px-2 py-2">
+                          <NumericInput
+                            value={item.unitRate}
+                            ariaLabel={`Unit Rate for row ${index + 1}`}
+                            onChange={(value) =>
+                              handleFieldChange(index, "unitRate", value)
+                            }
+                          />
+                        </td>
+
+                        <td className="px-2 py-2 text-right">
+                          <span className="inline-flex rounded-full bg-[var(--nu-surface-alt)] px-2 py-0.5 text-[11.5px] font-medium text-[var(--nu-text-secondary)]">
+                            {formatIndianNumber(item.unitRateINR)}
+                          </span>
+                        </td>
+
+                        <td className="px-2 py-2 text-right font-bold text-[var(--nu-success)]">
+                          {formatIndianCurrency(item.woValue || 0)}
+                        </td>
+
+                        <td className="px-2 py-2">
+                          <AssignedToInput
+                            value={item.assignedTo || ""}
+                            onChange={(val) =>
+                              handleFieldChange(index, "assignedTo", val)
+                            }
+                            ariaLabel={`Assigned to employee for row ${index + 1}`}
+                          />
+                        </td>
+
+                        <td className="px-2 py-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItem(index)}
+                            disabled={!canRemove}
+                            aria-label={
+                              canRemove
+                                ? `Delete row ${index + 1}`
+                                : LAST_ROW_WARNING
+                            }
+                            title={canRemove ? "Delete row" : LAST_ROW_WARNING}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--nu-radius-md)] bg-[var(--nu-danger-soft)] text-[var(--nu-danger)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--nu-shadow-sm)] disabled:opacity-30 disabled:cursor-not-allowed disabled:translate-y-0"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {project.quantityItems.length === 1 && (
+            <p className="text-[11px] font-medium text-[var(--nu-text-muted)]">
+              {LAST_ROW_WARNING}
+            </p>
+          )}
+        </CardBody>
+      </Card>
+
+      <CommercialSummaryCard
+        currency={project.currency}
+        workOrderValueINR={project.workOrderValueINR}
+        gstApplicable={project.gstApplicable}
+        gstRate={project.gstRate}
+        gstAmount={project.gstAmount}
+        grandTotal={project.grandTotal}
+        editable
+        onGstApplicableChange={handleGstApplicableChange}
+      />
     </div>
   );
 };

@@ -3,6 +3,7 @@ import type { ManhourExpense } from "./ManhourExpense";
 import type { NonManhourExpense } from "./NonManhourExpense";
 import type { InvoiceItem } from "./InvoiceItem";
 import type { MilestoneBilling } from "./MilestoneBilling";
+import type { ProjectNote } from "./ProjectNote";
 
 export interface Project {
   id: string;
@@ -156,6 +157,8 @@ nonManhourExpenses: NonManhourExpense[];
 
   createdAt?: string;
   updatedAt?: string;
+
+  notes?: ProjectNote[];
 }
 
 export interface ProjectResource {

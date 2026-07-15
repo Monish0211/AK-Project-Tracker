@@ -25,6 +25,10 @@ const saveInvoices = (
     STORAGE_KEY,
     JSON.stringify(invoices)
   );
+
+  // Lets the Dashboard (and any other live view) know invoice/payment data
+  // changed, without introducing a new store or altering any calculation.
+  window.dispatchEvent(new Event("pmo:data-changed"));
 };
 
 /* ===================================================

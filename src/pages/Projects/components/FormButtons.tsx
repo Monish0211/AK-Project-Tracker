@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import type { Dispatch, SetStateAction } from "react";
 
 import type { Project } from "../../../types/Project";
+import { Button } from "../../../components/ui/Button";
 
 import {
   addProject,
@@ -130,63 +131,70 @@ const FormButtons = ({
   };
 
   return (
-    <div className="sticky bottom-0 bg-white/95 backdrop-blur-md border-t border-gray-200 py-4 px-6 flex justify-between items-center shadow-lg -mx-6 mt-8 z-40">
-
+    <div className="sticky bottom-0 z-40 -mx-4 mt-2 bg-[var(--nu-surface)]/95 backdrop-blur-md border-t border-[var(--nu-border)] py-3 px-4 flex flex-wrap justify-between items-center gap-3 shadow-[var(--nu-shadow-md)] rounded-t-[var(--nu-radius-lg)]">
       {/* Left side actions */}
-      <div className="flex gap-3">
-        <button
+      <div className="flex flex-wrap gap-2">
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
+          icon={<ArrowLeft size={14} />}
           onClick={handleBack}
-          className="flex items-center gap-2 px-5 py-3 rounded-xl border border-gray-300 hover:bg-gray-50 text-slate-700 transition font-semibold"
         >
-          <ArrowLeft size={18} />
           Back
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
+          icon={<RotateCcw size={14} />}
           onClick={handleReset}
-          className="flex items-center gap-2 px-5 py-3 rounded-xl border border-yellow-500 text-yellow-600 hover:bg-yellow-50 transition font-semibold"
+          className="text-[var(--nu-warning)] hover:bg-[var(--nu-warning-soft)]"
         >
-          <RotateCcw size={18} />
           Reset
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
+          icon={<X size={14} />}
           onClick={handleCancel}
-          className="flex items-center gap-2 px-5 py-3 rounded-xl border border-red-500 text-red-600 hover:bg-red-50 transition font-semibold"
+          className="text-[var(--nu-danger)] hover:bg-[var(--nu-danger-soft)]"
         >
-          <X size={18} />
           Cancel
-        </button>
+        </Button>
       </div>
 
       {/* Right side actions */}
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-2">
         {!isLastTab && (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
+            icon={<ChevronRight size={14} />}
             onClick={handleSaveAndNext}
-            className="flex items-center gap-2 px-5 py-3 rounded-xl border border-blue-600 text-blue-600 hover:bg-blue-50 transition font-semibold"
+            className="flex-row-reverse"
           >
             Save & Next
-            <ChevronRight size={18} />
-          </button>
+          </Button>
         )}
 
         {isLastTab && (
-          <button
+          <Button
             type="button"
+            variant="primary"
+            size="sm"
+            icon={<Save size={14} />}
             onClick={handleSave}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition font-semibold save-project-btn shadow-md"
+            className="save-project-btn"
           >
-            <Save size={18} />
             {mode === "add" ? "Save Project" : "Update Project"}
-          </button>
+          </Button>
         )}
       </div>
-
     </div>
   );
 };
