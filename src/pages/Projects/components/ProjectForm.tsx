@@ -42,12 +42,13 @@ interface TabConfig {
   icon: typeof LayoutGrid;
 }
 
-// Add Project: 4 tabs — no team assigned, no expenses register, no invoices
+// Add Project: 5 tabs
 const TABS_ADD: TabConfig[] = [
   { key: "general", label: "General", icon: LayoutGrid },
   { key: "quantity", label: "Quantity", icon: Package },
   { key: "payments", label: "Payments", icon: CreditCard },
   { key: "budget", label: "Expense Budget", icon: Wallet },
+  { key: "team", label: "Team Assigned", icon: Users },
 ];
 
 // Edit Project: 7 tabs — full execution workflow
@@ -154,8 +155,8 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
               </h1>
               <p className="text-[12.5px] text-[var(--nu-text-muted)] mt-0.5">
                 {mode === "add"
-                  ? "Enter project information across General, Quantity, Payments and Expense Budget."
-                  : "Update project information including quantities, payment milestones, expenses and invoices."}
+                  ? "Enter project information across General, Quantity, Payments, Expense Budget, and Team Assigned."
+                  : "Update project information including quantities, payment milestones, expenses, team assignments, and invoices."}
               </p>
             </div>
           </div>

@@ -51,12 +51,10 @@ const FormButtons = ({
     }
 
     const requiresManager =
-      mode === "edit" && (
-        isLastTab ||
-        activeTab === "team" ||
-        activeTab === "expenses" ||
-        activeTab === "invoices"
-      );
+      isLastTab ||
+      activeTab === "team" ||
+      activeTab === "expenses" ||
+      activeTab === "invoices";
 
     if (requiresManager && project.primaryProjectManager.trim() === "") {
       alert("Please fill Primary Project Manager.");
