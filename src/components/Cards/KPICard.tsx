@@ -13,24 +13,9 @@ const KPICard = ({
   icon,
 }: Props) => {
   return (
-    <div
-      className="
-        relative
-        overflow-hidden
-        rounded-2xl
-        bg-white
-        p-6
-        shadow-md
-        border
-        border-gray-100
-        transition-all
-        duration-300
-        hover:-translate-y-1
-        hover:shadow-xl
-      "
-    >
+    <div className="kpi-card-wrapper bg-white border border-gray-100 shadow-md p-6 rounded-2xl">
       {/* Top Accent */}
-      <div className="absolute top-0 left-0 h-1 w-full bg-gradient-to-r from-blue-600 to-cyan-500" />
+      <div className="kpi-accent-line" />
 
       {/* Header */}
       <div className="flex justify-between items-start">

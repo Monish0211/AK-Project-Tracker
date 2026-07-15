@@ -60,6 +60,12 @@ const RevenueChart = () => {
         height={350}
       >
         <BarChart data={data}>
+          <defs>
+            <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#2563EB" />
+              <stop offset="100%" stopColor="#06B6D4" />
+            </linearGradient>
+          </defs>
 
           <CartesianGrid strokeDasharray="3 3" />
 
@@ -72,7 +78,7 @@ const RevenueChart = () => {
           <Bar
             dataKey="value"
             radius={[8, 8, 0, 0]}
-            fill="#2563eb"
+            fill="url(#barGradient)"
           />
 
         </BarChart>

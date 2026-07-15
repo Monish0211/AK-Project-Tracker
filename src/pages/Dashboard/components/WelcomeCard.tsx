@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import {
   CalendarDays,
   Clock3,
@@ -5,50 +6,71 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import SystemStatus from "../../../components/Dashboard/SystemStatus";
-import { getProjects } from "../../../services/projectService";
-import { getDashboardMetrics } from "../../../services/dashboardService";
 import { useTheme } from "../../../context/ThemeContext";
 
 const WelcomeCard = () => {
   const { theme } = useTheme();
-  const now = new Date();
-  const projects = getProjects();
-  const metrics = getDashboardMetrics();
+  
+  const [currentDate, setCurrentDate] = useState("");
+  const [currentTime, setCurrentTime] = useState("");
 
-  const activeCount = projects.filter((p) => p.projectStatus === "Active").length;
-  const projectCount = projects.length;
-  const totalInvoicesLakhs = (metrics.totalInvoiceRaised / 100000).toFixed(2);
+  useEffect(() => {
+    const updateTimeAndDate = () => {
+      const now = new Date();
+      
+      const dateString = now.toLocaleDateString("en-IN", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      });
 
-  const currentDate = now.toLocaleDateString("en-IN", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
+      const timeString = now.toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      });
 
-  const currentTime = now.toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+      setCurrentDate(dateString);
+      setCurrentTime(timeString);
+    };
+
+    updateTimeAndDate();
+    const interval = setInterval(updateTimeAndDate, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   if (theme === "light") {
     return (
-      <div className="bg-gradient-to-r from-slate-900 via-blue-900 to-cyan-700 rounded-2xl shadow-xl px-8 py-6 text-white">
+      <div className="bg-gradient-to-r from-slate-900 via-blue-900 to-cyan-700 rounded-2xl shadow-xl px-8 py-6 text-white overflow-hidden">
         <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-6">
           {/* Left Section */}
           <div className="flex-1">
-            <h1 className="text-3xl font-bold">
+            <h1 
+              className="text-3xl font-bold animate-fade-in-up"
+              style={{ animationDelay: "100ms" }}
+            >
               Welcome
             </h1>
-            <h2 className="text-xl font-semibold mt-2">
+            <h2 
+              className="text-xl font-semibold mt-2 animate-fade-in-up"
+              style={{ animationDelay: "200ms" }}
+            >
               iFluids Engineering Project Management Dashboard
             </h2>
-            <p className="text-blue-100 mt-3 max-w-3xl text-sm leading-6">
+            <p 
+              className="text-blue-100 mt-3 max-w-3xl text-sm leading-6 animate-fade-in-up"
+              style={{ animationDelay: "300ms" }}
+            >
               Monitor project execution, commercial performance,
               billing, profitability and operational status.
             </p>
             {/* Status */}
-            <div className="flex flex-wrap gap-8 mt-6">
+            <div 
+              className="flex flex-wrap gap-8 mt-6 animate-fade-in-up"
+              style={{ animationDelay: "400ms" }}
+            >
               <SystemStatus status="Online" />
               <div className="flex items-center gap-3">
                 <CalendarDays
@@ -81,7 +103,10 @@ const WelcomeCard = () => {
             </div>
           </div>
           {/* Right Section */}
-          <div className="flex justify-end">
+          <div 
+            className="flex justify-end animate-fade-in-up"
+            style={{ animationDelay: "500ms" }}
+          >
             <Link
               to="/projects/add"
               className="
@@ -111,194 +136,189 @@ const WelcomeCard = () => {
   return (
     <div className="enterprise-hero-bg relative overflow-hidden rounded-2xl border border-blue-500/25 shadow-xl hover:border-blue-500/50 transition-all duration-300">
       
-      {/* Content Container */}
-      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-stretch gap-6 px-8 py-5 text-white">
-        
-        {/* Left Column */}
-        <div className="flex-1 flex flex-col justify-between gap-4">
-          <div>
-            <h1 className="text-[36px] font-bold text-white leading-none">
-              Welcome
-            </h1>
-            <h2 className="text-[22px] font-semibold text-[#E2E8F0] mt-1.5 leading-tight">
-              iFluids Engineering Project Management Dashboard
-            </h2>
-            <p className="text-[15px] text-[#CBD5E1] mt-1 max-w-3xl">
-              Monitor project execution, commercial performance, billing, profitability, and operational status.
-            </p>
-          </div>
-
-          {/* Info Cards Row */}
-          <div className="flex flex-wrap lg:flex-nowrap gap-4 items-center justify-start w-full mt-4">
-            
-            {/* Status Info Card */}
-            <div 
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                minWidth: "180px",
-                width: "fit-content",
-                padding: "14px 18px",
-                borderRadius: "12px",
-                border: "1px solid rgba(255, 255, 255, 0.1)",
-                backgroundColor: "rgba(0, 0, 0, 0.25)",
-                backdropFilter: "blur(12px)",
-              }}
-              className="shrink-0"
-            >
-              <div 
-                style={{
-                  width: "36px",
-                  height: "36px",
-                  borderRadius: "10px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "rgba(59, 130, 246, 0.12)",
-                  flexShrink: 0,
-                }}
-              >
-                <SystemStatus status="Online" iconOnly={true} />
-              </div>
-              <div className="flex flex-col justify-center">
-                <span style={{ fontSize: "11px", fontWeight: 600, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", lineHeight: "1.2" }}>
-                  System Status
-                </span>
-                <span style={{ fontSize: "15px", fontWeight: 700, color: "#FFFFFF", lineHeight: "1.2" }} className="mt-0.5">
-                  Online
-                </span>
-              </div>
-            </div>
-
-            {/* Date Info Card */}
-            <div 
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                minWidth: "180px",
-                width: "fit-content",
-                padding: "14px 18px",
-                borderRadius: "12px",
-                border: "1px solid rgba(255, 255, 255, 0.1)",
-                backgroundColor: "rgba(0, 0, 0, 0.25)",
-                backdropFilter: "blur(12px)",
-              }}
-              className="shrink-0"
-            >
-              <div 
-                style={{
-                  width: "36px",
-                  height: "36px",
-                  borderRadius: "10px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "rgba(59, 130, 246, 0.12)",
-                  flexShrink: 0,
-                }}
-              >
-                <CalendarDays size={18} className="text-[#60A5FA]" />
-              </div>
-              <div className="flex flex-col justify-center">
-                <span style={{ fontSize: "11px", fontWeight: 600, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", lineHeight: "1.2" }}>
-                  Today
-                </span>
-                <span style={{ fontSize: "15px", fontWeight: 700, color: "#FFFFFF", lineHeight: "1.2" }} className="mt-0.5 whitespace-nowrap">
-                  {currentDate}
-                </span>
-              </div>
-            </div>
-
-            {/* Last Updated Card */}
-            <div 
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                minWidth: "180px",
-                width: "fit-content",
-                padding: "14px 18px",
-                borderRadius: "12px",
-                border: "1px solid rgba(255, 255, 255, 0.1)",
-                backgroundColor: "rgba(0, 0, 0, 0.25)",
-                backdropFilter: "blur(12px)",
-              }}
-              className="shrink-0"
-            >
-              <div 
-                style={{
-                  width: "36px",
-                  height: "36px",
-                  borderRadius: "10px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "rgba(59, 130, 246, 0.12)",
-                  flexShrink: 0,
-                }}
-              >
-                <Clock3 size={18} className="text-[#60A5FA]" />
-              </div>
-              <div className="flex flex-col justify-center">
-                <span style={{ fontSize: "11px", fontWeight: 600, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", lineHeight: "1.2" }}>
-                  Last Updated
-                </span>
-                <span style={{ fontSize: "15px", fontWeight: 700, color: "#FFFFFF", lineHeight: "1.2" }} className="mt-0.5 whitespace-nowrap">
-                  {currentTime}
-                </span>
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-        {/* Right Column */}
-        <div className="w-full lg:w-80 flex flex-col justify-between items-end gap-6 shrink-0">
-          
-          {/* Add Project Button */}
-          <Link
-            to="/projects/add"
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-xl font-semibold shadow-lg transition duration-200"
-          >
-            <Plus size={16} />
-            <span>Add Project</span>
-          </Link>
-
-          {/* KPI Badges */}
-          <div className="flex gap-3 mt-auto w-full lg:w-auto justify-end">
-            
-            {/* Projects Badges */}
-            <div className="flex flex-col items-center justify-center bg-black/35 border border-white/10 rounded-xl px-4 py-2 min-w-[75px] backdrop-blur-md">
-              <span className="text-[10px] uppercase tracking-wider text-[#CBD5E1]">Projects</span>
-              <span className="text-lg font-bold text-white mt-0.5">{projectCount}</span>
-            </div>
-
-            {/* Active Badge */}
-            <div className="flex flex-col items-center justify-center bg-black/35 border border-white/10 rounded-xl px-4 py-2 min-w-[75px] backdrop-blur-md">
-              <span className="text-[10px] uppercase tracking-wider text-[#CBD5E1]">Active</span>
-              <span className="text-lg font-bold text-green-400 mt-0.5">{activeCount}</span>
-            </div>
-
-            {/* Invoices Badge */}
-            <div className="flex flex-col items-center justify-center bg-black/35 border border-white/10 rounded-xl px-4 py-2 min-w-[105px] backdrop-blur-md">
-              <span className="text-[10px] uppercase tracking-wider text-[#CBD5E1]">Invoices</span>
-              <span className="text-lg font-bold text-cyan-400 mt-0.5">₹{totalInvoicesLakhs}L</span>
-            </div>
-
-          </div>
-        </div>
-
-      </div>
-
-      {/* Bottom Accent Line */}
+      {/* Floating Glassmorphic Overlay Layer */}
       <div 
         style={{
-          height: "3px",
-          background: "linear-gradient(90deg, #2563EB, #06B6D4, transparent)"
+          background: "rgba(255, 255, 255, 0.03)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          border: "1px solid rgba(255, 255, 255, 0.06)",
+          boxShadow: "inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 12px 40px rgba(0, 0, 0, 0.18)",
         }}
-      />
+        className="w-full h-full"
+      >
+        {/* Content Container */}
+        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-stretch gap-6 px-8 py-5 text-white">
+          
+          {/* Left Column */}
+          <div className="flex-1 flex flex-col justify-between gap-4">
+            <div>
+              <h1 
+                className="text-[36px] font-bold text-white leading-none animate-fade-in-up"
+                style={{ animationDelay: "100ms" }}
+              >
+                Welcome
+              </h1>
+              <h2 
+                className="text-[22px] font-semibold text-[#E2E8F0] mt-1.5 leading-tight animate-fade-in-up"
+                style={{ animationDelay: "200ms" }}
+              >
+                iFluids Engineering Project Management Dashboard
+              </h2>
+              <p 
+                className="text-[15px] text-[#CBD5E1] mt-1 max-w-3xl animate-fade-in-up"
+                style={{ animationDelay: "300ms" }}
+              >
+                Monitor project execution, commercial performance, billing, profitability, and operational status.
+              </p>
+            </div>
+
+            {/* Info Cards Row */}
+            <div 
+              className="flex flex-wrap lg:flex-nowrap gap-4 items-center justify-start w-full mt-4 animate-fade-in-up"
+              style={{ animationDelay: "400ms" }}
+            >
+              
+              {/* Status Info Card */}
+              <div 
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  minWidth: "180px",
+                  width: "fit-content",
+                  padding: "14px 18px",
+                  borderRadius: "12px",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                  backgroundColor: "rgba(0, 0, 0, 0.25)",
+                  backdropFilter: "blur(12px)",
+                }}
+                className="shrink-0"
+              >
+                <div 
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "10px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(59, 130, 246, 0.12)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <SystemStatus status="Online" iconOnly={true} />
+                </div>
+                <div className="flex flex-col justify-center">
+                  <span style={{ fontSize: "11px", fontWeight: 600, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", lineHeight: "1.2" }}>
+                    System Status
+                  </span>
+                  <span style={{ fontSize: "15px", fontWeight: 700, color: "#FFFFFF", lineHeight: "1.2" }} className="mt-0.5">
+                    Online
+                  </span>
+                </div>
+              </div>
+
+              {/* Date Info Card */}
+              <div 
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  minWidth: "180px",
+                  width: "fit-content",
+                  padding: "14px 18px",
+                  borderRadius: "12px",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                  backgroundColor: "rgba(0, 0, 0, 0.25)",
+                  backdropFilter: "blur(12px)",
+                }}
+                className="shrink-0"
+              >
+                <div 
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "10px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(59, 130, 246, 0.12)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <CalendarDays size={18} className="text-[#60A5FA]" />
+                </div>
+                <div className="flex flex-col justify-center">
+                  <span style={{ fontSize: "11px", fontWeight: 600, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", lineHeight: "1.2" }}>
+                    Today
+                  </span>
+                  <span style={{ fontSize: "15px", fontWeight: 700, color: "#FFFFFF", lineHeight: "1.2" }} className="mt-0.5 whitespace-nowrap">
+                    {currentDate}
+                  </span>
+                </div>
+              </div>
+
+              {/* Last Updated Card */}
+              <div 
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  minWidth: "180px",
+                  width: "fit-content",
+                  padding: "14px 18px",
+                  borderRadius: "12px",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                  backgroundColor: "rgba(0, 0, 0, 0.25)",
+                  backdropFilter: "blur(12px)",
+                }}
+                className="shrink-0"
+              >
+                <div 
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "10px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(59, 130, 246, 0.12)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Clock3 size={18} className="text-[#60A5FA]" />
+                </div>
+                <div className="flex flex-col justify-center">
+                  <span style={{ fontSize: "11px", fontWeight: 600, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", lineHeight: "1.2" }}>
+                    Last Updated
+                  </span>
+                  <span style={{ fontSize: "15px", fontWeight: 700, color: "#FFFFFF", lineHeight: "1.2" }} className="mt-0.5 whitespace-nowrap">
+                    {currentTime}
+                  </span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          {/* Right Column */}
+          <div className="w-full lg:w-80 flex flex-col justify-start items-end gap-6 shrink-0">
+            
+            {/* Add Project Button */}
+            <Link
+              to="/projects/add"
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-xl font-semibold shadow-lg transition duration-200 animate-fade-in-up"
+              style={{ animationDelay: "500ms" }}
+            >
+              <Plus size={16} />
+              <span>Add Project</span>
+            </Link>
+
+          </div>
+
+        </div>
+      </div>
       
     </div>
   );
