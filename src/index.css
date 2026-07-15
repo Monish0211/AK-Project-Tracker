@@ -47,6 +47,13 @@
   --color-gray-50: #F8FAFC;
   --color-gray-100: var(--bg-main);
   --color-gray-200: var(--border-color);
+  --color-gray-300: var(--border-color);
+  --color-gray-400: var(--text-muted);
+  --color-gray-500: var(--text-secondary);
+  --color-gray-600: var(--text-secondary);
+  --color-gray-700: var(--text-primary);
+  --color-gray-800: var(--text-primary);
+  --color-gray-900: var(--text-primary);
   --color-slate-200: var(--border-color);
 }
 
@@ -253,18 +260,44 @@ html.dark .bg-purple-100 {
   color: #c084fc !important;
 }
 
+/* Keyframes for shifting background gradient and fade entrance */
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
 /* Welcome Card Hero styling in dark mode: Enterprise PMO Style */
 .enterprise-hero-bg {
   background: linear-gradient(
-    135deg,
-    #1E293B 0%,
-    #1E3A8A 55%,
-    #0F4C81 100%
+    -45deg,
+    #1E3A8A 0%,
+    #2563EB 33%,
+    #0F766E 66%,
+    #0EA5E9 100%
   ) !important;
+  background-size: 300% 300% !important;
+  animation: gradientShift 18s ease-in-out infinite !important;
   position: relative;
   overflow: hidden;
   border: 1px solid rgba(59, 130, 246, 0.25) !important;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3) !important;
   transition: border-color 0.25s ease-in-out !important;
 }
 .enterprise-hero-bg::before {
@@ -371,25 +404,109 @@ html.dark .theme-toggle-btn {
 }
 
 /* Recharts Dark Mode Overrides */
-.recharts-default-tooltip {
-  background-color: var(--bg-card) !important;
-  border-color: var(--border-color) !important;
+html.dark .recharts-default-tooltip {
+  background-color: #1E293B !important;
+  border-color: #334155 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
 }
-.recharts-tooltip-label {
-  color: var(--text-primary) !important;
+html.dark .recharts-tooltip-label {
+  color: #F8FAFC !important;
 }
-.recharts-tooltip-item {
-  color: var(--text-primary) !important;
+html.dark .recharts-tooltip-item {
+  color: #F8FAFC !important;
 }
-.recharts-legend-item-text {
-  color: var(--text-primary) !important;
+html.dark .recharts-legend-item-text {
+  color: #E5E7EB !important;
 }
-.recharts-cartesian-axis-tick-value {
-  fill: var(--text-secondary) !important;
+html.dark .recharts-cartesian-axis-tick-value {
+  fill: #D1D5DB !important;
 }
-.recharts-cartesian-grid-horizontal line,
-.recharts-cartesian-grid-vertical line {
-  stroke: var(--border-color) !important;
+html.dark .recharts-cartesian-grid-horizontal line,
+html.dark .recharts-cartesian-grid-vertical line {
+  stroke: rgba(209, 213, 219, 0.1) !important;
+}
+
+/* Premium Outer Glow & Hover Animations on charts */
+html.dark .recharts-pie-sector {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), filter 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+html.dark .recharts-pie-sector:hover {
+  filter: url(#donutGlowHover) brightness(1.1) !important;
+  transform: scale(1.025);
+  transform-origin: center;
+  cursor: pointer;
+}
+html.dark .recharts-bar-rectangle path {
+  filter: drop-shadow(0 4px 8px rgba(37, 99, 235, 0.25));
+  transition: filter 0.2s ease-in-out;
+}
+html.dark .recharts-bar-rectangle:hover path {
+  filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.55)) brightness(1.15) !important;
+  cursor: pointer;
+}
+
+/* Live Data Contrast */
+html.dark span.text-gray-500 {
+  color: #E5E7EB !important;
+  font-weight: 500 !important;
+  opacity: 1 !important;
+}
+
+/* Card header dropdown button overrides for dark mode */
+html.dark .bg-white button.border-gray-200,
+html.dark .bg-card button.border-gray-200 {
+  color: #E2E8F0 !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  background-color: transparent !important;
+}
+html.dark .bg-white button.border-gray-200:hover,
+html.dark .bg-card button.border-gray-200:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* KPI Card Premium Animated Top Accent */
+@keyframes kpiBorderFlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes kpiBorderSweep {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.kpi-card-wrapper {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.28s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.kpi-card-wrapper:hover {
+  transform: translateY(-3px) !important;
+  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.12) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+html.dark .kpi-card-wrapper:hover {
+  box-shadow: 0 12px 30px rgba(59, 130, 246, 0.22), 0 0 18px rgba(37, 99, 235, 0.08) !important;
+}
+
+.kpi-accent-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 4px;
+  width: 100%;
+  background: linear-gradient(90deg, #2563EB, #06B6D4, #2563EB);
+  background-size: 200% 100%;
+  animation: kpiBorderFlow 4.5s ease-in-out infinite;
+  transition: filter 0.25s ease-in-out;
+}
+
+.kpi-card-wrapper:hover .kpi-accent-line {
+  animation: kpiBorderSweep 0.8s ease-out forwards;
+  filter: brightness(1.35);
 }
 
 /* Scrollbar dark mode styling */
