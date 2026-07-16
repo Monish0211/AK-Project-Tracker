@@ -31,18 +31,18 @@ const HeroBar = ({ lastUpdated }: Props) => {
 
   return (
     <div
-      className="relative overflow-hidden rounded-[var(--nu-radius-lg)] px-5 flex items-center justify-between gap-6 flex-wrap h-[112px]"
+      className="relative overflow-hidden rounded-[var(--nu-radius-lg)] px-5 py-[18px] lg:py-0 flex items-center justify-between gap-5 flex-wrap min-h-[112px]"
       style={{ background: "linear-gradient(120deg, #0f2447 0%, #14335f 45%, #0e5a73 100%)" }}
     >
       <div className="min-w-0">
-        <h1 className="text-[26px] font-bold text-white leading-tight">Engineering Project Management Dashboard</h1>
-        <p className="text-[13px] text-[#a9bfda] mt-1 max-w-2xl leading-snug hidden md:block">
+        <h1 className="text-[20px] sm:text-[23px] lg:text-[26px] font-bold text-white leading-tight">Engineering Project Management Dashboard</h1>
+        <p className="text-[12.5px] text-[#a9bfda] mt-1 max-w-xl leading-snug hidden md:block">
           Monitor project execution, commercial performance, invoicing, profitability and operational health across
           all active engineering projects.
         </p>
       </div>
 
-      <div className="flex items-center gap-2.5 flex-wrap justify-end">
+      <div className="grid grid-cols-2 min-[1440px]:flex min-[1440px]:items-center gap-2.5 shrink-0 justify-end">
         <InfoChip icon={<Wifi size={13} className="text-emerald-300" />} label="System Status" value="Online" />
         <InfoChip icon={<CalendarDays size={13} className="text-sky-300" />} label="Today" value={dateStr} />
         <InfoChip icon={<Clock3 size={13} className="text-cyan-300" />} label="Last Updated" value={timeStr} />

@@ -23,22 +23,24 @@ const Dashboard = () => {
         <HeroBar lastUpdated={lastUpdated} />
         <KPISection />
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 min-[1440px]:grid-cols-2 gap-3.5">
           <ProjectStatusChart />
           <RevenueChart />
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-3.5">
+        <div className="grid grid-cols-1 min-[1440px]:grid-cols-3 gap-3.5">
           <ProjectHealthSummary />
-          <div className="xl:col-span-2">
+          <div className="min-[1440px]:col-span-2">
             <ActivityFeed />
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-3.5">
+        <div className="grid grid-cols-1 md:grid-cols-2 min-[1440px]:grid-cols-3 gap-3.5">
           <DepartmentSummary />
           <TopClients />
-          <RecentProjects />
+          <div className="md:col-span-2 min-[1440px]:col-span-1">
+            <RecentProjects />
+          </div>
         </div>
 
         <QuickActions />

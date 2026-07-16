@@ -1,5 +1,6 @@
 import { X, User, Briefcase, Mail, Phone, MapPin, Hash } from "lucide-react";
 import type { UserProfile } from "../../../types/UserProfile";
+import Portal from "../../ui/Portal";
 
 interface Props {
   isOpen: boolean;
@@ -11,7 +12,8 @@ export const MyProfileModal = ({ isOpen, onClose, profile }: Props) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center">
+    <Portal>
+      <div className="fixed inset-0 z-[100] flex items-center justify-center">
       
       {/* Backdrop */}
       <div 
@@ -144,7 +146,8 @@ export const MyProfileModal = ({ isOpen, onClose, profile }: Props) => {
         </div>
 
       </div>
-    </div>
+      </div>
+    </Portal>
   );
 };
 export default MyProfileModal;

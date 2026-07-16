@@ -1,4 +1,5 @@
 import { X, HelpCircle, Mail, Globe, Info } from "lucide-react";
+import Portal from "../../ui/Portal";
 
 interface Props {
   isOpen: boolean;
@@ -9,7 +10,8 @@ export const HelpDialog = ({ isOpen, onClose }: Props) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center">
+    <Portal>
+      <div className="fixed inset-0 z-[100] flex items-center justify-center">
       
       {/* Backdrop */}
       <div 
@@ -100,7 +102,8 @@ export const HelpDialog = ({ isOpen, onClose }: Props) => {
         </div>
 
       </div>
-    </div>
+      </div>
+    </Portal>
   );
 };
 export default HelpDialog;

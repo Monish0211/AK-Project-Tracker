@@ -47,7 +47,8 @@ const Sidebar = () => {
         sticky
         top-0
         h-screen
-        w-[260px]
+        w-[72px]
+        min-[1440px]:w-[260px]
         flex-shrink-0
         bg-gradient-to-b
         from-[var(--sidebar-from)]
@@ -57,44 +58,38 @@ const Sidebar = () => {
         shadow-2xl
         flex
         flex-col
+        transition-all
+        duration-300
       "
     >
       {/* Branding */}
 
-      <div className="px-6 py-6">
+      <div className="px-3 min-[1440px]:px-6 py-6 flex justify-center min-[1440px]:justify-start">
 
         <div className="flex items-center gap-3">
-
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-900/40">
-
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-900/40 shrink-0">
             <Droplet
               size={22}
               className="text-white"
             />
-
           </div>
-
-          <div>
-
+          <div className="hidden min-[1440px]:block">
             <h1 className="text-lg font-bold">
               iFluids
             </h1>
-
             <p className="text-xs uppercase tracking-wider text-slate-400">
               PMO Portal
             </p>
-
           </div>
-
         </div>
 
       </div>
 
-      <div className="mx-6 border-t border-white/10" />
+      <div className="mx-3 min-[1440px]:mx-6 border-t border-white/10" />
 
       {/* Navigation */}
 
-      <nav className="flex-1 overflow-y-auto px-4 py-5">
+      <nav className="flex-1 overflow-y-auto px-2 min-[1440px]:px-4 py-5">
 
         <ul className="space-y-2">
 
@@ -109,9 +104,12 @@ const Sidebar = () => {
                   `
                   flex
                   items-center
+                  justify-center
+                  min-[1440px]:justify-start
                   gap-3
                   rounded-xl
-                  px-4
+                  px-3
+                  min-[1440px]:px-4
                   py-3
                   text-sm
                   font-medium
@@ -120,7 +118,7 @@ const Sidebar = () => {
                   ${
                     isActive
                       ? "bg-gradient-to-r from-blue-600 to-cyan-500 shadow-lg shadow-blue-900/40 active-nav-link"
-                      : "text-slate-300 hover:bg-white/10 hover:text-white hover:translate-x-1"
+                      : "text-slate-300 hover:bg-white/10 hover:text-white min-[1440px]:hover:translate-x-1"
                   }
                 `
                 }
@@ -131,7 +129,7 @@ const Sidebar = () => {
                   className="shrink-0"
                 />
 
-                <span>{label}</span>
+                <span className="hidden min-[1440px]:block">{label}</span>
 
               </NavLink>
 
@@ -145,7 +143,7 @@ const Sidebar = () => {
 
       {/* Bottom Summary */}
 
-      <div className="p-4">
+      <div className="hidden min-[1440px]:block p-4">
 
         <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-4">
 
