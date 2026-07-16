@@ -146,6 +146,7 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
 
   const remainingPercentage = 100 - totalPaymentPercentage;
   const isPercentageMismatch = totalPaymentPercentage !== 100;
+  const isDateRangeMissing = !project.projectStartDate || !project.projectEndDate;
 
   const handlePaymentTypeChange = useCallback(
     (paymentType: Project["paymentType"]) => {
@@ -364,13 +365,39 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
                     <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
                       Due Date
                     </label>
-                    <input
-                      type="date"
-                      value={singleMilestone?.dueDate ?? ""}
-                      aria-label="Due Date"
-                      onChange={(e) => handleDueDateChange(0, e.target.value)}
-                      className={fieldClass}
-                    />
+                    {isDateRangeMissing ? (
+                      <input
+                        type="text"
+                        disabled
+                        placeholder="Please select Project Start & End Date"
+                        className={`${fieldClass} bg-[var(--nu-surface-alt)] text-[var(--nu-text-muted)] cursor-not-allowed`}
+                      />
+                    ) : (
+                      <>
+                        <input
+                          type="date"
+                          value={singleMilestone?.dueDate ?? ""}
+                          min={project.projectStartDate}
+                          max={project.projectEndDate}
+                          aria-label="Due Date"
+                          onChange={(e) => handleDueDateChange(0, e.target.value)}
+                          className={`${fieldClass} ${
+                            singleMilestone?.dueDate &&
+                            (singleMilestone.dueDate < project.projectStartDate ||
+                              singleMilestone.dueDate > project.projectEndDate)
+                              ? "border-[var(--nu-danger)] focus:ring-[var(--nu-danger)]/25 focus:border-[var(--nu-danger)]"
+                              : ""
+                          }`}
+                        />
+                        {singleMilestone?.dueDate &&
+                          (singleMilestone.dueDate < project.projectStartDate ||
+                            singleMilestone.dueDate > project.projectEndDate) && (
+                            <p className="mt-1 text-[11px] text-[var(--nu-danger)] font-medium leading-normal">
+                              Milestone Due Date must be within the Project Schedule.
+                            </p>
+                          )}
+                      </>
+                    )}
                   </div>
                   <div>
                     <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
@@ -433,15 +460,41 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
                       <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
                         Due Date
                       </label>
-                      <input
-                        type="date"
-                        value={milestone.dueDate}
-                        aria-label={`Due Date for row ${index + 1}`}
-                        onChange={(e) =>
-                          handleDueDateChange(index, e.target.value)
-                        }
-                        className={fieldClass}
-                      />
+                      {isDateRangeMissing ? (
+                        <input
+                          type="text"
+                          disabled
+                          placeholder="Please select Project Start & End Date"
+                          className={`${fieldClass} bg-[var(--nu-surface-alt)] text-[var(--nu-text-muted)] cursor-not-allowed`}
+                        />
+                      ) : (
+                        <>
+                          <input
+                            type="date"
+                            value={milestone.dueDate}
+                            min={project.projectStartDate}
+                            max={project.projectEndDate}
+                            aria-label={`Due Date for row ${index + 1}`}
+                            onChange={(e) =>
+                              handleDueDateChange(index, e.target.value)
+                            }
+                            className={`${fieldClass} ${
+                              milestone.dueDate &&
+                              (milestone.dueDate < project.projectStartDate ||
+                                milestone.dueDate > project.projectEndDate)
+                                ? "border-[var(--nu-danger)] focus:ring-[var(--nu-danger)]/25 focus:border-[var(--nu-danger)]"
+                                : ""
+                            }`}
+                          />
+                          {milestone.dueDate &&
+                            (milestone.dueDate < project.projectStartDate ||
+                              milestone.dueDate > project.projectEndDate) && (
+                              <p className="mt-1 text-[11px] text-[var(--nu-danger)] font-medium leading-normal">
+                                Milestone Due Date must be within the Project Schedule.
+                              </p>
+                            )}
+                        </>
+                      )}
                     </div>
                     <div>
                       <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">

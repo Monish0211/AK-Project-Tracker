@@ -129,6 +129,8 @@ const ViewProject = () => {
         profitMargin={profitMargin}
         hasRevenue={hasRevenue}
         pendingQtyPercentage={pendingQtyPercentage}
+        invoiceRaised={commercialSummary.totalInvoiceRaised}
+        outstanding={commercialSummary.outstandingCollection}
         notesCount={project.notes?.length || 0}
         onOpenNotes={() => setIsNotesOpen(true)}
         onEdit={goEdit}

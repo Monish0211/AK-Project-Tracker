@@ -30,7 +30,7 @@ import Settings from "../pages/Settings/Settings";
 
 const MainLayout = () => {
   return (
-    <div className="flex min-h-screen bg-slate-100">
+    <div className="flex min-h-screen bg-slate-100 animate-pmo-fade-up">
 
       {/* Sidebar */}
       <Sidebar />

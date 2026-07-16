@@ -270,6 +270,7 @@ const Projects = () => {
         "Project Manager": p.primaryProjectManager || "",
         "Project Engineer": p.projectEngineer || "",
         "Project Coordinator": p.projectCoordinator || "",
+        "PMO Coordinator": p.pmoCoordinator || "",
         "Project Status": p.projectStatus || "",
         "Contract Type": p.contractType || "",
         "Work Order Value": p.workOrderValue || 0,
@@ -301,6 +302,7 @@ const Projects = () => {
       "Project Manager",
       "Project Engineer",
       "Project Coordinator",
+      "PMO Coordinator",
       "Project Status",
       "Contract Type",
       "Work Order Value",
@@ -365,6 +367,7 @@ const Projects = () => {
       const idxMgr = getColIndex("Project Manager");
       const idxEng = getColIndex("Project Engineer");
       const idxCoord = getColIndex("Project Coordinator");
+      const idxPmoCoord = getColIndex("PMO Coordinator");
       const idxStatus = getColIndex("Project Status");
       const idxContractType = getColIndex("Contract Type");
       const idxWOVal = getColIndex("Work Order Value");
@@ -503,6 +506,7 @@ const Projects = () => {
           primaryProjectManager: String(row[idxMgr] ?? "").trim(),
           projectEngineer: String(row[idxEng] ?? "").trim(),
           projectCoordinator: String(row[idxCoord] ?? "").trim(),
+          pmoCoordinator: String(row[idxPmoCoord] ?? "").trim(),
           projectStatus: String(row[idxStatus] ?? "Active").trim(),
           contractType: String(row[idxContractType] ?? "LUMP SUM").trim(),
           remarks: String(row[idxRemarks] ?? "").trim(),

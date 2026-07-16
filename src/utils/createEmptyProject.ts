@@ -138,6 +138,7 @@ export function createEmptyProject(): Project {
     secondaryProjectManager: "",
     projectEngineer: "",
     projectCoordinator: "",
+    pmoCoordinator: "",
     clientCoordinator: "",
 
     resources: [],

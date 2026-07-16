@@ -70,6 +70,10 @@ const GeneralView = ({ project }: Props) => {
         value={project.contractType || "LUMP SUM"}
       />
       <InfoField
+        label="PMO Coordinator"
+        value={project.pmoCoordinator}
+      />
+      <InfoField
         label="Currency"
         value={project.currency}
       />

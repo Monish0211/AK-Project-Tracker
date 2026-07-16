@@ -26,7 +26,7 @@ export const LogoutDialog = ({ isOpen, onClose, onConfirm }: Props) => {
           <div className="flex items-center gap-2">
             <LogOut className="text-red-500" size={20} />
             <h3 className="text-lg font-bold text-slate-800">
-              Logout
+              Sign Out?
             </h3>
           </div>
           <button
@@ -40,10 +40,7 @@ export const LogoutDialog = ({ isOpen, onClose, onConfirm }: Props) => {
         {/* Content Body */}
         <div className="py-6">
           <p className="text-sm font-semibold text-slate-800 leading-relaxed">
-            Are you sure you want to logout of the PMO Portal?
-          </p>
-          <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-            Your current local configurations and project states will remain persisted in this browser.
+            Are you sure you want to sign out of the PMO Portal?
           </p>
         </div>
 

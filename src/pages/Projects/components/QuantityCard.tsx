@@ -135,6 +135,7 @@ interface AssignedToInputProps {
 const AssignedToInput = ({ value, onChange, ariaLabel }: AssignedToInputProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [filterQuery, setFilterQuery] = useState(value);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -154,10 +155,10 @@ const AssignedToInput = ({ value, onChange, ariaLabel }: AssignedToInputProps) =
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const employeeNames = useMemo<string[]>(() => {
+  const reportingManagers = useMemo<string[]>(() => {
     try {
       const list = getEmployees()
-        .map((emp) => emp.employeeName?.trim())
+        .map((emp) => emp.reportingManager?.trim())
         .filter((name): name is string => typeof name === "string" && name !== "");
       return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b));
     } catch (e) {
@@ -171,49 +172,105 @@ const AssignedToInput = ({ value, onChange, ariaLabel }: AssignedToInputProps) =
     if (!q) {
       return [];
     }
-    return employeeNames
+    return reportingManagers
       .filter((name) => name.toLowerCase().includes(q))
-      .slice(0, 10);
-  }, [filterQuery, employeeNames]);
+      .slice(0, 5); // Capped at 5 suggestions, no scrollbars needed
+  }, [filterQuery, reportingManagers]);
+
+  const showDropdown = isOpen && filterQuery.trim() !== "" && suggestions.length > 0;
+
+  const selectOption = (name: string) => {
+    setFilterQuery(name);
+    onChange(name);
+    setIsOpen(false);
+    setHighlightedIndex(-1);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showDropdown) {
+      return;
+    }
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setHighlightedIndex((prev) =>
+          prev < suggestions.length - 1 ? prev + 1 : 0
+        );
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setHighlightedIndex((prev) =>
+          prev > 0 ? prev - 1 : suggestions.length - 1
+        );
+        break;
+      case "Enter":
+        e.preventDefault();
+        if (highlightedIndex >= 0 && highlightedIndex < suggestions.length) {
+          selectOption(suggestions[highlightedIndex]);
+        }
+        break;
+      case "Escape":
+        e.preventDefault();
+        setIsOpen(false);
+        setHighlightedIndex(-1);
+        break;
+      default:
+        break;
+    }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setFilterQuery(val);
     onChange(val);
-    setIsOpen(true);
+    if (val.trim() === "") {
+      setIsOpen(false);
+    } else {
+      setIsOpen(true);
+      setHighlightedIndex(0);
+    }
   };
 
   const handleFocus = () => {
-    setIsOpen(true);
+    if (filterQuery.trim() !== "") {
+      setIsOpen(true);
+      setHighlightedIndex(0);
+    }
   };
 
   return (
-    <div ref={containerRef} className="relative w-full">
+    <div ref={containerRef} className="relative w-full text-left">
       <input
         type="text"
         value={filterQuery}
         onChange={handleChange}
         onFocus={handleFocus}
+        onKeyDown={handleKeyDown}
         aria-label={ariaLabel}
         className={fieldClass + " px-2"}
-        placeholder="Type or select manager..."
+        placeholder="Type manager name..."
       />
-      {isOpen && suggestions.length > 0 && (
-        <div className="absolute left-0 right-0 z-50 mt-1 max-h-36 overflow-y-auto nu-scrollbar rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] py-1 shadow-[var(--nu-shadow-md)]">
-          {suggestions.map((name) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => {
-                setFilterQuery(name);
-                onChange(name);
-                setIsOpen(false);
-              }}
-              className="w-full text-left px-3 py-1.5 text-[12.5px] text-[var(--nu-text)] hover:bg-[var(--nu-accent-soft)] transition-colors duration-100"
-            >
-              {name}
-            </button>
-          ))}
+      {showDropdown && (
+        <div className="absolute left-0 right-0 z-50 mt-1.5 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] py-1 shadow-[var(--nu-shadow-md)] overflow-hidden animate-in fade-in duration-100">
+          {suggestions.map((name, index) => {
+            const isHighlighted = index === highlightedIndex;
+            return (
+              <button
+                key={name}
+                type="button"
+                onClick={() => selectOption(name)}
+                onMouseEnter={() => setHighlightedIndex(index)}
+                className={`w-full text-left px-3 py-1.5 text-[12.5px] transition-colors duration-100 ${
+                  isHighlighted
+                    ? "bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] font-semibold"
+                    : "text-[var(--nu-text)] hover:bg-[var(--nu-surface-alt)] hover:text-[var(--nu-accent)]"
+                }`}
+              >
+                {name}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
