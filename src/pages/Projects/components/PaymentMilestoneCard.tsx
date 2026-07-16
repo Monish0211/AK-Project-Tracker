@@ -381,21 +381,8 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
                           max={project.projectEndDate}
                           aria-label="Due Date"
                           onChange={(e) => handleDueDateChange(0, e.target.value)}
-                          className={`${fieldClass} ${
-                            singleMilestone?.dueDate &&
-                            (singleMilestone.dueDate < project.projectStartDate ||
-                              singleMilestone.dueDate > project.projectEndDate)
-                              ? "border-[var(--nu-danger)] focus:ring-[var(--nu-danger)]/25 focus:border-[var(--nu-danger)]"
-                              : ""
-                          }`}
+                          className={fieldClass}
                         />
-                        {singleMilestone?.dueDate &&
-                          (singleMilestone.dueDate < project.projectStartDate ||
-                            singleMilestone.dueDate > project.projectEndDate) && (
-                            <p className="mt-1 text-[11px] text-[var(--nu-danger)] font-medium leading-normal">
-                              Milestone Due Date must be within the Project Schedule.
-                            </p>
-                          )}
                       </>
                     )}
                   </div>
@@ -478,21 +465,8 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
                             onChange={(e) =>
                               handleDueDateChange(index, e.target.value)
                             }
-                            className={`${fieldClass} ${
-                              milestone.dueDate &&
-                              (milestone.dueDate < project.projectStartDate ||
-                                milestone.dueDate > project.projectEndDate)
-                                ? "border-[var(--nu-danger)] focus:ring-[var(--nu-danger)]/25 focus:border-[var(--nu-danger)]"
-                                : ""
-                            }`}
+                            className={fieldClass}
                           />
-                          {milestone.dueDate &&
-                            (milestone.dueDate < project.projectStartDate ||
-                              milestone.dueDate > project.projectEndDate) && (
-                              <p className="mt-1 text-[11px] text-[var(--nu-danger)] font-medium leading-normal">
-                                Milestone Due Date must be within the Project Schedule.
-                              </p>
-                            )}
                         </>
                       )}
                     </div>

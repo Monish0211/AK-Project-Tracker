@@ -42,109 +42,109 @@ const MainLayout = () => {
         <Navbar />
 
         {/* Page Content */}
-        <main className="flex-1 p-6 overflow-auto">
+        <main className="flex-1 overflow-auto bg-[#F8FAFC] dark:bg-[#0B0F19] transition-colors duration-300">
+          <div className="w-full max-w-[1800px] mx-auto px-6 py-6">
+            <Routes>
 
-          <Routes>
+              {/* Dashboard */}
+              <Route
+                path="/"
+                element={<Dashboard />}
+              />
 
-            {/* Dashboard */}
-            <Route
-              path="/"
-              element={<Dashboard />}
-            />
+              {/* ===========================
+                  PROJECTS
+              ============================ */}
 
-            {/* ===========================
-                PROJECTS
-            ============================ */}
+              <Route
+                path="/projects"
+                element={<Projects />}
+              />
 
-            <Route
-              path="/projects"
-              element={<Projects />}
-            />
+              <Route
+                path="/projects/add"
+                element={<AddProject />}
+              />
 
-            <Route
-              path="/projects/add"
-              element={<AddProject />}
-            />
+              <Route
+                path="/projects/view/:id"
+                element={<ViewProject />}
+              />
 
-            <Route
-              path="/projects/view/:id"
-              element={<ViewProject />}
-            />
+              <Route
+                path="/projects/edit/:id"
+                element={<EditProject />}
+              />
 
-            <Route
-              path="/projects/edit/:id"
-              element={<EditProject />}
-            />
+              {/* ===========================
+                  CUSTOMER MASTER
+              ============================ */}
 
-            {/* ===========================
-                CUSTOMER MASTER
-            ============================ */}
+              <Route
+                path="/customers"
+                element={<CustomerMaster />}
+              />
 
-            <Route
-              path="/customers"
-              element={<CustomerMaster />}
-            />
+              {/* ===========================
+                  INVOICES
+              ============================ */}
 
-            {/* ===========================
-                INVOICES
-            ============================ */}
+              <Route
+                path="/invoices"
+                element={<Invoices />}
+              />
 
-            <Route
-              path="/invoices"
-              element={<Invoices />}
-            />
+              <Route
+                path="/invoices/add"
+                element={<AddInvoice />}
+              />
 
-            <Route
-              path="/invoices/add"
-              element={<AddInvoice />}
-            />
+              <Route
+                path="/invoices/view/:id"
+                element={<ViewInvoice />}
+              />
 
-            <Route
-              path="/invoices/view/:id"
-              element={<ViewInvoice />}
-            />
+              <Route
+                path="/invoices/edit/:id"
+                element={<EditInvoice />}
+              />
 
-            <Route
-              path="/invoices/edit/:id"
-              element={<EditInvoice />}
-            />
+              {/* ===========================
+                  OTHER MODULES
+              ============================ */}
 
-            {/* ===========================
-                OTHER MODULES
-            ============================ */}
+              <Route
+                path="/manpower"
+                element={<Manpower />}
+              />
 
-            <Route
-              path="/manpower"
-              element={<Manpower />}
-            />
+              <Route
+                path="/timesheets"
+                element={<Timesheets />}
+              />
 
-            <Route
-              path="/timesheets"
-              element={<Timesheets />}
-            />
+              <Route
+                path="/expenses"
+                element={<Expenses />}
+              />
 
-            <Route
-              path="/expenses"
-              element={<Expenses />}
-            />
+              <Route
+                path="/reports"
+                element={<Reports />}
+              />
 
-            <Route
-              path="/reports"
-              element={<Reports />}
-            />
+              <Route
+                path="/resources"
+                element={<Resources />}
+              />
 
-            <Route
-              path="/resources"
-              element={<Resources />}
-            />
+              <Route
+                path="/settings"
+                element={<Settings />}
+              />
 
-            <Route
-              path="/settings"
-              element={<Settings />}
-            />
-
-          </Routes>
-
+            </Routes>
+          </div>
         </main>
 
       </div>

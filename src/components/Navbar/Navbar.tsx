@@ -149,9 +149,13 @@ const Navbar = () => {
   };
 
   const handleLogoutConfirm = () => {
+    // Close the dialog first
     setIsLogoutOpen(false);
+    // Synchronously clear auth state + localStorage, then navigate.
+    // Must NOT be async – the Navbar unmounts before any await resolves,
+    // which would leave the blur overlay frozen on screen.
     logout();
-    navigate("/login");
+    navigate("/login", { replace: true });
   };
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
@@ -172,7 +176,7 @@ const Navbar = () => {
     >
       <WorkspaceHeader />
 
-      <div style={{ display: "flex", alignItems: "center", gap: "24px", color: "var(--text-primary)" }}>
+      <div className="flex items-center gap-3 sm:gap-6 flex-nowrap text-[var(--text-primary)]">
         
         {/* Segmented Theme Switcher */}
         <div
@@ -214,7 +218,7 @@ const Navbar = () => {
                 theme === "light" ? "text-amber-500 fill-amber-500" : "text-slate-400"
               }`}
             />
-            <span>Light</span>
+            <span className="hidden md:inline">Light</span>
           </button>
 
           {/* Dark Button */}
@@ -245,7 +249,7 @@ const Navbar = () => {
                 theme === "dark" ? "text-blue-400 fill-blue-400/20" : "text-slate-400"
               }`}
             />
-            <span>Dark</span>
+            <span className="hidden md:inline">Dark</span>
           </button>
         </div>
 
@@ -259,7 +263,7 @@ const Navbar = () => {
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition duration-150 cursor-pointer outline-none border-none bg-transparent"
           >
             <Bell size={16} className="text-slate-500 dark:text-slate-400" />
-            <span>Notifications</span>
+            <span className="hidden md:inline">Notifications</span>
             {unreadCount > 0 && (
               <span className="bg-blue-600 dark:bg-blue-500 text-white rounded-full text-[10px] w-4.5 h-4.5 flex items-center justify-center font-bold">
                 {unreadCount}
@@ -366,7 +370,7 @@ const Navbar = () => {
             <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center border border-blue-100 dark:border-blue-800/30 shrink-0 hover:scale-105 transition shadow-sm">
               <User size={14} className="text-white" />
             </div>
-            <span>Administrator</span>
+            <span className="hidden md:inline">Administrator</span>
             <ChevronDown size={14} className="text-slate-400 shrink-0" />
           </button>
 
@@ -483,6 +487,8 @@ const Navbar = () => {
         onClose={() => setIsLogoutOpen(false)}
         onConfirm={handleLogoutConfirm}
       />
+
+      {/* Logout overlay removed – async state never clears when Navbar unmounts */}
 
     </div>
   );

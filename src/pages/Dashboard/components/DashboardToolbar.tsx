@@ -80,8 +80,8 @@ const DashboardToolbar = ({ onRefresh }: Props) => {
 
       <div className="flex items-center gap-2.5 shrink-0" ref={menuRef}>
         {/* Search */}
-        <div className="relative hidden md:block">
-          <div className="flex items-center gap-2 bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] px-2.5 py-1.5 w-72">
+        <div className="relative">
+          <div className="flex items-center gap-2 bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] px-2.5 py-1.5 w-32 sm:w-48 md:w-60 lg:w-72 transition-all duration-300">
             <Search size={13} className="text-[var(--nu-text-muted)] shrink-0" />
             <input
               value={query}
