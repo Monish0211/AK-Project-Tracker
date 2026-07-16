@@ -4,42 +4,14 @@ interface Props {
 }
 
 const InfoField = ({ label, value }: Props) => {
+  const hasValue = value !== "" && value !== null && value !== undefined;
+
   return (
-    <div
-      className="
-        bg-white
-        border
-        border-gray-200
-        rounded-xl
-        p-4
-        transition-all
-        duration-200
-        hover:shadow-md
-        hover:border-blue-200
-      "
-    >
-      {/* Label */}
-
-      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
-        {label}
-      </p>
-
-      {/* Value */}
-
-      <div className="text-base font-medium text-slate-800 break-words min-h-[28px] flex items-center">
-
-        {value !== "" &&
-        value !== null &&
-        value !== undefined
-          ? value
-          : (
-            <span className="italic text-gray-400">
-              Not Available
-            </span>
-          )}
-
+    <div className="bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] p-3 transition-colors duration-150 hover:border-[var(--nu-border-strong)]">
+      <p className="text-[10.5px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)] mb-1">{label}</p>
+      <div className="text-[13.5px] font-semibold text-[var(--nu-text)] break-words min-h-[20px] flex items-center">
+        {hasValue ? value : <span className="italic text-[var(--nu-text-muted)] font-normal">Not Available</span>}
       </div>
-
     </div>
   );
 };

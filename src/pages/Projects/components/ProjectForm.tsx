@@ -42,13 +42,12 @@ interface TabConfig {
   icon: typeof LayoutGrid;
 }
 
-// Add Project: 5 tabs
+// Add Project: 4 tabs (remove team assigned)
 const TABS_ADD: TabConfig[] = [
   { key: "general", label: "General", icon: LayoutGrid },
   { key: "quantity", label: "Quantity", icon: Package },
   { key: "payments", label: "Payments", icon: CreditCard },
   { key: "budget", label: "Expense Budget", icon: Wallet },
-  { key: "team", label: "Team Assigned", icon: Users },
 ];
 
 // Edit Project: 7 tabs — full execution workflow
@@ -155,7 +154,7 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
               </h1>
               <p className="text-[12.5px] text-[var(--nu-text-muted)] mt-0.5">
                 {mode === "add"
-                  ? "Enter project information across General, Quantity, Payments, Expense Budget, and Team Assigned."
+                  ? "Enter project information across General, Quantity, Payments, and Expense Budget."
                   : "Update project information including quantities, payment milestones, expenses, team assignments, and invoices."}
               </p>
             </div>
@@ -195,8 +194,8 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
       </div>
 
       {/* ================= Sticky section navigator ================= */}
-      <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-[var(--nu-shadow-sm)] overflow-hidden">
-        <div className="sticky top-0 z-20 bg-[var(--nu-surface)]/95 backdrop-blur-md border-b border-[var(--nu-border)] px-3 py-2.5">
+      <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-[var(--nu-shadow-sm)]">
+        <div className="sticky top-0 z-20 bg-[var(--nu-surface)]/95 backdrop-blur-md border-b border-[var(--nu-border)] px-3 py-2.5 rounded-t-[var(--nu-radius-lg)]">
           <div className="flex items-center justify-between gap-3 mb-2 px-0.5">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]">
               Section progress

@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { 
   Moon, Sun, Bell, User, ChevronDown, Settings, HelpCircle, LogOut,
   Briefcase, FileText, TrendingUp, CreditCard, Users, Info, X
 } from "lucide-react";
 import { useTheme } from "../../context/ThemeContext";
+import { useAuth } from "../../auth/authContext";
 import { 
   getNotifications, markAllAsRead, markAsRead
 } from "../../services/NotificationService";
@@ -66,6 +68,8 @@ const getLogoutIconClass = (isActive: boolean) => {
 
 const Navbar = () => {
   const { theme, setTheme } = useTheme();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   
   // Toggles and data hooks
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -146,7 +150,8 @@ const Navbar = () => {
 
   const handleLogoutConfirm = () => {
     setIsLogoutOpen(false);
-    alert("Simulated logout successful! Persisted local data remains active.");
+    logout();
+    navigate("/login");
   };
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
@@ -376,8 +381,10 @@ const Navbar = () => {
               {/* Header (Only on mobile header row is explicitly closed) */}
               <div className="flex justify-between items-center px-3 py-2.5 border-b border-slate-200 dark:border-slate-700 mb-1">
                 <div>
-                  <p className="text-xs font-bold text-slate-800">Administrator</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-300 uppercase tracking-wide font-semibold mt-0.5">System Administrator</p>
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{user?.name || "Administrator"}</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-350 font-semibold mt-0.5">
+                    Employee ID: {user?.employeeId || "PMOV1"}
+                  </p>
                 </div>
                 {isMobile && (
                   <button

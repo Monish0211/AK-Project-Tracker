@@ -11,11 +11,13 @@ import {
   formatIndianCurrency,
   formatIndianNumber,
 } from "../../../../utils/quantityCalculations";
+import { Badge } from "../../../../components/ui/Badge";
+import type { Tone } from "../../../../components/ui/Badge";
 
-const STATUS_BADGE_STYLES: Record<InvoiceStatus, string> = {
-  Pending: "bg-gray-100 text-gray-600 border-gray-200",
-  "Partially Invoiced": "bg-orange-50 text-orange-700 border-orange-200",
-  Completed: "bg-green-50 text-green-700 border-green-200",
+const STATUS_TONE: Record<InvoiceStatus, Tone> = {
+  Pending: "neutral",
+  "Partially Invoiced": "warning",
+  Completed: "success",
 };
 
 interface Props {
@@ -30,51 +32,37 @@ const InvoiceProgressRow = ({ item, index }: Props) => {
   const status = getInvoiceStatus(item);
 
   return (
-    <tr className="text-sm text-gray-700 hover:bg-gray-50">
-      <td className="px-3 py-3 text-center text-slate-500">{index + 1}</td>
+    <tr className="text-[var(--nu-text-secondary)] hover:bg-[var(--nu-surface-alt)]">
+      <td className="px-3 py-2.5 text-center text-[var(--nu-text-muted)]">{index + 1}</td>
 
-      <td className="px-3 py-3">
-        <span className="font-medium text-gray-800" title={item.description}>
+      <td className="px-3 py-2.5">
+        <span className="font-medium text-[var(--nu-text)]" title={item.description}>
           {item.description || "—"}
         </span>
       </td>
 
-      <td className="px-3 py-3 text-right">
-        {formatIndianNumber(item.qty)}
+      <td className="px-3 py-2.5 text-right">{formatIndianNumber(item.qty)}</td>
+
+      <td className="px-3 py-2.5 text-center">
+        <Badge tone="accent">{item.uom}</Badge>
       </td>
 
-      <td className="px-3 py-3 text-center">
-        <span className="inline-flex items-center rounded-md bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
-          {item.uom}
-        </span>
-      </td>
+      <td className="px-3 py-2.5 text-right">{formatIndianCurrency(item.unitPrice)}</td>
 
-      <td className="px-3 py-3 text-right">
-        {formatIndianCurrency(item.unitPrice)}
-      </td>
-
-      <td className="px-3 py-3 text-right font-semibold text-slate-800">
+      <td className="px-3 py-2.5 text-right font-semibold text-[var(--nu-text)]">
         {formatIndianCurrency(item.totalPrice)}
       </td>
 
-      <td className="px-3 py-3 text-right font-semibold text-blue-700">
+      <td className="px-3 py-2.5 text-right font-semibold text-[var(--nu-accent)]">
         {formatIndianCurrency(invoiceRaised)}
       </td>
 
-      <td className="px-3 py-3 text-right">
-        {invoicePercentage.toFixed(2)}%
-      </td>
+      <td className="px-3 py-2.5 text-right">{invoicePercentage.toFixed(2)}%</td>
 
-      <td className="px-3 py-3 text-right">
-        {balancePercentage.toFixed(2)}%
-      </td>
+      <td className="px-3 py-2.5 text-right">{balancePercentage.toFixed(2)}%</td>
 
-      <td className="px-3 py-3 text-center">
-        <span
-          className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_BADGE_STYLES[status]}`}
-        >
-          {status}
-        </span>
+      <td className="px-3 py-2.5 text-center">
+        <Badge tone={STATUS_TONE[status]}>{status}</Badge>
       </td>
     </tr>
   );

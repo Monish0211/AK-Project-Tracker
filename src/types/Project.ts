@@ -128,6 +128,7 @@ nonManhourExpenses: NonManhourExpense[];
   secondaryProjectManager: string;
   projectEngineer: string;
   projectCoordinator: string;
+  pmoCoordinator?: string;
   clientCoordinator: string;
 
   resources: ProjectResource[];

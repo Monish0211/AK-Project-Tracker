@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { Building2, CalendarRange, FileText, Hash, LayoutGrid } from "lucide-react";
 import type { Project } from "../../../types/Project";
 import { getCustomers } from "../../../services/customerService";
+import { getPmoCoordinators } from "../../../services/pmoCoordinatorService";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 
 interface Props {
@@ -61,6 +62,170 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
     {children}
   </div>
 );
+
+const PmoCoordinatorAutocomplete = ({
+  project,
+  setProject,
+}: {
+  project: Project;
+  setProject: Dispatch<SetStateAction<Project>>;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState(project.pmoCoordinator || "");
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const coordinators = useMemo(() => getPmoCoordinators(), []);
+
+  const filtered = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return [];
+    return coordinators
+      .filter((c) => c.toLowerCase().includes(q))
+      .slice(0, 5); // Maximum of 4-5 suggestions
+  }, [searchQuery, coordinators]);
+
+  const showDropdown = isOpen && searchQuery.trim() !== "";
+
+  // Sync searchQuery when project.pmoCoordinator changes
+  useEffect(() => {
+    setSearchQuery(project.pmoCoordinator || "");
+  }, [project.pmoCoordinator]);
+
+  // Handle click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+        const trimmed = searchQuery.trim();
+        if (!trimmed) {
+          setProject((prev) => ({ ...prev, pmoCoordinator: "" }));
+        } else {
+          const match = coordinators.find(
+            (c) => c.toLowerCase() === trimmed.toLowerCase()
+          );
+          if (match) {
+            setProject((prev) => ({ ...prev, pmoCoordinator: match }));
+            setSearchQuery(match);
+          } else {
+            setSearchQuery(project.pmoCoordinator || "");
+          }
+        }
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [searchQuery, coordinators, project.pmoCoordinator, setProject]);
+
+  const selectOption = (name: string) => {
+    setSearchQuery(name);
+    setProject((prev) => ({ ...prev, pmoCoordinator: name }));
+    setIsOpen(false);
+    setHighlightedIndex(-1);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showDropdown) {
+      return;
+    }
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setHighlightedIndex((prev) =>
+          prev < filtered.length - 1 ? prev + 1 : 0
+        );
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setHighlightedIndex((prev) =>
+          prev > 0 ? prev - 1 : filtered.length - 1
+        );
+        break;
+      case "Enter":
+        e.preventDefault();
+        if (highlightedIndex >= 0 && highlightedIndex < filtered.length) {
+          selectOption(filtered[highlightedIndex]);
+        } else {
+          const trimmed = searchQuery.trim();
+          const match = coordinators.find(
+            (c) => c.toLowerCase() === trimmed.toLowerCase()
+          );
+          if (match) {
+            selectOption(match);
+          } else {
+            setSearchQuery(project.pmoCoordinator || "");
+            setIsOpen(false);
+          }
+        }
+        break;
+      case "Escape":
+        e.preventDefault();
+        setIsOpen(false);
+        setHighlightedIndex(-1);
+        break;
+      default:
+        break;
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setSearchQuery(val);
+    if (val.trim() === "") {
+      setIsOpen(false);
+      setProject((prev) => ({ ...prev, pmoCoordinator: "" }));
+    } else {
+      setIsOpen(true);
+      setHighlightedIndex(0);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <input
+        type="text"
+        value={searchQuery}
+        onChange={handleChange}
+        onFocus={() => setIsOpen(true)}
+        onKeyDown={handleKeyDown}
+        className={fieldClass}
+        placeholder="Search PMO Coordinator..."
+      />
+      {showDropdown && (
+        <div className="absolute left-0 right-0 z-[100] mt-2.5 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] py-1 shadow-[var(--nu-shadow-md)] overflow-hidden animate-in fade-in duration-100">
+          {filtered.length === 0 ? (
+            <p className="px-3.5 py-2 text-[12.5px] text-[var(--nu-text-muted)]">
+              No matching PMO Coordinator found
+            </p>
+          ) : (
+            filtered.map((name, index) => {
+              const isHighlighted = index === highlightedIndex;
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => selectOption(name)}
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  className={`w-full text-left px-3.5 py-2 text-[12.5px] transition-colors duration-100 ${
+                    isHighlighted
+                      ? "bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] font-semibold"
+                      : "text-[var(--nu-text)] hover:bg-[var(--nu-surface-alt)] hover:text-[var(--nu-accent)]"
+                  }`}
+                >
+                  {name}
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const GeneralInfoCard = ({ project, setProject }: Props) => {
   const clientDropdownRef = useRef<HTMLDivElement>(null);
@@ -412,6 +577,10 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
               <Hash size={13} className="text-[var(--nu-text-muted)]" />
               {project.prNo || "—"}
             </div>
+          </Field>
+
+          <Field label="PMO Coordinator">
+            <PmoCoordinatorAutocomplete project={project} setProject={setProject} />
           </Field>
         </CardBody>
       </Card>

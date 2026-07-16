@@ -98,7 +98,8 @@ html.dark .project-form-shell {
 }
 
 /* Milestone timeline connector (Payment Milestones section) */
-.project-form-shell .milestone-connector::before {
+.project-form-shell .milestone-connector::before,
+.project-workspace-shell .milestone-connector::before {
   content: "";
   position: absolute;
   left: 15px;
@@ -107,7 +108,8 @@ html.dark .project-form-shell {
   width: 2px;
   background: var(--nu-border);
 }
-.project-form-shell .milestone-connector:last-child::before {
+.project-form-shell .milestone-connector:last-child::before,
+.project-workspace-shell .milestone-connector:last-child::before {
   display: none;
 }
 

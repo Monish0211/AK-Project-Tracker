@@ -23,6 +23,7 @@ const SEARCHABLE_FIELDS = [
   "primaryProjectManager",
   "projectEngineer",
   "projectCoordinator",
+  "pmoCoordinator",
 ] as const;
 
 const DashboardToolbar = ({ onRefresh }: Props) => {

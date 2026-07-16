@@ -61,6 +61,42 @@ const FormButtons = ({
       return false;
     }
 
+    const hasMilestonesTabBeenReached =
+      activeTab === "payments" ||
+      activeTab === "budget" ||
+      activeTab === "team" ||
+      activeTab === "expenses" ||
+      activeTab === "invoices" ||
+      isLastTab;
+
+    if (hasMilestonesTabBeenReached) {
+      const hasMissingDate = project.paymentMilestones.some(
+        (m) => !m.dueDate
+      );
+
+      if (hasMissingDate) {
+        alert("Every payment milestone must have a Due Date.");
+        return false;
+      }
+
+      const start = project.projectStartDate;
+      const end = project.projectEndDate;
+
+      if (!start || !end) {
+        alert("Please specify both Project Start Date and Project End Date in General Details.");
+        return false;
+      }
+
+      const hasInvalidDate = project.paymentMilestones.some(
+        (m) => m.dueDate && (m.dueDate < start || m.dueDate > end)
+      );
+
+      if (hasInvalidDate) {
+        alert("All Payment Milestone dates must fall within the selected Project Start Date and Project End Date.");
+        return false;
+      }
+    }
+
     return true;
   };
 

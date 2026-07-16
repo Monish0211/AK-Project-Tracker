@@ -6,6 +6,8 @@ import {
   formatIndianCurrency,
   formatIndianNumber,
 } from "../../../utils/quantityCalculations";
+import { Card, CardBody, CardHeader } from "../../../components/ui/Card";
+import { EmptyState } from "../../../components/ui/EmptyState";
 
 interface Props {
   expenses: NonManhourExpense[];
@@ -13,131 +15,56 @@ interface Props {
 
 const NonManhourExpenseView = ({ expenses }: Props) => {
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+    <Card padded={false}>
+      <CardHeader
+        icon={<Briefcase size={16} />}
+        iconTint="warning"
+        title="Other Project Expenses"
+        subtitle="Travel, accommodation and other project-related expenses"
+      />
 
-      <div className="border-b border-gray-100 px-6 py-5">
-        <h3 className="text-base font-semibold text-slate-800">
-          Other Project Expenses
-        </h3>
-        <p className="text-sm text-slate-500">
-          Travel, accommodation and other project-related expenses.
-        </p>
-      </div>
-
-      <div className="max-h-[26rem] overflow-auto">
-
-        <table className="min-w-full">
-
-          <thead className="sticky top-0 z-10 bg-gray-50">
-
-            <tr className="text-sm text-gray-600">
-
-              <th className="px-4 py-3 text-left">
-                Category
-              </th>
-
-              <th className="px-4 py-3 text-left">
-                Description
-              </th>
-
-              <th className="px-4 py-3 text-center">
-                Quantity
-              </th>
-
-              <th className="px-4 py-3 text-right">
-                Unit Cost
-              </th>
-
-              <th className="px-4 py-3 text-right">
-                Total Cost
-              </th>
-
-              <th className="px-4 py-3 text-left">
-                Remarks
-              </th>
-
-            </tr>
-
-          </thead>
-
-          <tbody className="divide-y divide-gray-100">
-
-            {expenses.length === 0 ? (
-
-              <tr>
-
-                <td colSpan={6} className="py-14 text-center">
-
-                  <div className="flex flex-col items-center">
-
-                    <div className="h-16 w-16 rounded-full bg-orange-50 flex items-center justify-center">
-                      <Briefcase size={30} className="text-orange-500" />
-                    </div>
-
-                    <h3 className="mt-4 text-lg font-semibold text-gray-700">
-                      No Other Expenses Recorded
-                    </h3>
-
-                    <p className="mt-2 text-sm text-gray-500 max-w-md">
-                      No non man-hour expenses have been added for this
-                      project.
-                    </p>
-
-                  </div>
-
-                </td>
-
+      {expenses.length === 0 ? (
+        <CardBody>
+          <EmptyState
+            icon={<Briefcase size={22} />}
+            title="No Other Expenses Recorded"
+            description="No non man-hour expenses have been added for this project."
+          />
+        </CardBody>
+      ) : (
+        <div className="max-h-[26rem] overflow-auto nu-scrollbar">
+          <table className="min-w-full text-[13px]">
+            <thead className="sticky top-0 z-10 bg-[var(--nu-surface-alt)]">
+              <tr className="text-[var(--nu-text-muted)] text-[11px] uppercase tracking-wide">
+                <th className="px-4 py-2.5 text-left font-semibold">Category</th>
+                <th className="px-4 py-2.5 text-left font-semibold">Description</th>
+                <th className="px-4 py-2.5 text-center font-semibold">Quantity</th>
+                <th className="px-4 py-2.5 text-right font-semibold">Unit Cost</th>
+                <th className="px-4 py-2.5 text-right font-semibold">Total Cost</th>
+                <th className="px-4 py-2.5 text-left font-semibold">Remarks</th>
               </tr>
+            </thead>
 
-            ) : (
-
-              expenses.map((expense) => (
-
-                <tr
-                  key={expense.id}
-                  className="text-sm text-gray-700 hover:bg-gray-50"
-                >
-
-                  <td className="px-4 py-3 font-medium text-gray-800">
-                    {expense.category}
-                  </td>
-
-                  <td className="px-4 py-3">
-                    {expense.description || "—"}
-                  </td>
-
-                  <td className="px-4 py-3 text-center">
-                    {formatIndianNumber(expense.quantity)}
-                  </td>
-
-                  <td className="px-4 py-3 text-right">
-                    {formatIndianCurrency(expense.unitCost)}
-                  </td>
-
-                  <td className="px-4 py-3 text-right font-semibold text-orange-700">
+            <tbody className="divide-y divide-[var(--nu-border)]">
+              {expenses.map((expense) => (
+                <tr key={expense.id} className="text-[var(--nu-text-secondary)] hover:bg-[var(--nu-surface-alt)]">
+                  <td className="px-4 py-2.5 font-medium text-[var(--nu-text)]">{expense.category}</td>
+                  <td className="px-4 py-2.5">{expense.description || "—"}</td>
+                  <td className="px-4 py-2.5 text-center">{formatIndianNumber(expense.quantity)}</td>
+                  <td className="px-4 py-2.5 text-right">{formatIndianCurrency(expense.unitCost)}</td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-[var(--nu-warning)]">
                     {formatIndianCurrency(expense.totalCost)}
                   </td>
-
-                  <td
-                    className="px-4 py-3 max-w-[12rem] truncate"
-                    title={expense.remarks}
-                  >
+                  <td className="px-4 py-2.5 max-w-[12rem] truncate" title={expense.remarks}>
                     {expense.remarks || "—"}
                   </td>
-
                 </tr>
-
-              ))
-
-            )}
-
-          </tbody>
-
-        </table>
-
-      </div>
-
-    </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 };
 
