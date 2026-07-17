@@ -61,6 +61,8 @@ const Timesheets = () => {
   const [importing, setImporting] = useState(false);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 30;
 
   const currentMonthData = selectedMonth ? allMonths.find((m) => m.month === selectedMonth) : undefined;
   const entries: TimesheetEntry[] = currentMonthData?.entries || [];
@@ -89,7 +91,7 @@ const Timesheets = () => {
     employeeGroups[entry.employeeNo].push(entry);
   });
 
-  const employees = useMemo(() => {
+  const allEmployees = useMemo(() => {
     return Object.entries(employeeGroups).map(([empNo, empEntries]) => {
       const first = empEntries[0];
       const totalHours = empEntries.reduce((sum, e) => sum + e.hours, 0);
@@ -110,6 +112,12 @@ const Timesheets = () => {
     });
   }, [employeeGroups]);
 
+  const totalPages = Math.max(Math.ceil(allEmployees.length / pageSize), 1);
+  const paginatedEmployees = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return allEmployees.slice(start, start + pageSize);
+  }, [allEmployees, currentPage]);
+
   const summaryStats = useMemo(() => {
     return {
       totalEmployees: new Set(filteredEntries.map((e) => e.employeeNo)).size,
@@ -117,6 +125,11 @@ const Timesheets = () => {
       totalWorkingDays: new Set(filteredEntries.map((e) => e.date)).size,
     };
   }, [filteredEntries]);
+
+  // Reset pagination when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedMonth, selectedProject, searchEmployee]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -502,7 +515,7 @@ const Timesheets = () => {
                 {formatMonthDisplay(selectedMonth)}
               </h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                {employees.length} employees
+                {allEmployees.length} total employees ({currentPage * pageSize > allEmployees.length ? allEmployees.length : currentPage * pageSize} showing)
               </p>
             </div>
             {currentMonthData && (
@@ -532,14 +545,14 @@ const Timesheets = () => {
                 </tr>
               </thead>
               <tbody>
-                {employees.length === 0 ? (
+                {allEmployees.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="py-10 text-center text-gray-500 font-medium">
                       No matching employees
                     </td>
                   </tr>
                 ) : (
-                  employees.map((emp) => (
+                  paginatedEmployees.map((emp) => (
                     <tr
                       key={`${emp.employeeNo}-${emp.projectCode}`}
                       className="border-b last:border-0 hover:bg-slate-50 transition"
@@ -582,13 +595,40 @@ const Timesheets = () => {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          {allEmployees.length > pageSize && (
+            <div className="border-t px-6 py-4 flex items-center justify-between bg-slate-50">
+              <div className="text-sm text-slate-600">
+                Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong> ({allEmployees.length} total)
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-white transition disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-white transition disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* Import Modal */}
       {showImportModal && selectedFile && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-3 max-h-[85vh] overflow-y-auto">
             {!importReport && !importError && (
               <>
                 <div className="flex items-start gap-3">
