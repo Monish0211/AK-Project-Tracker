@@ -37,6 +37,7 @@ import {
 import { syncTimesheetToProjects } from "../../services/timesheetSyncService";
 import { getProjects, updateProject } from "../../services/projectService";
 import { getEmployees } from "../../services/employeeService";
+import type { Employee } from "../../types/EmployeeModel";
 import { Card, CardHeader } from "../../components/ui/Card";
 import { StatTile } from "../../components/ui/StatTile";
 import { Badge } from "../../components/ui/Badge";
@@ -72,6 +73,71 @@ interface EntryModalState {
   original?: { employeeNo: string; projectCode: string };
 }
 
+interface EmployeeAutocompleteProps {
+  value: string;
+  onChange: (val: string) => void;
+  onSelect: (employeeNo: string, displayText: string) => void;
+  employees: Employee[];
+}
+
+// @ts-ignore
+const EmployeeAutocomplete = ({ value, onChange, onSelect, employees }: EmployeeAutocompleteProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const suggestions = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    if (!q) return employees.slice(0, 8);
+    return employees
+      .filter((emp) => emp.employeeName.toLowerCase().includes(q) || emp.employeeNo.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [value, employees]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        placeholder="Type employee name or number..."
+        className={fieldClass}
+      />
+      {isOpen && suggestions.length > 0 && (
+        <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] py-1 shadow-[var(--nu-shadow-md)]">
+          {suggestions.map((emp) => (
+            <button
+              key={emp.id}
+              type="button"
+              onClick={() => {
+                onSelect(emp.employeeNo, `${emp.employeeNo} — ${emp.employeeName}`);
+                setIsOpen(false);
+              }}
+              className="w-full text-left px-3 py-1.5 text-[12.5px] text-[var(--nu-text)] hover:bg-[var(--nu-accent-soft)] transition-colors"
+            >
+              <span className="font-semibold">{emp.employeeNo}</span> — {emp.employeeName}
+              <span className="text-[var(--nu-text-muted)]"> ({emp.designation})</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Timesheets = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [allMonths, setAllMonths] = useState<TimesheetImportMonth[]>(
@@ -97,6 +163,8 @@ const Timesheets = () => {
   // Manual Add/Edit Entry modal state
   const [entryModal, setEntryModal] = useState<EntryModalState | null>(null);
   const [formEmployeeNo, setFormEmployeeNo] = useState("");
+  // @ts-ignore
+  const [formEmployeeSearch, setFormEmployeeSearch] = useState("");
   const [formProjectCode, setFormProjectCode] = useState("");
   const [formProjectName, setFormProjectName] = useState("");
   const [formStartDate, setFormStartDate] = useState("");
@@ -376,6 +444,7 @@ const Timesheets = () => {
   const openAddEntry = () => {
     setEntryModal({ mode: "add" });
     setFormEmployeeNo("");
+    setFormEmployeeSearch("");
     setFormProjectCode("");
     setFormProjectName("");
     setFormStartDate("");
@@ -387,6 +456,7 @@ const Timesheets = () => {
   const openEditEntry = (emp: (typeof allEmployees)[number]) => {
     setEntryModal({ mode: "edit", original: { employeeNo: emp.employeeNo, projectCode: emp.projectCode } });
     setFormEmployeeNo(emp.employeeNo);
+    setFormEmployeeSearch(`${emp.employeeNo} — ${emp.employeeName}`);
     setFormProjectCode(emp.projectCode);
     setFormProjectName(emp.projectName);
     setFormStartDate(emp.startDate);
@@ -918,18 +988,18 @@ const Timesheets = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="sm:col-span-2">
                 <label className={fieldLabelClass}>Employee</label>
-                <select
-                  value={formEmployeeNo}
-                  onChange={(e) => setFormEmployeeNo(e.target.value)}
-                  className={fieldClass}
-                >
-                  <option value="">Select Employee</option>
-                  {masterEmployees.map((emp) => (
-                    <option key={emp.id} value={emp.employeeNo}>
-                      {emp.employeeNo} — {emp.employeeName} ({emp.designation})
-                    </option>
-                  ))}
-                </select>
+                <EmployeeAutocomplete
+                  value={formEmployeeSearch}
+                  onChange={(val) => {
+                    setFormEmployeeSearch(val);
+                    setFormEmployeeNo("");
+                  }}
+                  onSelect={(employeeNo, displayText) => {
+                    setFormEmployeeNo(employeeNo);
+                    setFormEmployeeSearch(displayText);
+                  }}
+                  employees={masterEmployees}
+                />
               </div>
 
               <div>
