@@ -1,58 +1,63 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Calendar, Clock, CheckCircle, RefreshCw } from "lucide-react";
 import type { Project } from "../../../types/Project";
 import {
-  getEmployeeDailyEntries,
-  getProjectMonths,
-  getTimesheetSummary,
-  hasTimesheetData,
+  getLiveEmployeeDailyEntries,
+  getLiveProjectMonths,
+  getLiveTeamMembers,
+  getLiveTimesheetSummary,
+  hasLiveTimesheetData,
 } from "../../../services/timesheetSyncService";
-import { formatDisplayDate, formatMonthDisplay } from "../../../services/timesheetService";
-import { getProjectById } from "../../../services/projectService";
+import {
+  formatDisplayDate,
+  formatMonthDisplay,
+  getAllTimesheetImports,
+} from "../../../services/timesheetService";
 
 interface Props {
   project: Project;
 }
 
-const ExpandableTeamMembersCard = ({ project: initialProject }: Props) => {
-  const [project, setProject] = useState(initialProject);
+// Team Members always matches Project Code = PR Number live against the raw
+// timesheet data — it never depends on the one-time push-sync snapshot
+// stored on the project, so it can't go stale if the project's PR Number is
+// created or edited after a timesheet was already imported.
+const ExpandableTeamMembersCard = ({ project }: Props) => {
+  const [allImports, setAllImports] = useState(() => getAllTimesheetImports());
   const [expandedEmployeeNo, setExpandedEmployeeNo] = useState<string | null>(null);
-  const [selectedMonth, setSelectedMonth] = useState<string>(
-    project.latestTimesheetMonth || ""
-  );
+  const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const availableMonths = getLiveProjectMonths(project.prNo, allImports);
+  const hasSyncedData = hasLiveTimesheetData(project.prNo, allImports);
+
+  // Default to latest available month whenever the matched months change.
+  useEffect(() => {
+    if (availableMonths.length === 0) {
+      setSelectedMonth("");
+    } else if (!availableMonths.includes(selectedMonth)) {
+      setSelectedMonth(availableMonths[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableMonths.join(",")]);
+
+  // Keep in sync with the Timesheets module without requiring a manual
+  // refresh or a page reload.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setAllImports(getAllTimesheetImports());
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    // Reload project from localStorage
-    const latest = getProjectById(project.id);
-    console.log("🔄 REFRESH: Reloading project", project.prNo, "from localStorage");
-    console.log("🔄 REFRESH: Latest data:", {
-      resourceCount: latest?.resources?.length || 0,
-      timesheetMonths: latest?.timesheetMonths?.length || 0,
-      latestMonth: latest?.latestTimesheetMonth,
-    });
-    if (latest) {
-      setProject(latest);
-      setSelectedMonth(latest.latestTimesheetMonth || "");
-    }
-    setTimeout(() => setIsRefreshing(false), 500);
+    setAllImports(getAllTimesheetImports());
+    setTimeout(() => setIsRefreshing(false), 400);
   };
 
-  const availableMonths = getProjectMonths(project);
-  const summary = getTimesheetSummary(project);
-  const hasSyncedData = hasTimesheetData(project);
-
-  console.log("👁️ RENDER TeamCard:", {
-    project: project.prNo,
-    resourceCount: project.resources?.length || 0,
-    timesheetMonths: project.timesheetMonths?.length || 0,
-    hasSyncedData,
-    availableMonths,
-  });
-
-  // Get employees for selected month
-  const employees = project.resources || [];
+  const summary = getLiveTimesheetSummary(project.prNo, allImports, selectedMonth);
+  const employees = getLiveTeamMembers(project.prNo, allImports, selectedMonth);
 
   const handleExpandToggle = (employeeNo: string) => {
     setExpandedEmployeeNo(
@@ -86,7 +91,7 @@ const ExpandableTeamMembersCard = ({ project: initialProject }: Props) => {
           </button>
 
           {summary && (
-            <div className="flex gap-4 text-sm">
+            <div className="flex gap-4 text-sm ml-4">
               <div className="text-center">
                 <div className="text-xs font-semibold text-slate-500 uppercase">
                   Employees
@@ -141,8 +146,8 @@ const ExpandableTeamMembersCard = ({ project: initialProject }: Props) => {
             No Team Members Synced
           </h3>
           <p className="text-sm text-gray-500">
-            Import a timesheet in the Timesheets module to automatically sync team members
-            for this project.
+            Import a timesheet in the Timesheets module with a Project Code matching this
+            project's PR Number ({project.prNo || "—"}) to automatically sync team members.
           </p>
         </div>
       ) : employees.length === 0 ? (
@@ -176,8 +181,9 @@ const ExpandableTeamMembersCard = ({ project: initialProject }: Props) => {
               <tbody>
                 {employees.map((emp) => {
                   const isExpanded = expandedEmployeeNo === emp.employeeNo;
-                  const dailyEntries = getEmployeeDailyEntries(
-                    project,
+                  const dailyEntries = getLiveEmployeeDailyEntries(
+                    project.prNo,
+                    allImports,
                     emp.employeeNo,
                     selectedMonth
                   );
