@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useMemo, useCallback } from "react";
 import {
   Upload,
   Calendar,
@@ -7,6 +7,10 @@ import {
   FileText,
   Clock,
   Users,
+  Search,
+  Edit2,
+  Trash2,
+  Loader,
 } from "lucide-react";
 import type { TimesheetImportMonth, TimesheetEntry } from "../../types/Timesheet";
 import {
@@ -26,8 +30,6 @@ import {
 import { syncTimesheetToProjects } from "../../services/timesheetSyncService";
 import { getProjects, updateProject } from "../../services/projectService";
 
-// Local state for managing imported timesheets
-// In production, this would be persisted to a database or localStorage
 const timesheetStorage = {
   getMonths: (): TimesheetImportMonth[] => {
     try {
@@ -44,56 +46,78 @@ const timesheetStorage = {
 
 const Timesheets = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // State
   const [allMonths, setAllMonths] = useState<TimesheetImportMonth[]>(
     timesheetStorage.getMonths()
   );
   const [selectedMonth, setSelectedMonth] = useState<string>(
     allMonths[allMonths.length - 1]?.month || ""
   );
+  const [importType, setImportType] = useState<"monthly" | "weekly">("monthly");
+  const [selectedProject, setSelectedProject] = useState<string>("all");
+  const [searchEmployee, setSearchEmployee] = useState<string>("");
+
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
-  const currentMonthData =
-    selectedMonth && allMonths.find((m) => m.month === selectedMonth);
-  const entries: TimesheetEntry[] = (currentMonthData && 'entries' in currentMonthData ? currentMonthData.entries : []);
+  const currentMonthData = selectedMonth ? allMonths.find((m) => m.month === selectedMonth) : undefined;
+  const entries: TimesheetEntry[] = currentMonthData?.entries || [];
 
-  // Group entries by employee for table display
+  const uniqueProjects = useMemo(() => {
+    const projects = new Set(entries.map((e) => e.projectCode));
+    return Array.from(projects).sort();
+  }, [entries]);
+
+  const filteredEntries = useMemo(() => {
+    return entries.filter((entry) => {
+      const projectMatch = selectedProject === "all" || entry.projectCode === selectedProject;
+      const employeeMatch =
+        !searchEmployee ||
+        entry.employeeName.toLowerCase().includes(searchEmployee.toLowerCase()) ||
+        entry.employeeNo.toLowerCase().includes(searchEmployee.toLowerCase());
+      return projectMatch && employeeMatch;
+    });
+  }, [entries, selectedProject, searchEmployee]);
+
   const employeeGroups: Record<string, TimesheetEntry[]> = {};
-  entries.forEach((entry: TimesheetEntry) => {
+  filteredEntries.forEach((entry) => {
     if (!employeeGroups[entry.employeeNo]) {
       employeeGroups[entry.employeeNo] = [];
     }
     employeeGroups[entry.employeeNo].push(entry);
   });
 
-  const employees = Object.entries(employeeGroups).map(([empNo, empEntries]) => {
-    const first = empEntries[0];
-    const totalHours = empEntries.reduce((sum, e) => sum + e.hours, 0);
-    const workingDays = new Set(empEntries.map((e) => e.date)).size;
-    return {
-      employeeNo: empNo,
-      employeeName: first.employeeName,
-      projectCode: first.projectCode,
-      projectName: first.projectName,
-      designation: "", // Would come from Employee Master
-      department: "", // Would come from Employee Master
-      reportingManager: "", // Would come from Employee Master
-      startDate: empEntries.map((e) => e.date).sort()[0],
-      endDate: empEntries.map((e) => e.date).sort().reverse()[0],
-      workingDays,
-      totalHours,
-      manHourExpenses: 0, // Would come from Employee Master
-      employeeCost: 0, // Would be calculated
-      status: first.status || "Active",
-    };
-  });
+  const employees = useMemo(() => {
+    return Object.entries(employeeGroups).map(([empNo, empEntries]) => {
+      const first = empEntries[0];
+      const totalHours = empEntries.reduce((sum, e) => sum + e.hours, 0);
+      const workingDays = new Set(empEntries.map((e) => e.date)).size;
+      return {
+        employeeNo: empNo,
+        employeeName: first.employeeName,
+        projectCode: first.projectCode,
+        projectName: first.projectName,
+        department: "",
+        reportingManager: "",
+        startDate: empEntries.map((e) => e.date).sort()[0],
+        endDate: empEntries.map((e) => e.date).sort().reverse()[0],
+        workingDays,
+        totalHours,
+        employeeCost: 0,
+      };
+    });
+  }, [employeeGroups]);
 
-  // Handlers
+  const summaryStats = useMemo(() => {
+    return {
+      totalEmployees: new Set(filteredEntries.map((e) => e.employeeNo)).size,
+      totalHours: Math.round(filteredEntries.reduce((sum, e) => sum + e.hours, 0) * 100) / 100,
+      totalWorkingDays: new Set(filteredEntries.map((e) => e.date)).size,
+    };
+  }, [filteredEntries]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -105,12 +129,12 @@ const Timesheets = () => {
     e.target.value = "";
   };
 
-  const closeImportModal = () => {
+  const closeImportModal = useCallback(() => {
     setShowImportModal(false);
     setSelectedFile(null);
     setImportReport(null);
     setImportError(null);
-  };
+  }, []);
 
   const handleExecuteImport = async () => {
     if (!selectedFile) return;
@@ -119,11 +143,9 @@ const Timesheets = () => {
     setImportError(null);
 
     try {
-      // Parse workbook
       const workbook = await parseWorkbook(selectedFile);
       const detectedSheets = workbook.SheetNames;
 
-      // Find worksheet with timesheet data
       let found = false;
       let selectedSheetName = "";
       let headerRowIndex = 0;
@@ -169,56 +191,63 @@ const Timesheets = () => {
 
       if (!found) {
         throw new Error(
-          "Could not find a worksheet containing timesheet data. Required columns: Employee No, Employee Name, Project Code, Date, Hours"
+          "Could not find timesheet data. Required columns: Employee No, Employee Name, Project Code, Date, Hours"
         );
       }
 
-      // Validate headers
       const normalizedHeaders = normalizeHeaders(headerRow);
       const { indices, missing } = validateHeaders(normalizedHeaders);
 
       if (missing.length > 0) {
-        throw new Error(
-          `Missing required columns: ${missing.join(", ")}`
-        );
+        throw new Error(`Missing columns: ${missing.join(", ")}`);
       }
 
-      // Extract entries
       const allEntries = extractTimesheetEntries(
         dataRows.filter((row) => row.some((cell) => cell !== "" && cell !== null && cell !== undefined)),
         indices as Record<string, number>
       );
 
       if (allEntries.length === 0) {
-        throw new Error("No valid timesheet entries found in the Excel file.");
+        throw new Error("No valid timesheet entries found.");
       }
 
-      // Create month import
-      const newMonth = createImportMonth(allEntries, "Admin"); // Would be current user
+      const existingMonth = allMonths.find((m) => m.month === allEntries[0].date.substring(0, 7));
+      if (existingMonth) {
+        const duplicateCheck = allEntries.filter((newEntry) =>
+          existingMonth.entries.some(
+            (existing) =>
+              existing.employeeNo === newEntry.employeeNo &&
+              existing.projectCode === newEntry.projectCode &&
+              existing.date === newEntry.date
+          )
+        );
+
+        if (duplicateCheck.length > 0) {
+          throw new Error(
+            `Found ${duplicateCheck.length} duplicate entries. Update the existing import or use a different month.`
+          );
+        }
+      }
+
+      const newMonth = createImportMonth(allEntries, "Admin", importType);
       const updatedMonths = allMonths.filter((m) => m.month !== newMonth.month);
       updatedMonths.push(newMonth);
       updatedMonths.sort((a, b) => a.month.localeCompare(b.month));
 
-      // Save and update state
       timesheetStorage.save(updatedMonths);
       setAllMonths(updatedMonths);
       setSelectedMonth(newMonth.month);
+      setSelectedProject("all");
+      setSearchEmployee("");
 
-      // AUTO-SYNC: Sync to all projects
       try {
         const allProjects = getProjects();
         const syncedProjects = syncTimesheetToProjects(allProjects, newMonth);
-
-        // Update all affected projects
-        syncedProjects.forEach((project) => {
-          updateProject(project);
-        });
+        syncedProjects.forEach((project) => updateProject(project));
       } catch (syncErr) {
-        // Log sync errors but don't fail the import
-        console.warn("Timesheet sync warning:", syncErr);
+        console.warn("Sync warning:", syncErr);
       }
 
-      // Show success
       const report: ImportReport = {
         workbookName: selectedFile.name,
         detectedSheets,
@@ -233,7 +262,7 @@ const Timesheets = () => {
 
       setImportReport(report);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to import timesheet";
+      const message = err instanceof Error ? err.message : "Import failed";
       setImportError(message);
     } finally {
       setImporting(false);
@@ -252,61 +281,114 @@ const Timesheets = () => {
   };
 
   return (
-    <div className="space-y-6 pb-8">
+    <div className="space-y-4 pb-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Timesheets</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Import and manage employee timesheets. Data is automatically synchronized to projects.
-          </p>
-        </div>
-
-        <input
-          type="file"
-          ref={fileInputRef}
-          accept=".xlsx,.xls"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition shrink-0"
-        >
-          <Upload size={16} />
-          Import Timesheet
-        </button>
-      </div>
-
-      {/* Month Selector */}
-      {allMonths.length > 0 && (
-        <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <Calendar size={18} className="text-blue-600" />
-            <h3 className="text-lg font-bold text-slate-800">Select Month</h3>
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">Timesheets</h1>
+            <p className="text-sm text-slate-500 mt-1">
+              Import and manage employee timesheets. Automatically synced to projects.
+            </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            {allMonths.map((month) => (
-              <button
-                key={month.month}
-                onClick={() => setSelectedMonth(month.month)}
-                className={`px-4 py-2.5 rounded-xl font-medium text-sm transition ${
-                  selectedMonth === month.month
-                    ? "bg-blue-100 text-blue-700 border-2 border-blue-600"
-                    : "bg-slate-100 text-slate-700 border-2 border-gray-200 hover:bg-slate-200"
-                }`}
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept=".xlsx,.xls"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition shrink-0"
+          >
+            <Upload size={16} />
+            Upload Timesheet
+          </button>
+        </div>
+      </div>
+
+      {/* Filters Toolbar */}
+      {allMonths.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-3">
+          <div className="flex flex-col md:flex-row gap-3">
+            {/* Import Type */}
+            <div className="flex-shrink-0">
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                Import Type
+              </label>
+              <select
+                value={importType}
+                onChange={(e) => setImportType(e.target.value as "monthly" | "weekly")}
+                className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white"
               >
-                {formatMonthDisplay(month.month)}
-              </button>
-            ))}
+                <option value="monthly">Monthly</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </div>
+
+            {/* Month Selector */}
+            <div className="flex-shrink-0">
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                Period
+              </label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white"
+              >
+                <option value="">Select Period</option>
+                {allMonths.map((month) => (
+                  <option key={month.month} value={month.month}>
+                    {formatMonthDisplay(month.month)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Project Filter */}
+            <div className="flex-shrink-0">
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                Project
+              </label>
+              <select
+                value={selectedProject}
+                onChange={(e) => setSelectedProject(e.target.value)}
+                className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white"
+              >
+                <option value="all">All Projects</option>
+                {uniqueProjects.map((project) => (
+                  <option key={project} value={project}>
+                    {project}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Employee Search */}
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                Search Employee
+              </label>
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="By name or ID..."
+                  value={searchEmployee}
+                  onChange={(e) => setSearchEmployee(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-300 text-sm"
+                />
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Statistics Cards */}
+      {/* Summary Cards */}
       {currentMonthData && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
@@ -317,7 +399,7 @@ const Timesheets = () => {
               Total Employees
             </p>
             <p className="mt-2 text-2xl font-bold text-slate-800">
-              {currentMonthData.summary?.totalEmployees || 0}
+              {summaryStats.totalEmployees}
             </p>
           </div>
 
@@ -329,7 +411,7 @@ const Timesheets = () => {
               Total Hours
             </p>
             <p className="mt-2 text-2xl font-bold text-slate-800">
-              {(currentMonthData.summary?.totalHours || 0).toLocaleString("en-IN", {
+              {summaryStats.totalHours.toLocaleString("en-IN", {
                 minimumFractionDigits: 1,
                 maximumFractionDigits: 2,
               })}
@@ -345,20 +427,19 @@ const Timesheets = () => {
               Working Days
             </p>
             <p className="mt-2 text-2xl font-bold text-slate-800">
-              {currentMonthData.summary?.totalWorkingDays || 0}
+              {summaryStats.totalWorkingDays}
             </p>
           </div>
         </div>
       )}
 
-      {/* Timesheets Table */}
+      {/* Employee Table */}
       {allMonths.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 border border-gray-100 shadow-sm text-center">
           <FileText size={48} className="mx-auto text-gray-300 mb-4" />
           <h3 className="text-lg font-bold text-slate-800 mb-2">No Timesheets Imported</h3>
           <p className="text-sm text-gray-500 mb-6">
-            Import your first Excel timesheet to get started. The system will automatically sync
-            employees to their projects.
+            Upload your first Excel timesheet to get started.
           </p>
           <button
             type="button"
@@ -366,18 +447,24 @@ const Timesheets = () => {
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition"
           >
             <Upload size={16} />
-            Import Timesheet
+            Upload Timesheet
           </button>
         </div>
+      ) : !selectedMonth ? (
+        <div className="bg-white rounded-2xl p-12 border border-gray-100 shadow-sm text-center">
+          <Calendar size={48} className="mx-auto text-gray-300 mb-4" />
+          <h3 className="text-lg font-bold text-slate-800 mb-2">Select a Period</h3>
+          <p className="text-sm text-gray-500">Choose a month or week to view employee data.</p>
+        </div>
       ) : (
-        <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b pb-4">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="border-b px-6 py-4 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-bold text-slate-800">
                 {formatMonthDisplay(selectedMonth)}
               </h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                {employees.length} unique employees with daily timesheet entries
+                {employees.length} employees
               </p>
             </div>
             {currentMonthData && (
@@ -386,32 +473,31 @@ const Timesheets = () => {
                 onClick={() => handleDeleteMonth(selectedMonth)}
                 className="px-3 py-1.5 text-xs rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition font-medium"
               >
-                Delete Month
+                Delete
               </button>
             )}
           </div>
 
-          {/* Table */}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] border-collapse text-left text-sm text-slate-700">
+            <table className="w-full border-collapse text-left text-sm text-slate-700">
               <thead className="bg-slate-100 text-slate-650 font-semibold uppercase text-xs tracking-wider border-b">
                 <tr>
                   <th className="px-4 py-3">Employee No</th>
                   <th className="px-4 py-3">Employee Name</th>
                   <th className="px-4 py-3">Project Code</th>
                   <th className="px-4 py-3">Project Name</th>
-                  <th className="px-4 py-3 w-32">Start Date</th>
-                  <th className="px-4 py-3 w-32">End Date</th>
+                  <th className="px-4 py-3 w-28">Start Date</th>
+                  <th className="px-4 py-3 w-28">End Date</th>
                   <th className="px-4 py-3 text-center w-24">Working Days</th>
                   <th className="px-4 py-3 text-right w-24">Total Hours</th>
-                  <th className="px-4 py-3 text-center w-24">Status</th>
+                  <th className="px-4 py-3 text-center w-24">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {employees.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="py-10 text-center text-gray-500 font-medium">
-                      No timesheet entries for this month
+                      No matching employees
                     </td>
                   </tr>
                 ) : (
@@ -435,15 +521,22 @@ const Timesheets = () => {
                         hrs
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                            emp.status === "Active"
-                              ? "bg-green-100 text-green-700"
-                              : "bg-slate-100 text-slate-600"
-                          }`}
-                        >
-                          {emp.status}
-                        </span>
+                        <div className="flex gap-2 justify-center">
+                          <button
+                            type="button"
+                            className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition"
+                            title="Edit"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition"
+                            title="Delete"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -462,25 +555,41 @@ const Timesheets = () => {
               <>
                 <div className="flex items-start gap-3">
                   <div className="mt-1 shrink-0 p-2 rounded-xl bg-blue-50 text-blue-600">
-                    <Upload size={24} />
+                    {importing ? (
+                      <Loader size={24} className="animate-spin" />
+                    ) : (
+                      <Upload size={24} />
+                    )}
                   </div>
                   <div>
-                    <h4 className="text-lg font-bold text-slate-800">Import Timesheet</h4>
+                    <h4 className="text-lg font-bold text-slate-800">
+                      {importing ? "Importing Timesheet..." : "Import Timesheet"}
+                    </h4>
                     <p className="text-xs text-gray-500 mt-1">
                       File: {selectedFile.name}
                     </p>
                   </div>
                 </div>
 
+                {importing && (
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <div className="flex items-center gap-2 text-sm text-slate-700">
+                      <Loader size={16} className="animate-spin" />
+                      Processing timesheet entries...
+                    </div>
+                  </div>
+                )}
+
                 <p className="text-sm text-slate-600">
-                  This timesheet will be processed and automatically synced to projects matching their Project Codes.
+                  This timesheet will be validated for duplicates and synced to projects.
                 </p>
 
                 <div className="flex justify-end gap-3 pt-3 border-t">
                   <button
                     type="button"
                     onClick={closeImportModal}
-                    className="px-4 py-2 border rounded-xl hover:bg-gray-50 text-sm font-semibold transition"
+                    disabled={importing}
+                    className="px-4 py-2 border rounded-xl hover:bg-gray-50 text-sm font-semibold transition disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -489,9 +598,10 @@ const Timesheets = () => {
                     type="button"
                     disabled={importing}
                     onClick={handleExecuteImport}
-                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
+                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50 flex items-center gap-2"
                   >
-                    {importing ? "Importing..." : "Import Timesheet"}
+                    {importing && <Loader size={14} className="animate-spin" />}
+                    {importing ? "Importing..." : "Import"}
                   </button>
                 </div>
               </>
@@ -537,7 +647,7 @@ const Timesheets = () => {
                   <div>
                     <h4 className="text-lg font-bold text-slate-800">Import Completed</h4>
                     <p className="text-xs text-gray-500 mt-1">
-                      {importReport.matchedRows} timesheet entries imported successfully.
+                      {importReport.matchedRows} entries imported successfully.
                     </p>
                   </div>
                 </div>
