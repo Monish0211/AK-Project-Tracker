@@ -13,14 +13,15 @@ import {
   Loader,
   ChevronLeft,
   ChevronRight,
+  Plus,
 } from "lucide-react";
-import type { ReactNode } from "react";
 import type { TimesheetEntry, TimesheetImportMonth } from "../../types/Timesheet";
 import {
   extractTimesheetEntries,
   createImportMonth,
   formatDisplayDate,
   formatMonthDisplay,
+  getMonthFromDate,
   getAllTimesheetImports,
   saveAllTimesheetImports,
 } from "../../services/timesheetService";
@@ -35,6 +36,7 @@ import {
 } from "../../services/timesheetImportService";
 import { syncTimesheetToProjects } from "../../services/timesheetSyncService";
 import { getProjects, updateProject } from "../../services/projectService";
+import { getEmployees } from "../../services/employeeService";
 import { Card, CardHeader } from "../../components/ui/Card";
 import { StatTile } from "../../components/ui/StatTile";
 import { Badge } from "../../components/ui/Badge";
@@ -50,15 +52,25 @@ const timesheetStorage = {
 const controlClass =
   "h-9 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] text-[12.5px] text-[var(--nu-text)] outline-none focus:ring-2 focus:ring-[var(--nu-accent)]/30 focus:border-[var(--nu-accent)] transition-shadow";
 
-const InfoChip = ({ icon, label, value }: { icon: ReactNode; label: string; value: string | number }) => (
-  <div className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--nu-radius-md)] bg-white/[0.07] border border-white/[0.1] shrink-0">
-    <div className="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center shrink-0">{icon}</div>
-    <div className="leading-tight">
-      <p className="text-[9.5px] uppercase tracking-wide text-white/55 font-medium">{label}</p>
-      <p className="text-[12.5px] font-semibold text-white whitespace-nowrap">{value}</p>
-    </div>
-  </div>
-);
+const fieldClass =
+  "w-full h-9 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] px-3 text-[12.5px] text-[var(--nu-text)] outline-none focus:ring-2 focus:ring-[var(--nu-accent)]/30 focus:border-[var(--nu-accent)] transition-shadow";
+const fieldLabelClass = "block text-[11px] font-medium text-[var(--nu-text-secondary)] mb-1";
+
+const toDateKey = (d: Date) => {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+const computeSummary = (entries: TimesheetEntry[]) => ({
+  totalEmployees: new Set(entries.map((e) => e.employeeNo)).size,
+  totalHours: Math.round(entries.reduce((sum, e) => sum + e.hours, 0) * 100) / 100,
+  totalWorkingDays: new Set(entries.map((e) => e.date)).size,
+});
+
+interface EntryModalState {
+  mode: "add" | "edit";
+  original?: { employeeNo: string; projectCode: string };
+}
 
 const Timesheets = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -68,7 +80,6 @@ const Timesheets = () => {
   const [selectedMonth, setSelectedMonth] = useState<string>(
     allMonths[allMonths.length - 1]?.month || ""
   );
-  const [importType, setImportType] = useState<"monthly" | "weekly">("monthly");
   const [selectedProject, setSelectedProject] = useState<string>("all");
   const [searchEmployee, setSearchEmployee] = useState<string>("");
 
@@ -80,6 +91,18 @@ const Timesheets = () => {
   const [syncedProjects, setSyncedProjects] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 30;
+
+  const masterEmployees = useMemo(() => getEmployees(), []);
+
+  // Manual Add/Edit Entry modal state
+  const [entryModal, setEntryModal] = useState<EntryModalState | null>(null);
+  const [formEmployeeNo, setFormEmployeeNo] = useState("");
+  const [formProjectCode, setFormProjectCode] = useState("");
+  const [formProjectName, setFormProjectName] = useState("");
+  const [formStartDate, setFormStartDate] = useState("");
+  const [formEndDate, setFormEndDate] = useState("");
+  const [formTotalHours, setFormTotalHours] = useState("");
+  const [formError, setFormError] = useState("");
 
   const currentMonthData = selectedMonth ? allMonths.find((m) => m.month === selectedMonth) : undefined;
   const entries: TimesheetEntry[] = currentMonthData?.entries || [];
@@ -259,7 +282,7 @@ const Timesheets = () => {
         }
       }
 
-      const newMonth = createImportMonth(allEntries, "Admin", importType);
+      const newMonth = createImportMonth(allEntries, "Admin", "monthly");
       const updatedMonths = allMonths.filter((m) => m.month !== newMonth.month);
       updatedMonths.push(newMonth);
       updatedMonths.sort((a, b) => a.month.localeCompare(b.month));
@@ -323,6 +346,158 @@ const Timesheets = () => {
     }
   };
 
+  // Persist an updated entry set for the current month and re-sync matching
+  // projects. Projects/Team Assigned reads timesheet data live (matching
+  // Project Code = PR Number on every render), so saving here is enough for
+  // that view to reflect the change immediately — no separate propagation
+  // needed for add/edit/delete to show up there.
+  const persistMonthEntries = (updatedEntries: TimesheetEntry[]) => {
+    if (!currentMonthData) return;
+
+    const updatedMonth: TimesheetImportMonth = {
+      ...currentMonthData,
+      entries: updatedEntries,
+      summary: computeSummary(updatedEntries),
+    };
+
+    const updatedMonths = allMonths.map((m) => (m.month === selectedMonth ? updatedMonth : m));
+    timesheetStorage.save(updatedMonths);
+    setAllMonths(updatedMonths);
+
+    try {
+      const allProjects = getProjects();
+      const synced = syncTimesheetToProjects(allProjects, updatedMonth);
+      synced.forEach((project) => updateProject(project));
+    } catch (syncErr) {
+      console.warn("Sync warning:", syncErr);
+    }
+  };
+
+  const openAddEntry = () => {
+    setEntryModal({ mode: "add" });
+    setFormEmployeeNo("");
+    setFormProjectCode("");
+    setFormProjectName("");
+    setFormStartDate("");
+    setFormEndDate("");
+    setFormTotalHours("");
+    setFormError("");
+  };
+
+  const openEditEntry = (emp: (typeof allEmployees)[number]) => {
+    setEntryModal({ mode: "edit", original: { employeeNo: emp.employeeNo, projectCode: emp.projectCode } });
+    setFormEmployeeNo(emp.employeeNo);
+    setFormProjectCode(emp.projectCode);
+    setFormProjectName(emp.projectName);
+    setFormStartDate(emp.startDate);
+    setFormEndDate(emp.endDate);
+    setFormTotalHours(String(emp.totalHours));
+    setFormError("");
+  };
+
+  const closeEntryModal = () => setEntryModal(null);
+
+  const handleSaveEntry = () => {
+    if (!currentMonthData || !entryModal) return;
+
+    if (!formEmployeeNo) {
+      setFormError("Select an employee.");
+      return;
+    }
+    if (!formProjectCode.trim()) {
+      setFormError("Project Code is required.");
+      return;
+    }
+    if (!formStartDate || !formEndDate) {
+      setFormError("Start and End dates are required.");
+      return;
+    }
+    if (new Date(formEndDate) < new Date(formStartDate)) {
+      setFormError("End date must be on or after the start date.");
+      return;
+    }
+    if (getMonthFromDate(formStartDate) !== selectedMonth || getMonthFromDate(formEndDate) !== selectedMonth) {
+      setFormError(`Dates must fall within ${formatMonthDisplay(selectedMonth)}.`);
+      return;
+    }
+
+    const hoursNum = Number(formTotalHours);
+    if (!hoursNum || hoursNum <= 0) {
+      setFormError("Enter a valid total hours value.");
+      return;
+    }
+
+    const employee = masterEmployees.find((e) => e.employeeNo === formEmployeeNo);
+    if (!employee) {
+      setFormError("Selected employee not found in Employee Master.");
+      return;
+    }
+
+    const isDuplicate = currentMonthData.entries.some((e) => {
+      if (e.employeeNo !== formEmployeeNo || e.projectCode.trim().toLowerCase() !== formProjectCode.trim().toLowerCase()) {
+        return false;
+      }
+      if (entryModal.mode === "edit" && entryModal.original) {
+        return !(e.employeeNo === entryModal.original.employeeNo && e.projectCode === entryModal.original.projectCode);
+      }
+      return true;
+    });
+    if (entryModal.mode === "add" && isDuplicate) {
+      setFormError("This employee already has entries for this project in the selected period. Edit the existing entry instead.");
+      return;
+    }
+
+    const dateKeys: string[] = [];
+    const cursor = new Date(formStartDate);
+    const end = new Date(formEndDate);
+    while (cursor <= end) {
+      dateKeys.push(toDateKey(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    const perDay = Math.round((hoursNum / dateKeys.length) * 100) / 100;
+    const newEntries: TimesheetEntry[] = dateKeys.map((date, idx) => {
+      const isLast = idx === dateKeys.length - 1;
+      const hours = isLast ? Math.round((hoursNum - perDay * (dateKeys.length - 1)) * 100) / 100 : perDay;
+      return {
+        id: `manual-${formEmployeeNo}-${formProjectCode}-${date}-${idx}`,
+        employeeNo: formEmployeeNo,
+        employeeName: employee.employeeName,
+        projectCode: formProjectCode.trim(),
+        projectName: formProjectName.trim(),
+        date,
+        hours,
+        status: "Active",
+      };
+    });
+
+    const filteredExisting = currentMonthData.entries.filter((e) => {
+      if (entryModal.mode === "edit" && entryModal.original) {
+        return !(e.employeeNo === entryModal.original.employeeNo && e.projectCode === entryModal.original.projectCode);
+      }
+      return true;
+    });
+
+    persistMonthEntries([...filteredExisting, ...newEntries]);
+    setEntryModal(null);
+  };
+
+  const handleDeleteEntry = (emp: (typeof allEmployees)[number]) => {
+    if (!currentMonthData) return;
+    if (
+      !window.confirm(
+        `Remove ${emp.employeeName} (${emp.employeeNo}) from ${emp.projectCode} for ${formatMonthDisplay(selectedMonth)}?`
+      )
+    ) {
+      return;
+    }
+
+    const updatedEntries = currentMonthData.entries.filter(
+      (e) => !(e.employeeNo === emp.employeeNo && e.projectCode === emp.projectCode)
+    );
+    persistMonthEntries(updatedEntries);
+  };
+
   return (
     <div className="timesheets-shell -m-6">
       <input
@@ -346,23 +521,9 @@ const Timesheets = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap justify-end">
-            {currentMonthData && (
-              <>
-                <InfoChip icon={<Users size={13} className="text-sky-300" />} label="Employees" value={summaryStats.totalEmployees} />
-                <InfoChip
-                  icon={<Clock size={13} className="text-emerald-300" />}
-                  label="Total Hours"
-                  value={summaryStats.totalHours.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-                />
-                <InfoChip icon={<CalendarDays size={13} className="text-amber-300" />} label="Working Days" value={summaryStats.totalWorkingDays} />
-              </>
-            )}
-
-            <Button variant="primary" size="sm" icon={<Upload size={14} />} onClick={() => fileInputRef.current?.click()} className="ml-1">
-              Upload Timesheet
-            </Button>
-          </div>
+          <Button variant="primary" size="sm" icon={<Upload size={14} />} onClick={() => fileInputRef.current?.click()}>
+            Upload Timesheet
+          </Button>
         </div>
 
         {/* ═══ KPI Strip ═══ */}
@@ -391,16 +552,6 @@ const Timesheets = () => {
           {/* Toolbar */}
           {allMonths.length > 0 && (
             <div className="flex flex-wrap items-center gap-2.5 px-4 py-3 border-b border-[var(--nu-border)]">
-              <select
-                value={importType}
-                onChange={(e) => setImportType(e.target.value as "monthly" | "weekly")}
-                className={`${controlClass} px-2.5 shrink-0`}
-                title="Import Type"
-              >
-                <option value="monthly">Monthly</option>
-                <option value="weekly">Weekly</option>
-              </select>
-
               <select
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
@@ -483,15 +634,20 @@ const Timesheets = () => {
                   </p>
                 </div>
                 {currentMonthData && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    icon={<Trash2 size={13} />}
-                    onClick={() => handleDeleteMonth(selectedMonth)}
-                    className="!text-[var(--nu-danger)] hover:!bg-[var(--nu-danger-soft)] shrink-0"
-                  >
-                    Delete Period
-                  </Button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button variant="secondary" size="sm" icon={<Plus size={13} />} onClick={openAddEntry}>
+                      Add Entry
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<Trash2 size={13} />}
+                      onClick={() => handleDeleteMonth(selectedMonth)}
+                      className="!text-[var(--nu-danger)] hover:!bg-[var(--nu-danger-soft)]"
+                    >
+                      Delete Period
+                    </Button>
+                  </div>
                 )}
               </div>
 
@@ -540,13 +696,17 @@ const Timesheets = () => {
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-center gap-2">
                               <button
+                                type="button"
                                 title="Edit"
+                                onClick={() => openEditEntry(emp)}
                                 className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150"
                               >
                                 <Pencil size={15} />
                               </button>
                               <button
+                                type="button"
                                 title="Delete"
+                                onClick={() => handleDeleteEntry(emp)}
                                 className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-danger-soft)] text-[var(--nu-danger)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150"
                               >
                                 <Trash2 size={15} />
@@ -731,6 +891,118 @@ const Timesheets = () => {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Add / Edit Entry Modal ═══ */}
+      {entryModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-[var(--nu-shadow-md)] w-full max-w-lg p-5 space-y-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] flex items-center justify-center shrink-0">
+                {entryModal.mode === "add" ? <Plus size={18} /> : <Pencil size={18} />}
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-[15px] font-semibold text-[var(--nu-text)]">
+                  {entryModal.mode === "add" ? "Add Timesheet Entry" : "Edit Timesheet Entry"}
+                </h2>
+                <p className="text-[12.5px] text-[var(--nu-text-secondary)] mt-1">
+                  {entryModal.mode === "add"
+                    ? "Manually add an employee missing from the uploaded timesheet."
+                    : `Update the record for ${formEmployeeNo}.`}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="sm:col-span-2">
+                <label className={fieldLabelClass}>Employee</label>
+                <select
+                  value={formEmployeeNo}
+                  onChange={(e) => setFormEmployeeNo(e.target.value)}
+                  className={fieldClass}
+                >
+                  <option value="">Select Employee</option>
+                  {masterEmployees.map((emp) => (
+                    <option key={emp.id} value={emp.employeeNo}>
+                      {emp.employeeNo} — {emp.employeeName} ({emp.designation})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={fieldLabelClass}>Project Code</label>
+                <input
+                  type="text"
+                  value={formProjectCode}
+                  onChange={(e) => setFormProjectCode(e.target.value)}
+                  placeholder="e.g. PR-11058"
+                  className={fieldClass}
+                />
+              </div>
+
+              <div>
+                <label className={fieldLabelClass}>Project Name</label>
+                <input
+                  type="text"
+                  value={formProjectName}
+                  onChange={(e) => setFormProjectName(e.target.value)}
+                  placeholder="Optional"
+                  className={fieldClass}
+                />
+              </div>
+
+              <div>
+                <label className={fieldLabelClass}>Start Date</label>
+                <input
+                  type="date"
+                  value={formStartDate}
+                  onChange={(e) => setFormStartDate(e.target.value)}
+                  className={fieldClass}
+                />
+              </div>
+
+              <div>
+                <label className={fieldLabelClass}>End Date</label>
+                <input
+                  type="date"
+                  value={formEndDate}
+                  onChange={(e) => setFormEndDate(e.target.value)}
+                  className={fieldClass}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className={fieldLabelClass}>Total Hours</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={formTotalHours}
+                  onChange={(e) => setFormTotalHours(e.target.value)}
+                  placeholder="Enter total hours for this date range"
+                  className={fieldClass}
+                />
+              </div>
+            </div>
+
+            {formError && (
+              <div className="bg-[var(--nu-danger-soft)] border border-[var(--nu-danger)]/20 rounded-[var(--nu-radius-md)] p-3 flex items-start gap-2">
+                <AlertTriangle size={14} className="text-[var(--nu-danger)] shrink-0 mt-0.5" />
+                <p className="text-[12px] text-[var(--nu-danger)] font-medium">{formError}</p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2.5 pt-3 border-t border-[var(--nu-border)]">
+              <Button variant="secondary" size="sm" onClick={closeEntryModal}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleSaveEntry}>
+                {entryModal.mode === "add" ? "Add Entry" : "Save Changes"}
+              </Button>
+            </div>
           </div>
         </div>
       )}
