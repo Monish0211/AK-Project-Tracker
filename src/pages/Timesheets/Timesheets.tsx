@@ -225,6 +225,10 @@ const Timesheets = () => {
         throw new Error("No valid timesheet entries found.");
       }
 
+      console.log("📥 IMPORT: Extracted entries:", allEntries.length);
+      console.log("📥 IMPORT: Sample entries:", allEntries.slice(0, 3));
+      console.log("📥 IMPORT: Unique project codes in import:", [...new Set(allEntries.map(e => e.projectCode))]);
+
       const existingMonth = allMonths.find((m) => m.month === allEntries[0].date.substring(0, 7));
       if (existingMonth) {
         const duplicateCheck = allEntries.filter((newEntry) =>
@@ -256,11 +260,19 @@ const Timesheets = () => {
 
       try {
         const allProjects = getProjects();
+        console.log("🔍 BEFORE SYNC: Projects in system:", allProjects.map(p => ({prNo: p.prNo, hasTimesheet: !!p.timesheetMonths})));
+
         const syncedProjects = syncTimesheetToProjects(allProjects, newMonth);
 
         // Track which projects were updated
         const updatedProjectNumbers: string[] = [];
         syncedProjects.forEach((project) => {
+          console.log(`💾 SAVING: Project ${project.prNo}:`, {
+            resourceCount: project.resources?.length || 0,
+            timesheetMonths: project.timesheetMonths?.length || 0,
+            latestMonth: project.latestTimesheetMonth,
+          });
+
           // Check if this project had entries matched
           if (project.resources && project.resources.length > 0) {
             updatedProjectNumbers.push(project.prNo);
@@ -269,6 +281,12 @@ const Timesheets = () => {
         });
 
         setSyncedProjects(updatedProjectNumbers);
+
+        // Verify save
+        setTimeout(() => {
+          const verify = getProjects();
+          console.log("✅ AFTER SYNC: Projects in system:", verify.map(p => ({prNo: p.prNo, resourceCount: p.resources?.length || 0, timesheetMonths: p.timesheetMonths?.length || 0})));
+        }, 100);
       } catch (syncErr) {
         console.warn("Sync warning:", syncErr);
       }
