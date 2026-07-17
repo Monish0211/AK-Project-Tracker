@@ -1,11 +1,25 @@
-import React, { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Calendar, Clock, CheckCircle, RefreshCw } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Calendar,
+  Clock,
+  CheckCircle,
+  RefreshCw,
+  Users,
+  IndianRupee,
+  Briefcase,
+  UserCog,
+  TrendingUp,
+  TrendingDown,
+  Wallet,
+  PieChart,
+} from "lucide-react";
 import type { Project } from "../../../types/Project";
 import {
   getLiveEmployeeDailyEntries,
   getLiveProjectMonths,
   getLiveTeamMembers,
-  getLiveTimesheetSummary,
   hasLiveTimesheetData,
 } from "../../../services/timesheetSyncService";
 import {
@@ -13,20 +27,49 @@ import {
   formatMonthDisplay,
   getAllTimesheetImports,
 } from "../../../services/timesheetService";
+import { getEmployees } from "../../../services/employeeService";
+import { getTotalNonManhourCost } from "../../../services/expenseService";
+import { getProjectCommercialSummary } from "../../../services/invoiceProgressService";
+import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
+import { StatTile } from "../../../components/ui/StatTile";
+import { Badge } from "../../../components/ui/Badge";
+import { Button } from "../../../components/ui/Button";
+import { EmptyState } from "../../../components/ui/EmptyState";
 
 interface Props {
   project: Project;
 }
 
-// Team Members always matches Project Code = PR Number live against the raw
+const fmtINR = (v: number) => `₹${v.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+const fmtINR2 = (v: number) =>
+  `₹${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtHrs = (v: number) => `${v.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 2 })} hrs`;
+
+const InfoField = ({ label, value, accent }: { label: string; value: string; accent?: boolean }) => (
+  <div className="min-w-0">
+    <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--nu-text-muted)]">{label}</p>
+    <p
+      className={`mt-0.5 text-[12.5px] font-semibold truncate ${accent ? "text-[var(--nu-accent)]" : "text-[var(--nu-text)]"}`}
+      title={value}
+    >
+      {value}
+    </p>
+  </div>
+);
+
+// Team Assigned matches Project Code = PR Number live against the raw
 // timesheet data — it never depends on the one-time push-sync snapshot
 // stored on the project, so it can't go stale if the project's PR Number is
-// created or edited after a timesheet was already imported.
+// created or edited after a timesheet was already imported. Manpower rate,
+// grade, designation etc. are looked up fresh from the Employee Master on
+// every render too, never duplicated onto the project.
 const ExpandableTeamMembersCard = ({ project }: Props) => {
   const [allImports, setAllImports] = useState(() => getAllTimesheetImports());
   const [expandedEmployeeNo, setExpandedEmployeeNo] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const masterEmployees = useMemo(() => getEmployees(), []);
 
   const availableMonths = getLiveProjectMonths(project.prNo, allImports);
   const hasSyncedData = hasLiveTimesheetData(project.prNo, allImports);
@@ -41,8 +84,8 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableMonths.join(",")]);
 
-  // Keep in sync with the Timesheets module without requiring a manual
-  // refresh or a page reload.
+  // Keep in sync with the Timesheets module (and Manpower rate changes)
+  // without requiring a manual refresh or a page reload.
   useEffect(() => {
     const interval = setInterval(() => {
       setAllImports(getAllTimesheetImports());
@@ -56,315 +99,360 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
     setTimeout(() => setIsRefreshing(false), 400);
   };
 
-  const summary = getLiveTimesheetSummary(project.prNo, allImports, selectedMonth);
   const employees = getLiveTeamMembers(project.prNo, allImports, selectedMonth);
 
+  // Fetch Designation/Department/Reporting Manager/Grade/Hourly Rate fresh
+  // from the Manpower module for each synced employee, then calculate this
+  // project's Man-Hour Cost independently per employee.
+  const enrichedEmployees = useMemo(() => {
+    return employees.map((emp) => {
+      const master = masterEmployees.find(
+        (m) => m.employeeNo.trim().toLowerCase() === emp.employeeNo.trim().toLowerCase()
+      );
+      const hourlyRate = master?.manhourExpenses || 0;
+      return {
+        ...emp,
+        designation: master?.designation || emp.designation,
+        department: master?.department || emp.department,
+        reportingManager: master?.reportingManager || emp.reportingManager,
+        grade: master?.grade || "",
+        hourlyRate,
+        manHourCost: (emp.totalHours || 0) * hourlyRate,
+      };
+    });
+  }, [employees, masterEmployees]);
+
+  const resourceSummary = useMemo(() => {
+    const totalEmployees = enrichedEmployees.length;
+    const totalHours = enrichedEmployees.reduce((sum, e) => sum + (e.totalHours || 0), 0);
+    const totalWorkingDays = enrichedEmployees.reduce((sum, e) => sum + (e.workingDays || 0), 0);
+    const totalManHourCost = enrichedEmployees.reduce((sum, e) => sum + e.manHourCost, 0);
+    const avgHoursPerEmployee = totalEmployees > 0 ? totalHours / totalEmployees : 0;
+    const avgHourlyRate =
+      totalEmployees > 0 ? enrichedEmployees.reduce((sum, e) => sum + e.hourlyRate, 0) / totalEmployees : 0;
+
+    return { totalEmployees, totalHours, totalWorkingDays, totalManHourCost, avgHoursPerEmployee, avgHourlyRate };
+  }, [enrichedEmployees]);
+
+  // Project Resource Cost Summary — combines this card's live Man-Hour Cost
+  // with the existing Non-Man-Hour totals (Expense Budget) and Work Order
+  // Value (Commercial Summary). Reuses those modules' own exported
+  // calculations untouched; only the roll-up below is new.
+  const nonManhourCost = getTotalNonManhourCost(project.nonManhourExpenses);
+  const workOrderValue = getProjectCommercialSummary(project).projectValueINR;
+  const totalProjectCost = resourceSummary.totalManHourCost + nonManhourCost;
+  const profit = workOrderValue - totalProjectCost;
+  const profitPercent = workOrderValue > 0 ? (profit / workOrderValue) * 100 : 0;
+  const remainingBudget = workOrderValue - totalProjectCost;
+
   const handleExpandToggle = (employeeNo: string) => {
-    setExpandedEmployeeNo(
-      expandedEmployeeNo === employeeNo ? null : employeeNo
-    );
+    setExpandedEmployeeNo(expandedEmployeeNo === employeeNo ? null : employeeNo);
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3.5">
       {/* Header */}
-      <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex-1">
-            <h3 className="text-lg font-bold text-slate-800">Team Members</h3>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {hasSyncedData
-                ? "Automatically synced from imported Timesheets"
-                : "No timesheet data imported yet"}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-blue-300 text-blue-600 hover:bg-blue-50 transition disabled:opacity-50 font-medium ml-4 shrink-0"
-            title="Refresh team members from timesheet data"
-          >
-            <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
-            Refresh
-          </button>
-
-          {summary && (
-            <div className="flex gap-4 text-sm ml-4">
-              <div className="text-center">
-                <div className="text-xs font-semibold text-slate-500 uppercase">
-                  Employees
-                </div>
-                <div className="text-lg font-bold text-slate-800">
-                  {summary.totalEmployees}
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-xs font-semibold text-slate-500 uppercase">
-                  Total Hours
-                </div>
-                <div className="text-lg font-bold text-slate-800">
-                  {summary.totalHours.toLocaleString("en-IN", {
-                    minimumFractionDigits: 1,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Month Selector */}
+      <Card padded={false}>
+        <CardHeader
+          icon={<Users size={15} />}
+          title="Team Assigned"
+          subtitle={
+            hasSyncedData ? "Automatically synced from imported Timesheets" : "No timesheet data imported yet"
+          }
+          action={
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<RefreshCw size={13} className={isRefreshing ? "animate-spin" : ""} />}
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+            >
+              Refresh
+            </Button>
+          }
+        />
         {availableMonths.length > 0 && (
-          <div className="flex flex-wrap gap-2 pt-4 border-t">
-            {availableMonths.map((month) => (
-              <button
-                key={month}
-                onClick={() => {
-                  setSelectedMonth(month);
-                  setExpandedEmployeeNo(null);
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                  selectedMonth === month
-                    ? "bg-blue-100 text-blue-700 border border-blue-600"
-                    : "bg-slate-100 text-slate-700 border border-gray-200 hover:bg-slate-200"
-                }`}
-              >
-                {formatMonthDisplay(month)}
-              </button>
-            ))}
-          </div>
+          <CardBody>
+            <div className="flex flex-wrap gap-2">
+              {availableMonths.map((month) => (
+                <button
+                  key={month}
+                  type="button"
+                  onClick={() => {
+                    setSelectedMonth(month);
+                    setExpandedEmployeeNo(null);
+                  }}
+                  className={`px-3 py-1.5 rounded-[var(--nu-radius-md)] text-[12px] font-medium transition ${
+                    selectedMonth === month
+                      ? "bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] border border-[var(--nu-accent)]"
+                      : "bg-[var(--nu-surface-alt)] text-[var(--nu-text-secondary)] border border-[var(--nu-border)] hover:border-[var(--nu-border-strong)]"
+                  }`}
+                >
+                  {formatMonthDisplay(month)}
+                </button>
+              ))}
+            </div>
+          </CardBody>
         )}
-      </div>
+      </Card>
 
-      {/* Team Members Table */}
       {!hasSyncedData ? (
-        <div className="bg-white rounded-2xl p-12 border border-gray-100 shadow-sm text-center">
-          <Calendar size={48} className="mx-auto text-gray-300 mb-4" />
-          <h3 className="text-lg font-bold text-slate-800 mb-2">
-            No Team Members Synced
-          </h3>
-          <p className="text-sm text-gray-500">
-            Import a timesheet in the Timesheets module with a Project Code matching this
-            project's PR Number ({project.prNo || "—"}) to automatically sync team members.
-          </p>
-        </div>
+        <Card>
+          <EmptyState
+            icon={<Calendar size={18} />}
+            title="No Team Members Synced"
+            description={`Import a timesheet with a Project Code matching this project's PR Number (${project.prNo || "—"}) to automatically sync team members.`}
+          />
+        </Card>
       ) : employees.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 border border-gray-100 shadow-sm text-center">
-          <CheckCircle size={48} className="mx-auto text-gray-300 mb-4" />
-          <h3 className="text-lg font-bold text-slate-800 mb-2">
-            No Employees for {formatMonthDisplay(selectedMonth)}
-          </h3>
-          <p className="text-sm text-gray-500">
-            Select a different month or import a new timesheet.
-          </p>
-        </div>
+        <Card>
+          <EmptyState
+            icon={<CheckCircle size={18} />}
+            title={`No Employees for ${formatMonthDisplay(selectedMonth)}`}
+            description="Select a different month or import a new timesheet."
+          />
+        </Card>
       ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead className="bg-slate-100 text-slate-650 font-semibold uppercase text-xs tracking-wider border-b">
-                <tr>
-                  <th className="px-4 py-3 w-8"></th>
-                  <th className="px-4 py-3">Employee No</th>
-                  <th className="px-4 py-3">Employee Name</th>
-                  <th className="px-4 py-3">Designation</th>
-                  <th className="px-4 py-3">Department</th>
-                  <th className="px-4 py-3 w-32">Start Date</th>
-                  <th className="px-4 py-3 w-32">End Date</th>
-                  <th className="px-4 py-3 text-center w-24">Working Days</th>
-                  <th className="px-4 py-3 text-right w-28">Total Hours</th>
-                  <th className="px-4 py-3 text-center w-24">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map((emp) => {
-                  const isExpanded = expandedEmployeeNo === emp.employeeNo;
-                  const dailyEntries = getLiveEmployeeDailyEntries(
-                    project.prNo,
-                    allImports,
-                    emp.employeeNo,
-                    selectedMonth
-                  );
+        <>
+          {/* Project Resource Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <StatTile
+              icon={<Users size={14} />}
+              label="Total Employees"
+              value={String(resourceSummary.totalEmployees)}
+              tint="accent"
+            />
+            <StatTile icon={<Clock size={14} />} label="Total Hours" value={fmtHrs(resourceSummary.totalHours)} tint="success" />
+            <StatTile
+              icon={<Calendar size={14} />}
+              label="Total Working Days"
+              value={`${resourceSummary.totalWorkingDays} days`}
+              tint="info"
+            />
+            <StatTile
+              icon={<IndianRupee size={14} />}
+              label="Total Man-Hour Cost"
+              value={fmtINR(resourceSummary.totalManHourCost)}
+              tint="warning"
+            />
+            <StatTile
+              icon={<TrendingUp size={14} />}
+              label="Avg Hours / Employee"
+              value={resourceSummary.avgHoursPerEmployee.toFixed(1)}
+              tint="accent"
+            />
+            <StatTile icon={<Wallet size={14} />} label="Avg Hourly Rate" value={fmtINR(resourceSummary.avgHourlyRate)} tint="info" />
+          </div>
 
-                  return (
-                    <React.Fragment key={emp.id}>
-                      {/* Main Row */}
-                      <tr
-                        className="border-b hover:bg-slate-50 transition cursor-pointer"
-                        onClick={() => handleExpandToggle(emp.employeeNo)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            handleExpandToggle(emp.employeeNo);
-                            e.preventDefault();
-                          }
-                        }}
-                      >
-                        <td className="px-4 py-3 text-center">
-                          {isExpanded ? (
-                            <ChevronDown size={18} className="text-blue-600" />
-                          ) : (
-                            <ChevronRight size={18} className="text-gray-400" />
-                          )}
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-slate-900">
-                          {emp.employeeNo}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">{emp.employeeName}</td>
-                        <td className="px-4 py-3 text-gray-600">
-                          {emp.designation || "—"}
-                        </td>
-                        <td className="px-4 py-3 text-gray-600">
-                          {emp.department || "—"}
-                        </td>
-                        <td className="px-4 py-3">{emp.startDate || "—"}</td>
-                        <td className="px-4 py-3">{emp.endDate || "—"}</td>
-                        <td className="px-4 py-3 text-center">
-                          {emp.workingDays} days
-                        </td>
-                        <td className="px-4 py-3 text-right font-medium">
-                          {(emp.totalHours || 0).toLocaleString("en-IN", {
-                            minimumFractionDigits: 1,
-                            maximumFractionDigits: 2,
-                          })}{" "}
-                          hrs
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                              emp.status === "Active"
-                                ? "bg-green-100 text-green-700"
-                                : "bg-slate-100 text-slate-600"
-                            }`}
-                          >
-                            {emp.status}
-                          </span>
-                        </td>
-                      </tr>
+          {/* Team Members Table */}
+          <Card padded={false}>
+            <div className="overflow-x-auto nu-scrollbar">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="bg-[var(--nu-surface-alt)] text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)] border-b border-[var(--nu-border)]">
+                    <th className="px-4 py-2.5 w-8"></th>
+                    <th className="px-4 py-2.5 font-medium">Employee No</th>
+                    <th className="px-4 py-2.5 font-medium">Employee Name</th>
+                    <th className="px-4 py-2.5 font-medium">Designation</th>
+                    <th className="px-4 py-2.5 font-medium">Department</th>
+                    <th className="px-4 py-2.5 font-medium">Reporting Manager</th>
+                    <th className="px-4 py-2.5 text-right font-medium w-28">Hourly Rate</th>
+                    <th className="px-4 py-2.5 text-center font-medium w-24">Working Days</th>
+                    <th className="px-4 py-2.5 text-right font-medium w-24">Total Hours</th>
+                    <th className="px-4 py-2.5 text-right font-medium w-32">Man-Hour Cost</th>
+                    <th className="px-4 py-2.5 text-center font-medium w-24">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enrichedEmployees.map((emp, index) => {
+                    const isExpanded = expandedEmployeeNo === emp.employeeNo;
+                    const dailyEntries = getLiveEmployeeDailyEntries(
+                      project.prNo,
+                      allImports,
+                      emp.employeeNo,
+                      selectedMonth
+                    );
 
-                      {/* Expanded Row - Daily Entries */}
-                      {isExpanded && dailyEntries.length > 0 && (
-                        <tr className="bg-slate-50 border-b">
-                          <td colSpan={10} className="p-0">
-                            <div className="p-6 space-y-4">
-                              {/* Project Context */}
-                              <div className="bg-white rounded-xl p-4 border border-slate-200">
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                  <div>
-                                    <div className="text-xs font-semibold text-slate-500 uppercase">
-                                      Project Code
-                                    </div>
-                                    <div className="text-slate-900 font-medium mt-1">
-                                      {dailyEntries[0].projectCode}
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div className="text-xs font-semibold text-slate-500 uppercase">
-                                      Project Name
-                                    </div>
-                                    <div className="text-slate-900 font-medium mt-1">
-                                      {dailyEntries[0].projectName}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Daily Entries Table */}
-                              <div>
-                                <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                  <Clock size={16} className="text-blue-600" />
-                                  Daily Timesheet Entries
-                                </h4>
-
-                                <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-                                  <table className="w-full text-xs">
-                                    <thead className="bg-slate-50 border-b">
-                                      <tr>
-                                        <th className="px-4 py-2 text-left font-semibold text-slate-600">
-                                          Date
-                                        </th>
-                                        <th className="px-4 py-2 text-left font-semibold text-slate-600">
-                                          Task
-                                        </th>
-                                        <th className="px-4 py-2 text-right font-semibold text-slate-600 w-24">
-                                          Hours
-                                        </th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {dailyEntries.map((entry, idx) => (
-                                        <tr
-                                          key={idx}
-                                          className="border-b last:border-0 hover:bg-slate-50"
-                                        >
-                                          <td className="px-4 py-2 font-medium text-slate-800">
-                                            {formatDisplayDate(entry.date)}
-                                          </td>
-                                          <td className="px-4 py-2 text-slate-600">
-                                            {entry.task || "—"}
-                                          </td>
-                                          <td className="px-4 py-2 text-right font-medium text-slate-800">
-                                            {entry.hours.toLocaleString("en-IN", {
-                                              minimumFractionDigits: 1,
-                                              maximumFractionDigits: 2,
-                                            })}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-
-                              {/* Summary */}
-                              <div className="bg-blue-50 rounded-lg border border-blue-200 p-4 grid grid-cols-2 gap-4 text-sm">
-                                <div>
-                                  <div className="text-xs font-semibold text-blue-600 uppercase">
-                                    Working Days
-                                  </div>
-                                  <div className="text-blue-900 font-bold text-lg mt-1">
-                                    {new Set(dailyEntries.map((e) => e.date)).size}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div className="text-xs font-semibold text-blue-600 uppercase">
-                                    Total Hours
-                                  </div>
-                                  <div className="text-blue-900 font-bold text-lg mt-1">
-                                    {dailyEntries
-                                      .reduce((sum, e) => sum + e.hours, 0)
-                                      .toLocaleString("en-IN", {
-                                        minimumFractionDigits: 1,
-                                        maximumFractionDigits: 2,
-                                      })}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
+                    return (
+                      <React.Fragment key={emp.id}>
+                        <tr
+                          className={`border-b border-[var(--nu-border)] last:border-none hover:bg-[var(--nu-accent-soft)] transition-colors cursor-pointer ${
+                            index % 2 === 1 ? "bg-[var(--nu-surface-alt)]" : "bg-[var(--nu-surface)]"
+                          }`}
+                          onClick={() => handleExpandToggle(emp.employeeNo)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              handleExpandToggle(emp.employeeNo);
+                              e.preventDefault();
+                            }
+                          }}
+                        >
+                          <td className="px-4 py-3 text-center">
+                            {isExpanded ? (
+                              <ChevronDown size={16} className="text-[var(--nu-accent)]" />
+                            ) : (
+                              <ChevronRight size={16} className="text-[var(--nu-text-muted)]" />
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-[12.5px] font-semibold text-[var(--nu-text)]">{emp.employeeNo}</td>
+                          <td className="px-4 py-3 text-[12.5px] text-[var(--nu-text)]">{emp.employeeName}</td>
+                          <td className="px-4 py-3 text-[12px] text-[var(--nu-text-secondary)]">{emp.designation || "—"}</td>
+                          <td className="px-4 py-3 text-[12px] text-[var(--nu-text-secondary)]">{emp.department || "—"}</td>
+                          <td className="px-4 py-3 text-[12px] text-[var(--nu-text-secondary)]">{emp.reportingManager || "—"}</td>
+                          <td className="px-4 py-3 text-right text-[12.5px] text-[var(--nu-text)]">{fmtINR(emp.hourlyRate)}</td>
+                          <td className="px-4 py-3 text-center text-[12px] text-[var(--nu-text-secondary)]">{emp.workingDays} days</td>
+                          <td className="px-4 py-3 text-right text-[12.5px] font-medium text-[var(--nu-text)]">
+                            {fmtHrs(emp.totalHours)}
+                          </td>
+                          <td className="px-4 py-3 text-right text-[12.5px] font-semibold text-[var(--nu-text)]">
+                            {fmtINR2(emp.manHourCost)}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <Badge tone={emp.status === "Active" ? "success" : "neutral"}>{emp.status}</Badge>
                           </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
-      {/* Info Box */}
-      {hasSyncedData && (
-        <div className="bg-blue-50 rounded-xl p-4 border border-blue-200 text-xs text-blue-700">
-          <p className="font-medium mb-1">📋 Timesheet-Synced Team Members</p>
-          <p>
-            Team members are automatically synchronized from the Timesheets module. Click
-            an employee row to view their daily timesheet entries for this project.
-          </p>
-        </div>
+                        {isExpanded && (
+                          <tr className="bg-[var(--nu-surface-alt)] border-b border-[var(--nu-border)]">
+                            <td colSpan={11} className="p-0">
+                              <div className="p-5 space-y-4">
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                  {/* Employee Information */}
+                                  <div className="bg-[var(--nu-surface)] rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] p-4">
+                                    <h4 className="text-[12px] font-bold text-[var(--nu-text)] mb-3 flex items-center gap-2">
+                                      <UserCog size={14} className="text-[var(--nu-accent)]" />
+                                      Employee Information
+                                    </h4>
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                                      <InfoField label="Employee No" value={emp.employeeNo} />
+                                      <InfoField label="Employee Name" value={emp.employeeName} />
+                                      <InfoField label="Designation" value={emp.designation || "—"} />
+                                      <InfoField label="Department" value={emp.department || "—"} />
+                                      <InfoField label="Reporting Manager" value={emp.reportingManager || "—"} />
+                                      <InfoField label="Grade" value={emp.grade || "—"} />
+                                      <InfoField label="Hourly Rate" value={fmtINR(emp.hourlyRate)} />
+                                    </div>
+                                  </div>
+
+                                  {/* Project Summary */}
+                                  <div className="bg-[var(--nu-surface)] rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] p-4">
+                                    <h4 className="text-[12px] font-bold text-[var(--nu-text)] mb-3 flex items-center gap-2">
+                                      <Briefcase size={14} className="text-[var(--nu-accent)]" />
+                                      Project Summary
+                                    </h4>
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                                      <InfoField label="Project Code" value={dailyEntries[0]?.projectCode || project.prNo} />
+                                      <InfoField label="Project Name" value={dailyEntries[0]?.projectName || "—"} />
+                                      <InfoField label="Start Date" value={formatDisplayDate(emp.startDate)} />
+                                      <InfoField label="End Date" value={formatDisplayDate(emp.endDate)} />
+                                      <InfoField label="Working Days" value={`${emp.workingDays} days`} />
+                                      <InfoField label="Total Hours" value={fmtHrs(emp.totalHours)} />
+                                      <InfoField label="Man-Hour Cost" value={fmtINR2(emp.manHourCost)} accent />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Daily Timesheet Entries */}
+                                {dailyEntries.length > 0 && (
+                                  <div>
+                                    <h4 className="text-[12px] font-bold text-[var(--nu-text)] mb-2 flex items-center gap-2">
+                                      <Clock size={14} className="text-[var(--nu-accent)]" />
+                                      Daily Timesheet Entries
+                                    </h4>
+                                    <div className="bg-[var(--nu-surface)] rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] overflow-hidden">
+                                      <table className="w-full text-[11.5px]">
+                                        <thead className="bg-[var(--nu-surface-alt)] border-b border-[var(--nu-border)]">
+                                          <tr>
+                                            <th className="px-3 py-2 text-left font-semibold text-[var(--nu-text-secondary)]">
+                                              Date
+                                            </th>
+                                            <th className="px-3 py-2 text-left font-semibold text-[var(--nu-text-secondary)]">
+                                              Task
+                                            </th>
+                                            <th className="px-3 py-2 text-right font-semibold text-[var(--nu-text-secondary)] w-24">
+                                              Hours
+                                            </th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {dailyEntries.map((entry, idx) => (
+                                            <tr
+                                              key={idx}
+                                              className="border-b border-[var(--nu-border)] last:border-0 hover:bg-[var(--nu-surface-alt)]"
+                                            >
+                                              <td className="px-3 py-1.5 font-medium text-[var(--nu-text)]">
+                                                {formatDisplayDate(entry.date)}
+                                              </td>
+                                              <td className="px-3 py-1.5 text-[var(--nu-text-secondary)]">
+                                                {entry.task || "—"}
+                                              </td>
+                                              <td className="px-3 py-1.5 text-right font-medium text-[var(--nu-text)]">
+                                                {entry.hours.toLocaleString("en-IN", {
+                                                  minimumFractionDigits: 1,
+                                                  maximumFractionDigits: 2,
+                                                })}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* Project Resource Cost Summary */}
+          <Card padded={false}>
+            <CardHeader
+              icon={<PieChart size={15} />}
+              title="Project Resource Cost Summary"
+              subtitle="Combines labor cost from Timesheets with Expense Budget and Commercial Summary."
+            />
+            <CardBody>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                <StatTile
+                  icon={<IndianRupee size={14} />}
+                  label="Total Man-Hour Cost"
+                  value={fmtINR(resourceSummary.totalManHourCost)}
+                  tint="accent"
+                />
+                <StatTile icon={<Wallet size={14} />} label="Non-Man-Hour Cost" value={fmtINR(nonManhourCost)} tint="warning" />
+                <StatTile icon={<IndianRupee size={14} />} label="Total Project Cost" value={fmtINR(totalProjectCost)} tint="info" />
+                <StatTile icon={<Briefcase size={14} />} label="Work Order Value" value={fmtINR(workOrderValue)} tint="accent" />
+                <StatTile
+                  icon={profit >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                  label="Profit"
+                  value={fmtINR(profit)}
+                  tint={profit >= 0 ? "success" : "danger"}
+                />
+                <StatTile
+                  icon={profit >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                  label="Profit %"
+                  value={`${profitPercent.toFixed(1)}%`}
+                  tint={profit >= 0 ? "success" : "danger"}
+                />
+                <StatTile
+                  icon={<Wallet size={14} />}
+                  label="Remaining Budget"
+                  value={fmtINR(remainingBudget)}
+                  tint={remainingBudget >= 0 ? "success" : "danger"}
+                />
+              </div>
+            </CardBody>
+          </Card>
+        </>
       )}
     </div>
   );
