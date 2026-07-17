@@ -25,6 +25,10 @@ export function syncTimesheetToProjects(
 ): Project[] {
   const masterEmployees = getEmployees();
 
+  console.log("🔄 SYNC START: Processing timesheet for month:", timesheetImport.month);
+  console.log("📊 Total timesheet entries:", timesheetImport.entries.length);
+  console.log("🎯 Total projects to match:", projects.length);
+
   return projects.map((project) => {
     // Extract project code from PR Number (normalize for matching)
     const projectCodeNormalized = normalizeProjectCode(project.prNo);
@@ -39,10 +43,18 @@ export function syncTimesheetToProjects(
       );
     });
 
+    if (projectCodeNormalized) {
+      console.log(
+        `📌 Project ${project.prNo} (normalized: ${projectCodeNormalized}) - Found ${projectEntries.length} matching entries`
+      );
+    }
+
     // If no entries for this project, return unchanged
     if (projectEntries.length === 0) {
       return project;
     }
+
+    console.log(`✅ Syncing ${projectEntries.length} entries to project ${project.prNo}`);
 
     // Group entries by employee
     const entriesByEmployee: Record<string, TimesheetEntry[]> = {};

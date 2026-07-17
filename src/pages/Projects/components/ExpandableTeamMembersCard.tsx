@@ -26,6 +26,12 @@ const ExpandableTeamMembersCard = ({ project: initialProject }: Props) => {
     setIsRefreshing(true);
     // Reload project from localStorage
     const latest = getProjectById(project.id);
+    console.log("🔄 REFRESH: Reloading project", project.prNo, "from localStorage");
+    console.log("🔄 REFRESH: Latest data:", {
+      resourceCount: latest?.resources?.length || 0,
+      timesheetMonths: latest?.timesheetMonths?.length || 0,
+      latestMonth: latest?.latestTimesheetMonth,
+    });
     if (latest) {
       setProject(latest);
       setSelectedMonth(latest.latestTimesheetMonth || "");
@@ -36,6 +42,14 @@ const ExpandableTeamMembersCard = ({ project: initialProject }: Props) => {
   const availableMonths = getProjectMonths(project);
   const summary = getTimesheetSummary(project);
   const hasSyncedData = hasTimesheetData(project);
+
+  console.log("👁️ RENDER TeamCard:", {
+    project: project.prNo,
+    resourceCount: project.resources?.length || 0,
+    timesheetMonths: project.timesheetMonths?.length || 0,
+    hasSyncedData,
+    availableMonths,
+  });
 
   // Get employees for selected month
   const employees = project.resources || [];
