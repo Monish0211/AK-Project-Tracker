@@ -15,12 +15,13 @@ export interface TimesheetEntry {
 }
 
 /**
- * TimesheetImportMonth - Monthly aggregated timesheet data
- * Groups all daily entries by month for a project's resource allocation
+ * TimesheetImportMonth - Monthly/Weekly aggregated timesheet data
+ * Groups all daily entries by period for a project's resource allocation
  */
 export interface TimesheetImportMonth {
   id: string;
-  month: string; // YYYY-MM format
+  month: string; // YYYY-MM format for monthly, YYYY-W##-YYYY-MM for weekly
+  importType: "monthly" | "weekly"; // Type of import
   uploadedAt: string; // ISO date
   uploadedBy: string; // User name
   entries: TimesheetEntry[];

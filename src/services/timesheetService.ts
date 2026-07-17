@@ -57,11 +57,12 @@ export function getMonthFromDate(dateStr: string): string {
 }
 
 /**
- * Create monthly aggregation from daily entries
+ * Create monthly/weekly aggregation from daily entries
  */
 export function createImportMonth(
   entries: TimesheetEntry[],
-  uploadedBy: string
+  uploadedBy: string,
+  importType: "monthly" | "weekly" = "monthly"
 ): TimesheetImportMonth {
   const dates = new Set(entries.map((e) => e.date));
   const uniqueEmployees = new Set(entries.map((e) => e.employeeNo));
@@ -73,6 +74,7 @@ export function createImportMonth(
   return {
     id: `import-${month}-${Date.now()}`,
     month,
+    importType,
     uploadedAt: new Date().toISOString(),
     uploadedBy,
     entries,
