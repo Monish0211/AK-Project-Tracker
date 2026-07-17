@@ -282,12 +282,50 @@ const Timesheets = () => {
 
   return (
     <div className="space-y-4 pb-8">
-      {/* Header */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Timesheets</h1>
-            <p className="text-sm text-slate-500 mt-1">
+      {/* Header - Hero Banner (matching Projects design) */}
+      <style>{`
+        .timesheet-hero {
+          border-radius: 14px;
+          overflow: hidden;
+          position: relative;
+          background: linear-gradient(135deg, #0F172A 0%, #1E3A8A 50%, #0E7490 100%);
+        }
+        .timesheet-hero::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image: radial-gradient(rgba(255,255,255,.032) 1px, transparent 1px);
+          background-size: 22px 22px;
+          pointer-events: none;
+        }
+        .timesheet-hero::after {
+          content: '';
+          position: absolute;
+          left: -80px;
+          top: -80px;
+          width: 280px;
+          height: 280px;
+          background: radial-gradient(circle, rgba(59,130,246,.14) 0%, transparent 68%);
+          pointer-events: none;
+        }
+        .timesheet-hero-inner {
+          position: relative;
+          z-index: 1;
+          padding: 24px 28px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+        }
+      `}</style>
+
+      <div className="timesheet-hero shadow-lg">
+        <div className="timesheet-hero-inner">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-3xl font-extrabold text-white tracking-tight leading-none">
+              Timesheets
+            </h1>
+            <p className="text-slate-300/80 text-sm mt-2 max-w-lg leading-relaxed">
               Import and manage employee timesheets. Automatically synced to projects.
             </p>
           </div>
@@ -303,7 +341,7 @@ const Timesheets = () => {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition shrink-0"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm transition shrink-0 shadow-lg hover:-translate-y-px duration-150 transform"
           >
             <Upload size={16} />
             Upload Timesheet
