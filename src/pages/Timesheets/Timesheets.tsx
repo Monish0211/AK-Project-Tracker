@@ -1,17 +1,20 @@
 import React, { useRef, useState, useMemo, useCallback } from "react";
 import {
   Upload,
-  Calendar,
+  CalendarDays,
   AlertTriangle,
   Check,
   FileText,
   Clock,
   Users,
   Search,
-  Edit2,
+  Pencil,
   Trash2,
   Loader,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import type { TimesheetEntry, TimesheetImportMonth } from "../../types/Timesheet";
 import {
   extractTimesheetEntries,
@@ -32,11 +35,30 @@ import {
 } from "../../services/timesheetImportService";
 import { syncTimesheetToProjects } from "../../services/timesheetSyncService";
 import { getProjects, updateProject } from "../../services/projectService";
+import { Card, CardHeader } from "../../components/ui/Card";
+import { StatTile } from "../../components/ui/StatTile";
+import { Badge } from "../../components/ui/Badge";
+import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
+import "./timesheets-theme.css";
 
 const timesheetStorage = {
   getMonths: getAllTimesheetImports,
   save: saveAllTimesheetImports,
 };
+
+const controlClass =
+  "h-9 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] text-[12.5px] text-[var(--nu-text)] outline-none focus:ring-2 focus:ring-[var(--nu-accent)]/30 focus:border-[var(--nu-accent)] transition-shadow";
+
+const InfoChip = ({ icon, label, value }: { icon: ReactNode; label: string; value: string | number }) => (
+  <div className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--nu-radius-md)] bg-white/[0.07] border border-white/[0.1] shrink-0">
+    <div className="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center shrink-0">{icon}</div>
+    <div className="leading-tight">
+      <p className="text-[9.5px] uppercase tracking-wide text-white/55 font-medium">{label}</p>
+      <p className="text-[12.5px] font-semibold text-white whitespace-nowrap">{value}</p>
+    </div>
+  </div>
+);
 
 const Timesheets = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -302,102 +324,88 @@ const Timesheets = () => {
   };
 
   return (
-    <div className="space-y-4 pb-8">
-      {/* Header - Hero Banner (matching Projects design) */}
-      <style>{`
-        .timesheet-hero {
-          border-radius: 14px;
-          overflow: hidden;
-          position: relative;
-          background: linear-gradient(135deg, #0F172A 0%, #1E3A8A 50%, #0E7490 100%);
-        }
-        .timesheet-hero::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background-image: radial-gradient(rgba(255,255,255,.032) 1px, transparent 1px);
-          background-size: 22px 22px;
-          pointer-events: none;
-        }
-        .timesheet-hero::after {
-          content: '';
-          position: absolute;
-          left: -80px;
-          top: -80px;
-          width: 280px;
-          height: 280px;
-          background: radial-gradient(circle, rgba(59,130,246,.14) 0%, transparent 68%);
-          pointer-events: none;
-        }
-        .timesheet-hero-inner {
-          position: relative;
-          z-index: 1;
-          padding: 24px 28px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-        }
-      `}</style>
+    <div className="timesheets-shell -m-6">
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept=".xlsx,.xls"
+        onChange={handleFileChange}
+        className="hidden"
+      />
 
-      <div className="timesheet-hero shadow-lg">
-        <div className="timesheet-hero-inner">
-          <div className="flex-1 min-w-0">
-            <h1 className="text-3xl font-extrabold text-white tracking-tight leading-none">
-              Timesheets
-            </h1>
-            <p className="text-slate-300/80 text-sm mt-2 max-w-lg leading-relaxed">
-              Import and manage employee timesheets. Automatically synced to projects.
+      <div className="p-4 space-y-3.5 nu-fade-in">
+        {/* ═══ Hero Banner ═══ */}
+        <div
+          className="relative overflow-hidden rounded-[var(--nu-radius-lg)] px-5 py-4 md:py-0 flex items-center justify-between gap-6 flex-wrap md:h-[112px]"
+          style={{ background: "linear-gradient(120deg, #0f2447 0%, #14335f 45%, #0e5a73 100%)" }}
+        >
+          <div className="min-w-0">
+            <h1 className="text-[26px] font-bold text-white leading-tight">Timesheets</h1>
+            <p className="text-[13px] text-[#a9bfda] mt-1 max-w-2xl leading-snug hidden md:block">
+              Import employee timesheets — automatically synced to Projects by PR Number.
             </p>
           </div>
 
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept=".xlsx,.xls"
-            onChange={handleFileChange}
-            className="hidden"
+          <div className="flex items-center gap-2.5 flex-wrap justify-end">
+            {currentMonthData && (
+              <>
+                <InfoChip icon={<Users size={13} className="text-sky-300" />} label="Employees" value={summaryStats.totalEmployees} />
+                <InfoChip
+                  icon={<Clock size={13} className="text-emerald-300" />}
+                  label="Total Hours"
+                  value={summaryStats.totalHours.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                />
+                <InfoChip icon={<CalendarDays size={13} className="text-amber-300" />} label="Working Days" value={summaryStats.totalWorkingDays} />
+              </>
+            )}
+
+            <Button variant="primary" size="sm" icon={<Upload size={14} />} onClick={() => fileInputRef.current?.click()} className="ml-1">
+              Upload Timesheet
+            </Button>
+          </div>
+        </div>
+
+        {/* ═══ KPI Strip ═══ */}
+        {currentMonthData && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <StatTile emphasis="secondary" label="Total Employees" value={summaryStats.totalEmployees.toString()} icon={<Users size={14} />} tint="accent" />
+            <StatTile
+              emphasis="secondary"
+              label="Total Hours"
+              value={`${summaryStats.totalHours.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 2 })} hrs`}
+              icon={<Clock size={14} />}
+              tint="success"
+            />
+            <StatTile emphasis="secondary" label="Working Days" value={summaryStats.totalWorkingDays.toString()} icon={<FileText size={14} />} tint="info" />
+          </div>
+        )}
+
+        {/* ═══ Records Card ═══ */}
+        <Card padded={false} elevated>
+          <CardHeader
+            icon={<FileText size={15} />}
+            title="Timesheet Records"
+            subtitle="Filter imported entries by period, project or employee."
           />
 
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm transition shrink-0 shadow-lg hover:-translate-y-px duration-150 transform"
-          >
-            <Upload size={16} />
-            Upload Timesheet
-          </button>
-        </div>
-      </div>
-
-      {/* Filters Toolbar */}
-      {allMonths.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-3">
-          <div className="flex flex-col md:flex-row gap-3">
-            {/* Import Type */}
-            <div className="flex-shrink-0">
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                Import Type
-              </label>
+          {/* Toolbar */}
+          {allMonths.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2.5 px-4 py-3 border-b border-[var(--nu-border)]">
               <select
                 value={importType}
                 onChange={(e) => setImportType(e.target.value as "monthly" | "weekly")}
-                className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white"
+                className={`${controlClass} px-2.5 shrink-0`}
+                title="Import Type"
               >
                 <option value="monthly">Monthly</option>
                 <option value="weekly">Weekly</option>
               </select>
-            </div>
 
-            {/* Month Selector */}
-            <div className="flex-shrink-0">
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                Period
-              </label>
               <select
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white"
+                className={`${controlClass} px-2.5 shrink-0`}
+                title="Period"
               >
                 <option value="">Select Period</option>
                 {allMonths.map((month) => (
@@ -406,17 +414,12 @@ const Timesheets = () => {
                   </option>
                 ))}
               </select>
-            </div>
 
-            {/* Project Filter */}
-            <div className="flex-shrink-0">
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                Project
-              </label>
               <select
                 value={selectedProject}
                 onChange={(e) => setSelectedProject(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white"
+                className={`${controlClass} px-2.5 shrink-0`}
+                title="Project"
               >
                 <option value="all">All Projects</option>
                 {uniqueProjects.map((project) => (
@@ -425,270 +428,219 @@ const Timesheets = () => {
                   </option>
                 ))}
               </select>
-            </div>
 
-            {/* Employee Search */}
-            <div className="flex-1">
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                Search Employee
-              </label>
-              <div className="relative">
-                <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
+              <div className="w-px h-6 bg-[var(--nu-border)] mx-0.5 shrink-0" />
+
+              <div className="relative flex-1 min-w-[220px]">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--nu-text-muted)]" />
                 <input
-                  type="text"
-                  placeholder="By name or ID..."
                   value={searchEmployee}
                   onChange={(e) => setSearchEmployee(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-300 text-sm"
+                  placeholder="Search employee name or ID..."
+                  className={`${controlClass} w-full pl-8 pr-3`}
                 />
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Summary Cards */}
-      {currentMonthData && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-              <Users size={18} strokeWidth={2.25} />
-            </div>
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Total Employees
-            </p>
-            <p className="mt-2 text-2xl font-bold text-slate-800">
-              {summaryStats.totalEmployees}
-            </p>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-50 text-green-600">
-              <Clock size={18} strokeWidth={2.25} />
-            </div>
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Total Hours
-            </p>
-            <p className="mt-2 text-2xl font-bold text-slate-800">
-              {summaryStats.totalHours.toLocaleString("en-IN", {
-                minimumFractionDigits: 1,
-                maximumFractionDigits: 2,
-              })}
-              {" hrs"}
-            </p>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-600">
-              <FileText size={18} strokeWidth={2.25} />
-            </div>
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Working Days
-            </p>
-            <p className="mt-2 text-2xl font-bold text-slate-800">
-              {summaryStats.totalWorkingDays}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Employee Table */}
-      {allMonths.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 border border-gray-100 shadow-sm text-center">
-          <FileText size={48} className="mx-auto text-gray-300 mb-4" />
-          <h3 className="text-lg font-bold text-slate-800 mb-2">No Timesheets Imported</h3>
-          <p className="text-sm text-gray-500 mb-6">
-            Upload your first Excel timesheet to get started.
-          </p>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition"
-          >
-            <Upload size={16} />
-            Upload Timesheet
-          </button>
-        </div>
-      ) : !selectedMonth ? (
-        <div className="bg-white rounded-2xl p-12 border border-gray-100 shadow-sm text-center">
-          <Calendar size={48} className="mx-auto text-gray-300 mb-4" />
-          <h3 className="text-lg font-bold text-slate-800 mb-2">Select a Period</h3>
-          <p className="text-sm text-gray-500">Choose a month or week to view employee data.</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="border-b px-6 py-4 flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-bold text-slate-800">
-                {formatMonthDisplay(selectedMonth)}
-              </h3>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {allEmployees.length} total employees ({currentPage * pageSize > allEmployees.length ? allEmployees.length : currentPage * pageSize} showing)
-              </p>
-            </div>
-            {currentMonthData && (
-              <button
-                type="button"
-                onClick={() => handleDeleteMonth(selectedMonth)}
-                className="px-3 py-1.5 text-xs rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition font-medium"
-              >
-                Delete
-              </button>
-            )}
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm text-slate-700">
-              <thead className="bg-slate-100 text-slate-650 font-semibold uppercase text-xs tracking-wider border-b">
-                <tr>
-                  <th className="px-4 py-3">Employee No</th>
-                  <th className="px-4 py-3">Employee Name</th>
-                  <th className="px-4 py-3">Project Code</th>
-                  <th className="px-4 py-3">Project Name</th>
-                  <th className="px-4 py-3 w-28">Start Date</th>
-                  <th className="px-4 py-3 w-28">End Date</th>
-                  <th className="px-4 py-3 text-center w-24">Working Days</th>
-                  <th className="px-4 py-3 text-right w-24">Total Hours</th>
-                  <th className="px-4 py-3 text-center w-24">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allEmployees.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="py-10 text-center text-gray-500 font-medium">
-                      No matching employees
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedEmployees.map((emp) => (
-                    <tr
-                      key={`${emp.employeeNo}-${emp.projectCode}`}
-                      className="border-b last:border-0 hover:bg-slate-50 transition"
-                    >
-                      <td className="px-4 py-3 font-semibold text-slate-900">{emp.employeeNo}</td>
-                      <td className="px-4 py-3">{emp.employeeName}</td>
-                      <td className="px-4 py-3 font-medium text-blue-600">{emp.projectCode}</td>
-                      <td className="px-4 py-3 text-gray-600">{emp.projectName}</td>
-                      <td className="px-4 py-3">{formatDisplayDate(emp.startDate)}</td>
-                      <td className="px-4 py-3">{formatDisplayDate(emp.endDate)}</td>
-                      <td className="px-4 py-3 text-center">{emp.workingDays} days</td>
-                      <td className="px-4 py-3 text-right font-medium">
-                        {emp.totalHours.toLocaleString("en-IN", {
-                          minimumFractionDigits: 1,
-                          maximumFractionDigits: 2,
-                        })}{" "}
-                        hrs
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <div className="flex gap-2 justify-center">
-                          <button
-                            type="button"
-                            className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition"
-                            title="Edit"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button
-                            type="button"
-                            className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition"
-                            title="Delete"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination Controls */}
-          {allEmployees.length > pageSize && (
-            <div className="border-t px-6 py-4 flex items-center justify-between bg-slate-50">
-              <div className="text-sm text-slate-600">
-                Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong> ({allEmployees.length} total)
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-white transition disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-white transition disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
           )}
-        </div>
-      )}
 
-      {/* Import Modal */}
+          {/* Body */}
+          {allMonths.length === 0 ? (
+            <div className="py-10">
+              <div className="flex flex-col items-center text-center px-4">
+                <div className="w-12 h-12 rounded-[var(--nu-radius-md)] bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] text-[var(--nu-text-muted)] flex items-center justify-center mb-3">
+                  <FileText size={20} />
+                </div>
+                <p className="text-[14px] font-semibold text-[var(--nu-text)]">No Timesheets Imported</p>
+                <p className="text-[12.5px] text-[var(--nu-text-muted)] mt-1 max-w-[300px] leading-snug">
+                  Upload your first Excel timesheet to get started.
+                </p>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={<Upload size={14} />}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="mt-4"
+                >
+                  Upload Timesheet
+                </Button>
+              </div>
+            </div>
+          ) : !selectedMonth ? (
+            <EmptyState
+              icon={<CalendarDays size={18} />}
+              title="Select a Period"
+              description="Choose a month or week above to view employee data."
+            />
+          ) : (
+            <>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--nu-border)]">
+                <div className="min-w-0">
+                  <p className="text-[13.5px] font-semibold text-[var(--nu-text)]">
+                    {formatMonthDisplay(selectedMonth)}
+                  </p>
+                  <p className="text-[11.5px] text-[var(--nu-text-muted)] mt-0.5">
+                    {allEmployees.length} total employees ({currentPage * pageSize > allEmployees.length ? allEmployees.length : currentPage * pageSize} showing)
+                  </p>
+                </div>
+                {currentMonthData && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<Trash2 size={13} />}
+                    onClick={() => handleDeleteMonth(selectedMonth)}
+                    className="!text-[var(--nu-danger)] hover:!bg-[var(--nu-danger-soft)] shrink-0"
+                  >
+                    Delete Period
+                  </Button>
+                )}
+              </div>
+
+              <div className="max-h-[560px] overflow-auto nu-scrollbar">
+                {allEmployees.length === 0 ? (
+                  <EmptyState icon={<Users size={18} />} title="No matching employees" description="Try adjusting the project filter or search term." />
+                ) : (
+                  <table className="w-full border-collapse text-left">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-[var(--nu-surface-alt)] text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)] border-b border-[var(--nu-border)]">
+                        <th className="px-4 py-2.5 font-medium">Employee No</th>
+                        <th className="px-4 py-2.5 font-medium">Employee Name</th>
+                        <th className="px-4 py-2.5 font-medium">Project Code</th>
+                        <th className="px-4 py-2.5 font-medium">Project Name</th>
+                        <th className="px-4 py-2.5 font-medium w-28">Start Date</th>
+                        <th className="px-4 py-2.5 font-medium w-28">End Date</th>
+                        <th className="px-4 py-2.5 text-center font-medium w-24">Working Days</th>
+                        <th className="px-4 py-2.5 text-right font-medium w-24">Total Hours</th>
+                        <th className="px-4 py-2.5 text-center font-medium w-24">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedEmployees.map((emp, index) => (
+                        <tr
+                          key={`${emp.employeeNo}-${emp.projectCode}`}
+                          className={`border-b border-[var(--nu-border)] last:border-none hover:bg-[var(--nu-accent-soft)] transition-colors ${
+                            index % 2 === 1 ? "bg-[var(--nu-surface-alt)]" : "bg-[var(--nu-surface)]"
+                          }`}
+                        >
+                          <td className="px-4 py-3 text-[12.5px] font-semibold text-[var(--nu-text)]">{emp.employeeNo}</td>
+                          <td className="px-4 py-3 text-[12.5px] text-[var(--nu-text)]">{emp.employeeName}</td>
+                          <td className="px-4 py-3">
+                            <Badge tone="accent">{emp.projectCode}</Badge>
+                          </td>
+                          <td className="px-4 py-3 text-[12px] text-[var(--nu-text-secondary)]">{emp.projectName}</td>
+                          <td className="px-4 py-3 text-[12px] text-[var(--nu-text-secondary)]">{formatDisplayDate(emp.startDate)}</td>
+                          <td className="px-4 py-3 text-[12px] text-[var(--nu-text-secondary)]">{formatDisplayDate(emp.endDate)}</td>
+                          <td className="px-4 py-3 text-center text-[12px] text-[var(--nu-text-secondary)]">{emp.workingDays} days</td>
+                          <td className="px-4 py-3 text-right text-[12.5px] font-medium text-[var(--nu-text)]">
+                            {emp.totalHours.toLocaleString("en-IN", {
+                              minimumFractionDigits: 1,
+                              maximumFractionDigits: 2,
+                            })}{" "}
+                            hrs
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                title="Edit"
+                                className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150"
+                              >
+                                <Pencil size={15} />
+                              </button>
+                              <button
+                                title="Delete"
+                                className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-danger-soft)] text-[var(--nu-danger)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Pagination */}
+              {allEmployees.length > pageSize && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--nu-border)]">
+                  <p className="text-[11.5px] text-[var(--nu-text-muted)]">
+                    Page <strong className="text-[var(--nu-text-secondary)]">{currentPage}</strong> of{" "}
+                    <strong className="text-[var(--nu-text-secondary)]">{totalPages}</strong> ({allEmployees.length} total)
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<ChevronLeft size={13} />}
+                      onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                      disabled={currentPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      className="flex-row-reverse"
+                      icon={<ChevronRight size={13} />}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      </div>
+
+      {/* ═══ Import Modal ═══ */}
       {showImportModal && selectedFile && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-3 max-h-[85vh] overflow-y-auto">
+          <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-[var(--nu-shadow-md)] w-full max-w-md p-5 space-y-4 max-h-[85vh] overflow-y-auto">
             {!importReport && !importError && (
               <>
                 <div className="flex items-start gap-3">
-                  <div className="mt-1 shrink-0 p-2 rounded-xl bg-blue-50 text-blue-600">
-                    {importing ? (
-                      <Loader size={24} className="animate-spin" />
-                    ) : (
-                      <Upload size={24} />
-                    )}
+                  <div className="w-10 h-10 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] flex items-center justify-center shrink-0">
+                    {importing ? <Loader size={18} className="animate-spin" /> : <Upload size={18} />}
                   </div>
-                  <div>
-                    <h4 className="text-lg font-bold text-slate-800">
-                      {importing ? "Importing Timesheet..." : "Import Timesheet"}
-                    </h4>
-                    <p className="text-xs text-gray-500 mt-1">
+                  <div className="min-w-0">
+                    <h2 className="text-[15px] font-semibold text-[var(--nu-text)]">
+                      {importing ? "Importing Timesheet…" : "Import Timesheet"}
+                    </h2>
+                    <p className="text-[12.5px] text-[var(--nu-text-secondary)] mt-1 truncate">
                       File: {selectedFile.name}
                     </p>
                   </div>
                 </div>
 
                 {importing && (
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <div className="flex items-center gap-2 text-sm text-slate-700">
-                      <Loader size={16} className="animate-spin" />
+                  <div className="bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] p-3">
+                    <div className="flex items-center gap-2 text-[12.5px] text-[var(--nu-text-secondary)]">
+                      <Loader size={14} className="animate-spin" />
                       Processing timesheet entries...
                     </div>
                   </div>
                 )}
 
-                <p className="text-sm text-slate-600">
+                <p className="text-[12.5px] text-[var(--nu-text-secondary)]">
                   This timesheet will be validated for duplicates and synced to projects.
                 </p>
 
-                <div className="flex justify-end gap-3 pt-3 border-t">
-                  <button
-                    type="button"
-                    onClick={closeImportModal}
-                    disabled={importing}
-                    className="px-4 py-2 border rounded-xl hover:bg-gray-50 text-sm font-semibold transition disabled:opacity-50"
-                  >
+                <div className="flex justify-end gap-2.5 pt-3 border-t border-[var(--nu-border)]">
+                  <Button variant="secondary" size="sm" onClick={closeImportModal} disabled={importing}>
                     Cancel
-                  </button>
-
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
                     disabled={importing}
                     onClick={handleExecuteImport}
-                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50 flex items-center gap-2"
+                    icon={importing ? <Loader size={13} className="animate-spin" /> : undefined}
                   >
-                    {importing && <Loader size={14} className="animate-spin" />}
                     {importing ? "Importing..." : "Import"}
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -696,30 +648,22 @@ const Timesheets = () => {
             {importError && (
               <>
                 <div className="flex items-start gap-3">
-                  <div className="mt-1 shrink-0 p-2 rounded-xl bg-red-50 text-red-600">
-                    <AlertTriangle size={24} />
+                  <div className="w-10 h-10 rounded-[var(--nu-radius-md)] bg-[var(--nu-danger-soft)] text-[var(--nu-danger)] flex items-center justify-center shrink-0">
+                    <AlertTriangle size={18} />
                   </div>
-                  <div>
-                    <h4 className="text-lg font-bold text-slate-800">Import Failed</h4>
-                    <p className="text-xs text-red-600 mt-1 font-medium">{importError}</p>
+                  <div className="min-w-0">
+                    <h2 className="text-[15px] font-semibold text-[var(--nu-text)]">Import Failed</h2>
+                    <p className="text-[12.5px] text-[var(--nu-danger)] mt-1 font-medium">{importError}</p>
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-3 pt-3 border-t">
-                  <button
-                    type="button"
-                    onClick={closeImportModal}
-                    className="px-4 py-2 border rounded-xl hover:bg-gray-50 text-sm font-semibold transition"
-                  >
+                <div className="flex justify-end gap-2.5 pt-3 border-t border-[var(--nu-border)]">
+                  <Button variant="secondary" size="sm" onClick={closeImportModal}>
                     Close
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setImportError(null)}
-                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition"
-                  >
+                  </Button>
+                  <Button variant="primary" size="sm" onClick={() => setImportError(null)}>
                     Try Again
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -727,70 +671,63 @@ const Timesheets = () => {
             {importReport && (
               <>
                 <div className="flex items-start gap-3">
-                  <div className="mt-1 shrink-0 p-2 rounded-xl bg-green-50 text-green-600">
-                    <Check size={24} />
+                  <div className="w-10 h-10 rounded-[var(--nu-radius-md)] bg-[var(--nu-success-soft)] text-[var(--nu-success)] flex items-center justify-center shrink-0">
+                    <Check size={18} />
                   </div>
-                  <div>
-                    <h4 className="text-lg font-bold text-slate-800">Import Completed</h4>
-                    <p className="text-xs text-gray-500 mt-1">
+                  <div className="min-w-0">
+                    <h2 className="text-[15px] font-semibold text-[var(--nu-text)]">Import Completed</h2>
+                    <p className="text-[12.5px] text-[var(--nu-text-secondary)] mt-1">
                       {importReport.matchedRows} entries imported successfully.
                     </p>
                   </div>
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-600 space-y-3">
+                <div className="space-y-3">
                   <div className="grid grid-cols-3 gap-2">
-                    <div className="bg-white rounded-lg border border-slate-200 p-2 text-center">
-                      <p className="text-[10px] uppercase tracking-wide text-slate-400">Total Rows</p>
-                      <p className="text-sm font-bold text-slate-800">{importReport.importedRows}</p>
+                    <div className="bg-[var(--nu-surface-alt)] rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] p-2 text-center">
+                      <p className="text-[10px] uppercase tracking-wide text-[var(--nu-text-muted)]">Total Rows</p>
+                      <p className="text-[13px] font-bold text-[var(--nu-text)]">{importReport.importedRows}</p>
                     </div>
-                    <div className="bg-white rounded-lg border border-slate-200 p-2 text-center">
-                      <p className="text-[10px] uppercase tracking-wide text-slate-400">Imported</p>
-                      <p className="text-sm font-bold text-green-700">{importReport.matchedRows}</p>
+                    <div className="bg-[var(--nu-surface-alt)] rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] p-2 text-center">
+                      <p className="text-[10px] uppercase tracking-wide text-[var(--nu-text-muted)]">Imported</p>
+                      <p className="text-[13px] font-bold text-[var(--nu-success)]">{importReport.matchedRows}</p>
                     </div>
-                    <div className="bg-white rounded-lg border border-slate-200 p-2 text-center">
-                      <p className="text-[10px] uppercase tracking-wide text-slate-400">Ignored</p>
-                      <p className="text-sm font-bold text-slate-500">{importReport.ignoredRows}</p>
+                    <div className="bg-[var(--nu-surface-alt)] rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] p-2 text-center">
+                      <p className="text-[10px] uppercase tracking-wide text-[var(--nu-text-muted)]">Ignored</p>
+                      <p className="text-[13px] font-bold text-[var(--nu-text-secondary)]">{importReport.ignoredRows}</p>
                     </div>
                   </div>
 
-                  {syncedProjects.length > 0 && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                      <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-1.5">
+                  {syncedProjects.length > 0 ? (
+                    <div className="bg-[var(--nu-accent-soft)] border border-[var(--nu-accent)]/20 rounded-[var(--nu-radius-md)] p-3">
+                      <p className="text-[10px] font-bold text-[var(--nu-accent)] uppercase tracking-wide mb-1.5">
                         Synced to Projects
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {syncedProjects.map((prNo) => (
-                          <span
-                            key={prNo}
-                            className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-[11px] font-semibold"
-                          >
+                          <Badge key={prNo} tone="accent">
                             {prNo}
-                          </span>
+                          </Badge>
                         ))}
                       </div>
                     </div>
-                  )}
-                  {syncedProjects.length === 0 && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                      <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide">
-                        ⚠️ No Projects Matched
+                  ) : (
+                    <div className="bg-[var(--nu-warning-soft)] border border-[var(--nu-warning)]/20 rounded-[var(--nu-radius-md)] p-3">
+                      <p className="text-[11.5px] font-bold text-[var(--nu-warning)] uppercase tracking-wide flex items-center gap-1.5">
+                        <AlertTriangle size={13} />
+                        No Projects Matched
                       </p>
-                      <p className="text-[11px] text-amber-600 mt-1">
+                      <p className="text-[11.5px] text-[var(--nu-text-secondary)] mt-1">
                         Verify that the Project Code in your Excel matches the PR Number in the Projects list.
                       </p>
                     </div>
                   )}
                 </div>
 
-                <div className="flex justify-end gap-3 pt-3 border-t">
-                  <button
-                    type="button"
-                    onClick={closeImportModal}
-                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition"
-                  >
+                <div className="flex justify-end gap-2.5 pt-3 border-t border-[var(--nu-border)]">
+                  <Button variant="primary" size="sm" onClick={closeImportModal}>
                     Done
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
