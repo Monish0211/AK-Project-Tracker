@@ -25,10 +25,6 @@ export function syncTimesheetToProjects(
 ): Project[] {
   const masterEmployees = getEmployees();
 
-  console.log("🔄 SYNC START: Processing timesheet for month:", timesheetImport.month);
-  console.log("📊 Total timesheet entries:", timesheetImport.entries.length);
-  console.log("🎯 Total projects to match:", projects.length);
-
   return projects.map((project) => {
     // Extract project code from PR Number (normalize for matching)
     const projectCodeNormalized = normalizeProjectCode(project.prNo);
@@ -43,18 +39,10 @@ export function syncTimesheetToProjects(
       );
     });
 
-    if (projectCodeNormalized) {
-      console.log(
-        `📌 Project ${project.prNo} (normalized: ${projectCodeNormalized}) - Found ${projectEntries.length} matching entries`
-      );
-    }
-
     // If no entries for this project, return unchanged
     if (projectEntries.length === 0) {
       return project;
     }
-
-    console.log(`✅ Syncing ${projectEntries.length} entries to project ${project.prNo}`);
 
     // Group entries by employee
     const entriesByEmployee: Record<string, TimesheetEntry[]> = {};
@@ -115,6 +103,157 @@ export function syncTimesheetToProjects(
       latestTimesheetMonth: timesheetImport.month,
     };
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// LIVE MATCHING
+// ─────────────────────────────────────────────────────────────────────────
+// The functions above populate project.resources/timesheetMonths once, at
+// import time — a "push" sync. That snapshot goes stale the moment a
+// project is created or has its PR Number edited after the import already
+// ran, since nothing re-triggers the push for it.
+//
+// The functions below fix that: they take the project's PR Number and the
+// full set of raw timesheet imports (read fresh from storage) and match
+// Project Code = PR Number on every call. They never go stale because
+// there's nothing cached to go stale — the match always reflects current
+// project + current timesheet data.
+
+function buildResourcesFromEntries(entries: TimesheetEntry[]): ProjectResource[] {
+  const masterEmployees = getEmployees();
+
+  const entriesByEmployee: Record<string, TimesheetEntry[]> = {};
+  entries.forEach((entry) => {
+    if (!entriesByEmployee[entry.employeeNo]) {
+      entriesByEmployee[entry.employeeNo] = [];
+    }
+    entriesByEmployee[entry.employeeNo].push(entry);
+  });
+
+  const resources: ProjectResource[] = [];
+
+  Object.entries(entriesByEmployee).forEach(([empNo, empEntries]) => {
+    const resourceData = buildProjectResourceFromTimesheet(empEntries);
+    if (!resourceData) return;
+
+    const empMaster = masterEmployees.find(
+      (e) => e.employeeNo.trim().toLowerCase() === empNo.trim().toLowerCase()
+    );
+
+    resources.push({
+      id: `live-${empNo}`,
+      employeeNo: resourceData.employeeNo,
+      employeeName: empMaster?.employeeName || resourceData.employeeName,
+      designation: empMaster?.designation || resourceData.designation,
+      department: empMaster?.department || resourceData.department,
+      reportingManager: empMaster?.reportingManager || resourceData.reportingManager,
+      startDate: resourceData.startDate,
+      endDate: resourceData.endDate,
+      workingDays: resourceData.workingDays,
+      totalHours: resourceData.totalHours,
+      status: resourceData.status,
+      location: empMaster?.location || resourceData.location,
+    });
+  });
+
+  return resources;
+}
+
+/**
+ * Get all months that contain at least one entry matching this PR Number.
+ */
+export function getLiveProjectMonths(prNo: string, allImports: TimesheetImportMonth[]): string[] {
+  const target = normalizeProjectCode(prNo);
+  if (!target) return [];
+
+  return allImports
+    .filter((month) =>
+      month.entries.some((entry) => normalizeProjectCode(entry.projectCode) === target)
+    )
+    .map((month) => month.month)
+    .sort()
+    .reverse();
+}
+
+/**
+ * Whether any imported timesheet entry matches this PR Number.
+ */
+export function hasLiveTimesheetData(prNo: string, allImports: TimesheetImportMonth[]): boolean {
+  return getLiveProjectMonths(prNo, allImports).length > 0;
+}
+
+/**
+ * Live team member list for a project + month, computed by matching
+ * Project Code = PR Number directly against raw timesheet entries.
+ */
+export function getLiveTeamMembers(
+  prNo: string,
+  allImports: TimesheetImportMonth[],
+  month?: string
+): ProjectResource[] {
+  const target = normalizeProjectCode(prNo);
+  if (!target || !month) return [];
+
+  const monthData = allImports.find((m) => m.month === month);
+  if (!monthData) return [];
+
+  const matchedEntries = monthData.entries.filter(
+    (entry) => normalizeProjectCode(entry.projectCode) === target
+  );
+
+  return buildResourcesFromEntries(matchedEntries);
+}
+
+/**
+ * Live summary stats for a project + month.
+ */
+export function getLiveTimesheetSummary(
+  prNo: string,
+  allImports: TimesheetImportMonth[],
+  month?: string
+): { month: string; totalEmployees: number; totalHours: number; totalWorkingDays: number } | null {
+  if (!month) return null;
+
+  const target = normalizeProjectCode(prNo);
+  const monthData = allImports.find((m) => m.month === month);
+  if (!target || !monthData) return null;
+
+  const matchedEntries = monthData.entries.filter(
+    (entry) => normalizeProjectCode(entry.projectCode) === target
+  );
+  if (matchedEntries.length === 0) return null;
+
+  const totalHours = matchedEntries.reduce((sum, e) => sum + e.hours, 0);
+
+  return {
+    month,
+    totalEmployees: new Set(matchedEntries.map((e) => e.employeeNo)).size,
+    totalHours: Math.round(totalHours * 100) / 100,
+    totalWorkingDays: new Set(matchedEntries.map((e) => e.date)).size,
+  };
+}
+
+/**
+ * Live daily entries for one employee within a project + month.
+ */
+export function getLiveEmployeeDailyEntries(
+  prNo: string,
+  allImports: TimesheetImportMonth[],
+  employeeNo: string,
+  month?: string
+): TimesheetEntry[] {
+  if (!month) return [];
+
+  const target = normalizeProjectCode(prNo);
+  const monthData = allImports.find((m) => m.month === month);
+  if (!target || !monthData) return [];
+
+  return monthData.entries
+    .filter(
+      (entry) =>
+        entry.employeeNo === employeeNo && normalizeProjectCode(entry.projectCode) === target
+    )
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**

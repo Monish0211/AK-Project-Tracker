@@ -2,6 +2,26 @@ import type { TimesheetEntry, TimesheetImportMonth, ProjectTimesheetData } from 
 import type { ProjectResource } from "../types/Project";
 import { getCellText, parseExcelDateKey } from "./timesheetImportService";
 
+const TIMESHEET_STORAGE_KEY = "timesheets_imports";
+
+/**
+ * Read all imported timesheet months directly from storage.
+ * Single source of truth used by both the Timesheets module and any
+ * live consumer (e.g. Project Team Members) so neither can go stale.
+ */
+export function getAllTimesheetImports(): TimesheetImportMonth[] {
+  try {
+    const data = localStorage.getItem(TIMESHEET_STORAGE_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveAllTimesheetImports(months: TimesheetImportMonth[]): void {
+  localStorage.setItem(TIMESHEET_STORAGE_KEY, JSON.stringify(months));
+}
+
 /**
  * Extract raw daily timesheet entries from Excel rows
  * Each row in the Excel becomes a TimesheetEntry

@@ -12,12 +12,14 @@ import {
   Trash2,
   Loader,
 } from "lucide-react";
-import type { TimesheetImportMonth, TimesheetEntry } from "../../types/Timesheet";
+import type { TimesheetEntry, TimesheetImportMonth } from "../../types/Timesheet";
 import {
   extractTimesheetEntries,
   createImportMonth,
   formatDisplayDate,
   formatMonthDisplay,
+  getAllTimesheetImports,
+  saveAllTimesheetImports,
 } from "../../services/timesheetService";
 import {
   parseWorkbook,
@@ -25,23 +27,15 @@ import {
   normalizeHeaders,
   validateHeaders,
   sheetToRows,
+  normalizeProjectCode,
   type ImportReport,
 } from "../../services/timesheetImportService";
 import { syncTimesheetToProjects } from "../../services/timesheetSyncService";
 import { getProjects, updateProject } from "../../services/projectService";
 
 const timesheetStorage = {
-  getMonths: (): TimesheetImportMonth[] => {
-    try {
-      const data = localStorage.getItem("timesheets_imports");
-      return data ? JSON.parse(data) : [];
-    } catch {
-      return [];
-    }
-  },
-  save: (months: TimesheetImportMonth[]): void => {
-    localStorage.setItem("timesheets_imports", JSON.stringify(months));
-  },
+  getMonths: getAllTimesheetImports,
+  save: saveAllTimesheetImports,
 };
 
 const Timesheets = () => {
@@ -225,10 +219,6 @@ const Timesheets = () => {
         throw new Error("No valid timesheet entries found.");
       }
 
-      console.log("📥 IMPORT: Extracted entries:", allEntries.length);
-      console.log("📥 IMPORT: Sample entries:", allEntries.slice(0, 3));
-      console.log("📥 IMPORT: Unique project codes in import:", [...new Set(allEntries.map(e => e.projectCode))]);
-
       const existingMonth = allMonths.find((m) => m.month === allEntries[0].date.substring(0, 7));
       if (existingMonth) {
         const duplicateCheck = allEntries.filter((newEntry) =>
@@ -258,35 +248,23 @@ const Timesheets = () => {
       setSelectedProject("all");
       setSearchEmployee("");
 
+      // AUTO-SYNC: push the latest resource snapshot onto matching projects
+      // (kept for Reports/other views that read project.resources directly).
+      // The Team Members tab itself no longer depends on this snapshot — it
+      // matches Project Code = PR Number live, so it can never go stale.
       try {
         const allProjects = getProjects();
-        console.log("🔍 BEFORE SYNC: Projects in system:", allProjects.map(p => ({prNo: p.prNo, hasTimesheet: !!p.timesheetMonths})));
+        const importEntryCodes = new Set(
+          allEntries.map((e) => normalizeProjectCode(e.projectCode)).filter(Boolean)
+        );
 
-        const syncedProjects = syncTimesheetToProjects(allProjects, newMonth);
+        const matchedPrNos = allProjects
+          .filter((p) => importEntryCodes.has(normalizeProjectCode(p.prNo)))
+          .map((p) => p.prNo);
+        setSyncedProjects(matchedPrNos);
 
-        // Track which projects were updated
-        const updatedProjectNumbers: string[] = [];
-        syncedProjects.forEach((project) => {
-          console.log(`💾 SAVING: Project ${project.prNo}:`, {
-            resourceCount: project.resources?.length || 0,
-            timesheetMonths: project.timesheetMonths?.length || 0,
-            latestMonth: project.latestTimesheetMonth,
-          });
-
-          // Check if this project had entries matched
-          if (project.resources && project.resources.length > 0) {
-            updatedProjectNumbers.push(project.prNo);
-          }
-          updateProject(project);
-        });
-
-        setSyncedProjects(updatedProjectNumbers);
-
-        // Verify save
-        setTimeout(() => {
-          const verify = getProjects();
-          console.log("✅ AFTER SYNC: Projects in system:", verify.map(p => ({prNo: p.prNo, resourceCount: p.resources?.length || 0, timesheetMonths: p.timesheetMonths?.length || 0})));
-        }, 100);
+        const synced = syncTimesheetToProjects(allProjects, newMonth);
+        synced.forEach((project) => updateProject(project));
       } catch (syncErr) {
         console.warn("Sync warning:", syncErr);
       }
