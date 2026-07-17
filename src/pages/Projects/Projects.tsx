@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   FolderKanban,
   Plus,
@@ -58,6 +58,8 @@ function parseExcelDateKey(value: unknown): string | null {
 const Projects = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const statusParam = searchParams.get("status") || "All";
 
   // Live project state
   const [projects, setProjects] = useState<Project[]>(getProjects());
@@ -65,7 +67,11 @@ const Projects = () => {
   // Search & Filter State
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState("All");
-  const [status, setStatus] = useState("All");
+  const [status, setStatus] = useState(statusParam);
+
+  useEffect(() => {
+    setStatus(statusParam);
+  }, [statusParam]);
 
   // Sorting State
   const [sortField, setSortField] = useState<string>("prNo");
@@ -177,6 +183,9 @@ const Projects = () => {
     setSearch("");
     setDepartment("All");
     setStatus("All");
+    const newParams = new URLSearchParams(searchParams);
+    newParams.delete("status");
+    setSearchParams(newParams);
   };
 
   // Filtered & Sorted Projects
@@ -892,7 +901,17 @@ const Projects = () => {
             {/* Status Filter */}
             <select
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) => {
+                const nextStatus = e.target.value;
+                setStatus(nextStatus);
+                const newParams = new URLSearchParams(searchParams);
+                if (nextStatus === "All") {
+                  newParams.delete("status");
+                } else {
+                  newParams.set("status", nextStatus);
+                }
+                setSearchParams(newParams);
+              }}
               className="flt py-1.5 px-3 pr-8 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 outline-none cursor-pointer"
             >
               <option value="All">All Statuses</option>
