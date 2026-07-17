@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ChevronDown, ChevronRight, Calendar, Clock, CheckCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, Calendar, Clock, CheckCircle, RefreshCw } from "lucide-react";
 import type { Project } from "../../../types/Project";
 import {
   getEmployeeDailyEntries,
@@ -8,16 +8,30 @@ import {
   hasTimesheetData,
 } from "../../../services/timesheetSyncService";
 import { formatDisplayDate, formatMonthDisplay } from "../../../services/timesheetService";
+import { getProjectById } from "../../../services/projectService";
 
 interface Props {
   project: Project;
 }
 
-const ExpandableTeamMembersCard = ({ project }: Props) => {
+const ExpandableTeamMembersCard = ({ project: initialProject }: Props) => {
+  const [project, setProject] = useState(initialProject);
   const [expandedEmployeeNo, setExpandedEmployeeNo] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<string>(
     project.latestTimesheetMonth || ""
   );
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    // Reload project from localStorage
+    const latest = getProjectById(project.id);
+    if (latest) {
+      setProject(latest);
+      setSelectedMonth(latest.latestTimesheetMonth || "");
+    }
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
 
   const availableMonths = getProjectMonths(project);
   const summary = getTimesheetSummary(project);
@@ -37,7 +51,7 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
       {/* Header */}
       <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
         <div className="flex items-center justify-between mb-4">
-          <div>
+          <div className="flex-1">
             <h3 className="text-lg font-bold text-slate-800">Team Members</h3>
             <p className="text-xs text-gray-500 mt-0.5">
               {hasSyncedData
@@ -45,6 +59,17 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
                 : "No timesheet data imported yet"}
             </p>
           </div>
+
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-blue-300 text-blue-600 hover:bg-blue-50 transition disabled:opacity-50 font-medium ml-4 shrink-0"
+            title="Refresh team members from timesheet data"
+          >
+            <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
+            Refresh
+          </button>
 
           {summary && (
             <div className="flex gap-4 text-sm">
