@@ -24,6 +24,7 @@ import type { Dispatch, SetStateAction } from "react";
 import GeneralInfoCard from "./GeneralInfoCard";
 import QuantityCard from "./QuantityCard";
 import CommercialCard from "./PaymentMilestoneCard";
+import ProjectLeadershipCard from "./ProjectLeadershipCard";
 import ExpandableTeamMembersCard from "./ExpandableTeamMembersCard";
 import FormButtons from "./FormButtons";
 import ExpenseBudgetCard from "./ExpenseBudgetCard";
@@ -42,12 +43,15 @@ interface TabConfig {
   icon: typeof LayoutGrid;
 }
 
-// Add Project: 4 tabs (remove team assigned)
+// Add Project: 5 tabs — Team Assigned covers Project Leadership only, since
+// synced Team Members require a timesheet import that can't happen until
+// the project exists.
 const TABS_ADD: TabConfig[] = [
   { key: "general", label: "General", icon: LayoutGrid },
   { key: "quantity", label: "Quantity", icon: Package },
   { key: "payments", label: "Payments", icon: CreditCard },
   { key: "budget", label: "Expense Budget", icon: Wallet },
+  { key: "team", label: "Team Assigned", icon: Users },
 ];
 
 // Edit Project: 7 tabs — full execution workflow
@@ -288,7 +292,10 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
           )}
 
           {activeTab === "team" && (
-            <ExpandableTeamMembersCard project={project} />
+            <div className="space-y-3.5">
+              <ProjectLeadershipCard project={project} setProject={setProject} />
+              <ExpandableTeamMembersCard project={project} />
+            </div>
           )}
 
           {activeTab === "expenses" && (
