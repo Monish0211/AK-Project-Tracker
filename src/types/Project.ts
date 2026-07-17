@@ -4,6 +4,7 @@ import type { NonManhourExpense } from "./NonManhourExpense";
 import type { InvoiceItem } from "./InvoiceItem";
 import type { MilestoneBilling } from "./MilestoneBilling";
 import type { ProjectNote } from "./ProjectNote";
+import type { TimesheetImportMonth } from "./Timesheet";
 
 export interface Project {
   id: string;
@@ -132,6 +133,11 @@ nonManhourExpenses: NonManhourExpense[];
   clientCoordinator: string;
 
   resources: ProjectResource[];
+
+  // Timesheet synchronization: Historical monthly imports
+  // Automatically populated from Timesheets module imports
+  timesheetMonths?: TimesheetImportMonth[];
+  latestTimesheetMonth?: string; // YYYY-MM format
 
   totalHoursBudget?: number;
   totalProjectBudget?: number;

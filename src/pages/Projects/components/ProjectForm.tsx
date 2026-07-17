@@ -24,7 +24,7 @@ import type { Dispatch, SetStateAction } from "react";
 import GeneralInfoCard from "./GeneralInfoCard";
 import QuantityCard from "./QuantityCard";
 import CommercialCard from "./PaymentMilestoneCard";
-import TeamAssignedCard from "./TeamAssignedCard";
+import ExpandableTeamMembersCard from "./ExpandableTeamMembersCard";
 import FormButtons from "./FormButtons";
 import ExpenseBudgetCard from "./ExpenseBudgetCard";
 import InvoiceCard from "./InvoiceCard";
@@ -288,7 +288,7 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
           )}
 
           {activeTab === "team" && (
-            <TeamAssignedCard project={project} onChange={setProject} />
+            <ExpandableTeamMembersCard project={project} />
           )}
 
           {activeTab === "expenses" && (

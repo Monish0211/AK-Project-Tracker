@@ -15,7 +15,7 @@ function normalizeHeaderKey(value: unknown): string {
     .replace(/\s+/g, " ");
 }
 
-type FieldKey =
+export type FieldKey =
   | "employeeNo"
   | "employeeName"
   | "projectCode"
@@ -93,7 +93,7 @@ function isRowBlank(row: unknown[]): boolean {
   return !row || row.every((cell) => String(cell ?? "").trim() === "");
 }
 
-function sheetToRows(sheet: XLSX.WorkSheet): unknown[][] {
+export function sheetToRows(sheet: XLSX.WorkSheet): unknown[][] {
   return XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
 }
 
@@ -201,7 +201,6 @@ function isDebugEnabled(): boolean {
 
 function logDebug(label: string, data: unknown): void {
   if (isDebugEnabled()) {
-    // eslint-disable-next-line no-console
     console.debug(`[TimesheetImport] ${label}`, data);
   }
 }
@@ -241,7 +240,7 @@ function localDateToDateKey(date: Date): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
-function parseExcelDateKey(value: unknown): string | null {
+export function parseExcelDateKey(value: unknown): string | null {
   if (!value) return null;
   if (value instanceof Date) return localDateToDateKey(value);
   if (typeof value === "number") return excelSerialToDateKey(value);
@@ -255,7 +254,7 @@ function parseExcelDateKey(value: unknown): string | null {
   return null;
 }
 
-function getCellText(row: unknown[], index: number | undefined): string {
+export function getCellText(row: unknown[], index: number | undefined): string {
   if (index === undefined || index === -1) return "";
   return String(row[index] ?? "").trim();
 }
@@ -269,7 +268,7 @@ function getCellText(row: unknown[], index: number | undefined): string {
 // explicit " - " separator, or at the first trailing word that has no digits —
 // then strips hyphens/underscores/spaces and case so "PR-10039", "PR 10039",
 // "PR_10039" and "pr10039" all normalize to the same value.
-function normalizeProjectCode(raw: string): string {
+export function normalizeProjectCode(raw: string): string {
   const collapsed = String(raw ?? "")
     .trim()
     .toUpperCase()
@@ -539,30 +538,7 @@ export async function importTimesheet(
     .slice(selection.headerRowIndex + 1)
     .filter((row) => !isRowBlank(row));
 
-  // TEMPORARY: unconditional console diagnostic for the first 20 project-code
-  // comparisons, to debug why rows aren't matching against real Keka exports.
-  // Remove once matching is confirmed correct in production data.
-  const targetCodeNormalized = normalizeProjectCode(projectPRNo);
-  let comparisonsLogged = 0;
-
-  const matchedRows = dataRows.filter((row) => {
-    const isMatch = matchProject(row, indices, projectPRNo);
-
-    if (comparisonsLogged < 20) {
-      const rawRowCode = getCellText(row, indices.projectCode);
-      // eslint-disable-next-line no-console
-      console.log(
-        `[TimesheetImport] Project PR Number: ${projectPRNo}\n` +
-          `Timesheet Project Code: ${rawRowCode}\n` +
-          `Normalized Project: ${targetCodeNormalized}\n` +
-          `Normalized Timesheet: ${normalizeProjectCode(rawRowCode)}\n` +
-          `Match Result: ${isMatch}`
-      );
-      comparisonsLogged++;
-    }
-
-    return isMatch;
-  });
+  const matchedRows = dataRows.filter((row) => matchProject(row, indices, projectPRNo));
   const ignoredRows = dataRows.length - matchedRows.length;
 
   logDebug("Rows parsed", {

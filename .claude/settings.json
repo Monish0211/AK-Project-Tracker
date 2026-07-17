@@ -1,0 +1,63 @@
+{
+  "version": "0.0.1",
+  "permissions": {
+    "allow": [
+      "bash",
+      "npm",
+      "git",
+      "tsc"
+    ]
+  },
+  "hooks": {
+    "post-edit": [
+      {
+        "match": "**/*.tsx",
+        "run": "npx tsc -b --noEmit"
+      },
+      {
+        "match": "**/*.ts",
+        "run": "npx tsc -b --noEmit"
+      },
+      {
+        "match": "**/*.tsx",
+        "run": "npx eslint {file} --fix"
+      },
+      {
+        "match": "**/*.ts",
+        "run": "npx eslint {file} --fix"
+      }
+    ]
+  },
+  "build": {
+    "typeCheck": "npx tsc -b --noEmit",
+    "lint": "npx eslint src --ext .ts,.tsx"
+  },
+  "verify": {
+    "command": "npx tsc -b --noEmit",
+    "description": "TypeScript build verification (project mode)"
+  },
+  "allowlist": {
+    "tools": [
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Bash",
+      "PowerShell"
+    ],
+    "bash": [
+      "npm",
+      "git",
+      "tsc",
+      "npx"
+    ]
+  },
+  "environment": {
+    "NODE_ENV": "development"
+  },
+  "preview": {
+    "enabled": false,
+    "reason": "Use tsc/eslint for verification only; no local dev server"
+  }
+}
