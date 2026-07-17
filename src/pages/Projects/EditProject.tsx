@@ -13,17 +13,33 @@ const EditProject = () => {
 
   const initialTab = (location.state as { tab?: TabKey } | null)?.tab;
 
-  const existingProject = id ? getProjectById(id) : undefined;
+  const [project, setProject] = useState<Project>(createEmptyProject());
 
-  const [project, setProject] = useState<Project>(
-    existingProject ?? createEmptyProject()
-  );
-
+  // Load project from localStorage - always get the latest data
   useEffect(() => {
-    if (existingProject) {
-      setProject(existingProject);
+    if (id) {
+      const latest = getProjectById(id);
+      if (latest) {
+        setProject(latest);
+      }
     }
   }, [id]);
+
+  // Refresh project data periodically to catch timesheet syncs
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (id) {
+        const latest = getProjectById(id);
+        if (latest) {
+          setProject(latest);
+        }
+      }
+    }, 2000); // Refresh every 2 seconds
+
+    return () => clearInterval(interval);
+  }, [id]);
+
+  const existingProject = id ? getProjectById(id) : undefined;
 
   if (!existingProject) {
     return (
