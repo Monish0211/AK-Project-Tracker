@@ -14,6 +14,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 import type { Project } from "../../types/Project";
 import {
@@ -22,6 +23,7 @@ import {
   saveProjects,
 } from "../../services/projectService";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
+import { getPmoCoordinators } from "../../services/pmoCoordinatorService";
 import { createEmptyProject } from "../../utils/createEmptyProject";
 
 // ─── DATE PARSER HELPERS (MATCHES TIMESHEET IMPORT) ──────────────────────────
@@ -301,34 +303,414 @@ const Projects = () => {
   };
 
   // Download Sample Template
-  const handleDownloadTemplate = () => {
-    const headers = [
-      "PR No",
-      "PO Month",
-      "Client Name",
-      "Department",
-      "Project Title",
-      "Project Manager",
-      "Project Engineer",
-      "Project Coordinator",
-      "PMO Coordinator",
-      "Project Status",
-      "Contract Type",
-      "Work Order Value",
-      "Currency",
-      "Exchange Rate",
-      "Invoice Raised",
-      "Payment Received",
-      "Outstanding",
-      "Start Date",
-      "End Date",
-      "Remarks",
+  const handleDownloadTemplate = async () => {
+    const workbook = new ExcelJS.Workbook();
+    
+    // Set workbook views to open directly on the first sheet (Projects)
+    workbook.views = [
+      {
+        x: 0,
+        y: 0,
+        width: 10000,
+        height: 20000,
+        firstSheet: 0,
+        activeTab: 0,
+        visibility: "visible"
+      }
     ];
 
-    const worksheet = XLSX.utils.aoa_to_sheet([headers]);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
-    XLSX.writeFile(workbook, "projects_import_template.xlsx");
+    // 1. Add main Projects worksheet (Visible, default opening sheet)
+    const dataSheet = workbook.addWorksheet("Projects");
+    dataSheet.views = [
+      { state: "frozen", ySplit: 1, showGridLines: true }
+    ];
+
+    // 2. Add Instructions worksheet (Visible)
+    const instructionSheet = workbook.addWorksheet("Instructions");
+    instructionSheet.views = [{ showGridLines: true }];
+
+    // 3. Add Lookup worksheet (Hidden dropdown options lists)
+    const lookupSheet = workbook.addWorksheet("Lookup");
+
+    // Gather dynamic dropdown lists
+    const categories = ["India", "Malaysia", "Oman", "Abu Dhabi", "Qatar", "Elixir Qatar", "FZI"];
+    
+    // Dynamic Departments (default + database values)
+    const defaultDepts = ["Design Engineering Services", "Environment", "Risk Management", "Training"];
+    const currentDepts = projects.map((p) => p.department).filter(Boolean);
+    const departments = Array.from(new Set([...defaultDepts, ...currentDepts])).sort();
+
+    const domesticForeignList = ["Domestic", "Foreign"];
+    const workOrderStatusList = ["Yet to Receive", "Received", "Closed", "Cancelled"];
+    const projectStatusList = ["Not Started", "Ongoing", "Active", "On Hold", "Completed", "Cancelled"];
+    const contractTypeList = ["LUMP SUM", "UNIT RATE", "MAN-HOUR", "RATE CONTRACT", "Lump Sum", "Unit Rate", "Man-Hour", "Rate Contract"];
+    const currencyList = ["INR", "USD", "EUR", "AED", "OMR", "QAR"];
+    const paymentTermsList = [
+      "100% After Completion",
+      "100% Advance",
+      "50% Advance / 50% Completion",
+      "30% / 40% / 30%",
+      "25% / 25% / 25% / 25%",
+      "Milestone Based"
+    ];
+    
+    // Dynamic PMO Coordinators
+    const coordinators = getPmoCoordinators();
+    const paymentTypeList = ["Single", "Multiple"];
+
+    // Write dropdown values to Lookup sheet columns
+    categories.forEach((val, idx) => { lookupSheet.getCell(idx + 1, 1).value = val; });
+    departments.forEach((val, idx) => { lookupSheet.getCell(idx + 1, 2).value = val; });
+    domesticForeignList.forEach((val, idx) => { lookupSheet.getCell(idx + 1, 3).value = val; });
+    workOrderStatusList.forEach((val, idx) => { lookupSheet.getCell(idx + 1, 4).value = val; });
+    projectStatusList.forEach((val, idx) => { lookupSheet.getCell(idx + 1, 5).value = val; });
+    contractTypeList.forEach((val, idx) => { lookupSheet.getCell(idx + 1, 6).value = val; });
+    currencyList.forEach((val, idx) => { lookupSheet.getCell(idx + 1, 7).value = val; });
+    paymentTermsList.forEach((val, idx) => { lookupSheet.getCell(idx + 1, 8).value = val; });
+    coordinators.forEach((val, idx) => { lookupSheet.getCell(idx + 1, 9).value = val; });
+    paymentTypeList.forEach((val, idx) => { lookupSheet.getCell(idx + 1, 10).value = val; });
+    
+    // Hide lookup sheet
+    lookupSheet.state = "hidden";
+
+    // --- SETUP INSTRUCTIONS SHEET ---
+    // Title
+    instructionSheet.getCell("A1").value = "iFluids PMO Portal - Project Import Instructions";
+    instructionSheet.getCell("A1").font = { name: "Segoe UI", size: 14, bold: true, color: { argb: "FF1E3A8A" } };
+    
+    instructionSheet.getCell("A3").value = "This template is designed to import engineering projects into the iFluids PMO Portal database.";
+    instructionSheet.getCell("A3").font = { name: "Segoe UI", size: 11, italic: true };
+    
+    // Headers
+    const instHeaders = ["Column Name", "Is Mandatory?", "Dropdown / Format Guidelines", "Description"];
+    instHeaders.forEach((h, colIdx) => {
+      const cell = instructionSheet.getCell(5, colIdx + 1);
+      cell.value = h;
+      cell.font = { name: "Segoe UI", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
+      cell.alignment = { vertical: "middle", horizontal: "left" };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFCBD5E1" } },
+        bottom: { style: "medium", color: { argb: "FF475569" } },
+        left: { style: "thin", color: { argb: "FFCBD5E1" } },
+        right: { style: "thin", color: { argb: "FFCBD5E1" } }
+      };
+    });
+    
+    const instructionRows = [
+      ["PO Month", "Yes (Highlighted)", "Excel Date (displays as MMMM YYYY, e.g. July 2026)", "Month or date the PO was issued."],
+      ["PR Category", "No", "Dropdown Selection", "Location classification category (India, Oman, Abu Dhabi, FZI, etc.)."],
+      ["PR No", "Yes (Highlighted)", "Free text (e.g. PR-India-001)", "Unique Purchase Requisition number code."],
+      ["Project Title", "Yes (Highlighted)", "Free text", "Full description name of the project work order."],
+      ["Client Name", "Yes (Highlighted)", "Free text", "Client entity name."],
+      ["Department", "Yes (Highlighted)", "Dropdown Selection", "Internal engineering division handling the execution."],
+      ["Domestic / Foreign", "No", "Dropdown Selection", "Classification category (Domestic vs Foreign)."],
+      ["Work Order Status", "No", "Dropdown Selection", "PO collection status (Yet to Receive, Received, etc.)."],
+      ["Project Status", "No (Defaults to Active)", "Dropdown Selection", "Predefined lifecycle status (Not Started, Ongoing, Active, On Hold, etc.)."],
+      ["Start Date", "No", "Excel Date (YYYY-MM-DD)", "Official project execution start date."],
+      ["End Date", "No", "Excel Date (YYYY-MM-DD)", "Target project delivery completion date."],
+      ["Contract Type", "No (Defaults to LUMP SUM)", "Dropdown Selection", "Commercial contract structure (LUMP SUM, UNIT RATE, etc.)."],
+      ["PMO Coordinator", "No", "Dropdown Selection", "PMO Coordinator assigned to the project."],
+      ["Project Manager", "No", "Free text", "Primary project manager name."],
+      ["Project Engineer", "No", "Free text", "Project execution engineer name."],
+      ["Project Coordinator", "No", "Free text", "PMO coordinator or project coordinator name."],
+      ["Remarks", "No", "Free text", "Any supplementary notes or comments."],
+      ["Currency", "No (Defaults to INR)", "Dropdown Selection", "Contract transaction currency code (INR, USD, AED, etc.)."],
+      ["Exchange Rate", "No (Defaults to 1)", "Numeric only (Minimum: 0.0001)", "Local currency to INR translation conversion factor."],
+      ["Work Order Value", "Yes (Highlighted)", "Numeric only (Minimum: 0)", "Total commercial value of the PO/contract."],
+      ["Payment Terms", "No", "Dropdown Selection", "Invoicing payment release milestones distribution."],
+      ["Payment Type", "No", "Dropdown Selection", "Project payment structure classification (Single vs Multiple)."]
+    ];
+    
+    instructionRows.forEach((row, rowIdx) => {
+      row.forEach((val, colIdx) => {
+        const cell = instructionSheet.getCell(6 + rowIdx, colIdx + 1);
+        cell.value = val;
+        cell.font = { name: "Segoe UI", size: 10 };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFECEFF1" } },
+          bottom: { style: "thin", color: { argb: "FFECEFF1" } },
+          left: { style: "thin", color: { argb: "FFECEFF1" } },
+          right: { style: "thin", color: { argb: "FFECEFF1" } }
+        };
+        if (colIdx === 1 && val.includes("Yes")) {
+          cell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FFDC2626" } };
+        }
+      });
+    });
+    
+    instructionSheet.getColumn(1).width = 25;
+    instructionSheet.getColumn(2).width = 18;
+    instructionSheet.getColumn(3).width = 40;
+    instructionSheet.getColumn(4).width = 45;
+
+    // --- SETUP METADATA SCHEMA FOR PROJECTS SHEET ---
+    interface ColumnSchema {
+      header: string;
+      required: boolean;
+      width: number;
+      validationType?: "list" | "date" | "number" | "exchangeRate";
+      validationFormula?: string;
+      errorMessage?: string;
+      numFmt?: string;
+    }
+
+    const columnSchema: ColumnSchema[] = [
+      {
+        header: "PO Month",
+        required: true,
+        width: 18,
+        validationType: "date",
+        errorMessage: "Please enter or select a valid date (YYYY-MM-DD).",
+        numFmt: "mmmm yyyy"
+      },
+      {
+        header: "PR Category",
+        required: false,
+        width: 16,
+        validationType: "list",
+        validationFormula: `Lookup!$A$1:$A$${categories.length}`,
+        errorMessage: "Please select a PR Category from the dropdown."
+      },
+      {
+        header: "PR No",
+        required: true,
+        width: 16
+      },
+      {
+        header: "Project Title",
+        required: true,
+        width: 28
+      },
+      {
+        header: "Client Name",
+        required: true,
+        width: 20
+      },
+      {
+        header: "Department",
+        required: true,
+        width: 26,
+        validationType: "list",
+        validationFormula: `Lookup!$B$1:$B$${departments.length}`,
+        errorMessage: "Please select a Department from the dropdown."
+      },
+      {
+        header: "Domestic / Foreign",
+        required: false,
+        width: 18,
+        validationType: "list",
+        validationFormula: `Lookup!$C$1:$C$${domesticForeignList.length}`,
+        errorMessage: "Please select a Domestic/Foreign option."
+      },
+      {
+        header: "Work Order Status",
+        required: false,
+        width: 18,
+        validationType: "list",
+        validationFormula: `Lookup!$D$1:$D$${workOrderStatusList.length}`,
+        errorMessage: "Please select a Work Order Status."
+      },
+      {
+        header: "Project Status",
+        required: false,
+        width: 16,
+        validationType: "list",
+        validationFormula: `Lookup!$E$1:$E$${projectStatusList.length}`,
+        errorMessage: "Please select a Project Status."
+      },
+      {
+        header: "Start Date",
+        required: false,
+        width: 15,
+        validationType: "date",
+        errorMessage: "Please enter a valid date (YYYY-MM-DD).",
+        numFmt: "yyyy-mm-dd"
+      },
+      {
+        header: "End Date",
+        required: false,
+        width: 15,
+        validationType: "date",
+        errorMessage: "Please enter a valid date (YYYY-MM-DD).",
+        numFmt: "yyyy-mm-dd"
+      },
+      {
+        header: "Contract Type",
+        required: false,
+        width: 16,
+        validationType: "list",
+        validationFormula: `Lookup!$F$1:$F$${contractTypeList.length}`,
+        errorMessage: "Please select a Contract Type."
+      },
+      {
+        header: "PMO Coordinator",
+        required: false,
+        width: 20,
+        validationType: "list",
+        validationFormula: `Lookup!$I$1:$I$${coordinators.length}`,
+        errorMessage: "Please select a PMO Coordinator."
+      },
+      {
+        header: "Project Manager",
+        required: false,
+        width: 20
+      },
+      {
+        header: "Project Engineer",
+        required: false,
+        width: 20
+      },
+      {
+        header: "Project Coordinator",
+        required: false,
+        width: 20
+      },
+      {
+        header: "Remarks",
+        required: false,
+        width: 25
+      },
+      {
+        header: "Currency",
+        required: false,
+        width: 12,
+        validationType: "list",
+        validationFormula: `Lookup!$G$1:$G$${currencyList.length}`,
+        errorMessage: "Please select a Currency."
+      },
+      {
+        header: "Exchange Rate",
+        required: false,
+        width: 15,
+        validationType: "exchangeRate",
+        errorMessage: "Please enter a valid positive exchange rate (greater than 0)."
+      },
+      {
+        header: "Work Order Value",
+        required: true,
+        width: 18,
+        validationType: "number",
+        errorMessage: "Please enter a valid positive number for Work Order Value."
+      },
+      {
+        header: "Payment Terms",
+        required: false,
+        width: 22,
+        validationType: "list",
+        validationFormula: `Lookup!$H$1:$H$${paymentTermsList.length}`,
+        errorMessage: "Please select valid Payment Terms."
+      },
+      {
+        header: "Payment Type",
+        required: false,
+        width: 16,
+        validationType: "list",
+        validationFormula: `Lookup!$J$1:$J$${paymentTypeList.length}`,
+        errorMessage: "Please select a Payment Type."
+      }
+    ];
+
+    // Setup headers and format columns
+    columnSchema.forEach((col, idx) => {
+      const cell = dataSheet.getCell(1, idx + 1);
+      cell.value = col.header;
+      cell.font = { name: "Segoe UI", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFCBD5E1" } },
+        bottom: { style: "medium", color: { argb: "FF475569" } },
+        left: { style: "thin", color: { argb: "FFCBD5E1" } },
+        right: { style: "thin", color: { argb: "FFCBD5E1" } }
+      };
+      cell.alignment = { vertical: "middle", horizontal: "left" };
+      dataSheet.getColumn(idx + 1).width = col.width;
+    });
+
+    dataSheet.getRow(1).height = 26;
+
+    // Enable auto filter on the header row
+    dataSheet.autoFilter = "A1:V1";
+
+    // Prepopulate exactly 500 blank data entry rows with validations and mandatory formatting
+    const maxRows = 501; 
+    for (let r = 2; r <= maxRows; r++) {
+      columnSchema.forEach((col, colIdx) => {
+        const c = colIdx + 1;
+        const cell = dataSheet.getCell(r, c);
+        cell.font = { name: "Segoe UI", size: 10 };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFECEFF1" } },
+          bottom: { style: "thin", color: { argb: "FFECEFF1" } },
+          left: { style: "thin", color: { argb: "FFECEFF1" } },
+          right: { style: "thin", color: { argb: "FFECEFF1" } }
+        };
+        
+        if (col.required) {
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF1F5F9" } // Subtle soft blue-gray highlight for mandatory columns
+          };
+        }
+
+        if (col.numFmt) {
+          cell.numFmt = col.numFmt;
+        }
+
+        // Apply Data Validation rules from the schema configuration
+        if (col.validationType === "list" && col.validationFormula) {
+          cell.dataValidation = {
+            type: "list",
+            allowBlank: true,
+            formulae: [col.validationFormula],
+            showErrorMessage: true,
+            errorTitle: "Invalid Option",
+            error: col.errorMessage || "Please select a valid option from the dropdown list."
+          };
+        } else if (col.validationType === "date") {
+          const dateVal: ExcelJS.DataValidation = {
+            type: "date",
+            operator: "greaterThan",
+            formulae: [new Date(1900, 0, 1)],
+            allowBlank: true,
+            showErrorMessage: true,
+            errorTitle: "Invalid Date",
+            error: col.errorMessage || "Please enter a valid date (YYYY-MM-DD)."
+          };
+          cell.dataValidation = dateVal;
+        } else if (col.validationType === "number") {
+          cell.dataValidation = {
+            type: "decimal",
+            operator: "greaterThanOrEqual",
+            formulae: [0],
+            allowBlank: true,
+            showErrorMessage: true,
+            errorTitle: "Invalid Number",
+            error: col.errorMessage || "Please enter a valid positive number."
+          };
+        } else if (col.validationType === "exchangeRate") {
+          cell.dataValidation = {
+            type: "decimal",
+            operator: "greaterThanOrEqual",
+            formulae: [0.0001],
+            allowBlank: true,
+            showErrorMessage: true,
+            errorTitle: "Invalid Exchange Rate",
+            error: col.errorMessage || "Please enter a valid positive exchange rate (greater than 0)."
+          };
+        }
+      });
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "projects_import_template.xlsx";
+    link.click();
+    window.URL.revokeObjectURL(url);
   };
 
   // File Import Logic
@@ -458,6 +840,17 @@ const Projects = () => {
 
         if (validationErrors.length > 0) continue;
 
+        let poMonthVal = String(row[idxPoMonth] ?? "").trim();
+        if (row[idxPoMonth]) {
+          const parsed = parseExcelDateKey(row[idxPoMonth]);
+          if (parsed) {
+            const parts = parsed.split("-");
+            if (parts.length >= 2) {
+              poMonthVal = `${parts[0]}-${parts[1]}`;
+            }
+          }
+        }
+
         // Construct project model instance
         const newProj = createEmptyProject();
         const currency = String(row[idxCurrency] || "INR").trim();
@@ -508,7 +901,7 @@ const Projects = () => {
         const importedProject: Project = {
           ...newProj,
           prNo,
-          poMonth: String(row[idxPoMonth] ?? "").trim(),
+          poMonth: poMonthVal,
           client,
           department,
           projectTitle,
