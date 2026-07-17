@@ -61,6 +61,7 @@ const Timesheets = () => {
   const [importing, setImporting] = useState(false);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [syncedProjects, setSyncedProjects] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 30;
 
@@ -256,7 +257,18 @@ const Timesheets = () => {
       try {
         const allProjects = getProjects();
         const syncedProjects = syncTimesheetToProjects(allProjects, newMonth);
-        syncedProjects.forEach((project) => updateProject(project));
+
+        // Track which projects were updated
+        const updatedProjectNumbers: string[] = [];
+        syncedProjects.forEach((project) => {
+          // Check if this project had entries matched
+          if (project.resources && project.resources.length > 0) {
+            updatedProjectNumbers.push(project.prNo);
+          }
+          updateProject(project);
+        });
+
+        setSyncedProjects(updatedProjectNumbers);
       } catch (syncErr) {
         console.warn("Sync warning:", syncErr);
       }
@@ -730,7 +742,7 @@ const Timesheets = () => {
                   </div>
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-600 space-y-2">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-600 space-y-3">
                   <div className="grid grid-cols-3 gap-2">
                     <div className="bg-white rounded-lg border border-slate-200 p-2 text-center">
                       <p className="text-[10px] uppercase tracking-wide text-slate-400">Total Rows</p>
@@ -745,6 +757,34 @@ const Timesheets = () => {
                       <p className="text-sm font-bold text-slate-500">{importReport.ignoredRows}</p>
                     </div>
                   </div>
+
+                  {syncedProjects.length > 0 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-1.5">
+                        Synced to Projects
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {syncedProjects.map((prNo) => (
+                          <span
+                            key={prNo}
+                            className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-[11px] font-semibold"
+                          >
+                            {prNo}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {syncedProjects.length === 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide">
+                        ⚠️ No Projects Matched
+                      </p>
+                      <p className="text-[11px] text-amber-600 mt-1">
+                        Verify that the Project Code in your Excel matches the PR Number in the Projects list.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-end gap-3 pt-3 border-t">
