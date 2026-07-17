@@ -4,15 +4,15 @@ import {
   UserCheck,
   Building,
   IndianRupee,
-  Table2,
 } from "lucide-react";
 
 import type { Project } from "../../../types/Project";
 import { getEmployees } from "../../../services/employeeService";
+import { getAllTimesheetImports } from "../../../services/timesheetService";
+import { getLiveProjectMonths, getLiveTeamMembers } from "../../../services/timesheetSyncService";
 import { Card, CardBody, CardHeader } from "../../../components/ui/Card";
 import { StatTile } from "../../../components/ui/StatTile";
-import { Badge } from "../../../components/ui/Badge";
-import { EmptyState } from "../../../components/ui/EmptyState";
+import ExpandableTeamMembersCard from "./ExpandableTeamMembersCard";
 
 interface Props {
   project: Project;
@@ -29,13 +29,20 @@ const LEADERSHIP_FIELDS: Array<{ label: string; icon: typeof UserCheck; key: key
 export default function TeamAssignedView({ project }: Props) {
   const masterEmployees = getEmployees();
 
-  const uniqueEmployeesCount = new Set(project.resources?.map(r => r.employeeNo.trim().toLowerCase()) || []).size;
-  const totalHoursSum = project.resources?.reduce((sum, r) => sum + (r.totalHours || 0), 0) || 0;
-  const totalManpowerBudget = project.resources?.reduce((sum, r) => {
-    const emp = masterEmployees.find(e => e.employeeNo.trim().toLowerCase() === r.employeeNo.trim().toLowerCase());
+  // Employee Summary reads the same live, PR-Number-matched data that the
+  // expandable Team Members card below renders — never the project's cached
+  // resources snapshot, so the two sections can't disagree.
+  const allImports = getAllTimesheetImports();
+  const latestMonth = getLiveProjectMonths(project.prNo, allImports)[0];
+  const liveResources = getLiveTeamMembers(project.prNo, allImports, latestMonth);
+
+  const uniqueEmployeesCount = liveResources.length;
+  const totalHoursSum = liveResources.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+  const totalManpowerBudget = liveResources.reduce((sum, r) => {
+    const emp = masterEmployees.find((e) => e.employeeNo.trim().toLowerCase() === r.employeeNo.trim().toLowerCase());
     const rate = emp ? (emp.manhourExpenses || 0) : 0;
     return sum + (r.totalHours || 0) * rate;
-  }, 0) || 0;
+  }, 0);
 
   return (
     <div className="space-y-3.5">
@@ -87,68 +94,8 @@ export default function TeamAssignedView({ project }: Props) {
         />
       </div>
 
-      {/* Team Members Table */}
-      <Card padded={false}>
-        <CardHeader icon={<Table2 size={16} />} title="Assigned Resources" subtitle="Manpower allocated to this project" />
-        {!project.resources || project.resources.length === 0 ? (
-          <CardBody>
-            <EmptyState icon={<Users size={22} />} title="No Team Members Assigned" description="No manpower has been assigned to this project yet." />
-          </CardBody>
-        ) : (
-          <div className="overflow-x-auto nu-scrollbar">
-            <table className="w-full min-w-[1000px] border-collapse text-left text-[13px]">
-              <thead className="bg-[var(--nu-surface-alt)] text-[var(--nu-text-muted)] font-semibold uppercase text-[11px] tracking-wide border-b border-[var(--nu-border)]">
-                <tr>
-                  <th className="px-4 py-2.5">Employee No</th>
-                  <th className="px-4 py-2.5">Employee Name</th>
-                  <th className="px-4 py-2.5">Designation</th>
-                  <th className="px-4 py-2.5">Department</th>
-                  <th className="px-4 py-2.5">Reporting Manager</th>
-                  <th className="px-4 py-2.5 w-32">Start Date</th>
-                  <th className="px-4 py-2.5 w-32">End Date</th>
-                  <th className="px-4 py-2.5 text-center w-28">Working Days</th>
-                  <th className="px-4 py-2.5 text-right w-28">Total Hours</th>
-                  <th className="px-4 py-2.5 text-right w-32">Man-hour Expenses</th>
-                  <th className="px-4 py-2.5 text-right w-36">Employee Cost</th>
-                  <th className="px-4 py-2.5 text-center w-28">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--nu-border)]">
-                {project.resources.map((res) => {
-                  const empMaster = masterEmployees.find(
-                    (e) => e.employeeNo.trim().toLowerCase() === res.employeeNo.trim().toLowerCase()
-                  );
-                  const rate = empMaster ? (empMaster.manhourExpenses || 0) : 0;
-                  const cost = (res.totalHours || 0) * rate;
-
-                  return (
-                    <tr key={res.id} className="hover:bg-[var(--nu-surface-alt)] transition-colors">
-                      <td className="px-4 py-2.5 font-semibold text-[var(--nu-text)]">{res.employeeNo}</td>
-                      <td className="px-4 py-2.5 text-[var(--nu-text-secondary)]">{res.employeeName}</td>
-                      <td className="px-4 py-2.5 text-[var(--nu-text-secondary)]">{res.designation}</td>
-                      <td className="px-4 py-2.5 text-[var(--nu-text-secondary)]">{res.department}</td>
-                      <td className="px-4 py-2.5 text-[var(--nu-text-secondary)]">{res.reportingManager || "—"}</td>
-                      <td className="px-4 py-2.5 text-[var(--nu-text-secondary)]">{res.startDate || "—"}</td>
-                      <td className="px-4 py-2.5 text-[var(--nu-text-secondary)]">{res.endDate || "—"}</td>
-                      <td className="px-4 py-2.5 text-center text-[var(--nu-text-secondary)]">{res.workingDays || 0} Days</td>
-                      <td className="px-4 py-2.5 text-right font-medium text-[var(--nu-text)]">
-                        {(res.totalHours || 0).toLocaleString("en-IN")} Hrs
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-medium text-[var(--nu-text)]">₹{rate.toLocaleString("en-IN")}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-[var(--nu-text)]">
-                        ₹{cost.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-                      <td className="px-4 py-2.5 text-center">
-                        <Badge tone={res.status === "Active" ? "success" : "neutral"}>{res.status}</Badge>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+      {/* Team Members — read-only, live-synced, with expandable daily entries */}
+      <ExpandableTeamMembersCard project={project} />
     </div>
   );
 }

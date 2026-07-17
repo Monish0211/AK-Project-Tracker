@@ -43,15 +43,15 @@ interface TabConfig {
   icon: typeof LayoutGrid;
 }
 
-// Add Project: 5 tabs — Team Assigned covers Project Leadership only, since
-// synced Team Members require a timesheet import that can't happen until
-// the project exists.
+// Add Project: 4 tabs — no Team Assigned step. Team Members can only be
+// populated once a timesheet import matches the project's PR Number, which
+// requires the project to already exist; Team Assigned lives in Edit/View
+// Project instead.
 const TABS_ADD: TabConfig[] = [
   { key: "general", label: "General", icon: LayoutGrid },
   { key: "quantity", label: "Quantity", icon: Package },
   { key: "payments", label: "Payments", icon: CreditCard },
   { key: "budget", label: "Expense Budget", icon: Wallet },
-  { key: "team", label: "Team Assigned", icon: Users },
 ];
 
 // Edit Project: 7 tabs — full execution workflow
