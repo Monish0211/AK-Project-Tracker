@@ -92,8 +92,8 @@ function normalizeProject(project: Project): Project {
     resources: Array.isArray(project.resources)
       ? project.resources.map((res: any) => ({
           ...res,
-          workingDays: typeof res.workingDays === "number" ? res.workingDays : 0,
-          totalHours: typeof res.totalHours === "number" ? res.totalHours : 0,
+          workingDays: typeof res.workingDays === "number" ? res.workingDays : Number(res.workingDays) || 0,
+          totalHours: typeof res.totalHours === "number" ? res.totalHours : Number(res.totalHours) || 0,
           status: res.status || "Active",
         }))
       : [],
@@ -102,15 +102,15 @@ function normalizeProject(project: Project): Project {
     clientCoordinator: project.clientCoordinator || "",
     lastImportedDate: project.lastImportedDate || "",
     lastImportedBy: project.lastImportedBy || "",
-    lastImportedRowsCount: typeof project.lastImportedRowsCount === "number" ? project.lastImportedRowsCount : 0,
+    lastImportedRowsCount: typeof project.lastImportedRowsCount === "number" ? project.lastImportedRowsCount : Number(project.lastImportedRowsCount) || 0,
     contractType: project.contractType || "LUMP SUM",
-    totalHoursBudget: typeof project.totalHoursBudget === "number" ? project.totalHoursBudget : 0,
+    totalHoursBudget: typeof project.totalHoursBudget === "number" ? project.totalHoursBudget : Number(project.totalHoursBudget) || 0,
     totalProjectBudget: totals.workOrderValueINR,
 
-    manhourBudgetAmount: typeof project.manhourBudgetAmount === "number" ? project.manhourBudgetAmount : 0,
-    manhourBudgetHours: typeof project.manhourBudgetHours === "number" ? project.manhourBudgetHours : 0,
+    manhourBudgetAmount: typeof project.manhourBudgetAmount === "number" ? project.manhourBudgetAmount : Number(project.manhourBudgetAmount) || 0,
+    manhourBudgetHours: typeof project.manhourBudgetHours === "number" ? project.manhourBudgetHours : Number(project.manhourBudgetHours) || 0,
     manhourBudgetRemarks: project.manhourBudgetRemarks || "",
-    nonManhourBudgetAmount: typeof project.nonManhourBudgetAmount === "number" ? project.nonManhourBudgetAmount : 0,
+    nonManhourBudgetAmount: typeof project.nonManhourBudgetAmount === "number" ? project.nonManhourBudgetAmount : Number(project.nonManhourBudgetAmount) || 0,
     nonManhourBudgetRemarks: project.nonManhourBudgetRemarks || "",
   };
 }
