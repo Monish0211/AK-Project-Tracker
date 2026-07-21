@@ -205,6 +205,24 @@ export function getLiveTeamMembers(
 }
 
 /**
+ * Actual Hours for a project — sums the same per-employee totalHours that
+ * Team Assigned computes via getLiveTeamMembers(), for the project's latest
+ * matched month (Team Assigned's own default view before a user manually
+ * switches months). This is the single source of truth for "Actual Hours":
+ * anything comparing against budgeted hours (e.g. the Dashboard's Hours
+ * Overrun widget) must call this rather than re-deriving hours from
+ * project.resources or raw timesheet entries independently, or the two
+ * views can disagree.
+ */
+export function getProjectActualHours(prNo: string, allImports: TimesheetImportMonth[]): number {
+  const latestMonth = getLiveProjectMonths(prNo, allImports)[0];
+  if (!latestMonth) return 0;
+
+  const teamMembers = getLiveTeamMembers(prNo, allImports, latestMonth);
+  return Math.round(teamMembers.reduce((sum, m) => sum + (m.totalHours || 0), 0) * 100) / 100;
+}
+
+/**
  * Live summary stats for a project + month.
  */
 export function getLiveTimesheetSummary(
