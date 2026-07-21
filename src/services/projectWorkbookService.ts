@@ -363,7 +363,10 @@ function parsePoMonthToDate(poMonth: string): Date | undefined {
   const year = Number(parts[0]);
   const month = Number(parts[1]);
   if (!year || !month) return undefined;
-  return new Date(year, month - 1, 1);
+  // ExcelJS serializes Date cell values using UTC getters, so this must be
+  // built with Date.UTC — a local-timezone constructor shifts the date back
+  // by a day in positive-UTC-offset zones (e.g. IST) once written to the cell.
+  return new Date(Date.UTC(year, month - 1, 1));
 }
 
 function quantityItemsToRows(p: Project) {
