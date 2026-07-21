@@ -10,3 +10,20 @@ export const formatCompactINR = (value: number): string => {
   if (abs >= 1_000) return `₹${(value / 1_000).toFixed(0)} K`;
   return `₹${value.toLocaleString("en-IN")}`;
 };
+
+/** Indian business notation (Cr, L, K) with max 2 decimals, removing trailing zeros. */
+export const formatBusinessINR = (value: number): string => {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  
+  if (abs >= 1_00_00_000) {
+    return `₹ ${sign}${Number((abs / 1_00_00_000).toFixed(2))} Cr`;
+  }
+  if (abs >= 1_00_000) {
+    return `₹ ${sign}${Number((abs / 1_00_000).toFixed(2))} L`;
+  }
+  if (abs >= 1_000) {
+    return `₹ ${sign}${Number((abs / 1_000).toFixed(2))} K`;
+  }
+  return `₹ ${sign}${Number(abs.toFixed(2))}`;
+};
