@@ -573,9 +573,6 @@ export interface ParsedWorkbookResult {
 
 export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjects: Project[]): ParsedWorkbookResult {
   const errors: string[] = [];
-  const lists = getLookupLists(existingProjects);
-  const matches = (value: string, list: string[]) =>
-    !value || list.some((v) => v.toLowerCase() === value.toLowerCase());
 
   const projectsSheet = workbook.getWorksheet(SHEET_NAMES.projects);
   const quantitySheet = workbook.getWorksheet(SHEET_NAMES.quantity);
@@ -656,12 +653,12 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
       seenPRNumbers.add(key);
     }
 
-    if (!matches(currency, lists.currencies)) errors.push(`Projects, Row ${r}: Invalid Currency "${currency}".`);
-    if (!matches(department, lists.departments)) errors.push(`Projects, Row ${r}: Invalid Department "${department}".`);
-    if (!matches(contractType, lists.contractTypes)) errors.push(`Projects, Row ${r}: Invalid Contract Type "${contractType}".`);
-    if (!matches(workOrderStatus, lists.workOrderStatuses)) errors.push(`Projects, Row ${r}: Invalid Work Order Status "${workOrderStatus}".`);
-    if (!matches(projectStatus, lists.projectStatuses)) errors.push(`Projects, Row ${r}: Invalid Project Status "${projectStatus}".`);
-    if (!matches(pmoCoordinator, lists.pmoCoordinators)) errors.push(`Projects, Row ${r}: Invalid PMO Coordinator "${pmoCoordinator}".`);
+    // Dropdown columns (Currency, Contract Type, Project Status, Work Order
+    // Status, PMO Coordinator) accept whatever value the file actually has —
+    // real project history predates the dropdown lists and uses free-form
+    // phrasing ("Hold", "In progress", "Milestone Basis", etc.). The Lookup
+    // sheet still drives the dropdown for NEW manual entries; import just
+    // never rejects a row for using a value outside that list.
 
     const startDateRaw = cellText(get("Start Date"));
     const endDateRaw = cellText(get("End Date"));
@@ -727,7 +724,6 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
       }
       if (!description) errors.push(`Quantity Details, Row ${r}: Description is missing.`);
       if (!uom) errors.push(`Quantity Details, Row ${r}: UOM is missing.`);
-      if (!matches(uom, lists.uom)) errors.push(`Quantity Details, Row ${r}: Invalid UOM "${uom}".`);
       if (!qty) errors.push(`Quantity Details, Row ${r}: Qty is missing or zero.`);
       if (!unitRate) errors.push(`Quantity Details, Row ${r}: Unit Rate is missing or zero.`);
 
@@ -758,9 +754,6 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
         continue;
       }
       if (!paymentPercentage) errors.push(`Payment Milestones, Row ${r}: Payment % is missing or zero.`);
-      if (paymentTerms && !matches(paymentTerms, lists.paymentTerms)) {
-        errors.push(`Payment Milestones, Row ${r}: Invalid Payment Terms "${paymentTerms}".`);
-      }
 
       const dueDateRaw = cellText(get("Due Date"));
       const dueDate = cellDateKey(get("Due Date"));
