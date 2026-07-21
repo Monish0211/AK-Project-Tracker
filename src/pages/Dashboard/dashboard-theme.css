@@ -88,3 +88,26 @@ html.dark .dashboard-shell {
     transform: translateY(0);
   }
 }
+
+/* Thin modern scrollbar for executive widgets */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(241, 245, 249, 0.7);
+  border-radius: 9999px;
+}
+html.dark .custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(30, 41, 59, 0.7);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(203, 213, 225, 0.9);
+  border-radius: 9999px;
+}
+html.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.9);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #ef4444;
+}

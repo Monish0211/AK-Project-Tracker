@@ -4,6 +4,7 @@ import { getProjectCommercialSummary } from "./invoiceProgressService";
 import { getInvoices } from "./invoiceService";
 import { getAllTimesheetImports } from "./timesheetService";
 import { getProjectActualHours } from "./timesheetSyncService";
+import { getEmployees } from "./employeeService";
 
 export interface DashboardMetrics {
   totalProjects: number;
@@ -451,9 +452,8 @@ export interface DurationOverrunWidgetResult {
 }
 
 export const getProjectsWithDurationOverrun = (): DurationOverrunWidgetResult => {
-  const projects = getProjects().filter(
-    (p) => p.projectStatus !== "Archived" && p.projectStatus !== "Cancelled"
-  );
+  // Business Rule: Display ONLY Active projects
+  const projects = getProjects().filter((p) => p.projectStatus === "Active");
   const today = new Date();
 
   const durationOverruns: DurationOverrunProjectSummary[] = [];
@@ -466,31 +466,37 @@ export const getProjectsWithDurationOverrun = (): DurationOverrunWidgetResult =>
 
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return;
 
-    // Planned Duration = Project End Date - Project Start Date
+    // Business Rule 3: Current Date must be greater than Project End Date
+    const isOverdue = today.getTime() > endDate.getTime();
+
+    // Planned Duration = Project End Date - Project Start Date (in days)
     const plannedDurationDays = Math.max(
       1,
       Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24))
     );
 
-    // Actual Duration: If Project Status = Completed -> Completion Date - Project Start Date, Else Current Date - Project Start Date
-    let actualEndDate = today;
-    if (p.projectStatus === "Completed" && p.projectCompletionDate) {
-      const compDate = new Date(p.projectCompletionDate);
-      if (!isNaN(compDate.getTime())) {
-        actualEndDate = compDate;
-      }
-    }
-
+    // Actual Duration = Current Date - Project Start Date (in days)
     const actualDurationDays = Math.round(
-      (actualEndDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24)
+      (today.getTime() - startDate.getTime()) / (1000 * 3600 * 24)
     );
 
-    // Filter: Actual Duration > Planned Duration
-    if (actualDurationDays > plannedDurationDays) {
-      const delayDays = actualDurationDays - plannedDurationDays;
-      const pct = parseFloat(
-        (((actualDurationDays - plannedDurationDays) / plannedDurationDays) * 100).toFixed(1)
-      );
+    // Delay Days = Current Date - Project End Date (in days)
+    const delayDays = Math.round(
+      (today.getTime() - endDate.getTime()) / (1000 * 3600 * 24)
+    );
+
+    const isIncluded = isOverdue && delayDays > 0;
+
+    console.log(
+      `[Dashboard Duration Risk Check] PR: ${p.prNo || "N/A"}\n` +
+      `  Status: ${p.projectStatus}\n` +
+      `  Start Date: ${p.projectStartDate} | End Date: ${p.projectEndDate}\n` +
+      `  Planned: ${plannedDurationDays}d | Actual: ${actualDurationDays}d | Delay: ${delayDays}d\n` +
+      `  Include: ${isIncluded ? "TRUE" : "FALSE"}`
+    );
+
+    if (isIncluded) {
+      const pct = parseFloat(((delayDays / plannedDurationDays) * 100).toFixed(1));
       const name = p.client
         ? `${p.client} – ${p.projectTitle}`
         : p.projectTitle || "Untitled Project";
@@ -512,11 +518,140 @@ export const getProjectsWithDurationOverrun = (): DurationOverrunWidgetResult =>
     }
   });
 
-  // Sort descending by Delay Days (largest delay first)
+  // Sort descending by Delay Days (highest delay first)
   durationOverruns.sort((a, b) => b.delayDays - a.delayDays);
 
   return {
     totalMatchingProjects: durationOverruns.length,
     top5Projects: durationOverruns.slice(0, 5),
+  };
+};
+
+/* ===================================================
+   TEAM LEADS – PROJECT WORKLOAD WIDGET
+=================================================== */
+
+export interface TeamLeadWorkloadSummary {
+  reportingManager: string;
+  activeProjectsCount: number;
+  totalWorkOrderValue: number;
+  formattedWorkOrderValue: string;
+  status: "High" | "Medium" | "Normal";
+}
+
+export interface TeamLeadWorkloadWidgetResult {
+  totalReportingManagers: number;
+  top5Leads: TeamLeadWorkloadSummary[];
+}
+
+function formatCurrencyCompact(amount: number): string {
+  if (!amount || amount === 0) return "₹ 0";
+  if (amount >= 10000000) {
+    const cr = amount / 10000000;
+    return `₹ ${cr.toFixed(2)} Cr`;
+  }
+  if (amount >= 100000) {
+    const lakh = amount / 100000;
+    return `₹ ${lakh.toFixed(2)} L`;
+  }
+  return `₹ ${amount.toLocaleString("en-IN")}`;
+}
+
+export const getTeamLeadsWorkload = (): TeamLeadWorkloadWidgetResult => {
+  // Business Rule: Only active projects
+  const activeProjects = getProjects().filter((p) => p.projectStatus === "Active");
+  const masterEmployees = getEmployees();
+
+  // Map: Reporting Manager -> { projectIds: Set<string>, totalWOValue: number }
+  const managerDataMap: Map<string, { projectIds: Set<string>; totalWOValue: number }> = new Map();
+
+  activeProjects.forEach((project) => {
+    const woValue = Number(project.workOrderValueINR) || 0;
+    const projectManagersInThisProject = new Set<string>();
+
+    // 1. Collect unique reporting managers from project resources
+    (project.resources || []).forEach((resource) => {
+      let managerName = (resource.reportingManager || "").trim();
+
+      // If managerName empty, lookup from master employees
+      if (!managerName && resource.employeeNo) {
+        const emp = masterEmployees.find(
+          (e) => e.employeeNo.trim().toLowerCase() === resource.employeeNo.trim().toLowerCase()
+        );
+        if (emp?.reportingManager) {
+          managerName = emp.reportingManager.trim();
+        }
+      }
+
+      if (
+        managerName &&
+        managerName !== "—" &&
+        managerName.toLowerCase() !== "unassigned" &&
+        managerName.toLowerCase() !== "null"
+      ) {
+        projectManagersInThisProject.add(managerName);
+      }
+    });
+
+    // 2. Fallback to primaryProjectManager if resources list is unpopulated
+    if (projectManagersInThisProject.size === 0) {
+      if (
+        project.primaryProjectManager &&
+        project.primaryProjectManager.trim() &&
+        project.primaryProjectManager !== "—"
+      ) {
+        projectManagersInThisProject.add(project.primaryProjectManager.trim());
+      }
+    }
+
+    // Add this project to each unique manager's map ONCE per project
+    projectManagersInThisProject.forEach((mgr) => {
+      if (!managerDataMap.has(mgr)) {
+        managerDataMap.set(mgr, { projectIds: new Set(), totalWOValue: 0 });
+      }
+      const data = managerDataMap.get(mgr)!;
+      if (!data.projectIds.has(project.id)) {
+        data.projectIds.add(project.id);
+        data.totalWOValue += woValue;
+      }
+    });
+  });
+
+  const list: TeamLeadWorkloadSummary[] = [];
+
+  managerDataMap.forEach((data, managerName) => {
+    const activeProjectsCount = data.projectIds.size;
+    let status: "High" | "Medium" | "Normal" = "Normal";
+
+    // Business Rules Status Badges:
+    // High: 10 or more Active Projects
+    // Medium: 5 to 9 Active Projects
+    // Normal: Less than 5 Active Projects
+    if (activeProjectsCount >= 10) {
+      status = "High";
+    } else if (activeProjectsCount >= 5) {
+      status = "Medium";
+    }
+
+    list.push({
+      reportingManager: managerName,
+      activeProjectsCount,
+      totalWorkOrderValue: data.totalWOValue,
+      formattedWorkOrderValue: formatCurrencyCompact(data.totalWOValue),
+      status,
+    });
+  });
+
+  // Sort descending by Active Projects, then by Total WO Value
+  list.sort((a, b) => {
+    if (b.activeProjectsCount !== a.activeProjectsCount) {
+      return b.activeProjectsCount - a.activeProjectsCount;
+    }
+    return b.totalWorkOrderValue - a.totalWorkOrderValue;
+  });
+
+  return {
+    totalReportingManagers: list.length,
+    top5Leads: list.slice(0, 5),
   };
 };
