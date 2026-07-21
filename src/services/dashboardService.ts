@@ -2,6 +2,8 @@ import { getProjects } from "./projectService";
 import { getGrossProfit, getTotalProjectCost } from "./expenseService";
 import { getProjectCommercialSummary } from "./invoiceProgressService";
 import { getInvoices } from "./invoiceService";
+import { getAllTimesheetImports } from "./timesheetService";
+import { getProjectActualHours } from "./timesheetSyncService";
 
 export interface DashboardMetrics {
   totalProjects: number;
@@ -349,4 +351,172 @@ export const getRecentActivity = (limit = 8): ActivityEvent[] => {
     .filter((event) => !!event.timestamp)
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, limit);
+};
+
+/* ===================================================
+   EXECUTIVE RISK SUMMARY WIDGETS
+=================================================== */
+
+export interface HoursOverrunProjectSummary {
+  id: string;
+  prNumber: string;
+  projectName: string;
+  budgetHours: number;
+  actualHours: number;
+  hoursOverrun: number;
+  percentOverrun: number;
+  formattedBudgetHours: string;
+  formattedActualHours: string;
+  formattedHoursOverrun: string;
+  formattedPercentOverrun: string;
+  status: "Loss";
+}
+
+export interface HoursOverrunWidgetResult {
+  totalMatchingProjects: number;
+  top5Projects: HoursOverrunProjectSummary[];
+}
+
+export const getProjectsWithHoursOverrun = (): HoursOverrunWidgetResult => {
+  const projects = getProjects().filter(
+    (p) => p.projectStatus !== "Archived" && p.projectStatus !== "Cancelled"
+  );
+
+  const timesheetImports = getAllTimesheetImports();
+  const overrunProjects: HoursOverrunProjectSummary[] = [];
+
+  projects.forEach((p) => {
+    // Budget Hours from Expense Budget -> Budget Hours (or totalHoursBudget fallback)
+    const budget = Number(p.manhourBudgetHours) || Number(p.totalHoursBudget) || 0;
+
+    // Actual Hours: the SAME computation Team Assigned uses (getLiveTeamMembers
+    // for the project's latest matched month) — not re-derived here, so the
+    // Dashboard and Team Assigned can never disagree on this number.
+    const actual = getProjectActualHours(p.prNo, timesheetImports);
+
+    // Filter Logic: BudgetHours > 0 AND ActualHours > BudgetHours
+    const isIncluded = budget > 0 && actual > budget;
+    const overrun = actual - budget;
+
+    if (isIncluded) {
+      const pct = parseFloat((((actual - budget) / budget) * 100).toFixed(1));
+      const name = p.client
+        ? `${p.client} – ${p.projectTitle}`
+        : p.projectTitle || "Untitled Project";
+
+      overrunProjects.push({
+        id: p.id,
+        prNumber: p.prNo || "N/A",
+        projectName: name,
+        budgetHours: budget,
+        actualHours: actual,
+        hoursOverrun: overrun,
+        percentOverrun: pct,
+        formattedBudgetHours: `${Math.round(budget)} hrs`,
+        formattedActualHours: `${Math.round(actual)} hrs`,
+        formattedHoursOverrun: `+${overrun % 1 === 0 ? overrun.toFixed(0) : overrun.toFixed(2)} hrs`,
+        formattedPercentOverrun: `${pct.toFixed(1)}%`,
+        status: "Loss",
+      });
+    }
+  });
+
+  // Sort descending by Hours Overrun (largest overrun first)
+  overrunProjects.sort((a, b) => b.hoursOverrun - a.hoursOverrun);
+
+  return {
+    totalMatchingProjects: overrunProjects.length,
+    top5Projects: overrunProjects.slice(0, 5),
+  };
+};
+
+export interface DurationOverrunProjectSummary {
+  id: string;
+  prNumber: string;
+  projectName: string;
+  plannedDurationDays: number;
+  actualDurationDays: number;
+  delayDays: number;
+  percentDelay: number;
+  formattedPlannedDuration: string;
+  formattedActualDuration: string;
+  formattedDelayDays: string;
+  formattedPercentDelay: string;
+  status: "Delayed";
+}
+
+export interface DurationOverrunWidgetResult {
+  totalMatchingProjects: number;
+  top5Projects: DurationOverrunProjectSummary[];
+}
+
+export const getProjectsWithDurationOverrun = (): DurationOverrunWidgetResult => {
+  const projects = getProjects().filter(
+    (p) => p.projectStatus !== "Archived" && p.projectStatus !== "Cancelled"
+  );
+  const today = new Date();
+
+  const durationOverruns: DurationOverrunProjectSummary[] = [];
+
+  projects.forEach((p) => {
+    if (!p.projectStartDate || !p.projectEndDate) return;
+
+    const startDate = new Date(p.projectStartDate);
+    const endDate = new Date(p.projectEndDate);
+
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return;
+
+    // Planned Duration = Project End Date - Project Start Date
+    const plannedDurationDays = Math.max(
+      1,
+      Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24))
+    );
+
+    // Actual Duration: If Project Status = Completed -> Completion Date - Project Start Date, Else Current Date - Project Start Date
+    let actualEndDate = today;
+    if (p.projectStatus === "Completed" && p.projectCompletionDate) {
+      const compDate = new Date(p.projectCompletionDate);
+      if (!isNaN(compDate.getTime())) {
+        actualEndDate = compDate;
+      }
+    }
+
+    const actualDurationDays = Math.round(
+      (actualEndDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24)
+    );
+
+    // Filter: Actual Duration > Planned Duration
+    if (actualDurationDays > plannedDurationDays) {
+      const delayDays = actualDurationDays - plannedDurationDays;
+      const pct = parseFloat(
+        (((actualDurationDays - plannedDurationDays) / plannedDurationDays) * 100).toFixed(1)
+      );
+      const name = p.client
+        ? `${p.client} – ${p.projectTitle}`
+        : p.projectTitle || "Untitled Project";
+
+      durationOverruns.push({
+        id: p.id,
+        prNumber: p.prNo || "N/A",
+        projectName: name,
+        plannedDurationDays,
+        actualDurationDays,
+        delayDays,
+        percentDelay: pct,
+        formattedPlannedDuration: `${plannedDurationDays} Days`,
+        formattedActualDuration: `${actualDurationDays} Days`,
+        formattedDelayDays: `+${delayDays} Days`,
+        formattedPercentDelay: `${pct.toFixed(1)}%`,
+        status: "Delayed",
+      });
+    }
+  });
+
+  // Sort descending by Delay Days (largest delay first)
+  durationOverruns.sort((a, b) => b.delayDays - a.delayDays);
+
+  return {
+    totalMatchingProjects: durationOverruns.length,
+    top5Projects: durationOverruns.slice(0, 5),
+  };
 };
