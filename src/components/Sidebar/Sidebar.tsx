@@ -207,12 +207,15 @@ const Sidebar = () => {
   };
 
   return (
+    // Full application height, not just the viewport: this outer element has
+    // no explicit height, so it stretches (default flex align-items: stretch)
+    // to match MainLayout's row — the same height as the Navbar+<main> column,
+    // however tall the page content makes it. That's what gives the gradient
+    // background continuous coverage all the way down a long page instead of
+    // stopping dead at 100vh and exposing the page background beneath it.
     <aside
       className="
         pmo-sidebar
-        sticky
-        top-0
-        h-screen
         w-[72px]
         min-[1440px]:w-[260px]
         flex-shrink-0
@@ -222,8 +225,6 @@ const Sidebar = () => {
         to-[var(--sidebar-to)]
         text-white
         pmo-sidebar-shadow
-        flex
-        flex-col
         transition-all
         duration-300
       "
@@ -233,8 +234,7 @@ const Sidebar = () => {
           __html: `
         /* ══ Enterprise sidebar polish — visual only, no logic here ══ */
 
-        .pmo-sidebar { position: relative; }
-        .pmo-sidebar::before {
+        .pmo-sidebar-inner::before {
           content: '';
           position: absolute; inset: 0;
           background: radial-gradient(120% 55% at 50% 0%, rgba(255,255,255,.035) 0%, transparent 62%);
@@ -365,10 +365,18 @@ const Sidebar = () => {
         }}
       />
 
-      {/* Branding — shrink-0 so it always keeps its natural size and never
-          gets compressed by the flex column, regardless of how tall
-          Navigation or Quick Summary end up being. */}
-      <div className="shrink-0 relative px-3 min-[1440px]:px-6 py-6 flex justify-center min-[1440px]:justify-start">
+      {/* The actual sidebar UI lives in this inner layer, pinned to the
+          viewport (sticky + h-screen) so the logo stays at the top and Quick
+          Summary stays anchored near the bottom exactly as before, no matter
+          how far the page has scrolled — only this layer's flex-col sizing
+          logic (nav's flex-1/min-h-0/overflow-y-auto) determines where Quick
+          Summary sits within the viewport; the outer <aside> above is purely
+          the full-height background. */}
+      <div className="pmo-sidebar-inner sticky top-0 h-screen flex flex-col">
+        {/* Branding — shrink-0 so it always keeps its natural size and never
+            gets compressed by the flex column, regardless of how tall
+            Navigation or Quick Summary end up being. */}
+        <div className="shrink-0 relative px-3 min-[1440px]:px-6 py-6 flex justify-center min-[1440px]:justify-start">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-900/40 shrink-0">
             <Droplet
@@ -566,6 +574,7 @@ const Sidebar = () => {
             })}
           </div>
         </div>
+      </div>
       </div>
 
       {/* Floating Context Menu (fixed for viewport alignment) */}
