@@ -106,9 +106,55 @@ const HeroBar = ({ lastUpdated }: Props) => {
         /* ══ Inner wrapper ══════════════════════════════════════════ */
         .pmo-hero-in {
           position: relative; z-index: 1;
-          padding: 16px 22px;
+          padding: 24px 22px;
           display: flex; align-items: center;
           justify-content: space-between; gap: 20px;
+          flex-wrap: wrap;
+        }
+
+        .pmo-chip-container {
+          display: flex; align-items: center; justify-content: flex-end;
+          flex-shrink: 0; flex-wrap: wrap; gap: 20px;
+        }
+
+        /* ══ UNIFIED CHIP BASE ══════════════════════════════════════ */
+        .pmo-chip {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px 14px;
+          border-radius: 12px;
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+          background: rgba(0,0,0,.25);
+          border: 1px solid rgba(255,255,255,.10);
+          box-shadow: 0 1px 3px rgba(0,0,0,.18);
+          flex-shrink: 0;
+          cursor: default;
+          transition: transform 250ms cubic-bezier(.22,.68,0,1.2), box-shadow 250ms ease, border-color 250ms ease, background 200ms ease;
+          will-change: transform;
+        }
+        .pmo-chip:hover {
+          transform: translateY(-3px);
+          background: rgba(255,255,255,.10) !important;
+          border-color: rgba(255,255,255,.22) !important;
+          box-shadow: 0 6px 20px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.16);
+        }
+
+        .pmo-chip-icon {
+          width: 32px; height: 32px; border-radius: 8px;
+          background: rgba(255,255,255,.10);
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .pmo-chip-label {
+          font-size: 9px; font-weight: 700; letter-spacing: .08em;
+          text-transform: uppercase; color: rgba(203,213,225,.65); line-height: 1;
+        }
+        .pmo-chip-value {
+          font-size: 12.5px; font-weight: 800; color: #ffffff;
+          line-height: 1; margin-top: 3px; white-space: nowrap;
         }
 
         /* ══ Title animations ═══════════════════════════════════════ */
@@ -123,66 +169,28 @@ const HeroBar = ({ lastUpdated }: Props) => {
         }
         .pmo-subtitle.visible { opacity: 1; transform: translateY(0); }
 
-        /* ══ UNIFIED CHIP BASE ══════════════════════════════════════
-           All four header cards share this class.
-           Identical height, padding, border-radius, shadow.
-           NOTHING inside this base class should create height differences.
-        ════════════════════════════════════════════════════════════ */
-        .pmo-chip {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          /* Fixed padding — all four chips identical */
-          padding: 8px 14px;
-          border-radius: 12px;
-          backdrop-filter: blur(14px);
-          -webkit-backdrop-filter: blur(14px);
-          /* Default glass background */
-          background: rgba(0,0,0,.25);
-          border: 1px solid rgba(255,255,255,.10);
-          box-shadow: 0 1px 3px rgba(0,0,0,.18);
-          flex-shrink: 0;
-          cursor: default;
-          /* Hover animation */
-          transition: transform 250ms cubic-bezier(.22,.68,0,1.2),
-                      box-shadow 250ms ease,
-                      border-color 250ms ease,
-                      background 200ms ease;
-          will-change: transform;
+        /* ══ Responsive Breakpoints ═════════════════════════════════ */
+        @media (min-width: 1600px) {
+          .pmo-hero-in, .pmo-chip-container { flex-wrap: nowrap; }
+          .pmo-chip { width: 220px; }
+          .pmo-hero { min-height: 170px; display: flex; align-items: center; }
         }
-        .pmo-chip:hover {
-          transform: translateY(-3px);
-          background: rgba(255,255,255,.10) !important;
-          border-color: rgba(255,255,255,.22) !important;
-          box-shadow: 0 6px 20px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.16);
+        @media (min-width: 1200px) and (max-width: 1599px) {
+          .pmo-hero-in, .pmo-chip-container { flex-wrap: nowrap; gap: 12px; }
+          .pmo-hero-in { padding: 20px 16px; }
+          .pmo-chip { width: 175px; padding: 8px 10px; gap: 8px; }
+          .pmo-chip-label { font-size: 8px; }
+          .pmo-chip-value { font-size: 11px; }
+          .pmo-title { font-size: 22px; }
+          .pmo-subtitle { font-size: 11px; max-width: 500px; }
+          .pmo-hero { min-height: 150px; display: flex; align-items: center; }
         }
-
-        /* Icon square — identical across all chips */
-        .pmo-chip-icon {
-          width: 32px;
-          height: 32px;
-          border-radius: 8px;
-          background: rgba(255,255,255,.10);
-          display: flex; align-items: center; justify-content: center;
-          flex-shrink: 0;
+        @media (max-width: 1199px) and (min-width: 768px) {
+          .pmo-chip { width: 200px; }
         }
-
-        /* Text block — identical structure across all chips */
-        .pmo-chip-label {
-          font-size: 9px;
-          font-weight: 700;
-          letter-spacing: .08em;
-          text-transform: uppercase;
-          color: rgba(203,213,225,.65);
-          line-height: 1;
-        }
-        .pmo-chip-value {
-          font-size: 12.5px;
-          font-weight: 800;
-          color: #ffffff;
-          line-height: 1;
-          margin-top: 3px;
-          white-space: nowrap;
+        @media (max-width: 767px) {
+          .pmo-chip { width: 100%; }
+          .pmo-chip-container { display: grid; grid-template-columns: repeat(2, 1fr); width: 100%; gap: 12px; }
         }
 
         /* ══ Card entrance sequence ═════════════════════════════════ */
@@ -313,7 +321,7 @@ const HeroBar = ({ lastUpdated }: Props) => {
       `}} />
 
       {/* ── Hero inner ── */}
-      <div className="pmo-hero-in flex items-center justify-between gap-5 flex-wrap min-h-[135px] py-6">
+      <div className="pmo-hero-in">
 
         {/* Left: Title + Subtitle */}
         <div className="min-w-0">
@@ -327,7 +335,7 @@ const HeroBar = ({ lastUpdated }: Props) => {
         </div>
 
         {/* Right: Four header cards — all same height */}
-        <div className="flex items-center gap-2.5 shrink-0 justify-end flex-wrap">
+        <div className="pmo-chip-container">
 
           {/* ① System Status */}
           <div className="pmo-chip pmo-chip-status pmo-card-enter pmo-card-enter-1">
