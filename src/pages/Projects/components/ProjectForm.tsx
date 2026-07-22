@@ -32,6 +32,8 @@ import InvoiceCard from "./InvoiceCard";
 import NonManhourExpenseCard from "./ExpenseInformation/NonManhourExpenseCard";
 import { syncInvoiceItemsWithQuantity } from "../../../services/invoiceSyncService";
 import { ProjectWorkspaceDrawer } from "../../../components/Dashboard/ProjectWorkspaceDrawer";
+import { useFormValidation } from "../../../hooks/useFormValidation";
+import { validateGeneralTab, validateQuantityTab, validatePaymentMilestonesTab } from "../../../utils/projectValidation";
 import "../project-workspace-theme.css";
 
 // All possible tab keys
@@ -97,17 +99,34 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
     mode === "add" ? 0 : TABS.length - 1
   );
 
+  const { errors, validate, clearError, clearAllErrors } = useFormValidation<Project>();
+
+  const validateActiveTab = (tab: TabKey): boolean => {
+    switch (tab) {
+      case "general":
+        return validate(project, validateGeneralTab);
+      case "quantity":
+        return validate(project, validateQuantityTab);
+      case "payments":
+        return validate(project, validatePaymentMilestonesTab);
+      default:
+        return true;
+    }
+  };
+
   const goToNextTab = () => {
     if (activeIndex < TABS.length - 1) {
       const nextIndex = activeIndex + 1;
       setUnlockedIndex((prev) => Math.max(prev, nextIndex));
       setActiveTab(TABS[nextIndex].key);
+      clearAllErrors();
     }
   };
 
   const goToPreviousTab = () => {
     if (activeIndex > 0) {
       setActiveTab(TABS[activeIndex - 1].key);
+      clearAllErrors();
     }
   };
 
@@ -238,7 +257,12 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
                       : undefined
                   }
                   onClick={() => {
-                    if (!isLocked) setActiveTab(key);
+                    if (!isLocked) {
+                      if (validateActiveTab(activeTab)) {
+                        clearAllErrors();
+                        setActiveTab(key);
+                      }
+                    }
                   }}
                   className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-medium transition-all duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--nu-accent)] ${
                     isActive
@@ -276,15 +300,15 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
 
         <div className="p-4">
           {activeTab === "general" && (
-            <GeneralInfoCard project={project} setProject={setProject} />
+            <GeneralInfoCard project={project} setProject={setProject} errors={errors} clearError={clearError} />
           )}
 
           {activeTab === "quantity" && (
-            <QuantityCard project={project} setProject={setProject} />
+            <QuantityCard project={project} setProject={setProject} errors={errors} clearError={clearError} />
           )}
 
           {activeTab === "payments" && (
-            <CommercialCard project={project} setProject={setProject} />
+            <CommercialCard project={project} setProject={setProject} errors={errors} clearError={clearError} />
           )}
 
           {activeTab === "budget" && (
@@ -316,6 +340,7 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
         activeTab={activeTab}
         isLastTab={isLastTab}
         isFirstTab={isFirstTab}
+        onValidate={() => validateActiveTab(activeTab)}
         onSaveAndNext={goToNextTab}
         onBack={goToPreviousTab}
       />

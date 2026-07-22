@@ -17,12 +17,17 @@ import {
 } from "../../../utils/quantityCalculations";
 import CommercialSummaryCard from "./CommercialSummaryCard";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
+import { FormLabel, RequiredAsterisk } from "../../../components/ui/FormLabel";
 import { StatTile } from "../../../components/ui/StatTile";
 import { Button } from "../../../components/ui/Button";
+
+import { FieldError } from "../../../components/ui/FieldError";
 
 interface Props {
   project: Project;
   setProject: Dispatch<SetStateAction<Project>>;
+  errors?: Record<string, string>;
+  clearError?: (field: string) => void;
 }
 
 const NUMBER_INPUT_PATTERN = /^\d*\.?\d*$/;
@@ -51,6 +56,7 @@ interface NumericInputProps {
   hasError?: boolean;
   prefix?: string;
   disabled?: boolean;
+  className?: string;
 }
 
 const NumericInput = ({
@@ -60,6 +66,7 @@ const NumericInput = ({
   hasError = false,
   prefix,
   disabled = false,
+  className = "",
 }: NumericInputProps) => {
   const [rawValue, setRawValue] = useState<string>(
     value === 0 ? "" : String(value)
@@ -108,7 +115,7 @@ const NumericInput = ({
           : hasError
           ? "border-[var(--nu-danger)] bg-[var(--nu-danger-soft)] focus:border-[var(--nu-danger)] focus:ring-[var(--nu-danger)]/20"
           : ""
-      }`}
+      } ${className}`}
     />
   );
 
@@ -277,9 +284,10 @@ const AssignedToInput = ({ value, onChange, ariaLabel }: AssignedToInputProps) =
   );
 };
 
-const QuantityCard = ({ project, setProject }: Props) => {
+const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) => {
   const handleDescriptionChange = useCallback(
     (index: number, value: string) => {
+      clearError?.(`qty_desc_${index}`);
       setProject((prev) => {
         const updatedItems = prev.quantityItems.map((item, i) =>
           i === index ? { ...item, description: value } : item
@@ -296,6 +304,10 @@ const QuantityCard = ({ project, setProject }: Props) => {
 
   const handleFieldChange = useCallback(
     (index: number, field: "woQty" | "unitRate" | "uom" | "assignedTo", value: string | number) => {
+      if (field === "woQty") clearError?.(`qty_qty_${index}`);
+      if (field === "uom") clearError?.(`qty_uom_${index}`);
+      if (field === "unitRate") clearError?.(`qty_rate_${index}`);
+
       setProject((prev) => {
         const updatedItems = prev.quantityItems.map((item, i) => {
           if (i !== index) return item;
@@ -538,13 +550,17 @@ const QuantityCard = ({ project, setProject }: Props) => {
         <CardBody className="space-y-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-32">
-              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]">
+              <FormLabel required={true} className="mb-1 !text-[11px] uppercase">
                 Currency
-              </label>
+              </FormLabel>
               <select
+                data-field="currency"
                 value={project.currency || DEFAULT_CURRENCY}
-                onChange={(e) => handleProjectCurrencyChange(e.target.value)}
-                className={fieldClass + " px-2"}
+                onChange={(e) => {
+                  handleProjectCurrencyChange(e.target.value);
+                  clearError?.("currency");
+                }}
+                className={`${fieldClass} px-2 ${errors["currency"] ? "!border-[var(--nu-danger)]" : ""}`}
               >
                 {CURRENCY_OPTIONS.map((currencyOption) => (
                   <option key={currencyOption} value={currencyOption}>
@@ -552,18 +568,26 @@ const QuantityCard = ({ project, setProject }: Props) => {
                   </option>
                 ))}
               </select>
+              <FieldError error={errors["currency"]} />
             </div>
 
             <div className="w-36">
-              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]">
+              <FormLabel required={!isCurrencyINR} className="mb-1 !text-[11px] uppercase">
                 Exchange Rate
-              </label>
-              <NumericInput
-                value={project.currentExchangeRate}
-                ariaLabel="Project Exchange Rate"
-                disabled={isCurrencyINR}
-                onChange={(value) => handleProjectExchangeRateChange(value)}
-              />
+              </FormLabel>
+              <div data-field="exchangeRate">
+                <NumericInput
+                  value={project.currentExchangeRate}
+                  ariaLabel="Project Exchange Rate"
+                  disabled={isCurrencyINR}
+                  onChange={(value) => {
+                    handleProjectExchangeRateChange(value);
+                    clearError?.("exchangeRate");
+                  }}
+                  className={errors["exchangeRate"] ? "!border-[var(--nu-danger)]" : ""}
+                />
+              </div>
+              <FieldError error={errors["exchangeRate"]} />
             </div>
           </div>
 
@@ -575,16 +599,16 @@ const QuantityCard = ({ project, setProject }: Props) => {
                     Sl
                   </th>
                   <th className="border-b border-[var(--nu-border)] px-2 py-2 text-left font-medium">
-                    Description
+                    Description <RequiredAsterisk />
                   </th>
                   <th className="w-20 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
-                    Qty
+                    Qty <RequiredAsterisk />
                   </th>
                   <th className="w-28 border-b border-[var(--nu-border)] px-2 py-2 text-center font-medium">
-                    UOM
+                    UOM <RequiredAsterisk />
                   </th>
                   <th className="w-24 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
-                    Unit Rate
+                    Unit Rate <RequiredAsterisk />
                   </th>
                   <th className="w-28 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
                     Rate (INR)
@@ -620,9 +644,10 @@ const QuantityCard = ({ project, setProject }: Props) => {
                           {index + 1}
                         </td>
 
-                        <td className="px-2 py-2">
+                        <td className="px-2 py-2 align-top">
                           <input
                             type="text"
+                            data-field={`qty_desc_${index}`}
                             value={item.description}
                             placeholder={
                               DESCRIPTION_PLACEHOLDERS[
@@ -633,28 +658,34 @@ const QuantityCard = ({ project, setProject }: Props) => {
                             onChange={(e) =>
                               handleDescriptionChange(index, e.target.value)
                             }
-                            className={fieldClass + " px-2"}
+                            className={`${fieldClass} px-2 ${errors[`qty_desc_${index}`] ? "!border-[var(--nu-danger)]" : ""}`}
                           />
+                          <FieldError error={errors[`qty_desc_${index}`]} />
                         </td>
 
-                        <td className="px-2 py-2">
-                          <NumericInput
-                            value={item.woQty}
-                            ariaLabel={`Quantity for row ${index + 1}`}
-                            onChange={(value) =>
-                              handleFieldChange(index, "woQty", value)
-                            }
-                          />
+                        <td className="px-2 py-2 align-top">
+                          <div data-field={`qty_qty_${index}`}>
+                            <NumericInput
+                              value={item.woQty}
+                              ariaLabel={`Quantity for row ${index + 1}`}
+                              onChange={(value) =>
+                                handleFieldChange(index, "woQty", value)
+                              }
+                              className={errors[`qty_qty_${index}`] ? "!border-[var(--nu-danger)]" : ""}
+                            />
+                          </div>
+                          <FieldError error={errors[`qty_qty_${index}`]} />
                         </td>
 
-                        <td className="px-2 py-2">
+                        <td className="px-2 py-2 align-top">
                           <select
+                            data-field={`qty_uom_${index}`}
                             value={item.uom || "DAY"}
                             aria-label={`UOM for row ${index + 1}`}
                             onChange={(e) =>
                               handleFieldChange(index, "uom", e.target.value)
                             }
-                            className={fieldClass + " px-1.5"}
+                            className={`${fieldClass} px-1.5 ${errors[`qty_uom_${index}`] ? "!border-[var(--nu-danger)]" : ""}`}
                           >
                             {UOM_OPTIONS.map((opt) => (
                               <option key={opt} value={opt}>
@@ -662,16 +693,21 @@ const QuantityCard = ({ project, setProject }: Props) => {
                               </option>
                             ))}
                           </select>
+                          <FieldError error={errors[`qty_uom_${index}`]} />
                         </td>
 
-                        <td className="px-2 py-2">
-                          <NumericInput
-                            value={item.unitRate}
-                            ariaLabel={`Unit Rate for row ${index + 1}`}
-                            onChange={(value) =>
-                              handleFieldChange(index, "unitRate", value)
-                            }
-                          />
+                        <td className="px-2 py-2 align-top">
+                          <div data-field={`qty_rate_${index}`}>
+                            <NumericInput
+                              value={item.unitRate}
+                              ariaLabel={`Unit Rate for row ${index + 1}`}
+                              onChange={(value) =>
+                                handleFieldChange(index, "unitRate", value)
+                              }
+                              className={errors[`qty_rate_${index}`] ? "!border-[var(--nu-danger)]" : ""}
+                            />
+                          </div>
+                          <FieldError error={errors[`qty_rate_${index}`]} />
                         </td>
 
                         <td className="px-2 py-2 text-right">

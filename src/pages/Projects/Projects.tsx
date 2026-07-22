@@ -485,38 +485,54 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
             </p>
             {/* Status counts */}
             <div className="chips flex items-center gap-2 mt-4">
-              <div className="pmo-chip">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mb-1"></span>
-                <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.active}</span>
-                <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">Active</span>
-              </div>
-              <div className="pmo-chip">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mb-1"></span>
-                <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.onHold}</span>
-                <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">On Hold</span>
-              </div>
+              {mode !== "completed" && (
+                <>
+                  <div className="pmo-chip">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mb-1"></span>
+                    <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.active}</span>
+                    <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">Active</span>
+                  </div>
+                  <div className="pmo-chip">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mb-1"></span>
+                    <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.onHold}</span>
+                    <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">On Hold</span>
+                  </div>
+                </>
+              )}
               <div className="pmo-chip">
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mb-1"></span>
                 <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.completed}</span>
                 <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">Completed</span>
               </div>
-              <div className="pmo-chip">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-400 mb-1"></span>
-                <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.cancelled}</span>
-                <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cancelled</span>
-              </div>
+              {mode !== "completed" && (
+                <div className="pmo-chip">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 mb-1"></span>
+                  <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.cancelled}</span>
+                  <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cancelled</span>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Right actions & clock */}
           <div className="flex flex-col items-end gap-3 shrink-0">
-            <button
-              onClick={() => navigate("/projects/add")}
-              className="btn-add flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg transition duration-150 transform hover:-translate-y-px"
-            >
-              <Plus size={15} />
-              Add Project
-            </button>
+            {mode === "completed" ? (
+              <button
+                onClick={handleExport}
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold px-4 py-2 rounded-lg backdrop-blur-md transition-all duration-200 text-sm shadow-sm"
+              >
+                <Download size={14} />
+                Export Archive
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate("/projects/add")}
+                className="btn-add flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg transition duration-150 transform hover:-translate-y-px"
+              >
+                <Plus size={15} />
+                Add Project
+              </button>
+            )}
             <div className="text-right flex flex-col items-end gap-1.5">
               <span className="pmo-live-pill">
                 <span className="pmo-live-dot"></span>
@@ -538,53 +554,55 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       </div>
 
       {/* ═══════════ KPI SUMMARY BAR ═══════════ */}
-      <div className="grid grid-cols-5 gap-3">
-        <div className="pmo-mc bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3 shadow-sm">
-          <div className="mi w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/20 flex items-center justify-center">
-            <FolderKanban size={15} className="text-blue-500" />
+      {mode !== "completed" && (
+        <div className="grid grid-cols-5 gap-3">
+          <div className="pmo-mc bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+            <div className="mi w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/20 flex items-center justify-center">
+              <FolderKanban size={15} className="text-blue-500" />
+            </div>
+            <div>
+              <div className="ml text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase">Total Projects</div>
+              <div className="mv text-lg font-black text-slate-800 dark:text-slate-100 leading-none mt-1">{projects.length}</div>
+            </div>
           </div>
-          <div>
-            <div className="ml text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase">Total Projects</div>
-            <div className="mv text-lg font-black text-slate-800 dark:text-slate-100 leading-none mt-1">{projects.length}</div>
+          <div className="pmo-mc bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+            <div className="mi w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 flex items-center justify-center">
+              <FolderKanban size={15} className="text-emerald-500" />
+            </div>
+            <div>
+              <div className="ml text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase">Active</div>
+              <div className="mv text-lg font-black text-emerald-600 dark:text-emerald-400 leading-none mt-1">{stats.active}</div>
+            </div>
+          </div>
+          <div className="pmo-mc bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+            <div className="mi w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/20 flex items-center justify-center">
+              <FolderKanban size={15} className="text-indigo-500" />
+            </div>
+            <div>
+              <div className="ml text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase">Completed</div>
+              <div className="mv text-lg font-black text-indigo-600 dark:text-indigo-400 leading-none mt-1">{stats.completed}</div>
+            </div>
+          </div>
+          <div className="pmo-mc bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+            <div className="mi w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/20 flex items-center justify-center">
+              <FolderKanban size={15} className="text-amber-500" />
+            </div>
+            <div>
+              <div className="ml text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase">Pending Invoice</div>
+              <div className="mv text-lg font-black text-amber-600 dark:text-amber-400 leading-none mt-1">{stats.pendingInvoice}</div>
+            </div>
+          </div>
+          <div className="pmo-mc bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+            <div className="mi w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/20 flex items-center justify-center">
+              <FolderKanban size={15} className="text-rose-500" />
+            </div>
+            <div>
+              <div className="ml text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase">Outstanding</div>
+              <div className="mv text-lg font-black text-rose-600 dark:text-rose-400 leading-none mt-1">{fmtWOValue(stats.totalOutstanding)}</div>
+            </div>
           </div>
         </div>
-        <div className="pmo-mc bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3 shadow-sm">
-          <div className="mi w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 flex items-center justify-center">
-            <FolderKanban size={15} className="text-emerald-500" />
-          </div>
-          <div>
-            <div className="ml text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase">Active</div>
-            <div className="mv text-lg font-black text-emerald-600 dark:text-emerald-400 leading-none mt-1">{stats.active}</div>
-          </div>
-        </div>
-        <div className="pmo-mc bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3 shadow-sm">
-          <div className="mi w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/20 flex items-center justify-center">
-            <FolderKanban size={15} className="text-indigo-500" />
-          </div>
-          <div>
-            <div className="ml text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase">Completed</div>
-            <div className="mv text-lg font-black text-indigo-600 dark:text-indigo-400 leading-none mt-1">{stats.completed}</div>
-          </div>
-        </div>
-        <div className="pmo-mc bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3 shadow-sm">
-          <div className="mi w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/20 flex items-center justify-center">
-            <FolderKanban size={15} className="text-amber-500" />
-          </div>
-          <div>
-            <div className="ml text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase">Pending Invoice</div>
-            <div className="mv text-lg font-black text-amber-600 dark:text-amber-400 leading-none mt-1">{stats.pendingInvoice}</div>
-          </div>
-        </div>
-        <div className="pmo-mc bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3 shadow-sm">
-          <div className="mi w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/20 flex items-center justify-center">
-            <FolderKanban size={15} className="text-rose-500" />
-          </div>
-          <div>
-            <div className="ml text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase">Outstanding</div>
-            <div className="mv text-lg font-black text-rose-600 dark:text-rose-400 leading-none mt-1">{fmtWOValue(stats.totalOutstanding)}</div>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* ═══════════ PROJECT REPOSITORY CARD ═══════════ */}
       <div className="pmo-repo bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm flex flex-col min-h-0">
@@ -690,50 +708,56 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
               Sort
             </button>
 
-            {/* Export button */}
-            <button
-              onClick={handleExport}
-              className="tbtn flex items-center gap-1 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400"
-            >
-              <Download size={11} />
-              Export
-            </button>
+            {mode !== "completed" && (
+              <>
+                {/* Export button */}
+                <button
+                  onClick={handleExport}
+                  className="tbtn flex items-center gap-1 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400"
+                >
+                  <Download size={11} />
+                  Export
+                </button>
 
-            {/* Import Button */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="tbtn flex items-center gap-1 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400"
-            >
-              <Upload size={11} />
-              Import
-            </button>
+                {/* Import Button */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="tbtn flex items-center gap-1 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400"
+                >
+                  <Upload size={11} />
+                  Import
+                </button>
 
-            {/* Hidden Input for Import */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleImportFile}
-              accept=".xlsx, .csv"
-              className="hidden"
-            />
+                {/* Hidden Input for Import */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleImportFile}
+                  accept=".xlsx, .csv"
+                  className="hidden"
+                />
 
-            {/* Reset Filters */}
-            <button
-              onClick={rst}
-              className="tbtn rst flex items-center gap-1 px-3 py-1.5 border border-red-200 rounded-lg text-xs bg-red-50/50 text-red-600"
-            >
-              Reset
-            </button>
+                {/* Reset Filters */}
+                <button
+                  onClick={rst}
+                  className="tbtn rst flex items-center gap-1 px-3 py-1.5 border border-red-200 rounded-lg text-xs bg-red-50/50 text-red-600"
+                >
+                  Reset
+                </button>
+              </>
+            )}
           </div>
 
           {/* Download Template button */}
-          <button
-            onClick={handleDownloadTemplate}
-            className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-          >
-            <Download size={10} />
-            Download Sample Template
-          </button>
+          {mode !== "completed" && (
+            <button
+              onClick={handleDownloadTemplate}
+              className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+            >
+              <Download size={10} />
+              Download Sample Template
+            </button>
+          )}
         </div>
 
         {/* TABLE CONTAINER */}

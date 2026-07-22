@@ -18,14 +18,11 @@ interface Props {
   setProject: Dispatch<SetStateAction<Project>>;
   mode: "add" | "edit";
   activeTab: string;
-  /** When true, shows the Save / Update Project primary button. When false, only Save & Next is shown. */
   isLastTab: boolean;
-  /** When true, Back exits to the Project Repository instead of going to the previous tab. */
   isFirstTab: boolean;
-  /** Advances the form to the next tab. Called after the current tab's data is validated and saved. */
   onSaveAndNext: () => void;
-  /** Moves the form to the previous tab. Not called when already on the first tab. */
   onBack: () => void;
+  onValidate?: () => boolean;
 }
 
 const FormButtons = ({
@@ -37,24 +34,10 @@ const FormButtons = ({
   isFirstTab,
   onSaveAndNext,
   onBack,
+  onValidate,
 }: Props) => {
   const navigate = useNavigate();
 
-  const validate = (): boolean => {
-    if (
-      project.prNo.trim() === "" ||
-      project.client.trim() === "" ||
-      project.projectTitle.trim() === ""
-    ) {
-      alert("Please fill PR Number, Client, and Project Title.");
-      return false;
-    }
-
-    return true;
-  };
-
-  // Upserts by id so repeatedly saving while stepping through tabs in Add
-  // Project never creates duplicate project records.
   const saveProjectData = () => {
     const timestamp = new Date().toISOString();
     const existing = getProjectById(project.id);
@@ -75,14 +58,14 @@ const FormButtons = ({
   };
 
   const handleSave = () => {
-    if (!validate()) return;
+    if (onValidate && !onValidate()) return;
     saveProjectData();
     alert(mode === "add" ? "Project Saved Successfully!" : "Project Updated Successfully!");
     navigate("/projects");
   };
 
   const handleSaveAndNext = () => {
-    if (!validate()) return;
+    if (onValidate && !onValidate()) return;
     saveProjectData();
     onSaveAndNext();
   };
