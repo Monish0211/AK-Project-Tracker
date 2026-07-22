@@ -9,8 +9,11 @@ import {
   Droplet,
   FolderKanban,
   LayoutDashboard,
+  PauseCircle,
+  PlayCircle,
   Settings,
   Users,
+  XCircle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as XLSX from "xlsx";
@@ -29,6 +32,13 @@ interface NavItem {
   to?: string;
   icon: LucideIcon;
   children?: NavChild[];
+  /**
+   * Notification-ready but not wired to anything yet — no menu item sets
+   * this today, so nothing renders. Kept as an explicit field so a future
+   * "N unread" or "has updates" signal can flow in without touching the
+   * rendering logic below.
+   */
+  hasNotification?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -49,23 +59,24 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 interface SummaryRow {
-  dot: string;
+  icon: LucideIcon;
+  color: string;
   label: string;
   statusKey: string;
 }
 
 const SUMMARY_ROWS: SummaryRow[] = [
-  { dot: "bg-emerald-500", label: "Active Projects", statusKey: "Active" },
-  { dot: "bg-amber-500", label: "On Hold", statusKey: "On Hold" },
-  { dot: "bg-indigo-400", label: "Completed", statusKey: "Completed" },
-  { dot: "bg-red-400", label: "Cancelled", statusKey: "Cancelled" },
+  { icon: PlayCircle, color: "text-emerald-400", label: "Active Projects", statusKey: "Active" },
+  { icon: PauseCircle, color: "text-amber-400", label: "On Hold", statusKey: "On Hold" },
+  { icon: CheckCircle2, color: "text-indigo-400", label: "Completed", statusKey: "Completed" },
+  { icon: XCircle, color: "text-red-400", label: "Cancelled", statusKey: "Cancelled" },
 ];
 
 const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  
+
   // Live project state
   const [projects, setProjects] = useState<Project[]>(getProjects());
 
@@ -198,6 +209,7 @@ const Sidebar = () => {
   return (
     <aside
       className="
+        pmo-sidebar
         sticky
         top-0
         h-screen
@@ -209,15 +221,152 @@ const Sidebar = () => {
         via-[var(--sidebar-via)]
         to-[var(--sidebar-to)]
         text-white
-        shadow-2xl
+        pmo-sidebar-shadow
         flex
         flex-col
         transition-all
         duration-300
       "
     >
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        /* ══ Enterprise sidebar polish — visual only, no logic here ══ */
+
+        .pmo-sidebar { position: relative; }
+        .pmo-sidebar::before {
+          content: '';
+          position: absolute; inset: 0;
+          background: radial-gradient(120% 55% at 50% 0%, rgba(255,255,255,.035) 0%, transparent 62%);
+          pointer-events: none;
+        }
+        .pmo-sidebar-shadow {
+          box-shadow: 4px 0 24px rgba(0,0,0,.28), 1px 0 0 rgba(255,255,255,.04) inset;
+        }
+
+        /* ── Premium nav item hover ─────────────────────────────────── */
+        .pmo-nav-item {
+          position: relative;
+          transition: transform 230ms cubic-bezier(.22,.68,0,1.05),
+                      background-color 220ms ease,
+                      box-shadow 230ms ease,
+                      color 220ms ease;
+        }
+        .pmo-nav-item:hover:not(.pmo-nav-active) {
+          transform: translate(3px, -1px);
+          box-shadow: 0 4px 14px rgba(0,0,0,.22);
+        }
+        .pmo-nav-item:focus-visible {
+          outline: 2px solid rgba(96,165,250,.6);
+          outline-offset: 2px;
+        }
+        .pmo-nav-icon {
+          transition: transform 220ms ease, filter 220ms ease;
+          display: inline-flex;
+        }
+        .pmo-nav-item:hover .pmo-nav-icon { transform: scale(1.05); filter: brightness(1.25); }
+        .pmo-nav-label { transition: color 220ms ease, opacity 220ms ease; }
+        .pmo-nav-item:hover .pmo-nav-label { color: #ffffff; }
+
+        /* ── Premium active state — soft glass gradient card ───────── */
+        .pmo-nav-active {
+          background: linear-gradient(135deg, rgba(37,99,235,.85) 0%, rgba(8,145,178,.75) 100%);
+          border: 1px solid rgba(125,211,252,.35);
+          box-shadow: 0 6px 20px rgba(37,99,235,.28), 0 2px 6px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.14);
+          transform: translateY(-1px);
+        }
+        .pmo-nav-active:hover { transform: translateY(-1.5px); }
+
+        /* ── Projects dropdown expand/collapse ─────────────────────── */
+        .pmo-dropdown-panel {
+          overflow: hidden;
+          max-height: 0;
+          opacity: 0;
+          transform: translateY(-4px);
+          transition: max-height 320ms cubic-bezier(.22,.68,0,1),
+                      opacity 220ms ease,
+                      transform 260ms ease;
+        }
+        .pmo-dropdown-panel.pmo-dropdown-open {
+          max-height: 140px;
+          opacity: 1;
+          transform: translateY(0);
+        }
+        .pmo-dropdown-chevron { transition: transform 220ms ease; }
+        .pmo-dropdown-chevron.pmo-rotated { transform: rotate(180deg); }
+
+        /* ── Child list connector (wide sidebar only) ──────────────── */
+        .pmo-child-list { position: relative; }
+        @media (min-width: 1440px) {
+          .pmo-child-list::before {
+            content: '';
+            position: absolute;
+            left: 9px;
+            top: -4px;
+            bottom: 12px;
+            width: 1px;
+            background: linear-gradient(to bottom, rgba(255,255,255,.18), rgba(255,255,255,.04));
+          }
+        }
+
+        /* ── Active child item ──────────────────────────────────────  */
+        .pmo-child-active {
+          position: relative;
+          background: rgba(59,130,246,.14);
+          border: 1px solid rgba(96,165,250,.28);
+          box-shadow: 0 2px 8px rgba(37,99,235,.16);
+        }
+        @media (min-width: 1440px) {
+          .pmo-child-active::before {
+            content: '';
+            position: absolute;
+            left: -2px; top: 5px; bottom: 5px;
+            width: 3px; border-radius: 0 3px 3px 0;
+            background: #60a5fa;
+          }
+        }
+
+        /* ── Quick Summary rows ─────────────────────────────────────── */
+        .pmo-qs-card {
+          transition: box-shadow 220ms ease, background-color 220ms ease;
+        }
+        .pmo-qs-row { transition: background-color 180ms ease, filter 180ms ease, transform 180ms ease; }
+        .pmo-qs-row:hover { filter: brightness(1.1); }
+        .pmo-qs-icon { transition: transform 200ms ease; }
+        .pmo-qs-row:hover .pmo-qs-icon { transform: scale(1.08); }
+
+        /* ── Divider ────────────────────────────────────────────────── */
+        .pmo-divider {
+          height: 1px;
+          border: none;
+          background: linear-gradient(to right, transparent, rgba(255,255,255,.16), transparent);
+        }
+
+        /* ── Notification pulse dot (future-ready; only renders when a
+             nav item's hasNotification is true — none set one yet) ──── */
+        .pmo-nav-dot {
+          width: 6px; height: 6px; border-radius: 9999px;
+          background: #ef4444;
+          animation: pmoDotPulse 1.8s ease-in-out infinite;
+        }
+        @keyframes pmoDotPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.55); }
+          50%       { box-shadow: 0 0 0 4px rgba(239,68,68,0); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .pmo-nav-item, .pmo-nav-icon, .pmo-nav-label, .pmo-nav-active,
+          .pmo-dropdown-panel, .pmo-dropdown-chevron, .pmo-qs-row, .pmo-qs-icon {
+            transition: none !important;
+            animation: none !important;
+          }
+        }
+      `,
+        }}
+      />
+
       {/* Branding */}
-      <div className="px-3 min-[1440px]:px-6 py-6 flex justify-center min-[1440px]:justify-start">
+      <div className="relative px-3 min-[1440px]:px-6 py-6 flex justify-center min-[1440px]:justify-start">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-900/40 shrink-0">
             <Droplet
@@ -226,17 +375,20 @@ const Sidebar = () => {
             />
           </div>
           <div className="hidden min-[1440px]:block">
-            <h1 className="text-lg font-bold">
+            <h1 className="text-lg font-bold tracking-tight">
               iFluids
             </h1>
-            <p className="text-xs uppercase tracking-wider text-slate-400">
-              PMO Portal
+            <p className="text-[10.5px] font-medium uppercase text-slate-400/80 tracking-[0.14em] leading-tight mt-0.5">
+              Engineering PMO
+            </p>
+            <p className="text-[10px] font-medium text-slate-500/70 tracking-[0.1em] leading-tight">
+              Enterprise Portal
             </p>
           </div>
         </div>
       </div>
 
-      <div className="mx-3 min-[1440px]:mx-6 border-t border-white/10" />
+      <hr className="pmo-divider mx-3 min-[1440px]:mx-6 my-1" />
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-2 min-[1440px]:px-4 py-5">
@@ -249,31 +401,40 @@ const Sidebar = () => {
                   <button
                     type="button"
                     onClick={() => setIsProjectsOpen((v) => !v)}
+                    aria-expanded={isProjectsOpen}
+                    aria-controls="pmo-projects-submenu"
                     className={`
+                      pmo-nav-item
                       w-full flex items-center justify-center min-[1440px]:justify-between
                       gap-3 rounded-xl px-3 min-[1440px]:px-4 py-3 text-sm font-medium
-                      transition-all duration-300
                       ${
                         isProjectsSectionActive
-                          ? "bg-gradient-to-r from-blue-600 to-cyan-500 shadow-lg shadow-blue-900/40 active-nav-link"
+                          ? "pmo-nav-active text-white"
                           : "text-slate-300 hover:bg-white/10 hover:text-white"
                       }
                     `}
                   >
                     <span className="flex items-center gap-3">
-                      <ParentIcon size={19} className="shrink-0" />
-                      <span className="hidden min-[1440px]:block">{item.label}</span>
+                      <ParentIcon size={19} className="pmo-nav-icon shrink-0" />
+                      <span className="pmo-nav-label hidden min-[1440px]:block font-semibold tracking-[0.01em]">
+                        {item.label}
+                      </span>
+                      {item.hasNotification && <span className="pmo-nav-dot hidden min-[1440px]:inline-block" />}
                     </span>
                     <ChevronDown
                       size={15}
-                      className={`hidden min-[1440px]:block shrink-0 transition-transform duration-200 ${
-                        isProjectsOpen ? "rotate-180" : ""
+                      className={`pmo-dropdown-chevron hidden min-[1440px]:block shrink-0 ${
+                        isProjectsOpen ? "pmo-rotated" : ""
                       }`}
                     />
                   </button>
 
-                  {isProjectsOpen && (
-                    <ul className="mt-1.5 space-y-1 min-[1440px]:pl-4">
+                  <div
+                    id="pmo-projects-submenu"
+                    role="group"
+                    className={`pmo-dropdown-panel ${isProjectsOpen ? "pmo-dropdown-open" : ""}`}
+                  >
+                    <ul className="pmo-child-list mt-1.5 space-y-1 min-[1440px]:pl-5 ml-1">
                       {item.children.map((child) => {
                         const ChildIcon = child.icon;
                         const childActive =
@@ -283,29 +444,29 @@ const Sidebar = () => {
                             <NavLink
                               to={child.to}
                               className={`
+                                pmo-nav-item
                                 flex items-center justify-center min-[1440px]:justify-start
                                 gap-3 rounded-xl px-3 min-[1440px]:px-4 py-2.5 text-sm font-medium
-                                transition-all duration-300
                                 ${
                                   childActive
-                                    ? "bg-white/15 text-white shadow-inner"
+                                    ? "pmo-child-active text-white"
                                     : "text-slate-400 hover:bg-white/10 hover:text-white"
                                 }
                               `}
                             >
-                              <ChildIcon size={16} className="shrink-0" />
-                              <span className="hidden min-[1440px]:block truncate">{child.label}</span>
+                              <ChildIcon size={16} className="pmo-nav-icon shrink-0" />
+                              <span className="pmo-nav-label hidden min-[1440px]:block truncate">{child.label}</span>
                             </NavLink>
                           </li>
                         );
                       })}
                     </ul>
-                  )}
+                  </div>
                 </li>
               );
             }
 
-            const { label, to, icon: Icon } = item;
+            const { label, to, icon: Icon, hasNotification } = item;
             return (
               <li key={to}>
                 <NavLink
@@ -313,6 +474,7 @@ const Sidebar = () => {
                   end={to === "/"}
                   className={({ isActive }) =>
                     `
+                    pmo-nav-item
                     flex
                     items-center
                     justify-center
@@ -324,21 +486,20 @@ const Sidebar = () => {
                     py-3
                     text-sm
                     font-medium
-                    transition-all
-                    duration-300
                     ${
                       isActive
-                        ? "bg-gradient-to-r from-blue-600 to-cyan-500 shadow-lg shadow-blue-900/40 active-nav-link"
-                        : "text-slate-300 hover:bg-white/10 hover:text-white min-[1440px]:hover:translate-x-1"
+                        ? "pmo-nav-active text-white"
+                        : "text-slate-300 hover:bg-white/10 hover:text-white"
                     }
                   `
                   }
                 >
                   <Icon
                     size={19}
-                    className="shrink-0"
+                    className="pmo-nav-icon shrink-0"
                   />
-                  <span className="hidden min-[1440px]:block">{label}</span>
+                  <span className="pmo-nav-label hidden min-[1440px]:block font-semibold tracking-[0.01em]">{label}</span>
+                  {hasNotification && <span className="pmo-nav-dot hidden min-[1440px]:inline-block" />}
                 </NavLink>
               </li>
             );
@@ -348,13 +509,13 @@ const Sidebar = () => {
 
       {/* Bottom Summary */}
       <div className="hidden min-[1440px]:block p-4">
-        <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-4 shadow-xl">
+        <div className="pmo-qs-card rounded-2xl border border-white/10 bg-white/[0.06] backdrop-blur-sm p-4 shadow-xl">
           <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-slate-400">
             Quick Summary
           </h3>
 
           <div className="space-y-2">
-            {SUMMARY_ROWS.map(({ dot, label, statusKey }) => {
+            {SUMMARY_ROWS.map(({ icon: Icon, color, label, statusKey }) => {
               const active = isStatusActive(statusKey);
               const value = counts[statusKey] ?? 0;
               return (
@@ -363,7 +524,7 @@ const Sidebar = () => {
                   onClick={() => handleRowClick(statusKey)}
                   onContextMenu={(e) => handleContextMenu(e, statusKey)}
                   tabIndex={0}
-                  className={`w-full relative flex items-center justify-between text-sm px-3.5 py-2.5 rounded-xl border border-transparent transition-all duration-200 cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-blue-500/40 select-none group active:scale-[0.98] ${
+                  className={`pmo-qs-row w-full relative flex items-center justify-between text-sm px-3.5 py-2.5 rounded-xl border border-transparent cursor-pointer text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 select-none group active:scale-[0.98] ${
                     active
                       ? "bg-white/10 text-white font-bold border-white/5 shadow-inner"
                       : "text-slate-300 hover:bg-white/5 hover:text-white"
@@ -379,10 +540,7 @@ const Sidebar = () => {
                   />
 
                   <div className="flex items-center gap-2.5 pl-1">
-                    {/* Status dot */}
-                    <span
-                      className={`h-2 w-2 rounded-full transition-transform duration-200 group-hover:scale-125 shrink-0 ${dot}`}
-                    />
+                    <Icon size={15} className={`pmo-qs-icon shrink-0 ${color}`} />
                     <span className="text-xs font-semibold tracking-wide">
                       {label}
                     </span>
