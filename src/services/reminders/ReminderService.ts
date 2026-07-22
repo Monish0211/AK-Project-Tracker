@@ -20,6 +20,20 @@ const toDateTimeParts = (d: Date): { date: string; time: string } => ({
   time: `${pad2(d.getHours())}:${pad2(d.getMinutes())}`,
 });
 
+// If an edit touches any of these, the reminder's schedule (when/whether it
+// should fire, or how it should read when it does) has materially changed,
+// so it must behave exactly like a newly created reminder — never silently
+// stay "already fired" forever because of a stale trigger flag from before
+// the edit.
+const SCHEDULING_FIELDS: (keyof ProjectReminder)[] = [
+  "reminderDate",
+  "reminderTime",
+  "notifyOffset",
+  "repeat",
+  "reminderType",
+  "priority",
+];
+
 class ReminderServiceFacade {
   getAllReminders(): ProjectReminder[] {
     return repository.getAll();
@@ -50,17 +64,29 @@ class ReminderServiceFacade {
   updateReminder(id: string, updates: Partial<ProjectReminder>) {
     let reminders = this.getAllReminders();
     reminders = reminders.map((r) => {
-      if (r.id === id) {
-        const updated = { ...r, ...updates };
-        if (updated.status === "Completed" && r.status !== "Completed") {
-          updated.isCompleted = true;
-          updated.completedDate = new Date().toISOString();
-        } else if (updated.status !== "Completed") {
-          updated.isCompleted = false;
-        }
-        return updated;
+      if (r.id !== id) return r;
+
+      const updated = { ...r, ...updates };
+      if (updated.status === "Completed" && r.status !== "Completed") {
+        updated.isCompleted = true;
+        updated.completedDate = new Date().toISOString();
+      } else if (updated.status !== "Completed") {
+        updated.isCompleted = false;
       }
-      return r;
+
+      // Editing must never require deleting and recreating the reminder: if
+      // any scheduling-relevant field actually changed, clear the trigger
+      // state so the Scheduler recalculates and fires again at the new time,
+      // instead of the reminder being permanently skipped as "already fired".
+      const schedulingChanged = SCHEDULING_FIELDS.some(
+        (field) => field in updates && updates[field] !== r[field]
+      );
+      if (schedulingChanged) {
+        updated.notificationGenerated = false;
+        updated.triggeredAt = undefined;
+      }
+
+      return updated;
     });
     repository.saveAll(reminders);
     this.emitChange();

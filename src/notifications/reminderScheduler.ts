@@ -34,11 +34,25 @@ const computeTriggerTime = (reminder: ProjectReminder): Date => {
  */
 class ReminderScheduler {
   private timerId: number | null = null;
+  private onDataChanged = (): void => {
+    // Deferred rather than called inline: this listener also fires as a
+    // side effect of this scheduler's own fire() (via updateReminder ->
+    // emitChange), so running synchronously would re-enter tick() from
+    // inside its own forEach. Deferring to a fresh task breaks that chain
+    // while still re-checking effectively immediately.
+    setTimeout(() => this.tick(), 0);
+  };
 
   start(): void {
     if (this.timerId !== null) return; // already running — idempotent
     this.tick(); // catch up immediately (covers reminders that became due while the app was closed)
     this.timerId = window.setInterval(() => this.tick(), POLL_INTERVAL_MS);
+
+    // Re-check immediately whenever a reminder is created, edited, snoozed,
+    // completed, or deleted — reminderService.emitChange() fires this event
+    // on every one of those — instead of waiting up to POLL_INTERVAL_MS for
+    // the next scheduled poll. No page refresh is ever required.
+    window.addEventListener("pmo:reminders-changed", this.onDataChanged);
   }
 
   stop(): void {
@@ -46,6 +60,7 @@ class ReminderScheduler {
       window.clearInterval(this.timerId);
       this.timerId = null;
     }
+    window.removeEventListener("pmo:reminders-changed", this.onDataChanged);
   }
 
   private tick(): void {

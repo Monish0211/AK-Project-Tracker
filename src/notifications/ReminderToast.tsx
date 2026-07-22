@@ -11,11 +11,6 @@ interface Props {
   onDismiss: (id: string) => void;
 }
 
-// Non-critical, not-yet-due toasts auto-dismiss after this long so the stack
-// doesn't accumulate stale "heads up" popups. Due-now / Critical-priority
-// toasts never auto-dismiss — they stay until the user acts.
-const AUTO_DISMISS_MS = 10_000;
-
 const SNOOZE_OPTIONS: { option: SnoozeOption; label: string }[] = [
   { option: "5m", label: "5 Minutes" },
   { option: "10m", label: "10 Minutes" },
@@ -83,14 +78,9 @@ export const ReminderToast: React.FC<Props> = ({ toast, onDismiss }) => {
     return () => clearInterval(id);
   }, []);
 
-  // Auto-dismiss only while not critical / not yet due. Re-armed whenever
-  // isCritical flips (e.g. countdown reaching zero cancels it for good).
-  useEffect(() => {
-    if (isCritical) return;
-    const t = setTimeout(() => handleDismiss(), AUTO_DISMISS_MS);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCritical]);
+  // No auto-dismiss, ever — the toast stays visible until the user takes an
+  // explicit action (Open Project, Snooze, or Dismiss). Project reminders
+  // must never disappear on their own while someone is looking elsewhere.
 
   useEffect(() => {
     if (!showSnoozeMenu) return;
