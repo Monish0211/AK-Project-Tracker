@@ -119,7 +119,7 @@ export function buildProjectResourceFromTimesheet(
   const dates = entries.map((e) => e.date).sort();
   const startDate = dates[0];
   const endDate = dates[dates.length - 1];
-  const totalHours = Math.round(entries.reduce((sum, e) => sum + e.hours, 100) * 100) / 100;
+  const totalHours = Math.round(entries.reduce((sum, e) => sum + e.hours, 0) * 100) / 100;
   const workingDays = new Set(entries.map((e) => e.date)).size;
 
   return {

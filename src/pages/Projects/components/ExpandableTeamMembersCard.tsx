@@ -17,17 +17,15 @@ import {
 } from "lucide-react";
 import type { Project } from "../../../types/Project";
 import {
-  getLiveEmployeeDailyEntries,
-  getLiveProjectMonths,
-  getLiveTeamMembers,
-  hasLiveTimesheetData,
-} from "../../../services/timesheetSyncService";
+  getProcessedProjectMonths,
+  hasProcessedTimesheetData,
+  getProcessedTeamMembers,
+} from "../../../services/timesheetProcessingService";
 import {
   formatDisplayDate,
   formatMonthDisplay,
   getAllTimesheetImports,
 } from "../../../services/timesheetService";
-import { getEmployees } from "../../../services/employeeService";
 import { getTotalNonManhourCost } from "../../../services/expenseService";
 import { getProjectCommercialSummary } from "../../../services/invoiceProgressService";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
@@ -66,13 +64,12 @@ const InfoField = ({ label, value, accent }: { label: string; value: string; acc
 const ExpandableTeamMembersCard = ({ project }: Props) => {
   const [allImports, setAllImports] = useState(() => getAllTimesheetImports());
   const [expandedEmployeeNo, setExpandedEmployeeNo] = useState<string | null>(null);
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const masterEmployees = useMemo(() => getEmployees(), []);
-
-  const availableMonths = getLiveProjectMonths(project.prNo, allImports);
-  const hasSyncedData = hasLiveTimesheetData(project.prNo, allImports);
+  const availableMonths = getProcessedProjectMonths(project.prNo, allImports);
+  const hasSyncedData = hasProcessedTimesheetData(project.prNo, allImports);
 
   // Default to latest available month whenever the matched months change.
   useEffect(() => {
@@ -99,40 +96,25 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
     setTimeout(() => setIsRefreshing(false), 400);
   };
 
-  const employees = getLiveTeamMembers(project.prNo, allImports, selectedMonth);
-
-  // Fetch Designation/Department/Reporting Manager/Grade/Hourly Rate fresh
-  // from the Manpower module for each synced employee, then calculate this
-  // project's Man-Hour Cost independently per employee.
-  const enrichedEmployees = useMemo(() => {
-    return employees.map((emp) => {
-      const master = masterEmployees.find(
-        (m) => m.employeeNo.trim().toLowerCase() === emp.employeeNo.trim().toLowerCase()
-      );
-      const hourlyRate = master?.manhourExpenses || 0;
-      return {
-        ...emp,
-        designation: master?.designation || emp.designation,
-        department: master?.department || emp.department,
-        reportingManager: master?.reportingManager || emp.reportingManager,
-        grade: master?.grade || "",
-        hourlyRate,
-        manHourCost: (emp.totalHours || 0) * hourlyRate,
-      };
-    });
-  }, [employees, masterEmployees]);
+  // Consolidated per-employee summaries — Total Hours, Working Days (unique
+  // dates only), Hourly Rate and Man-Hour Cost all come from the single
+  // TimesheetProcessingService, which groups raw entries by Employee Number
+  // + Project Number + Work Date. Each summary carries `.days`, one
+  // consolidated row per date with the original raw rows for that day
+  // preserved for drill-down/audit.
+  const employees = getProcessedTeamMembers(project.prNo, allImports, selectedMonth);
 
   const resourceSummary = useMemo(() => {
-    const totalEmployees = enrichedEmployees.length;
-    const totalHours = enrichedEmployees.reduce((sum, e) => sum + (e.totalHours || 0), 0);
-    const totalWorkingDays = enrichedEmployees.reduce((sum, e) => sum + (e.workingDays || 0), 0);
-    const totalManHourCost = enrichedEmployees.reduce((sum, e) => sum + e.manHourCost, 0);
+    const totalEmployees = employees.length;
+    const totalHours = employees.reduce((sum, e) => sum + (e.totalHours || 0), 0);
+    const totalWorkingDays = employees.reduce((sum, e) => sum + (e.workingDays || 0), 0);
+    const totalManHourCost = employees.reduce((sum, e) => sum + e.totalCost, 0);
     const avgHoursPerEmployee = totalEmployees > 0 ? totalHours / totalEmployees : 0;
     const avgHourlyRate =
-      totalEmployees > 0 ? enrichedEmployees.reduce((sum, e) => sum + e.hourlyRate, 0) / totalEmployees : 0;
+      totalEmployees > 0 ? employees.reduce((sum, e) => sum + e.hourlyRate, 0) / totalEmployees : 0;
 
     return { totalEmployees, totalHours, totalWorkingDays, totalManHourCost, avgHoursPerEmployee, avgHourlyRate };
-  }, [enrichedEmployees]);
+  }, [employees]);
 
   // Project Resource Cost Summary — combines this card's live Man-Hour Cost
   // with the existing Non-Man-Hour totals (Expense Budget) and Work Order
@@ -147,6 +129,17 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
 
   const handleExpandToggle = (employeeNo: string) => {
     setExpandedEmployeeNo(expandedEmployeeNo === employeeNo ? null : employeeNo);
+    setExpandedDates(new Set());
+  };
+
+  const handleDateToggle = (employeeNo: string, date: string) => {
+    const key = `${employeeNo}|${date}`;
+    setExpandedDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
   return (
@@ -181,6 +174,7 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
                   onClick={() => {
                     setSelectedMonth(month);
                     setExpandedEmployeeNo(null);
+                    setExpandedDates(new Set());
                   }}
                   className={`px-3 py-1.5 rounded-[var(--nu-radius-md)] text-[12px] font-medium transition ${
                     selectedMonth === month
@@ -264,17 +258,11 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {enrichedEmployees.map((emp, index) => {
+                  {employees.map((emp, index) => {
                     const isExpanded = expandedEmployeeNo === emp.employeeNo;
-                    const dailyEntries = getLiveEmployeeDailyEntries(
-                      project.prNo,
-                      allImports,
-                      emp.employeeNo,
-                      selectedMonth
-                    );
 
                     return (
-                      <React.Fragment key={emp.id}>
+                      <React.Fragment key={emp.employeeNo}>
                         <tr
                           className={`border-b border-[var(--nu-border)] last:border-none hover:bg-[var(--nu-accent-soft)] transition-colors cursor-pointer ${
                             index % 2 === 1 ? "bg-[var(--nu-surface-alt)]" : "bg-[var(--nu-surface)]"
@@ -307,7 +295,7 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
                             {fmtHrs(emp.totalHours)}
                           </td>
                           <td className="px-4 py-3 text-right text-[12.5px] font-semibold text-[var(--nu-text)]">
-                            {fmtINR2(emp.manHourCost)}
+                            {fmtINR2(emp.totalCost)}
                           </td>
                           <td className="px-4 py-3 text-center">
                             <Badge tone={emp.status === "Active" ? "success" : "neutral"}>{emp.status}</Badge>
@@ -343,19 +331,21 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
                                       Project Summary
                                     </h4>
                                     <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-                                      <InfoField label="Project Code" value={dailyEntries[0]?.projectCode || project.prNo} />
-                                      <InfoField label="Project Name" value={dailyEntries[0]?.projectName || "—"} />
+                                      <InfoField label="Project Code" value={emp.projectCode || project.prNo} />
+                                      <InfoField label="Project Name" value={emp.projectName || "—"} />
                                       <InfoField label="Start Date" value={formatDisplayDate(emp.startDate)} />
                                       <InfoField label="End Date" value={formatDisplayDate(emp.endDate)} />
                                       <InfoField label="Working Days" value={`${emp.workingDays} days`} />
                                       <InfoField label="Total Hours" value={fmtHrs(emp.totalHours)} />
-                                      <InfoField label="Man-Hour Cost" value={fmtINR2(emp.manHourCost)} accent />
+                                      <InfoField label="Man-Hour Cost" value={fmtINR2(emp.totalCost)} accent />
                                     </div>
                                   </div>
                                 </div>
 
-                                {/* Daily Timesheet Entries */}
-                                {dailyEntries.length > 0 && (
+                                {/* Daily Timesheet Entries — one consolidated row per work
+                                    date (Employee + Project + Date), expandable to reveal
+                                    every raw imported row summed into that day's total. */}
+                                {emp.days.length > 0 && (
                                   <div>
                                     <h4 className="text-[12px] font-bold text-[var(--nu-text)] mb-2 flex items-center gap-2">
                                       <Clock size={14} className="text-[var(--nu-accent)]" />
@@ -365,37 +355,80 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
                                       <table className="w-full text-[11.5px]">
                                         <thead className="bg-[var(--nu-surface-alt)] border-b border-[var(--nu-border)]">
                                           <tr>
+                                            <th className="px-3 py-2 w-6"></th>
                                             <th className="px-3 py-2 text-left font-semibold text-[var(--nu-text-secondary)]">
                                               Date
                                             </th>
-                                            <th className="px-3 py-2 text-left font-semibold text-[var(--nu-text-secondary)]">
-                                              Task
-                                            </th>
-                                            <th className="px-3 py-2 text-right font-semibold text-[var(--nu-text-secondary)] w-24">
-                                              Hours
+                                            <th className="px-3 py-2 text-right font-semibold text-[var(--nu-text-secondary)] w-28">
+                                              Total Hours
                                             </th>
                                           </tr>
                                         </thead>
                                         <tbody>
-                                          {dailyEntries.map((entry, idx) => (
-                                            <tr
-                                              key={idx}
-                                              className="border-b border-[var(--nu-border)] last:border-0 hover:bg-[var(--nu-surface-alt)]"
-                                            >
-                                              <td className="px-3 py-1.5 font-medium text-[var(--nu-text)]">
-                                                {formatDisplayDate(entry.date)}
-                                              </td>
-                                              <td className="px-3 py-1.5 text-[var(--nu-text-secondary)]">
-                                                {entry.task || "—"}
-                                              </td>
-                                              <td className="px-3 py-1.5 text-right font-medium text-[var(--nu-text)]">
-                                                {entry.hours.toLocaleString("en-IN", {
-                                                  minimumFractionDigits: 1,
-                                                  maximumFractionDigits: 2,
-                                                })}
-                                              </td>
-                                            </tr>
-                                          ))}
+                                          {emp.days.map((day) => {
+                                            const dateKey = `${emp.employeeNo}|${day.date}`;
+                                            const isDateExpanded = expandedDates.has(dateKey);
+                                            const hasMultipleEntries = day.entries.length > 1;
+
+                                            return (
+                                              <React.Fragment key={dateKey}>
+                                                <tr
+                                                  className={`border-b border-[var(--nu-border)] last:border-0 hover:bg-[var(--nu-surface-alt)] ${
+                                                    hasMultipleEntries ? "cursor-pointer" : ""
+                                                  }`}
+                                                  onClick={() => hasMultipleEntries && handleDateToggle(emp.employeeNo, day.date)}
+                                                >
+                                                  <td className="px-3 py-1.5 text-center">
+                                                    {hasMultipleEntries &&
+                                                      (isDateExpanded ? (
+                                                        <ChevronDown size={13} className="text-[var(--nu-accent)]" />
+                                                      ) : (
+                                                        <ChevronRight size={13} className="text-[var(--nu-text-muted)]" />
+                                                      ))}
+                                                  </td>
+                                                  <td className="px-3 py-1.5 font-medium text-[var(--nu-text)]">
+                                                    {formatDisplayDate(day.date)}
+                                                  </td>
+                                                  <td className="px-3 py-1.5 text-right font-semibold text-[var(--nu-text)]">
+                                                    {fmtHrs(day.dailyHours)}
+                                                  </td>
+                                                </tr>
+
+                                                {isDateExpanded && (
+                                                  <tr className="bg-[var(--nu-surface-alt)] border-b border-[var(--nu-border)]">
+                                                    <td colSpan={3} className="px-3 pb-2 pt-0">
+                                                      <div className="ml-6 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] overflow-hidden">
+                                                        <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--nu-text-muted)] border-b border-[var(--nu-border)]">
+                                                          Imported Entries
+                                                        </div>
+                                                        <table className="w-full text-[11.5px]">
+                                                          <tbody>
+                                                            {day.entries.map((entry) => (
+                                                              <tr
+                                                                key={entry.id}
+                                                                className="border-b border-[var(--nu-border)] last:border-0"
+                                                              >
+                                                                <td className="px-3 py-1 text-[var(--nu-text-secondary)]">
+                                                                  {entry.task || "—"}
+                                                                </td>
+                                                                <td className="px-3 py-1 text-right font-medium text-[var(--nu-text)] w-28">
+                                                                  {entry.hours.toLocaleString("en-IN", {
+                                                                    minimumFractionDigits: 1,
+                                                                    maximumFractionDigits: 2,
+                                                                  })}{" "}
+                                                                  hrs
+                                                                </td>
+                                                              </tr>
+                                                            ))}
+                                                          </tbody>
+                                                        </table>
+                                                      </div>
+                                                    </td>
+                                                  </tr>
+                                                )}
+                                              </React.Fragment>
+                                            );
+                                          })}
                                         </tbody>
                                       </table>
                                     </div>

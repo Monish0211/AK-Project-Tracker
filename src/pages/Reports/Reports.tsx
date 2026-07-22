@@ -37,6 +37,8 @@ import { getEmployees } from "../../services/employeeService";
 import { getInvoices } from "../../services/invoiceService";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import { getTotalProjectCost, getGrossProfit } from "../../services/expenseService";
+import { getAllTimesheetImports } from "../../services/timesheetService";
+import { getProcessedEmployeeTotalHours } from "../../services/timesheetProcessingService";
 
 const Reports = () => {
   // Live State
@@ -461,10 +463,17 @@ const Reports = () => {
           );
 
       case "resource": {
+        // Hours come from the single TimesheetProcessingService whenever a
+        // live timesheet import matches this employee + project, so Reports
+        // can never disagree with Team Assigned or the Dashboard. Falls
+        // back to the project's own resource record (e.g. a manually added
+        // resource with no matching import yet).
+        const allImports = getAllTimesheetImports();
         const rows: any[] = [];
         filteredData.projects.forEach((p) => {
           if (Array.isArray(p.resources)) {
             p.resources.forEach((res) => {
+              const processedHours = getProcessedEmployeeTotalHours(p.prNo, allImports, res.employeeNo);
               rows.push({
                 projectTitle: p.projectTitle,
                 prNo: p.prNo,
@@ -472,7 +481,7 @@ const Reports = () => {
                 empNo: res.employeeNo,
                 designation: res.designation || "—",
                 dept: p.department,
-                hours: res.totalHours,
+                hours: processedHours ?? res.totalHours,
                 status: res.status || "Active",
               });
             });
