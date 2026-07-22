@@ -1,10 +1,8 @@
-import { useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
 
 import Sidebar from "../components/Sidebar/Sidebar";
 import Navbar from "../components/Navbar/Navbar";
-import { ReminderToastContainer } from "../notifications/ReminderToastContainer";
-import { reminderScheduler } from "../notifications/reminderScheduler";
+import { GlobalReminderProvider } from "../notifications/GlobalReminderProvider";
 
 import Dashboard from "../pages/Dashboard/Dashboard";
 
@@ -32,15 +30,8 @@ import Resources from "../pages/Resources/Resources";
 import Settings from "../pages/Settings/Settings";
 
 const MainLayout = () => {
-  // Runs continuously while the PMO Portal is open — checks pending reminders
-  // against the current moment and fires toasts/notifications as they come
-  // due. Independent of page refreshes and of whatever route is active.
-  useEffect(() => {
-    reminderScheduler.start();
-    return () => reminderScheduler.stop();
-  }, []);
-
   return (
+    <GlobalReminderProvider>
     <div className="flex min-h-screen bg-slate-100 animate-pmo-fade-up">
 
       {/* Sidebar */}
@@ -160,9 +151,8 @@ const MainLayout = () => {
 
       </div>
 
-      <ReminderToastContainer />
-
     </div>
+    </GlobalReminderProvider>
   );
 };
 
