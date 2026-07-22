@@ -21,7 +21,7 @@ import ExpenseBudgetView from "./components/ExpenseBudgetView";
 import TeamAssignedView from "./components/TeamAssignedView";
 import NonManhourExpenseView from "./components/NonManhourExpenseView";
 import InvoiceProgressView from "./components/InvoiceProgressView";
-import { ProjectNotesDrawer } from "../../components/Dashboard/ProjectNotesDrawer";
+import { ProjectWorkspaceDrawer } from "../../components/Dashboard/ProjectWorkspaceDrawer";
 
 import ProjectWorkspaceHeader from "./components/workspace/ProjectWorkspaceHeader";
 import ProjectSummaryStrip from "./components/workspace/ProjectSummaryStrip";
@@ -185,7 +185,7 @@ const ViewProject = () => {
       </div>
 
       {/* Project Notes Slide-over Drawer (Read-Only) */}
-      <ProjectNotesDrawer
+      <ProjectWorkspaceDrawer
         isOpen={isNotesOpen}
         onClose={() => setIsNotesOpen(false)}
         project={project}
