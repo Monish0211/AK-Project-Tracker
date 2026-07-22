@@ -645,28 +645,39 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                 ))}
             </select>
 
-            {/* Status Filter */}
-            <select
-              value={status}
-              onChange={(e) => {
-                const nextStatus = e.target.value;
-                setStatus(nextStatus);
-                const newParams = new URLSearchParams(searchParams);
-                if (nextStatus === "All") {
-                  newParams.delete("status");
-                } else {
-                  newParams.set("status", nextStatus);
-                }
-                setSearchParams(newParams);
-              }}
-              className="flt py-1.5 px-3 pr-8 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 outline-none cursor-pointer"
-            >
-              <option value="All">All Statuses</option>
-              <option value="Active">Active</option>
-              <option value="On Hold">On Hold</option>
-              <option value="Completed">Completed</option>
-              <option value="Cancelled">Cancelled</option>
-            </select>
+            {/* Status Filter — Completed Projects has only one possible status,
+                so a filter is meaningless there; show a read-only badge instead.
+                Project Repository never offers "Completed" as an option, since
+                that dataset already excludes completed projects entirely. */}
+            {mode === "completed" ? (
+              <span
+                className="flt inline-flex items-center gap-1.5 py-1.5 px-3 border border-emerald-200 dark:border-emerald-900/40 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 select-none"
+                title="All projects on this page are Completed"
+              >
+                ✅ Completed
+              </span>
+            ) : (
+              <select
+                value={status}
+                onChange={(e) => {
+                  const nextStatus = e.target.value;
+                  setStatus(nextStatus);
+                  const newParams = new URLSearchParams(searchParams);
+                  if (nextStatus === "All") {
+                    newParams.delete("status");
+                  } else {
+                    newParams.set("status", nextStatus);
+                  }
+                  setSearchParams(newParams);
+                }}
+                className="flt py-1.5 px-3 pr-8 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 outline-none cursor-pointer"
+              >
+                <option value="All">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="On Hold">On Hold</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+            )}
 
             <div className="t-sep h-5 w-[1px] bg-slate-200 dark:bg-slate-800"></div>
 
