@@ -1,14 +1,19 @@
 import { AlertTriangle, CreditCard, Percent, Plus, Trash2, Wallet } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChangeEvent, Dispatch, SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import type { Project } from "../../../types/Project";
+import { FormLabel } from "../../../components/ui/FormLabel";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { StatTile } from "../../../components/ui/StatTile";
 import { Button } from "../../../components/ui/Button";
 
+import { FieldError } from "../../../components/ui/FieldError";
+
 interface Props {
   project: Project;
   setProject: Dispatch<SetStateAction<Project>>;
+  errors?: Record<string, string>;
+  clearError?: (field: string) => void;
 }
 
 type PaymentMilestone = Project["paymentMilestones"][number];
@@ -71,6 +76,7 @@ interface NumericInputProps {
   onChange: (nextValue: number) => void;
   suffix?: string;
   disabled?: boolean;
+  className?: string;
 }
 
 const NumericInput = ({
@@ -79,11 +85,12 @@ const NumericInput = ({
   onChange,
   suffix,
   disabled = false,
+  className = "",
 }: NumericInputProps) => {
   const [rawValue, setRawValue] = useState<string>(
     value === 0 ? "" : String(value)
   );
-
+  
   const lastCommittedValue = useRef<number>(value);
 
   useEffect(() => {
@@ -93,7 +100,7 @@ const NumericInput = ({
     }
   }, [value]);
 
-  const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const nextRaw = event.target.value;
 
     if (nextRaw !== "" && !NUMBER_INPUT_PATTERN.test(nextRaw)) {
@@ -120,7 +127,7 @@ const NumericInput = ({
         disabled
           ? "bg-[var(--nu-surface-alt)] text-[var(--nu-text-muted)] cursor-not-allowed"
           : ""
-      }`}
+      } ${className}`}
     />
   );
 
@@ -138,7 +145,7 @@ const NumericInput = ({
   );
 };
 
-const PaymentMilestoneCard = ({ project, setProject }: Props) => {
+const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: Props) => {
   const totalPaymentPercentage = project.paymentMilestones.reduce(
     (sum, milestone) => sum + milestone.paymentPercentage,
     0
@@ -179,6 +186,7 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
 
   const handlePercentageChange = useCallback(
     (index: number, value: number) => {
+      clearError?.(`milestone_pct_${index}`);
       setProject((prev) => {
         const updatedMilestones = prev.paymentMilestones.map((milestone, i) =>
           i === index
@@ -196,11 +204,12 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
         };
       });
     },
-    [setProject]
+    [setProject, clearError]
   );
 
   const handleMilestoneNameChange = useCallback(
     (index: number, value: string) => {
+      clearError?.(`milestone_name_${index}`);
       setProject((prev) => {
         const updatedMilestones = prev.paymentMilestones.map((milestone, i) =>
           i === index ? { ...milestone, milestoneName: value } : milestone
@@ -341,25 +350,30 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
                 </div>
                 <div className="flex-1 grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_1.2fr] gap-3 items-end pb-4">
                   <div>
-                    <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
+                    <FormLabel required={true} className="!text-[11px] !text-[var(--nu-text-muted)] mb-1">
                       Milestone Name
-                    </label>
+                    </FormLabel>
                     <input
                       type="text"
+                      data-field="milestone_name_0"
                       value={singleMilestone?.milestoneName ?? ""}
                       placeholder="e.g. Submission Draft"
                       aria-label="Milestone Name"
                       onChange={(e) => handleMilestoneNameChange(0, e.target.value)}
-                      className={fieldClass}
+                      className={`${fieldClass} ${errors["milestone_name_0"] ? "!border-[var(--nu-danger)]" : ""}`}
                     />
+                    <FieldError error={errors["milestone_name_0"]} />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
+                    <FormLabel required={true} className="!text-[11px] !text-[var(--nu-text-muted)] mb-1">
                       Payment %
-                    </label>
-                    <div className="h-9 flex items-center justify-center rounded-[var(--nu-radius-md)] bg-[var(--nu-surface-alt)] text-[12.5px] font-semibold text-[var(--nu-text-secondary)]">
-                      100%
+                    </FormLabel>
+                    <div data-field="milestone_pct_0">
+                      <div className="h-9 flex items-center justify-center rounded-[var(--nu-radius-md)] bg-[var(--nu-surface-alt)] text-[12.5px] font-semibold text-[var(--nu-text-secondary)]">
+                        100%
+                      </div>
                     </div>
+                    <FieldError error={errors["milestone_pct_0"]} />
                   </div>
                   <div>
                     <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
@@ -416,32 +430,38 @@ const PaymentMilestoneCard = ({ project, setProject }: Props) => {
                   </div>
                   <div className="flex-1 grid grid-cols-1 sm:grid-cols-[2fr_0.8fr_1fr_1.2fr_auto] gap-3 items-end pb-5">
                     <div>
-                      <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
+                      <FormLabel required={true} className="!text-[11px] !text-[var(--nu-text-muted)] mb-1">
                         Milestone Name
-                      </label>
+                      </FormLabel>
                       <input
                         type="text"
+                        data-field={`milestone_name_${index}`}
                         value={milestone.milestoneName ?? ""}
                         placeholder="e.g. Submission Draft"
                         aria-label={`Milestone Name for row ${index + 1}`}
                         onChange={(e) =>
                           handleMilestoneNameChange(index, e.target.value)
                         }
-                        className={fieldClass}
+                        className={`${fieldClass} ${errors[`milestone_name_${index}`] ? "!border-[var(--nu-danger)]" : ""}`}
                       />
+                      <FieldError error={errors[`milestone_name_${index}`]} />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">
+                      <FormLabel required={true} className="!text-[11px] !text-[var(--nu-text-muted)] mb-1">
                         Payment %
-                      </label>
-                      <NumericInput
-                        value={milestone.paymentPercentage}
-                        ariaLabel={`Payment % for row ${index + 1}`}
-                        suffix="%"
-                        onChange={(value) =>
-                          handlePercentageChange(index, value)
-                        }
-                      />
+                      </FormLabel>
+                      <div data-field={`milestone_pct_${index}`}>
+                        <NumericInput
+                          value={milestone.paymentPercentage}
+                          ariaLabel={`Payment % for row ${index + 1}`}
+                          suffix="%"
+                          onChange={(value) =>
+                            handlePercentageChange(index, value)
+                          }
+                          className={errors[`milestone_pct_${index}`] ? "!border-[var(--nu-danger)]" : ""}
+                        />
+                      </div>
+                      <FieldError error={errors[`milestone_pct_${index}`]} />
                     </div>
                     <div>
                       <label className="block text-[11px] font-medium text-[var(--nu-text-muted)] mb-1">

@@ -6,9 +6,13 @@ import { getCustomers } from "../../../services/customerService";
 import { getPmoCoordinators } from "../../../services/pmoCoordinatorService";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 
+import { FieldError } from "../../../components/ui/FieldError";
+
 interface Props {
   project: Project;
   setProject: Dispatch<SetStateAction<Project>>;
+  errors?: Record<string, string>;
+  clearError?: (field: string) => void;
 }
 
 const prCategories = [
@@ -52,23 +56,28 @@ const applyPrNoPrefix = (rawValue: string, prefix: string) => {
   return prefix + rawValue;
 };
 
+import { FormLabel } from "../../../components/ui/FormLabel";
+
 const fieldClass =
   "w-full h-10 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] px-3 text-[13px] text-[var(--nu-text)] outline-none transition-shadow focus:ring-2 focus:ring-[var(--nu-accent)]/25 focus:border-[var(--nu-accent)]";
-const labelClass = "block text-[11.5px] font-medium text-[var(--nu-text-secondary)] mb-1.5";
+const labelClass = ""; // handled by FormLabel now
 
-const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
+const Field = ({ label, children, required, error }: { label: string; children: React.ReactNode; required?: boolean; error?: string }) => (
   <div>
-    <label className={labelClass}>{label}</label>
+    <FormLabel required={required}>{label}</FormLabel>
     {children}
+    <FieldError error={error} />
   </div>
 );
 
 const PmoCoordinatorAutocomplete = ({
   project,
   setProject,
+  hasError,
 }: {
   project: Project;
-  setProject: Dispatch<SetStateAction<Project>>;
+  setProject: Dispatch<SetStateAction<Project>> | ((updater: (prev: Project) => Project) => void);
+  hasError?: boolean;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState(project.pmoCoordinator || "");
@@ -192,7 +201,7 @@ const PmoCoordinatorAutocomplete = ({
         onChange={handleChange}
         onFocus={() => setIsOpen(true)}
         onKeyDown={handleKeyDown}
-        className={fieldClass}
+        className={`${fieldClass} ${hasError ? "!border-[var(--nu-danger)]" : ""}`}
         placeholder="Search PMO Coordinator..."
       />
       {showDropdown && (
@@ -227,7 +236,7 @@ const PmoCoordinatorAutocomplete = ({
   );
 };
 
-const GeneralInfoCard = ({ project, setProject }: Props) => {
+const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props) => {
   const clientDropdownRef = useRef<HTMLDivElement>(null);
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
   const [isOtherDepartment, setIsOtherDepartment] = useState(
@@ -277,22 +286,25 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
           subtitle="PR identity and project title"
         />
         <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="PO Month">
+          <Field label="PO Month" required={true} error={errors["poMonth"]}>
             <input
               type="month"
+              data-field="poMonth"
               value={project.poMonth}
-              onChange={(e) =>
+              onChange={(e) => {
                 setProject({
                   ...project,
                   poMonth: e.target.value,
-                })
-              }
-              className={fieldClass}
+                });
+                clearError?.("poMonth");
+              }}
+              className={`${fieldClass} ${errors["poMonth"] ? "!border-[var(--nu-danger)]" : ""}`}
             />
           </Field>
 
-          <Field label="PR Category">
+          <Field label="PR Category" required={true} error={errors["prCategory"]}>
             <select
+              data-field="prCategory"
               value={project.prCategory}
               onChange={(e) => {
                 const newCategory = e.target.value;
@@ -308,8 +320,9 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
                   prCategory: newCategory,
                   prNo: newPrefix + numberPart,
                 });
+                clearError?.("prCategory");
               }}
-              className={fieldClass}
+              className={`${fieldClass} ${errors["prCategory"] ? "!border-[var(--nu-danger)]" : ""}`}
             >
               <option value="">Select PR Category</option>
 
@@ -321,9 +334,10 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
             </select>
           </Field>
 
-          <Field label="PR Number">
+          <Field label="PR Number" required={true} error={errors["prNo"]}>
             <input
               type="text"
+              data-field="prNo"
               value={project.prNo}
               onChange={(e) => {
                 const prefix = prNumberPrefixMap[project.prCategory] || "";
@@ -332,8 +346,9 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
                   ...project,
                   prNo: applyPrNoPrefix(e.target.value, prefix),
                 });
+                clearError?.("prNo");
               }}
-              className={fieldClass}
+              className={`${fieldClass} ${errors["prNo"] ? "!border-[var(--nu-danger)]" : ""}`}
               placeholder={
                 prNumberPrefixMap[project.prCategory]
                   ? `${prNumberPrefixMap[project.prCategory]}Enter Number`
@@ -342,17 +357,19 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
             />
           </Field>
 
-          <Field label="Project Title">
+          <Field label="Project Title" required={true} error={errors["projectTitle"]}>
             <input
               type="text"
+              data-field="projectTitle"
               value={project.projectTitle}
-              onChange={(e) =>
+              onChange={(e) => {
                 setProject({
                   ...project,
                   projectTitle: e.target.value,
-                })
-              }
-              className={fieldClass}
+                });
+                clearError?.("projectTitle");
+              }}
+              className={`${fieldClass} ${errors["projectTitle"] ? "!border-[var(--nu-danger)]" : ""}`}
               placeholder="Enter Project Title"
             />
           </Field>
@@ -369,9 +386,10 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
         />
         <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="relative sm:col-span-2" ref={clientDropdownRef}>
-            <label className={labelClass}>Client Name</label>
+            <FormLabel required={true}>Client Name</FormLabel>
             <input
               type="text"
+              data-field="client"
               value={project.client}
               onChange={(e) => {
                 setProject({
@@ -379,11 +397,13 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
                   client: e.target.value,
                 });
                 setIsClientDropdownOpen(true);
+                clearError?.("client");
               }}
               onFocus={() => setIsClientDropdownOpen(true)}
-              className={fieldClass}
+              className={`${fieldClass} ${errors["client"] ? "!border-[var(--nu-danger)]" : ""}`}
               placeholder="Enter Client Name"
             />
+            <FieldError error={errors["client"]} />
 
             {isClientDropdownOpen && filteredCustomers.length > 0 && (
               <div className="absolute z-10 mt-1 w-full bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] shadow-[var(--nu-shadow-md)] max-h-56 overflow-y-auto nu-scrollbar">
@@ -407,10 +427,12 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
             )}
           </div>
 
-          <Field label="Department">
+          <Field label="Department" required={true} error={errors["department"]}>
             <select
+              data-field="department"
               value={isOtherDepartment ? "Others" : project.department}
               onChange={(e) => {
+                clearError?.("department");
                 if (e.target.value === "Others") {
                   setIsOtherDepartment(true);
                   return;
@@ -422,7 +444,7 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
                   department: e.target.value,
                 });
               }}
-              className={fieldClass}
+              className={`${fieldClass} ${errors["department"] ? "!border-[var(--nu-danger)]" : ""}`}
             >
               <option value="">Select Department</option>
               {departmentOptions.map((department) => (
@@ -434,16 +456,18 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
             </select>
           </Field>
 
-          <Field label="Domestic / Foreign">
+          <Field label="Domestic / Foreign" required={true} error={errors["domesticForeign"]}>
             <select
+              data-field="domesticForeign"
               value={project.domesticForeign}
-              onChange={(e) =>
+              onChange={(e) => {
                 setProject({
                   ...project,
                   domesticForeign: e.target.value,
-                })
-              }
-              className={fieldClass}
+                });
+                clearError?.("domesticForeign");
+              }}
+              className={`${fieldClass} ${errors["domesticForeign"] ? "!border-[var(--nu-danger)]" : ""}`}
             >
               <option value="">Select</option>
               <option value="Domestic">Domestic</option>
@@ -480,16 +504,18 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
           iconTint="info"
         />
         <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Work Order Status">
+          <Field label="Work Order Status" required={true} error={errors["workOrderStatus"]}>
             <select
+              data-field="workOrderStatus"
               value={project.workOrderStatus}
-              onChange={(e) =>
+              onChange={(e) => {
                 setProject({
                   ...project,
                   workOrderStatus: e.target.value,
-                })
-              }
-              className={fieldClass}
+                });
+                clearError?.("workOrderStatus");
+              }}
+              className={`${fieldClass} ${errors["workOrderStatus"] ? "!border-[var(--nu-danger)]" : ""}`}
             >
               <option value="">Select</option>
               <option value="Received">Received</option>
@@ -498,16 +524,18 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
             </select>
           </Field>
 
-          <Field label="Project Status">
+          <Field label="Project Status" required={true} error={errors["projectStatus"]}>
             <select
+              data-field="projectStatus"
               value={project.projectStatus}
-              onChange={(e) =>
+              onChange={(e) => {
                 setProject({
                   ...project,
                   projectStatus: e.target.value,
-                })
-              }
-              className={fieldClass}
+                });
+                clearError?.("projectStatus");
+              }}
+              className={`${fieldClass} ${errors["projectStatus"] ? "!border-[var(--nu-danger)]" : ""}`}
             >
               <option value="">Select</option>
               <option value="Active">Active</option>
@@ -517,17 +545,19 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
             </select>
           </Field>
 
-          <Field label="Project Start Date">
+          <Field label="Project Start Date" required={true} error={errors["projectStartDate"]}>
             <input
               type="date"
+              data-field="projectStartDate"
               value={project.projectStartDate}
-              onChange={(e) =>
+              onChange={(e) => {
                 setProject({
                   ...project,
                   projectStartDate: e.target.value,
-                })
-              }
-              className={fieldClass}
+                });
+                clearError?.("projectStartDate");
+              }}
+              className={`${fieldClass} ${errors["projectStartDate"] ? "!border-[var(--nu-danger)]" : ""}`}
             />
           </Field>
 
@@ -556,16 +586,18 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
           iconTint="warning"
         />
         <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Contract Type">
+          <Field label="Contract Type" required={true} error={errors["contractType"]}>
             <select
+              data-field="contractType"
               value={project.contractType || "LUMP SUM"}
-              onChange={(e) =>
+              onChange={(e) => {
                 setProject({
                   ...project,
                   contractType: e.target.value,
-                })
-              }
-              className={fieldClass}
+                });
+                clearError?.("contractType");
+              }}
+              className={`${fieldClass} ${errors["contractType"] ? "!border-[var(--nu-danger)]" : ""}`}
             >
               <option value="LUMP SUM">LUMP SUM</option>
               <option value="ARC">ARC</option>
@@ -579,8 +611,17 @@ const GeneralInfoCard = ({ project, setProject }: Props) => {
             </div>
           </Field>
 
-          <Field label="PMO Coordinator">
-            <PmoCoordinatorAutocomplete project={project} setProject={setProject} />
+          <Field label="PMO Coordinator" required={true} error={errors["pmoCoordinator"]}>
+            <div data-field="pmoCoordinator">
+              <PmoCoordinatorAutocomplete
+                project={project}
+                setProject={(update: any) => {
+                  setProject(update);
+                  clearError?.("pmoCoordinator");
+                }}
+                hasError={!!errors["pmoCoordinator"]}
+              />
+            </div>
           </Field>
         </CardBody>
       </Card>
