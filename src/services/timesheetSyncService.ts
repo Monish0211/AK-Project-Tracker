@@ -10,6 +10,7 @@ import type { TimesheetImportMonth, TimesheetEntry } from "../types/Timesheet";
 import { normalizeProjectCode } from "./timesheetImportService";
 import { buildProjectResourceFromTimesheet } from "./timesheetService";
 import { getEmployees } from "./employeeService";
+import { getProcessedActualHours } from "./timesheetProcessingService";
 
 /**
  * Sync a timesheet import to all matching projects
@@ -113,165 +114,20 @@ export function syncTimesheetToProjects(
 // project is created or has its PR Number edited after the import already
 // ran, since nothing re-triggers the push for it.
 //
-// The functions below fix that: they take the project's PR Number and the
-// full set of raw timesheet imports (read fresh from storage) and match
-// Project Code = PR Number on every call. They never go stale because
-// there's nothing cached to go stale — the match always reflects current
-// project + current timesheet data.
-
-function buildResourcesFromEntries(entries: TimesheetEntry[]): ProjectResource[] {
-  const masterEmployees = getEmployees();
-
-  const entriesByEmployee: Record<string, TimesheetEntry[]> = {};
-  entries.forEach((entry) => {
-    if (!entriesByEmployee[entry.employeeNo]) {
-      entriesByEmployee[entry.employeeNo] = [];
-    }
-    entriesByEmployee[entry.employeeNo].push(entry);
-  });
-
-  const resources: ProjectResource[] = [];
-
-  Object.entries(entriesByEmployee).forEach(([empNo, empEntries]) => {
-    const resourceData = buildProjectResourceFromTimesheet(empEntries);
-    if (!resourceData) return;
-
-    const empMaster = masterEmployees.find(
-      (e) => e.employeeNo.trim().toLowerCase() === empNo.trim().toLowerCase()
-    );
-
-    resources.push({
-      id: `live-${empNo}`,
-      employeeNo: resourceData.employeeNo,
-      employeeName: empMaster?.employeeName || resourceData.employeeName,
-      designation: empMaster?.designation || resourceData.designation,
-      department: empMaster?.department || resourceData.department,
-      reportingManager: empMaster?.reportingManager || resourceData.reportingManager,
-      startDate: resourceData.startDate,
-      endDate: resourceData.endDate,
-      workingDays: resourceData.workingDays,
-      totalHours: resourceData.totalHours,
-      status: resourceData.status,
-      location: empMaster?.location || resourceData.location,
-    });
-  });
-
-  return resources;
-}
+// Live reads (Team Assigned, Dashboard's Hours Overrun, Reports, etc.) no
+// longer re-derive hours here — they all go through the single
+// TimesheetProcessingService, which groups raw entries by Employee Number +
+// Project Number + Work Date before summing. getProjectActualHours below is
+// kept as a thin re-export so existing callers (e.g. dashboardService) don't
+// need to change their import path.
 
 /**
- * Get all months that contain at least one entry matching this PR Number.
- */
-export function getLiveProjectMonths(prNo: string, allImports: TimesheetImportMonth[]): string[] {
-  const target = normalizeProjectCode(prNo);
-  if (!target) return [];
-
-  return allImports
-    .filter((month) =>
-      month.entries.some((entry) => normalizeProjectCode(entry.projectCode) === target)
-    )
-    .map((month) => month.month)
-    .sort()
-    .reverse();
-}
-
-/**
- * Whether any imported timesheet entry matches this PR Number.
- */
-export function hasLiveTimesheetData(prNo: string, allImports: TimesheetImportMonth[]): boolean {
-  return getLiveProjectMonths(prNo, allImports).length > 0;
-}
-
-/**
- * Live team member list for a project + month, computed by matching
- * Project Code = PR Number directly against raw timesheet entries.
- */
-export function getLiveTeamMembers(
-  prNo: string,
-  allImports: TimesheetImportMonth[],
-  month?: string
-): ProjectResource[] {
-  const target = normalizeProjectCode(prNo);
-  if (!target || !month) return [];
-
-  const monthData = allImports.find((m) => m.month === month);
-  if (!monthData) return [];
-
-  const matchedEntries = monthData.entries.filter(
-    (entry) => normalizeProjectCode(entry.projectCode) === target
-  );
-
-  return buildResourcesFromEntries(matchedEntries);
-}
-
-/**
- * Actual Hours for a project — sums the same per-employee totalHours that
- * Team Assigned computes via getLiveTeamMembers(), for the project's latest
- * matched month (Team Assigned's own default view before a user manually
- * switches months). This is the single source of truth for "Actual Hours":
- * anything comparing against budgeted hours (e.g. the Dashboard's Hours
- * Overrun widget) must call this rather than re-deriving hours from
- * project.resources or raw timesheet entries independently, or the two
- * views can disagree.
+ * Actual Hours for a project — the single source of truth. Delegates to
+ * TimesheetProcessingService so Team Assigned, the Dashboard's Hours
+ * Overrun widget, and any other consumer can never disagree on this number.
  */
 export function getProjectActualHours(prNo: string, allImports: TimesheetImportMonth[]): number {
-  const latestMonth = getLiveProjectMonths(prNo, allImports)[0];
-  if (!latestMonth) return 0;
-
-  const teamMembers = getLiveTeamMembers(prNo, allImports, latestMonth);
-  return Math.round(teamMembers.reduce((sum, m) => sum + (m.totalHours || 0), 0) * 100) / 100;
-}
-
-/**
- * Live summary stats for a project + month.
- */
-export function getLiveTimesheetSummary(
-  prNo: string,
-  allImports: TimesheetImportMonth[],
-  month?: string
-): { month: string; totalEmployees: number; totalHours: number; totalWorkingDays: number } | null {
-  if (!month) return null;
-
-  const target = normalizeProjectCode(prNo);
-  const monthData = allImports.find((m) => m.month === month);
-  if (!target || !monthData) return null;
-
-  const matchedEntries = monthData.entries.filter(
-    (entry) => normalizeProjectCode(entry.projectCode) === target
-  );
-  if (matchedEntries.length === 0) return null;
-
-  const totalHours = matchedEntries.reduce((sum, e) => sum + e.hours, 0);
-
-  return {
-    month,
-    totalEmployees: new Set(matchedEntries.map((e) => e.employeeNo)).size,
-    totalHours: Math.round(totalHours * 100) / 100,
-    totalWorkingDays: new Set(matchedEntries.map((e) => e.date)).size,
-  };
-}
-
-/**
- * Live daily entries for one employee within a project + month.
- */
-export function getLiveEmployeeDailyEntries(
-  prNo: string,
-  allImports: TimesheetImportMonth[],
-  employeeNo: string,
-  month?: string
-): TimesheetEntry[] {
-  if (!month) return [];
-
-  const target = normalizeProjectCode(prNo);
-  const monthData = allImports.find((m) => m.month === month);
-  if (!target || !monthData) return [];
-
-  return monthData.entries
-    .filter(
-      (entry) =>
-        entry.employeeNo === employeeNo && normalizeProjectCode(entry.projectCode) === target
-    )
-    .sort((a, b) => a.date.localeCompare(b.date));
+  return getProcessedActualHours(prNo, allImports);
 }
 
 /**

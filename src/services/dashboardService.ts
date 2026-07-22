@@ -390,8 +390,9 @@ export const getProjectsWithHoursOverrun = (): HoursOverrunWidgetResult => {
     // Budget Hours from Expense Budget -> Budget Hours (or totalHoursBudget fallback)
     const budget = Number(p.manhourBudgetHours) || Number(p.totalHoursBudget) || 0;
 
-    // Actual Hours: the SAME computation Team Assigned uses (getLiveTeamMembers
-    // for the project's latest matched month) — not re-derived here, so the
+    // Actual Hours: the SAME TimesheetProcessingService total Team Assigned
+    // shows (consolidated by Employee + Project + Work Date, for the
+    // project's latest matched month) — not re-derived here, so the
     // Dashboard and Team Assigned can never disagree on this number.
     const actual = getProjectActualHours(p.prNo, timesheetImports);
 
