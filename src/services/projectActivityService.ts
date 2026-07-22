@@ -1,7 +1,8 @@
 import type { Project } from "../types/Project";
 import { getInvoices } from "./invoiceService";
+import { reminderService } from "./reminders/ReminderService";
 
-export type ProjectActivityCategory = "Project" | "Invoice" | "Payment" | "Notes" | "Team" | "Milestone";
+export type ProjectActivityCategory = "Project" | "Invoice" | "Payment" | "Notes" | "Team" | "Milestone" | "Reminders";
 
 export interface ProjectActivityEvent {
   id: string;
@@ -22,27 +23,47 @@ export interface ProjectActivityEvent {
 export const getProjectActivityTimeline = (project: Project, limit = 20): ProjectActivityEvent[] => {
   const events: ProjectActivityEvent[] = [];
 
-  if (project.createdAt) {
-    events.push({
-      id: `${project.id}-created`,
-      category: "Project",
-      title: "Project Created",
-      description: `${project.projectTitle || project.prNo} was added to the repository.`,
-      user: project.primaryProjectManager || undefined,
-      timestamp: project.createdAt,
-    });
-  }
+  // Project Created and Project Updated are intentionally filtered out
+  // to reduce timeline clutter and only show meaningful business activities.
 
-  if (project.updatedAt && project.updatedAt !== project.createdAt) {
+  // Major Project Status
+  if (project.updatedAt && project.projectStatus && project.projectStatus !== "Active" && project.projectStatus !== "In Progress") {
     events.push({
-      id: `${project.id}-updated`,
+      id: `${project.id}-status-${project.projectStatus.toLowerCase().replace(/\s+/g, '-')}`,
       category: "Project",
-      title: "Project Updated",
-      description: `${project.projectTitle || project.prNo} details were updated.`,
+      title: `Project ${project.projectStatus}`,
+      description: `${project.projectTitle || project.prNo} was marked as ${project.projectStatus}.`,
       user: project.primaryProjectManager || undefined,
       timestamp: project.updatedAt,
     });
   }
+
+  // Reminders
+  reminderService.getRemindersByProject(project.id).forEach((reminder) => {
+    // 1. Reminder Created
+    events.push({
+      id: `reminder-created-${reminder.id}`,
+      category: "Reminders",
+      title: "Reminder Created",
+      description: `Reminder to "${reminder.title}" was added.`,
+      user: reminder.createdBy,
+      timestamp: reminder.createdDate,
+    });
+
+    // 2. Reminder Completed
+    if (reminder.isCompleted && reminder.completedDate) {
+      events.push({
+        id: `reminder-completed-${reminder.id}`,
+        category: "Reminders",
+        title: "Reminder Completed",
+        description: `Reminder "${reminder.title}" was completed.`,
+        user: reminder.createdBy,
+        timestamp: reminder.completedDate,
+      });
+    }
+    
+    // Additional reminder events (like Snoozed/Updated) could be added here if the model tracks those timestamps in the future.
+  });
 
   (project.notes || []).forEach((note) => {
     events.push({

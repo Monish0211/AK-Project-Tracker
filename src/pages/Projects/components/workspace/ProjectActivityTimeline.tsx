@@ -1,4 +1,4 @@
-import { Activity, FolderCog, FolderPlus, Landmark, FileText, StickyNote, Users, CalendarCheck } from "lucide-react";
+import { Activity, FolderCog, FolderPlus, Landmark, FileText, StickyNote, Users, CalendarCheck, Bell } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ProjectActivityEvent, ProjectActivityCategory } from "../../../../services/projectActivityService";
 import { Badge } from "../../../../components/ui/Badge";
@@ -16,6 +16,7 @@ const CATEGORY_META: Record<ProjectActivityCategory, { icon: LucideIcon; tint: s
   Notes: { icon: StickyNote, tint: "text-cyan-600 bg-cyan-100 dark:text-cyan-300 dark:bg-cyan-500/15", badgeTone: "neutral" },
   Team: { icon: Users, tint: "text-purple-600 bg-purple-100 dark:text-purple-300 dark:bg-purple-500/15", badgeTone: "accent" },
   Milestone: { icon: CalendarCheck, tint: "text-amber-600 bg-amber-100 dark:text-amber-300 dark:bg-amber-500/15", badgeTone: "warning" },
+  Reminders: { icon: Bell, tint: "text-pink-600 bg-pink-100 dark:text-pink-300 dark:bg-pink-500/15", badgeTone: "danger" },
 };
 
 const ICON_OVERRIDE: Partial<Record<string, LucideIcon>> = {
