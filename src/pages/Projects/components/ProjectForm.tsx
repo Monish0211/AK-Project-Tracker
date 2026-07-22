@@ -31,7 +31,7 @@ import ExpenseBudgetCard from "./ExpenseBudgetCard";
 import InvoiceCard from "./InvoiceCard";
 import NonManhourExpenseCard from "./ExpenseInformation/NonManhourExpenseCard";
 import { syncInvoiceItemsWithQuantity } from "../../../services/invoiceSyncService";
-import { ProjectNotesDrawer } from "../../../components/Dashboard/ProjectNotesDrawer";
+import { ProjectWorkspaceDrawer } from "../../../components/Dashboard/ProjectWorkspaceDrawer";
 import "../project-workspace-theme.css";
 
 // All possible tab keys
@@ -171,7 +171,7 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
               className="flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] font-semibold bg-[var(--nu-accent)] hover:bg-[var(--nu-accent-strong)] text-white shadow-[var(--nu-shadow-sm)] transition-colors self-start sm:self-auto text-[12.5px] shrink-0"
             >
               <span>📝</span>
-              <span>Project Notes</span>
+              <span>Workspace</span>
               <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-[11px] font-bold ml-0.5">
                 {project.notes?.length || 0}
               </span>
@@ -321,7 +321,7 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
       />
 
       {/* Project Notes Slide-over Drawer */}
-      <ProjectNotesDrawer
+      <ProjectWorkspaceDrawer
         isOpen={isNotesOpen}
         onClose={() => setIsNotesOpen(false)}
         project={project}

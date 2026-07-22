@@ -1,15 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
-  Moon, Sun, Bell, User, ChevronDown, Settings, HelpCircle, LogOut,
-  Briefcase, FileText, TrendingUp, CreditCard, Users, Info, X
+  Moon, Sun, User, ChevronDown, Settings, HelpCircle, LogOut, X
 } from "lucide-react";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../auth/authContext";
-import { 
-  getNotifications, markAllAsRead, markAsRead
-} from "../../services/NotificationService";
-import type { AppNotification } from "../../types/AppNotification";
+import { NotificationBell } from "../../notifications/NotificationBell";
 import { getUserProfile } from "../../services/UserService";
 import type { UserProfile } from "../../types/UserProfile";
 import WorkspaceHeader from "../WorkspaceHeader/WorkspaceHeader";
@@ -20,23 +16,6 @@ import AccountSettingsModal from "./components/AccountSettingsModal";
 import HelpDialog from "./components/HelpDialog";
 import LogoutDialog from "./components/LogoutDialog";
 
-const getNotificationIcon = (type: string) => {
-  const iconClass = "text-blue-600 dark:text-blue-400";
-  switch (type) {
-    case "project":
-      return <Briefcase className={iconClass} size={16} />;
-    case "invoice":
-      return <FileText className={iconClass} size={16} />;
-    case "expense":
-      return <TrendingUp className={iconClass} size={16} />;
-    case "payment":
-      return <CreditCard className={iconClass} size={16} />;
-    case "team":
-      return <Users className={iconClass} size={16} />;
-    default:
-      return <Info className={iconClass} size={16} />;
-  }
-};
 
 const getRowClass = (isActive: boolean) => {
   if (isActive) {
@@ -71,11 +50,7 @@ const Navbar = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   
-  // Toggles and data hooks
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [profile] = useState<UserProfile>(getUserProfile());
-  
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
   
   // Modals active states
@@ -88,13 +63,8 @@ const Navbar = () => {
   const [isMobile, setIsMobile] = useState(false);
 
   // Dropdown layout refs for click outside hooks
-  const notificationsRef = useRef<HTMLDivElement>(null);
   const adminMenuRef = useRef<HTMLDivElement>(null);
 
-  // Load notifications from local storage on mount
-  useEffect(() => {
-    setNotifications(getNotifications());
-  }, []);
 
   // Monitor screen size for mobile responsive drawer adjustments
   useEffect(() => {
@@ -109,12 +79,7 @@ const Navbar = () => {
   // Click Outside hook implementation
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
-      if (
-        notificationsRef.current && 
-        !notificationsRef.current.contains(e.target as Node)
-      ) {
-        setIsNotificationsOpen(false);
-      }
+
       if (
         adminMenuRef.current && 
         !adminMenuRef.current.contains(e.target as Node)
@@ -130,7 +95,6 @@ const Navbar = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setIsNotificationsOpen(false);
         setIsAdminMenuOpen(false);
       }
     };
@@ -138,15 +102,6 @@ const Navbar = () => {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const handleMarkAllAsRead = () => {
-    const updated = markAllAsRead();
-    setNotifications(updated);
-  };
-
-  const handleNotificationClick = (id: string) => {
-    const updated = markAsRead(id);
-    setNotifications(updated);
-  };
 
   const handleLogoutConfirm = () => {
     // Close the dialog first
@@ -158,7 +113,7 @@ const Navbar = () => {
     navigate("/login", { replace: true });
   };
 
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
+
 
   return (
     <div
@@ -254,116 +209,13 @@ const Navbar = () => {
         </div>
 
         {/* 🔔 Notifications Dropdown Container */}
-        <div ref={notificationsRef} className="relative">
-          <button
-            onClick={() => {
-              setIsNotificationsOpen(!isNotificationsOpen);
-              setIsAdminMenuOpen(false);
-            }}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition duration-150 cursor-pointer outline-none border-none bg-transparent"
-          >
-            <Bell size={16} className="text-slate-500 dark:text-slate-400" />
-            <span className="hidden md:inline">Notifications</span>
-            {unreadCount > 0 && (
-              <span className="bg-blue-600 dark:bg-blue-500 text-white rounded-full text-[10px] w-4.5 h-4.5 flex items-center justify-center font-bold">
-                {unreadCount}
-              </span>
-            )}
-          </button>
-
-          {/* Notifications List Panel */}
-          {isNotificationsOpen && (
-            <div className={`
-              ${isMobile 
-                ? "fixed inset-x-0 bottom-0 z-50 w-full bg-white dark:bg-[#1E293B] border-t border-slate-200 dark:border-slate-700 rounded-t-2xl shadow-2xl max-h-[75vh] flex flex-col animate-fade-in-up"
-                : "absolute right-0 mt-2 z-50 w-[360px] bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl flex flex-col"
-              }
-            `}>
-              {/* Header row */}
-              <div className="flex justify-between items-center px-4 py-3 border-b border-slate-200 dark:border-slate-700">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-slate-800">Notifications</span>
-                  {unreadCount > 0 && (
-                    <span className="bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide">
-                      {unreadCount} new
-                    </span>
-                  )}
-                </div>
-                {unreadCount > 0 && (
-                  <button
-                    onClick={handleMarkAllAsRead}
-                    className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline border-none bg-transparent cursor-pointer"
-                  >
-                    Mark All as Read
-                  </button>
-                )}
-                {isMobile && (
-                  <button
-                    onClick={() => setIsNotificationsOpen(false)}
-                    className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 border-none bg-transparent"
-                  >
-                    <X size={16} />
-                  </button>
-                )}
-              </div>
-
-              {/* Notification list scroll */}
-              <div className="flex-1 overflow-y-auto max-h-[360px] p-2 space-y-1.5 custom-scrollbar-timeline bg-transparent">
-                {notifications.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center p-8 text-center bg-transparent">
-                    <Bell size={28} className="text-slate-400 dark:text-slate-500 mb-2 animate-bounce" />
-                    <p className="text-sm font-bold text-slate-800">No Notifications</p>
-                    <p className="text-xs text-slate-500 mt-0.5">You're all caught up.</p>
-                  </div>
-                ) : (
-                  notifications.map((notif) => (
-                    <div
-                      key={notif.id}
-                      onClick={() => handleNotificationClick(notif.id)}
-                      className={`p-4 flex gap-3 hover:bg-slate-50 dark:hover:bg-slate-700/40 cursor-pointer transition duration-200 relative items-start bg-white dark:bg-transparent rounded-lg border-l-2 ${
-                        !notif.isRead 
-                          ? "border-blue-600 dark:border-blue-500" 
-                          : "border-transparent"
-                      }`}
-                    >
-                      {/* Left icon wrapper */}
-                      <div className="mt-0.5 w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center border border-slate-200 dark:border-slate-600 shrink-0">
-                        {getNotificationIcon(notif.type)}
-                      </div>
-
-                      {/* Content */}
-                      <div className="flex-1 min-w-0 pr-4">
-                        <p className={`text-sm text-slate-800 truncate ${
-                          !notif.isRead ? "font-bold" : "font-semibold"
-                        }`}>
-                          {notif.title}
-                        </p>
-                        <p className="text-[13px] leading-normal text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed break-words">
-                          {notif.description}
-                        </p>
-                        <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1 uppercase tracking-wide">
-                          {notif.time}
-                        </p>
-                      </div>
-
-                      {/* Unread dot */}
-                      {!notif.isRead && (
-                        <span className="absolute right-4 top-5 w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-500 shadow-sm shadow-blue-500/30 shrink-0" />
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+        <NotificationBell />
 
         {/* 👤 Administrator Dropdown Container */}
         <div ref={adminMenuRef} className="relative">
           <button
             onClick={() => {
               setIsAdminMenuOpen(!isAdminMenuOpen);
-              setIsNotificationsOpen(false);
             }}
             className="flex items-center gap-2 px-3 py-1 rounded-lg text-sm font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition duration-150 cursor-pointer outline-none border-none bg-transparent"
           >

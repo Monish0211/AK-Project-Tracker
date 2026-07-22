@@ -109,7 +109,7 @@ const ProjectWorkspaceHeader = ({
 
         <div className="flex flex-wrap items-center justify-between gap-2.5 mt-4 pt-3.5 border-t border-[var(--nu-border)]">
           <Button variant="secondary" size="sm" icon={<StickyNote size={13} />} onClick={onOpenNotes}>
-            Project Notes
+            Workspace
             <span className="bg-[var(--nu-accent)] text-white px-1.5 py-0.5 rounded-full text-[10px] font-bold ml-0.5">
               {notesCount}
             </span>
