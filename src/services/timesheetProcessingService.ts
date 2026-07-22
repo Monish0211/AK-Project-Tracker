@@ -293,18 +293,21 @@ export function getProcessedTeamMembers(
 }
 
 /**
- * Actual Hours for a project — the single source of truth. Sums the
- * consolidated Total Hours (from getProcessedTeamMembers) for the project's
- * latest matched month. Anything comparing against budgeted hours (e.g. the
- * Dashboard's Hours Overrun widget) must call this rather than re-deriving
- * hours independently, or the views can disagree.
+ * Lifetime Actual Hours for a project — sums consolidated Total Hours
+ * (from getProcessedTeamMembers) across every imported month matched to
+ * this project, never just one. This is the single source of truth for
+ * anything comparing against budgeted hours (e.g. the Dashboard's Hours
+ * Overrun widget): it is intentionally independent of whatever month is
+ * currently selected in the Team Assigned UI, which is a display-only
+ * filter and must never change a project's lifetime effort total.
+ *
+ * For a month-scoped figure (Team Assigned's own view when a specific
+ * month is selected), call getProcessedTeamMembers(prNo, allImports, month)
+ * instead and sum its totalHours — passing no month there already means
+ * "aggregate every month," matching this function.
  */
-export function getProcessedActualHours(prNo: string, allImports: TimesheetImportMonth[]): number {
-  const months = getProcessedProjectMonths(prNo, allImports);
-  const latestMonth = months[months.length - 1];
-  if (!latestMonth) return 0;
-
-  const members = getProcessedTeamMembers(prNo, allImports, latestMonth);
+export function getProcessedLifetimeActualHours(prNo: string, allImports: TimesheetImportMonth[]): number {
+  const members = getProcessedTeamMembers(prNo, allImports);
   return Math.round(members.reduce((sum, m) => sum + m.totalHours, 0) * 100) / 100;
 }
 

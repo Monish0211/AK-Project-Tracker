@@ -390,10 +390,11 @@ export const getProjectsWithHoursOverrun = (): HoursOverrunWidgetResult => {
     // Budget Hours from Expense Budget -> Budget Hours (or totalHoursBudget fallback)
     const budget = Number(p.manhourBudgetHours) || Number(p.totalHoursBudget) || 0;
 
-    // Actual Hours: the SAME TimesheetProcessingService total Team Assigned
-    // shows (consolidated by Employee + Project + Work Date, for the
-    // project's latest matched month) — not re-derived here, so the
-    // Dashboard and Team Assigned can never disagree on this number.
+    // Actual Hours: the project's LIFETIME total from TimesheetProcessingService
+    // (every imported month for this project summed, consolidated by
+    // Employee + Project + Work Date) — never just the month currently
+    // selected in Team Assigned. That month selector is a display-only UI
+    // filter; changing it must never change this widget's numbers.
     const actual = getProjectActualHours(p.prNo, timesheetImports);
 
     // Filter Logic: BudgetHours > 0 AND ActualHours > BudgetHours

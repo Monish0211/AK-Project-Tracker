@@ -10,7 +10,7 @@ import type { TimesheetImportMonth, TimesheetEntry } from "../types/Timesheet";
 import { normalizeProjectCode } from "./timesheetImportService";
 import { buildProjectResourceFromTimesheet } from "./timesheetService";
 import { getEmployees } from "./employeeService";
-import { getProcessedActualHours } from "./timesheetProcessingService";
+import { getProcessedLifetimeActualHours } from "./timesheetProcessingService";
 
 /**
  * Sync a timesheet import to all matching projects
@@ -122,12 +122,15 @@ export function syncTimesheetToProjects(
 // need to change their import path.
 
 /**
- * Actual Hours for a project — the single source of truth. Delegates to
- * TimesheetProcessingService so Team Assigned, the Dashboard's Hours
- * Overrun widget, and any other consumer can never disagree on this number.
+ * Actual Hours for a project — the single source of truth for Hours
+ * Overrun. Delegates to TimesheetProcessingService's lifetime total (every
+ * imported month for the project summed, never just one), so this is
+ * intentionally independent of whatever month is currently selected in the
+ * Team Assigned UI — that selector is a display-only filter and must never
+ * change what the Dashboard reports.
  */
 export function getProjectActualHours(prNo: string, allImports: TimesheetImportMonth[]): number {
-  return getProcessedActualHours(prNo, allImports);
+  return getProcessedLifetimeActualHours(prNo, allImports);
 }
 
 /**
