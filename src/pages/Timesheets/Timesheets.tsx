@@ -332,9 +332,25 @@ const Timesheets = () => {
         throw new Error("No valid timesheet entries found.");
       }
 
-      const existingMonth = allMonths.find((m) => m.month === allEntries[0].date.substring(0, 7));
-      if (existingMonth) {
-        const duplicateCheck = allEntries.filter((newEntry) =>
+      // A single Excel upload can legitimately span multiple calendar
+      // months (e.g. Feb-Jul). Group entries by each row's own work date
+      // instead of tagging the whole upload with just the first row's
+      // month, so every month present gets its own TimesheetImportMonth
+      // container and shows up in the month selector.
+      const entriesByMonth = new Map<string, TimesheetEntry[]>();
+      allEntries.forEach((entry) => {
+        const key = getMonthFromDate(entry.date);
+        const list = entriesByMonth.get(key);
+        if (list) list.push(entry);
+        else entriesByMonth.set(key, [entry]);
+      });
+
+      const duplicateMonths: string[] = [];
+      entriesByMonth.forEach((monthEntries, monthKey) => {
+        const existingMonth = allMonths.find((m) => m.month === monthKey);
+        if (!existingMonth) return;
+
+        const duplicateCheck = monthEntries.filter((newEntry) =>
           existingMonth.entries.some(
             (existing) =>
               existing.employeeNo === newEntry.employeeNo &&
@@ -344,20 +360,28 @@ const Timesheets = () => {
         );
 
         if (duplicateCheck.length > 0) {
-          throw new Error(
-            `Found ${duplicateCheck.length} duplicate entries. Update the existing import or use a different month.`
-          );
+          duplicateMonths.push(`${formatMonthDisplay(monthKey)} (${duplicateCheck.length})`);
         }
+      });
+
+      if (duplicateMonths.length > 0) {
+        throw new Error(
+          `Found duplicate entries in ${duplicateMonths.join(", ")}. Update the existing import or use a different month.`
+        );
       }
 
-      const newMonth = createImportMonth(allEntries, "Admin", "monthly");
-      const updatedMonths = allMonths.filter((m) => m.month !== newMonth.month);
-      updatedMonths.push(newMonth);
+      const newMonths = Array.from(entriesByMonth.entries()).map(([, monthEntries]) =>
+        createImportMonth(monthEntries, "Admin", "monthly")
+      );
+      const newMonthKeys = newMonths.map((m) => m.month);
+
+      let updatedMonths = allMonths.filter((m) => !newMonthKeys.includes(m.month));
+      updatedMonths = [...updatedMonths, ...newMonths];
       updatedMonths.sort((a, b) => a.month.localeCompare(b.month));
 
       timesheetStorage.save(updatedMonths);
       setAllMonths(updatedMonths);
-      setSelectedMonth(newMonth.month);
+      setSelectedMonth([...newMonthKeys].sort().reverse()[0] || "");
       setSelectedProject("all");
       setSearchEmployee("");
 
@@ -376,7 +400,10 @@ const Timesheets = () => {
           .map((p) => p.prNo);
         setSyncedProjects(matchedPrNos);
 
-        const synced = syncTimesheetToProjects(allProjects, newMonth);
+        let synced = allProjects;
+        newMonths.forEach((newMonth) => {
+          synced = syncTimesheetToProjects(synced, newMonth);
+        });
         synced.forEach((project) => updateProject(project));
       } catch (syncErr) {
         console.warn("Sync warning:", syncErr);

@@ -19,6 +19,7 @@
 
 import type { TimesheetEntry, TimesheetImportMonth } from "../types/Timesheet";
 import { normalizeProjectCode } from "./timesheetImportService";
+import { getMonthFromDate } from "./timesheetService";
 import { getEmployees } from "./employeeService";
 
 export interface ProcessedDay {
@@ -81,7 +82,12 @@ function computeDayGroups(allImports: TimesheetImportMonth[]): RawDayGroup[] {
   allImports.forEach((monthData) => {
     monthData.entries.forEach((entry) => {
       const normCode = normalizeProjectCode(entry.projectCode);
-      const key = `${monthData.month}|${entry.employeeNo.trim().toLowerCase()}|${normCode}|${entry.date}`;
+      // Derive the month from each row's own work date rather than trusting
+      // the import container's single month tag — one Excel upload can
+      // legitimately span several calendar months, and every one of them
+      // must be discoverable independently.
+      const entryMonth = getMonthFromDate(entry.date);
+      const key = `${entryMonth}|${entry.employeeNo.trim().toLowerCase()}|${normCode}|${entry.date}`;
 
       let group = map.get(key);
       if (!group) {
@@ -92,7 +98,7 @@ function computeDayGroups(allImports: TimesheetImportMonth[]): RawDayGroup[] {
           rawProjectCode: entry.projectCode,
           rawProjectName: entry.projectName,
           date: entry.date,
-          importMonth: monthData.month,
+          importMonth: entryMonth,
           dailyHours: 0,
           status: entry.status || "Active",
           entries: [],
@@ -148,16 +154,28 @@ function rateForEmployee(employeeNo: string, masterEmployees: ReturnType<typeof 
 // Public engine API
 // ─────────────────────────────────────────────────────────────────────────
 
-/** Months that contain at least one entry matching this PR Number. */
+/**
+ * Unique months (YYYY-MM) that contain at least one entry matching this PR
+ * Number, derived from each row's own work date — never from the import
+ * container's single month tag, so a multi-month upload surfaces every
+ * month it actually contains. Returned in chronological order (oldest
+ * first) for populating month dropdowns; callers that want the most recent
+ * month should read the last element.
+ */
 export function getProcessedProjectMonths(prNo: string, allImports: TimesheetImportMonth[]): string[] {
   const target = normalizeProjectCode(prNo);
   if (!target) return [];
 
-  return allImports
-    .filter((month) => month.entries.some((entry) => normalizeProjectCode(entry.projectCode) === target))
-    .map((month) => month.month)
-    .sort()
-    .reverse();
+  const months = new Set<string>();
+  allImports.forEach((monthData) => {
+    monthData.entries.forEach((entry) => {
+      if (normalizeProjectCode(entry.projectCode) === target) {
+        months.add(getMonthFromDate(entry.date));
+      }
+    });
+  });
+
+  return Array.from(months).sort();
 }
 
 /** Whether any imported timesheet entry matches this PR Number. */
@@ -282,7 +300,8 @@ export function getProcessedTeamMembers(
  * hours independently, or the views can disagree.
  */
 export function getProcessedActualHours(prNo: string, allImports: TimesheetImportMonth[]): number {
-  const latestMonth = getProcessedProjectMonths(prNo, allImports)[0];
+  const months = getProcessedProjectMonths(prNo, allImports);
+  const latestMonth = months[months.length - 1];
   if (!latestMonth) return 0;
 
   const members = getProcessedTeamMembers(prNo, allImports, latestMonth);
@@ -302,7 +321,8 @@ export function getProcessedEmployeeTotalHours(
   allImports: TimesheetImportMonth[],
   employeeNo: string
 ): number | undefined {
-  const latestMonth = getProcessedProjectMonths(prNo, allImports)[0];
+  const months = getProcessedProjectMonths(prNo, allImports);
+  const latestMonth = months[months.length - 1];
   if (!latestMonth) return undefined;
 
   const member = getProcessedTeamMembers(prNo, allImports, latestMonth).find(

@@ -72,11 +72,12 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
   const hasSyncedData = hasProcessedTimesheetData(project.prNo, allImports);
 
   // Default to latest available month whenever the matched months change.
+  // availableMonths is chronological (oldest first), so latest is the last entry.
   useEffect(() => {
     if (availableMonths.length === 0) {
       setSelectedMonth("");
     } else if (!availableMonths.includes(selectedMonth)) {
-      setSelectedMonth(availableMonths[0]);
+      setSelectedMonth(availableMonths[availableMonths.length - 1]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableMonths.join(",")]);
