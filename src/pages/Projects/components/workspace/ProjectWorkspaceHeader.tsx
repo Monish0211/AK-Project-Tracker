@@ -74,6 +74,11 @@ const ProjectWorkspaceHeader = ({
               {project.projectStatus || "—"}
             </Badge>
             {project.workOrderStatus && <Badge tone="info">WO: {project.workOrderStatus}</Badge>}
+            {project.projectStatus === "Completed" && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-400/30">
+                ✅ Completed Project
+              </span>
+            )}
           </div>
           <p className="text-[12.5px] text-[#a9bfda] mt-1">
             PR {project.prNo || "—"} · {project.client || "—"} · {project.department || "—"}

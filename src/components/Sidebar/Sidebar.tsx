@@ -76,12 +76,23 @@ const Sidebar = () => {
     statusKey: string;
   } | null>(null);
 
+  // View/Edit Project are shared routes reused by both modules, so their own
+  // path can't tell us which one the user came from — Projects.tsx passes
+  // { state: { source } } on navigate() for exactly this reason. Without
+  // that context, viewing a completed project would always (incorrectly)
+  // light up Project Repository just because /projects/view/:id starts with
+  // /projects/.
+  const routeState = location.state as { source?: "repository" | "completed" } | null;
+  const isProjectDetailPath = /^\/projects\/(view|edit)\//.test(location.pathname);
+  const cameFromCompleted = isProjectDetailPath && routeState?.source === "completed";
+
   // "Project Repository" covers /projects itself plus its add/view/edit
-  // sub-routes, but NOT /projects/completed, which is its own dedicated page.
+  // sub-routes, but NOT /projects/completed, and not a project opened from
+  // Completed Projects.
+  const isCompletedProjectsActive = location.pathname.startsWith("/projects/completed") || cameFromCompleted;
   const isRepositoryActive =
-    location.pathname === "/projects" ||
-    (location.pathname.startsWith("/projects/") && !location.pathname.startsWith("/projects/completed"));
-  const isCompletedProjectsActive = location.pathname.startsWith("/projects/completed");
+    !isCompletedProjectsActive &&
+    (location.pathname === "/projects" || location.pathname.startsWith("/projects/"));
   const isProjectsSectionActive = isRepositoryActive || isCompletedProjectsActive;
 
   // Dropdown starts expanded whenever a Projects sub-page is already active,
