@@ -93,7 +93,11 @@ const ProjectStatusChart: React.FC = () => {
                 return (
                   <div
                     key={entry.name}
-                    onClick={() => navigate(`/projects?status=${entry.name}`)}
+                    onClick={() =>
+                      navigate(
+                        entry.name === "Completed" ? "/projects/completed" : `/projects?status=${entry.name}`
+                      )
+                    }
                     className="flex items-center justify-between text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 font-semibold cursor-pointer transition-colors"
                   >
                     <div className="flex items-center gap-1.5 truncate">

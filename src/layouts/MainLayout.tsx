@@ -8,6 +8,7 @@ import Dashboard from "../pages/Dashboard/Dashboard";
 
 /* Projects */
 import Projects from "../pages/Projects/Projects";
+import CompletedProjects from "../pages/Projects/CompletedProjects";
 import AddProject from "../pages/Projects/AddProject";
 import ViewProject from "../pages/Projects/ViewProject";
 import EditProject from "../pages/Projects/EditProject";
@@ -61,6 +62,11 @@ const MainLayout = () => {
               <Route
                 path="/projects"
                 element={<Projects />}
+              />
+
+              <Route
+                path="/projects/completed"
+                element={<CompletedProjects />}
               />
 
               <Route

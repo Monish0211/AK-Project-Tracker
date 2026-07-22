@@ -29,14 +29,42 @@ import {
   parseProjectsWorkbook,
 } from "../../services/projectWorkbookService";
 
-const Projects = () => {
+type ProjectsMode = "repository" | "completed";
+
+interface ProjectsProps {
+  /**
+   * "repository" (default): every project except Completed — the primary
+   * working repository. "completed": only Completed projects. This is the
+   * only difference between the Project Repository and Completed Projects
+   * pages — same component, same table/search/filters/sorting/pagination,
+   * just a different base dataset. Today that's a client-side filter;
+   * swapping to a REST API later only means changing this query
+   * (WHERE ProjectStatus <> 'Completed' vs = 'Completed'), not this component.
+   */
+  mode?: ProjectsMode;
+}
+
+const scopeProjectsByMode = (all: Project[], mode: ProjectsMode): Project[] =>
+  mode === "completed"
+    ? all.filter((p) => p.projectStatus === "Completed")
+    : all.filter((p) => p.projectStatus !== "Completed");
+
+const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const statusParam = searchParams.get("status") || "All";
 
-  // Live project state
-  const [projects, setProjects] = useState<Project[]>(getProjects());
+  const pageTitle = mode === "completed" ? "Completed Projects" : "Projects";
+  const repoCardTitle = mode === "completed" ? "Completed Projects" : "Project Repository";
+  const repoCardSubtitle =
+    mode === "completed"
+      ? "Search, filter, and review all completed engineering projects"
+      : "Search, filter, and manage all engineering projects";
+
+  // Live project state — already scoped to this page's dataset (Repository
+  // excludes Completed, Completed Projects shows only Completed).
+  const [projects, setProjects] = useState<Project[]>(() => scopeProjectsByMode(getProjects(), mode));
 
   // Search & Filter State
   const [search, setSearch] = useState("");
@@ -78,16 +106,18 @@ const Projects = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Live synchronization whenever project data changes (via add/edit/delete/import)
+  // Live synchronization whenever project data changes (via add/edit/delete/import).
+  // Re-scoping on every change is what makes a status edit to/from Completed
+  // move a project between this page and the other one automatically.
   useEffect(() => {
     const handleDataChange = () => {
-      setProjects(getProjects());
+      setProjects(scopeProjectsByMode(getProjects(), mode));
     };
     window.addEventListener("pmo:data-changed", handleDataChange);
     return () => {
       window.removeEventListener("pmo:data-changed", handleDataChange);
     };
-  }, []);
+  }, [mode]);
 
   // Computed statistics (dynamic live summaries)
   const stats = useMemo(() => {
@@ -146,7 +176,7 @@ const Projects = () => {
       return;
     }
     deleteProject(id);
-    setProjects(getProjects());
+    setProjects(scopeProjectsByMode(getProjects(), mode));
   };
 
   const clr = () => {
@@ -448,7 +478,7 @@ const Projects = () => {
               iFluids Engineering · Project Management Office
             </div>
             <h1 className="pmo-hero-title text-3xl font-extrabold text-white tracking-tight leading-none">
-              Projects
+              {pageTitle}
             </h1>
             <p className="text-slate-300/80 text-sm mt-1 max-w-lg leading-relaxed">
               Engineering project tracking · Commercial management · Invoicing · Execution lifecycle
@@ -567,10 +597,10 @@ const Projects = () => {
             </div>
             <div>
               <h2 className="rh-title text-base font-bold text-slate-800 dark:text-slate-100">
-                Project Repository
+                {repoCardTitle}
               </h2>
               <p className="rh-sub text-xs text-slate-400">
-                Search, filter, and manage all engineering projects
+                {repoCardSubtitle}
               </p>
             </div>
           </div>
