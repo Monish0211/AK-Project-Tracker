@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Briefcase, CreditCard, History, LayoutGrid, Package, Receipt, Users, Wallet } from "lucide-react";
 
 import "./project-workspace-theme.css";
@@ -49,8 +49,16 @@ const TABS: WorkspaceTabConfig<TabKey>[] = [
 const ViewProject = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState<TabKey>(TABS[0].key);
   const [isNotesOpen, setIsNotesOpen] = useState(false);
+
+  // Which module the user opened this project from (Project Repository or
+  // Completed Projects) — preserved from Projects.tsx's row action so Back
+  // returns to the right place and the Sidebar keeps the right item
+  // highlighted, instead of always assuming Project Repository.
+  const source = (location.state as { source?: "repository" | "completed" } | null)?.source;
+  const backDestination = source === "completed" ? "/projects/completed" : "/projects";
 
   const [, setRefreshTrigger] = useState(0);
 
@@ -79,7 +87,7 @@ const ViewProject = () => {
       <div className="bg-white rounded-2xl shadow-md p-8">
         <h1 className="text-3xl font-bold text-red-600 mb-4">Project Not Found</h1>
         <button
-          onClick={() => navigate("/projects")}
+          onClick={() => navigate(backDestination)}
           className="px-5 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition"
         >
           Back to Projects
@@ -119,7 +127,7 @@ const ViewProject = () => {
 
   const goBack = () => {
     if (isFirstTab) {
-      navigate("/projects");
+      navigate(backDestination);
     } else {
       setActiveTab(TABS[activeIndex - 1].key);
     }
@@ -127,7 +135,7 @@ const ViewProject = () => {
 
   const goEdit = () =>
     navigate(`/projects/edit/${project.id}`, {
-      state: { tab: activeTab },
+      state: { tab: activeTab, source },
     });
 
   return (

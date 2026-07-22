@@ -827,14 +827,14 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                         <div className="acts">
                           <div className="pmo-act-wrap bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-900">
                             <button
-                              onClick={() => navigate(`/projects/view/${p.id}`)}
+                              onClick={() => navigate(`/projects/view/${p.id}`, { state: { source: mode } })}
                               className="pmo-act-btn act-v hover:bg-blue-100/40 hover:text-blue-600"
                               title="View Project Details"
                             >
                               <Eye />
                             </button>
                             <button
-                              onClick={() => navigate(`/projects/edit/${p.id}`)}
+                              onClick={() => navigate(`/projects/edit/${p.id}`, { state: { source: mode } })}
                               className="pmo-act-btn act-e hover:bg-slate-100/50 hover:text-slate-600"
                               title="Edit Project Details"
                             >
