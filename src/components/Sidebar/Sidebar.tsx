@@ -3,6 +3,8 @@ import { NavLink, useNavigate, useLocation, useSearchParams } from "react-router
 import {
   BarChart3,
   Building2,
+  CheckCircle2,
+  ChevronDown,
   Clock3,
   Droplet,
   FolderKanban,
@@ -16,15 +18,29 @@ import { getProjects } from "../../services/projectService";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import type { Project } from "../../types/Project";
 
-interface NavItem {
+interface NavChild {
   label: string;
   to: string;
   icon: LucideIcon;
 }
 
+interface NavItem {
+  label: string;
+  to?: string;
+  icon: LucideIcon;
+  children?: NavChild[];
+}
+
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", to: "/", icon: LayoutDashboard },
-  { label: "Projects", to: "/projects", icon: FolderKanban },
+  {
+    label: "Projects",
+    icon: FolderKanban,
+    children: [
+      { label: "Project Repository", to: "/projects", icon: FolderKanban },
+      { label: "Completed Projects", to: "/projects/completed", icon: CheckCircle2 },
+    ],
+  },
   { label: "Customer Master", to: "/customers", icon: Building2 },
   { label: "Manpower", to: "/manpower", icon: Users },
   { label: "Timesheets", to: "/timesheets", icon: Clock3 },
@@ -60,6 +76,18 @@ const Sidebar = () => {
     statusKey: string;
   } | null>(null);
 
+  // "Project Repository" covers /projects itself plus its add/view/edit
+  // sub-routes, but NOT /projects/completed, which is its own dedicated page.
+  const isRepositoryActive =
+    location.pathname === "/projects" ||
+    (location.pathname.startsWith("/projects/") && !location.pathname.startsWith("/projects/completed"));
+  const isCompletedProjectsActive = location.pathname.startsWith("/projects/completed");
+  const isProjectsSectionActive = isRepositoryActive || isCompletedProjectsActive;
+
+  // Dropdown starts expanded whenever a Projects sub-page is already active,
+  // and otherwise toggles manually.
+  const [isProjectsOpen, setIsProjectsOpen] = useState(isProjectsSectionActive);
+
   // Sync projects dynamically when data changes
   useEffect(() => {
     const handleDataChange = () => {
@@ -91,7 +119,13 @@ const Sidebar = () => {
   };
 
   const handleRowClick = (statusKey: string) => {
-    navigate(`/projects?status=${statusKey}`);
+    // Completed projects live on their own dedicated page now, since the
+    // Project Repository always excludes them regardless of the status filter.
+    if (statusKey === "Completed") {
+      navigate("/projects/completed");
+    } else {
+      navigate(`/projects?status=${statusKey}`);
+    }
   };
 
   const handleContextMenu = (e: React.MouseEvent, statusKey: string) => {
@@ -144,6 +178,9 @@ const Sidebar = () => {
 
   // Determine if a status is currently active (path is /projects and param matches)
   const isStatusActive = (statusKey: string) => {
+    if (statusKey === "Completed") {
+      return location.pathname === "/projects/completed";
+    }
     return location.pathname === "/projects" && searchParams.get("status") === statusKey;
   };
 
@@ -193,42 +230,108 @@ const Sidebar = () => {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-2 min-[1440px]:px-4 py-5">
         <ul className="space-y-2">
-          {NAV_ITEMS.map(({ label, to, icon: Icon }) => (
-            <li key={to}>
-              <NavLink
-                to={to}
-                end={to === "/"}
-                className={({ isActive }) =>
+          {NAV_ITEMS.map((item) => {
+            if (item.children) {
+              const ParentIcon = item.icon;
+              return (
+                <li key={item.label}>
+                  <button
+                    type="button"
+                    onClick={() => setIsProjectsOpen((v) => !v)}
+                    className={`
+                      w-full flex items-center justify-center min-[1440px]:justify-between
+                      gap-3 rounded-xl px-3 min-[1440px]:px-4 py-3 text-sm font-medium
+                      transition-all duration-300
+                      ${
+                        isProjectsSectionActive
+                          ? "bg-gradient-to-r from-blue-600 to-cyan-500 shadow-lg shadow-blue-900/40 active-nav-link"
+                          : "text-slate-300 hover:bg-white/10 hover:text-white"
+                      }
+                    `}
+                  >
+                    <span className="flex items-center gap-3">
+                      <ParentIcon size={19} className="shrink-0" />
+                      <span className="hidden min-[1440px]:block">{item.label}</span>
+                    </span>
+                    <ChevronDown
+                      size={15}
+                      className={`hidden min-[1440px]:block shrink-0 transition-transform duration-200 ${
+                        isProjectsOpen ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+
+                  {isProjectsOpen && (
+                    <ul className="mt-1.5 space-y-1 min-[1440px]:pl-4">
+                      {item.children.map((child) => {
+                        const ChildIcon = child.icon;
+                        const childActive =
+                          child.to === "/projects" ? isRepositoryActive : isCompletedProjectsActive;
+                        return (
+                          <li key={child.to}>
+                            <NavLink
+                              to={child.to}
+                              className={`
+                                flex items-center justify-center min-[1440px]:justify-start
+                                gap-3 rounded-xl px-3 min-[1440px]:px-4 py-2.5 text-sm font-medium
+                                transition-all duration-300
+                                ${
+                                  childActive
+                                    ? "bg-white/15 text-white shadow-inner"
+                                    : "text-slate-400 hover:bg-white/10 hover:text-white"
+                                }
+                              `}
+                            >
+                              <ChildIcon size={16} className="shrink-0" />
+                              <span className="hidden min-[1440px]:block truncate">{child.label}</span>
+                            </NavLink>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </li>
+              );
+            }
+
+            const { label, to, icon: Icon } = item;
+            return (
+              <li key={to}>
+                <NavLink
+                  to={to!}
+                  end={to === "/"}
+                  className={({ isActive }) =>
+                    `
+                    flex
+                    items-center
+                    justify-center
+                    min-[1440px]:justify-start
+                    gap-3
+                    rounded-xl
+                    px-3
+                    min-[1440px]:px-4
+                    py-3
+                    text-sm
+                    font-medium
+                    transition-all
+                    duration-300
+                    ${
+                      isActive
+                        ? "bg-gradient-to-r from-blue-600 to-cyan-500 shadow-lg shadow-blue-900/40 active-nav-link"
+                        : "text-slate-300 hover:bg-white/10 hover:text-white min-[1440px]:hover:translate-x-1"
+                    }
                   `
-                  flex
-                  items-center
-                  justify-center
-                  min-[1440px]:justify-start
-                  gap-3
-                  rounded-xl
-                  px-3
-                  min-[1440px]:px-4
-                  py-3
-                  text-sm
-                  font-medium
-                  transition-all
-                  duration-300
-                  ${
-                    isActive
-                      ? "bg-gradient-to-r from-blue-600 to-cyan-500 shadow-lg shadow-blue-900/40 active-nav-link"
-                      : "text-slate-300 hover:bg-white/10 hover:text-white min-[1440px]:hover:translate-x-1"
                   }
-                `
-                }
-              >
-                <Icon
-                  size={19}
-                  className="shrink-0"
-                />
-                <span className="hidden min-[1440px]:block">{label}</span>
-              </NavLink>
-            </li>
-          ))}
+                >
+                  <Icon
+                    size={19}
+                    className="shrink-0"
+                  />
+                  <span className="hidden min-[1440px]:block">{label}</span>
+                </NavLink>
+              </li>
+            );
+          })}
         </ul>
       </nav>
 
