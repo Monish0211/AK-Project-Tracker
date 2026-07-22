@@ -52,12 +52,21 @@ const ViewProject = () => {
   const [activeTab, setActiveTab] = useState<TabKey>(TABS[0].key);
   const [isNotesOpen, setIsNotesOpen] = useState(false);
 
+  const [, setRefreshTrigger] = useState(0);
+
   // Sync active tab & notes state to session storage so Breadcrumb can read it
   useEffect(() => {
     sessionStorage.setItem("view-project-tab", activeTab);
     sessionStorage.setItem("view-project-notes", String(isNotesOpen));
     window.dispatchEvent(new Event("pmo-project-view-state-change"));
   }, [activeTab, isNotesOpen]);
+
+  // Listen for external project updates (like from the ProjectWorkspaceDrawer)
+  useEffect(() => {
+    const handleDataChange = () => setRefreshTrigger((prev) => prev + 1);
+    window.addEventListener("pmo:data-changed", handleDataChange);
+    return () => window.removeEventListener("pmo:data-changed", handleDataChange);
+  }, []);
 
   if (!id) {
     return <div className="text-center mt-10">Invalid Project Id</div>;
@@ -184,13 +193,13 @@ const ViewProject = () => {
         </div>
       </div>
 
-      {/* Project Notes Slide-over Drawer (Read-Only) */}
+      {/* Project Workspace Slide-over Drawer (Interactive) */}
       <ProjectWorkspaceDrawer
         isOpen={isNotesOpen}
         onClose={() => setIsNotesOpen(false)}
         project={project}
-        setProject={() => {}}
-        readOnly={true}
+        setProject={() => {}} // State updates triggered via pmo:data-changed
+        readOnly={false}
       />
     </div>
   );

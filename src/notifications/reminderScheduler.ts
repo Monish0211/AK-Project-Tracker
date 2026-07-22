@@ -4,6 +4,7 @@ import { reminderService } from "../services/reminders/ReminderService";
 import { notificationService } from "./notificationService";
 import { toastStore } from "./toastStore";
 import { NotificationRoutes } from "./notificationRoutes";
+import { reminderSoundService } from "../services/audio/ReminderSoundService";
 
 // Poll every 15s: frequent enough that a 1-minute notify offset never slips
 // noticeably late, cheap enough (one array filter/map over pending reminders
@@ -71,12 +72,18 @@ class ReminderScheduler {
     // refreshing the app (or any later tick) can never fire it twice.
     const candidates = reminderService.getPendingReminders().filter((r) => !r.notificationGenerated);
 
+    let firedCount = 0;
     candidates.forEach((reminder) => {
       const triggerAt = computeTriggerTime(reminder);
       if (now.getTime() >= triggerAt.getTime()) {
         this.fire(reminder, now);
+        firedCount++;
       }
     });
+
+    if (firedCount > 0) {
+      reminderSoundService.play();
+    }
   }
 
   private fire(reminder: ProjectReminder, now: Date): void {

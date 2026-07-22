@@ -5,6 +5,7 @@ import type { ReminderToastData } from "./toastStore";
 import { NotificationRoutes } from "./notificationRoutes";
 import { reminderService } from "../services/reminders/ReminderService";
 import type { SnoozeOption } from "../services/reminders/ReminderService";
+import { reminderSoundService } from "../services/audio/ReminderSoundService";
 
 interface Props {
   toast: ReminderToastData;
@@ -46,6 +47,7 @@ export const ReminderToast: React.FC<Props> = ({ toast, onDismiss }) => {
 
   const startExit = (after: () => void) => {
     setPhase("exiting");
+    reminderSoundService.stop();
     setTimeout(after, 220); // matches the exit transition duration below
   };
 
