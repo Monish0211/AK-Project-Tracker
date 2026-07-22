@@ -365,8 +365,10 @@ const Sidebar = () => {
         }}
       />
 
-      {/* Branding */}
-      <div className="relative px-3 min-[1440px]:px-6 py-6 flex justify-center min-[1440px]:justify-start">
+      {/* Branding — shrink-0 so it always keeps its natural size and never
+          gets compressed by the flex column, regardless of how tall
+          Navigation or Quick Summary end up being. */}
+      <div className="shrink-0 relative px-3 min-[1440px]:px-6 py-6 flex justify-center min-[1440px]:justify-start">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-900/40 shrink-0">
             <Droplet
@@ -388,10 +390,17 @@ const Sidebar = () => {
         </div>
       </div>
 
-      <hr className="pmo-divider mx-3 min-[1440px]:mx-6 my-1" />
+      <hr className="pmo-divider shrink-0 mx-3 min-[1440px]:mx-6 my-1" />
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-2 min-[1440px]:px-4 py-5">
+      {/* Navigation — flex-1 lets this expand to fill whatever vertical
+          space Branding/Quick Summary don't need (acting as the "flexible
+          spacer" pushing Quick Summary to the bottom), while min-h-0
+          overrides the flex default of never shrinking below content size —
+          without it, a tall item list could never be capped/scrolled and
+          would instead push Quick Summary down or off-screen. overflow-y-auto
+          then makes ONLY this region scrollable if its content ever exceeds
+          the space it was allocated. */}
+      <nav className="flex-1 min-h-0 overflow-y-auto px-2 min-[1440px]:px-4 py-5">
         <ul className="space-y-2">
           {NAV_ITEMS.map((item) => {
             if (item.children) {
@@ -507,8 +516,10 @@ const Sidebar = () => {
         </ul>
       </nav>
 
-      {/* Bottom Summary */}
-      <div className="hidden min-[1440px]:block p-4">
+      {/* Bottom Summary — shrink-0 so it always renders at its natural
+          height and stays anchored to the bottom, right after Navigation's
+          flexible space, never compressed or pushed below the viewport. */}
+      <div className="shrink-0 hidden min-[1440px]:block p-4">
         <div className="pmo-qs-card rounded-2xl border border-white/10 bg-white/[0.06] backdrop-blur-sm p-4 shadow-xl">
           <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-slate-400">
             Quick Summary
