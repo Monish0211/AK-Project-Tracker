@@ -43,6 +43,10 @@ const fmtINR2 = (v: number) =>
   `₹${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtHrs = (v: number) => `${v.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 2 })} hrs`;
 
+// Sentinel for the "All" month filter — not a real "YYYY-MM" key, so it can
+// never collide with an actual imported month.
+const ALL_MONTHS = "ALL";
+
 const InfoField = ({ label, value, accent }: { label: string; value: string; accent?: boolean }) => (
   <div className="min-w-0">
     <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--nu-text-muted)]">{label}</p>
@@ -65,19 +69,20 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
   const [allImports, setAllImports] = useState(() => getAllTimesheetImports());
   const [expandedEmployeeNo, setExpandedEmployeeNo] = useState<string | null>(null);
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
-  const [selectedMonth, setSelectedMonth] = useState<string>("");
+  // "All" is the default view — a full project lifetime rollup across every
+  // imported month — with each specific month still selectable to drill down.
+  const [selectedMonth, setSelectedMonth] = useState<string>(ALL_MONTHS);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const availableMonths = getProcessedProjectMonths(project.prNo, allImports);
   const hasSyncedData = hasProcessedTimesheetData(project.prNo, allImports);
 
-  // Default to latest available month whenever the matched months change.
-  // availableMonths is chronological (oldest first), so latest is the last entry.
+  // "All" is always a valid selection. Only fall back to it if a specific
+  // month was selected and that month has since disappeared (e.g. deleted
+  // from the Timesheets module).
   useEffect(() => {
-    if (availableMonths.length === 0) {
-      setSelectedMonth("");
-    } else if (!availableMonths.includes(selectedMonth)) {
-      setSelectedMonth(availableMonths[availableMonths.length - 1]);
+    if (selectedMonth !== ALL_MONTHS && availableMonths.length > 0 && !availableMonths.includes(selectedMonth)) {
+      setSelectedMonth(ALL_MONTHS);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableMonths.join(",")]);
@@ -102,8 +107,10 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
   // TimesheetProcessingService, which groups raw entries by Employee Number
   // + Project Number + Work Date. Each summary carries `.days`, one
   // consolidated row per date with the original raw rows for that day
-  // preserved for drill-down/audit.
-  const employees = getProcessedTeamMembers(project.prNo, allImports, selectedMonth);
+  // preserved for drill-down/audit. Passing `undefined` (the "All" case)
+  // makes the engine aggregate across every imported month instead of one.
+  const monthFilter = selectedMonth === ALL_MONTHS ? undefined : selectedMonth;
+  const employees = getProcessedTeamMembers(project.prNo, allImports, monthFilter);
 
   const resourceSummary = useMemo(() => {
     const totalEmployees = employees.length;
@@ -168,6 +175,21 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
         {availableMonths.length > 0 && (
           <CardBody>
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMonth(ALL_MONTHS);
+                  setExpandedEmployeeNo(null);
+                  setExpandedDates(new Set());
+                }}
+                className={`px-3 py-1.5 rounded-[var(--nu-radius-md)] text-[12px] font-medium transition ${
+                  selectedMonth === ALL_MONTHS
+                    ? "bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] border border-[var(--nu-accent)]"
+                    : "bg-[var(--nu-surface-alt)] text-[var(--nu-text-secondary)] border border-[var(--nu-border)] hover:border-[var(--nu-border-strong)]"
+                }`}
+              >
+                All
+              </button>
               {availableMonths.map((month) => (
                 <button
                   key={month}
@@ -203,7 +225,7 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
         <Card>
           <EmptyState
             icon={<CheckCircle size={18} />}
-            title={`No Employees for ${formatMonthDisplay(selectedMonth)}`}
+            title={`No Employees for ${selectedMonth === ALL_MONTHS ? "Any Month" : formatMonthDisplay(selectedMonth)}`}
             description="Select a different month or import a new timesheet."
           />
         </Card>
