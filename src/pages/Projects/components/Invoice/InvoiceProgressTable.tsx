@@ -43,7 +43,7 @@ const InvoiceProgressTable = ({ project }: Props) => {
             <table className="w-full min-w-[1150px] table-fixed border-collapse text-[13px]">
               <thead className="sticky top-0 z-10 bg-[var(--nu-surface-alt)] text-[11px] uppercase tracking-wide text-[var(--nu-text-muted)]">
                 <tr>
-                  <th className="w-14 border-b border-[var(--nu-border)] px-3 py-2.5 text-center font-semibold">S.No</th>
+                  <th className="w-14 border-b border-[var(--nu-border)] px-3 py-2.5 text-center font-semibold sticky top-0 left-0 z-30 bg-[var(--nu-surface-alt)]">S.No</th>
                   <th className="border-b border-[var(--nu-border)] px-3 py-2.5 text-left font-semibold">Description</th>
                   <th className="w-24 border-b border-[var(--nu-border)] px-3 py-2.5 text-right font-semibold">Qty</th>
                   <th className="w-28 border-b border-[var(--nu-border)] px-3 py-2.5 text-center font-semibold">UOM</th>
@@ -68,7 +68,7 @@ const InvoiceProgressTable = ({ project }: Props) => {
 
       {/* Bottom Summary — Excel-style invoice percentage sheet */}
       <Card>
-        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3.5">
           <div>
             <p className="text-[10.5px] font-medium uppercase tracking-wide text-[var(--nu-text-muted)]">Total Invoice Raised</p>
             <p className="mt-1 text-[16px] font-bold text-[var(--nu-accent)]">{formatIndianCurrency(totalInvoiceRaised)}</p>

@@ -69,43 +69,43 @@ const InvoiceTable = () => {
 
               <tr className="text-sm text-slate-700">
 
-                <th className="p-4 text-left">
+                <th className="p-4 text-left sticky top-0 left-0 z-30 bg-slate-100">
                   PR No
                 </th>
 
-                <th className="p-4 text-left">
+                <th className="p-4 text-left sticky top-0 z-20 bg-slate-100">
                   Invoice Ref
                 </th>
 
-                <th className="p-4 text-left">
+                <th className="p-4 text-left sticky top-0 z-20 bg-slate-100">
                   Client
                 </th>
 
-                <th className="p-4 text-left">
+                <th className="p-4 text-left sticky top-0 z-20 bg-slate-100">
                   Invoice Date
                 </th>
 
-                <th className="p-4 text-left">
+                <th className="p-4 text-left sticky top-0 z-20 bg-slate-100">
                   Due Date
                 </th>
 
-                <th className="p-4 text-right">
+                <th className="p-4 text-right sticky top-0 z-20 bg-slate-100">
                   Invoice Amount
                 </th>
 
-                <th className="p-4 text-right">
+                <th className="p-4 text-right sticky top-0 z-20 bg-slate-100">
                   Received
                 </th>
 
-                <th className="p-4 text-right">
+                <th className="p-4 text-right sticky top-0 z-20 bg-slate-100">
                   Outstanding
                 </th>
 
-                <th className="p-4 text-center">
+                <th className="p-4 text-center sticky top-0 z-20 bg-slate-100">
                   Status
                 </th>
 
-                <th className="p-4 text-center">
+                <th className="p-4 text-center sticky top-0 z-20 bg-slate-100">
                   Actions
                 </th>
 

@@ -755,7 +755,7 @@ const Timesheets = () => {
                   <table className="w-full border-collapse text-left">
                     <thead className="sticky top-0 z-10">
                       <tr className="bg-[var(--nu-surface-alt)] text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)] border-b border-[var(--nu-border)]">
-                        <th className="px-4 py-2.5 font-medium">Employee No</th>
+                        <th className="px-4 py-2.5 font-medium sticky left-0 z-20 bg-[var(--nu-surface-alt)]">Employee No</th>
                         <th className="px-4 py-2.5 font-medium">Employee Name</th>
                         <th className="px-4 py-2.5 font-medium">Project Code</th>
                         <th className="px-4 py-2.5 font-medium">Project Name</th>
@@ -774,7 +774,13 @@ const Timesheets = () => {
                             index % 2 === 1 ? "bg-[var(--nu-surface-alt)]" : "bg-[var(--nu-surface)]"
                           }`}
                         >
-                          <td className="px-4 py-3 text-[12.5px] font-semibold text-[var(--nu-text)]">{emp.employeeNo}</td>
+                          <td
+                            className={`px-4 py-3 text-[12.5px] font-semibold text-[var(--nu-text)] sticky left-0 z-10 ${
+                              index % 2 === 1 ? "bg-[var(--nu-surface-alt)]" : "bg-[var(--nu-surface)]"
+                            }`}
+                          >
+                            {emp.employeeNo}
+                          </td>
                           <td className="px-4 py-3 text-[12.5px] text-[var(--nu-text)]">{emp.employeeName}</td>
                           <td className="px-4 py-3">
                             <Badge tone="accent">{emp.projectCode}</Badge>

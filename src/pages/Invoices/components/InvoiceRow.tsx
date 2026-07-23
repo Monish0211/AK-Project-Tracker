@@ -39,7 +39,7 @@ const InvoiceRow = ({
   return (
     <tr className="border-b hover:bg-slate-50">
 
-      <td className="p-3">{invoice.prNo}</td>
+      <td className="p-3 sticky left-0 z-10 bg-white">{invoice.prNo}</td>
 
       <td className="p-3 font-medium">
         {invoice.invoiceRef}

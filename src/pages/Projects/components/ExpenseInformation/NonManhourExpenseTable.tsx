@@ -31,7 +31,7 @@ const NonManhourExpenseTable = ({ expenses, onEdit, onDelete }: Props) => {
 
           <tr className="text-sm text-gray-600">
 
-            <th className="px-4 py-3 text-left">
+            <th className="px-4 py-3 text-left sticky left-0 z-30 bg-gray-50">
               Category
             </th>
 
@@ -101,7 +101,7 @@ const NonManhourExpenseTable = ({ expenses, onEdit, onDelete }: Props) => {
                 className="text-sm text-gray-700 hover:bg-gray-50"
               >
 
-                <td className="px-4 py-3 font-medium text-gray-800">
+                <td className="px-4 py-3 font-medium text-gray-800 sticky left-0 z-10 bg-white">
                   {expense.category}
                 </td>
 

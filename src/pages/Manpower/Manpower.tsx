@@ -391,7 +391,7 @@ const Manpower = () => {
       </div>
 
       {/* ═══════════ KPI SUMMARY BAR ═══════════ */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
         <div className="pmo-mc bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3 shadow-sm">
           <div className="mi w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/20 flex items-center justify-center">
             <Users size={15} className="text-blue-500" />
@@ -596,34 +596,34 @@ const Manpower = () => {
           <table className="min-w-full text-xs">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                <th onClick={() => toggleSort("employeeNo")} className="p-3 font-extrabold uppercase select-none text-left">
+                <th onClick={() => toggleSort("employeeNo")} className="p-3 font-extrabold uppercase select-none text-left sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">
                   Employee No <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("employeeName")} className="p-3 font-extrabold uppercase select-none text-left">
+                <th onClick={() => toggleSort("employeeName")} className="p-3 font-extrabold uppercase select-none text-left sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Employee Name <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("designation")} className="p-3 font-extrabold uppercase select-none text-left">
+                <th onClick={() => toggleSort("designation")} className="p-3 font-extrabold uppercase select-none text-left sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Designation <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("department")} className="p-3 font-extrabold uppercase select-none text-left">
+                <th onClick={() => toggleSort("department")} className="p-3 font-extrabold uppercase select-none text-left sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Department <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("location")} className="p-3 font-extrabold uppercase select-none text-left">
+                <th onClick={() => toggleSort("location")} className="p-3 font-extrabold uppercase select-none text-left sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Location <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("reportingManager")} className="p-3 font-extrabold uppercase select-none text-left">
+                <th onClick={() => toggleSort("reportingManager")} className="p-3 font-extrabold uppercase select-none text-left sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Reporting Manager <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("grade")} className="p-3 font-extrabold uppercase select-none text-center">
+                <th onClick={() => toggleSort("grade")} className="p-3 font-extrabold uppercase select-none text-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Grade <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("manhourExpenses")} className="p-3 font-extrabold uppercase select-none text-right">
+                <th onClick={() => toggleSort("manhourExpenses")} className="p-3 font-extrabold uppercase select-none text-right sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Man-Hour Expenses <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center">
+                <th onClick={() => toggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Status <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th className="p-3 font-extrabold uppercase select-none text-center">
+                <th className="p-3 font-extrabold uppercase select-none text-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Actions
                 </th>
               </tr>
@@ -641,7 +641,7 @@ const Manpower = () => {
                     key={e.id}
                     className="border-b border-slate-100 dark:border-slate-800/80 hover:bg-blue-50/20 dark:hover:bg-slate-800/30 transition-all duration-100"
                   >
-                    <td className="p-3 font-semibold pmo-prno">{e.employeeNo}</td>
+                    <td className="p-3 font-semibold pmo-prno sticky left-0 z-10 bg-white dark:bg-slate-900">{e.employeeNo}</td>
                     <td className="p-3">
                       <div className="tclient font-bold text-slate-800 dark:text-slate-100">{e.employeeName}</div>
                     </td>

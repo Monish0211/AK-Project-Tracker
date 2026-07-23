@@ -104,13 +104,13 @@ const InvoiceCard = ({ project, setProject }: Props) => {
     <>
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b">
-          <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-xl bg-blue-100 flex items-center justify-center">
+        <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 border-b">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-11 w-11 shrink-0 rounded-xl bg-blue-100 flex items-center justify-center">
               <Receipt className="text-blue-600" size={22} />
             </div>
 
-            <div>
+            <div className="min-w-0">
               <h2 className="text-lg font-semibold text-gray-800">
                 Invoice Progress Tracker
               </h2>
@@ -123,7 +123,7 @@ const InvoiceCard = ({ project, setProject }: Props) => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => {
                 setIsDrawerOpen(false);
