@@ -16,7 +16,11 @@ const KPISection = () => {
   const metrics = getDashboardMetrics();
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
+    // auto-fit + minmax lets the browser decide column count purely from
+    // available width (never fewer than ~170px per tile, never more columns
+    // than the 6 tiles below), so it scales smoothly across 1366px laptops
+    // through 4K monitors instead of jumping at fixed breakpoints.
+    <div className="grid gap-3.5 grid-cols-[repeat(auto-fit,minmax(170px,1fr))]">
       <StatTile label="Work Order Value" value={formatBusinessINR(metrics.totalWOValue)} icon={<IndianRupee size={16} />} tint="success" />
       <StatTile label="Invoice Raised" value={formatBusinessINR(metrics.totalInvoiceRaised)} icon={<FileText size={16} />} tint="info" />
       <StatTile label="Outstanding" value={formatBusinessINR(metrics.totalOutstanding)} icon={<Wallet size={16} />} tint="danger" />
