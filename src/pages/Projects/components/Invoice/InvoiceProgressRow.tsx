@@ -33,7 +33,7 @@ const InvoiceProgressRow = ({ item, index }: Props) => {
 
   return (
     <tr className="text-[var(--nu-text-secondary)] hover:bg-[var(--nu-surface-alt)]">
-      <td className="px-3 py-2.5 text-center text-[var(--nu-text-muted)]">{index + 1}</td>
+      <td className="px-3 py-2.5 text-center text-[var(--nu-text-muted)] sticky left-0 z-10 bg-[var(--nu-surface)]">{index + 1}</td>
 
       <td className="px-3 py-2.5">
         <span className="font-medium text-[var(--nu-text)]" title={item.description}>

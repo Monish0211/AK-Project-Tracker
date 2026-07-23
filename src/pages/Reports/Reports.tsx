@@ -870,8 +870,10 @@ const Reports = () => {
             </div>
           </div>
 
-          {/* Unified Filters Suite */}
-          <div className="grid grid-cols-6 gap-3 bg-slate-50/50 dark:bg-slate-950/30 p-3 rounded-lg border border-slate-100 dark:border-slate-900/60 flex-wrap">
+          {/* Unified Filters Suite — auto-fit instead of a fixed 6-col grid so
+              these 6 filter controls wrap onto more rows on a 1366px laptop
+              instead of compressing each select into an unreadable sliver. */}
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3 bg-slate-50/50 dark:bg-slate-950/30 p-3 rounded-lg border border-slate-100 dark:border-slate-900/60">
             {/* Department */}
             <div>
               <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Department</label>
@@ -995,7 +997,7 @@ const Reports = () => {
         <div className="space-y-4">
           
           {/* 1. Dynamic KPI cards for current view */}
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
             {activeTab === "executive" && (
               <>
                 <div className="pmo-mc bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3 shadow-sm">
@@ -1173,11 +1175,14 @@ const Reports = () => {
             )}
           </div>
 
-          {/* 2. Visual Graphs Grid */}
-          <div className="grid grid-cols-3 gap-4">
-            
+          {/* 2. Visual Graphs Grid — stacks to one column below xl (1280px) so
+              these two charts never get squeezed on a narrower window; at
+              every one of the supported 1366px+ resolutions this renders
+              identically to the previous fixed 3-col layout. */}
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+
             {/* Financial Overview (Bar Chart) */}
-            <div className="col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm min-h-[300px]">
+            <div className="xl:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm min-h-[300px]">
               <div>
                 <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider">WO Value vs. Billed by Top Clients</h3>
                 <p className="text-[10px] text-slate-400">Drilldown enabled: click columns to filter table list below instantly</p>
@@ -1317,93 +1322,93 @@ const Reports = () => {
                   {/* Financials Tab Header */}
                   {(activeTab === "financial" || activeTab === "executive") && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">PR No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("title")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Project Title <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Client <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("department")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Department <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("woValue")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">WO Value <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("billed")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Billed Amount <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("outstanding")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Outstanding <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("profit")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Profit <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer">Status <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">PR No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("title")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Project Title <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Client <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("department")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Department <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("woValue")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">WO Value <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("billed")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Billed Amount <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("outstanding")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Outstanding <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("profit")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Profit <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Status <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
 
                   {/* Project Performance Tab Header */}
                   {activeTab === "project" && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">PR No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("title")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Project Title <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Client <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("manager")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Manager <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("startDate")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Start Date <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("endDate")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">End Date <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("category")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Category <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer">Status <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">PR No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("title")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Project Title <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Client <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("manager")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Manager <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("startDate")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Start Date <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("endDate")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">End Date <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("category")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Category <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Status <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
 
                   {/* Resource Utilization Tab Header */}
                   {activeTab === "resource" && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Project No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("projectTitle")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Project Title <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("name")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Resource Name <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("empNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Emp No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("designation")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Designation <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("dept")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Department <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("hours")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer">Logged Hours <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer">Status <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">Project No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("projectTitle")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Project Title <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("name")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Resource Name <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("empNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Emp No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("designation")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Designation <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("dept")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Department <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("hours")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Logged Hours <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Status <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
 
                   {/* Manpower Analytics Tab Header */}
                   {activeTab === "manpower" && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("employeeNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Emp No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("employeeName")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Employee Name <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("grade")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Grade <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("department")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Department <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("manhourExpenses")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Hourly Rate <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer">Status <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("employeeNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">Emp No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("employeeName")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Employee Name <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("grade")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Grade <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("department")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Department <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("manhourExpenses")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Hourly Rate <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Status <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
 
                   {/* Invoice Analytics Tab Header */}
                   {activeTab === "invoice" && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("invoiceRef")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Invoice Ref <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("invoiceDate")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Date <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">PR No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Client <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("invoiceAmount")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Amount <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("receivedAmount")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Paid <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("outstandingAmount")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Outstanding <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer">Status <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("invoiceRef")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">Invoice Ref <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("invoiceDate")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Date <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">PR No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Client <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("invoiceAmount")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Amount <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("receivedAmount")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Paid <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("outstandingAmount")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Outstanding <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Status <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
 
                   {/* Expense Analytics Tab Header */}
                   {activeTab === "expense" && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">PR No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("title")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Project Title <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("woValue")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Budget (WO Value) <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("manhourCost")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Manhour Cost <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("nonManhourCost")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Non-Manhour Cost <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("totalCost")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Total Expense <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("margin")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Margin (%) <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">PR No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("title")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Project Title <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("woValue")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Budget (WO Value) <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("manhourCost")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Manhour Cost <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("nonManhourCost")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Non-Manhour Cost <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("totalCost")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Total Expense <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("margin")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Margin (%) <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
 
                   {/* Customer Analytics Tab Header */}
                   {activeTab === "customer" && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer">Client Name <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("count")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer">Project Count <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("woValue")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Total WO Value <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("billed")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Total Billed <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("outstanding")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer">Outstanding <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">Client Name <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("count")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Project Count <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("woValue")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Total WO Value <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("billed")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Total Billed <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("outstanding")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Outstanding <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
               </thead>
@@ -1423,7 +1428,7 @@ const Reports = () => {
                       {/* Financials / Executive Tab Rows */}
                       {(activeTab === "financial" || activeTab === "executive") && (
                         <>
-                          <td className="p-3 font-semibold pmo-prno text-blue-600">{r.prNo}</td>
+                          <td className="p-3 font-semibold pmo-prno text-blue-600 sticky left-0 z-10 bg-white dark:bg-slate-900">{r.prNo}</td>
                           <td className="p-3 font-bold text-slate-800 dark:text-slate-200">{r.title}</td>
                           <td className="p-3 text-slate-600 dark:text-slate-400 font-medium">{r.client}</td>
                           <td className="p-3 font-medium">{r.department}</td>
@@ -1442,7 +1447,7 @@ const Reports = () => {
                       {/* Project Performance Tab Rows */}
                       {activeTab === "project" && (
                         <>
-                          <td className="p-3 font-semibold pmo-prno text-blue-600">{r.prNo}</td>
+                          <td className="p-3 font-semibold pmo-prno text-blue-600 sticky left-0 z-10 bg-white dark:bg-slate-900">{r.prNo}</td>
                           <td className="p-3 font-bold text-slate-800 dark:text-slate-200">{r.title}</td>
                           <td className="p-3 text-slate-600 dark:text-slate-400 font-medium">{r.client}</td>
                           <td className="p-3 font-medium">{r.manager}</td>
@@ -1460,7 +1465,7 @@ const Reports = () => {
                       {/* Resource Utilization Tab Rows */}
                       {activeTab === "resource" && (
                         <>
-                          <td className="p-3 font-semibold pmo-prno text-blue-600">{r.prNo}</td>
+                          <td className="p-3 font-semibold pmo-prno text-blue-600 sticky left-0 z-10 bg-white dark:bg-slate-900">{r.prNo}</td>
                           <td className="p-3 font-bold text-slate-800 dark:text-slate-200">{r.projectTitle}</td>
                           <td className="p-3 text-slate-600 dark:text-slate-400 font-bold">{r.name}</td>
                           <td className="p-3 font-semibold pmo-prno">{r.empNo}</td>
@@ -1476,7 +1481,7 @@ const Reports = () => {
                       {/* Manpower Analytics Tab Rows */}
                       {activeTab === "manpower" && (
                         <>
-                          <td className="p-3 font-semibold pmo-prno text-blue-600">{r.employeeNo}</td>
+                          <td className="p-3 font-semibold pmo-prno text-blue-600 sticky left-0 z-10 bg-white dark:bg-slate-900">{r.employeeNo}</td>
                           <td className="p-3 font-bold text-slate-800 dark:text-slate-200">{r.employeeName}</td>
                           <td className="p-3 font-bold text-center text-slate-500">{r.grade}</td>
                           <td className="p-3">{r.department}</td>
@@ -1492,7 +1497,7 @@ const Reports = () => {
                       {/* Invoice Analytics Tab Rows */}
                       {activeTab === "invoice" && (
                         <>
-                          <td className="p-3 font-semibold text-blue-600">{r.invoiceRef}</td>
+                          <td className="p-3 font-semibold text-blue-600 sticky left-0 z-10 bg-white dark:bg-slate-900">{r.invoiceRef}</td>
                           <td className="p-3 pmo-prno">{r.invoiceDate}</td>
                           <td className="p-3 font-semibold pmo-prno text-slate-500">{r.prNo}</td>
                           <td className="p-3 text-slate-600 dark:text-slate-400 font-medium">{r.client}</td>
@@ -1510,7 +1515,7 @@ const Reports = () => {
                       {/* Expense Analytics Tab Rows */}
                       {activeTab === "expense" && (
                         <>
-                          <td className="p-3 font-semibold pmo-prno text-blue-600">{r.prNo}</td>
+                          <td className="p-3 font-semibold pmo-prno text-blue-600 sticky left-0 z-10 bg-white dark:bg-slate-900">{r.prNo}</td>
                           <td className="p-3 font-bold text-slate-800 dark:text-slate-200">{r.title}</td>
                           <td className="p-3 text-right font-semibold pmo-prno">₹{r.woValue.toLocaleString("en-IN")}</td>
                           <td className="p-3 text-right font-semibold text-red-500 pmo-prno">₹{r.manhourCost.toLocaleString("en-IN")}</td>
@@ -1523,7 +1528,7 @@ const Reports = () => {
                       {/* Customer Analytics Tab Rows */}
                       {activeTab === "customer" && (
                         <>
-                          <td className="p-3 font-bold text-slate-800 dark:text-slate-200">{r.client}</td>
+                          <td className="p-3 font-bold text-slate-800 dark:text-slate-200 sticky left-0 z-10 bg-white dark:bg-slate-900">{r.client}</td>
                           <td className="p-3 font-bold text-center text-slate-500">{r.count} Projects</td>
                           <td className="p-3 text-right font-semibold pmo-prno">₹{r.woValue.toLocaleString("en-IN")}</td>
                           <td className="p-3 text-right font-semibold text-emerald-600 pmo-prno">₹{r.billed.toLocaleString("en-IN")}</td>

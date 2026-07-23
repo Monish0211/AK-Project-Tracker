@@ -59,7 +59,7 @@ const InvoiceKPIs = () => {
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-6">
 
       {cards.map((card) => {
         const Icon = card.icon;

@@ -232,7 +232,7 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
       ) : (
         <>
           {/* Project Resource Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
             <StatTile
               icon={<Users size={14} />}
               label="Total Employees"
@@ -267,17 +267,17 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="bg-[var(--nu-surface-alt)] text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)] border-b border-[var(--nu-border)]">
-                    <th className="px-4 py-2.5 w-8"></th>
-                    <th className="px-4 py-2.5 font-medium">Employee No</th>
-                    <th className="px-4 py-2.5 font-medium">Employee Name</th>
-                    <th className="px-4 py-2.5 font-medium">Designation</th>
-                    <th className="px-4 py-2.5 font-medium">Department</th>
-                    <th className="px-4 py-2.5 font-medium">Reporting Manager</th>
-                    <th className="px-4 py-2.5 text-right font-medium w-28">Hourly Rate</th>
-                    <th className="px-4 py-2.5 text-center font-medium w-24">Working Days</th>
-                    <th className="px-4 py-2.5 text-right font-medium w-24">Total Hours</th>
-                    <th className="px-4 py-2.5 text-right font-medium w-32">Man-Hour Cost</th>
-                    <th className="px-4 py-2.5 text-center font-medium w-24">Status</th>
+                    <th className="px-4 py-2.5 w-8 sticky top-0 left-0 z-30 bg-[var(--nu-surface-alt)]"></th>
+                    <th className="px-4 py-2.5 font-medium sticky top-0 left-8 z-30 bg-[var(--nu-surface-alt)]">Employee No</th>
+                    <th className="px-4 py-2.5 font-medium sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Employee Name</th>
+                    <th className="px-4 py-2.5 font-medium sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Designation</th>
+                    <th className="px-4 py-2.5 font-medium sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Department</th>
+                    <th className="px-4 py-2.5 font-medium sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Reporting Manager</th>
+                    <th className="px-4 py-2.5 text-right font-medium w-28 sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Hourly Rate</th>
+                    <th className="px-4 py-2.5 text-center font-medium w-24 sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Working Days</th>
+                    <th className="px-4 py-2.5 text-right font-medium w-24 sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Total Hours</th>
+                    <th className="px-4 py-2.5 text-right font-medium w-32 sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Man-Hour Cost</th>
+                    <th className="px-4 py-2.5 text-center font-medium w-24 sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -300,14 +300,24 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
                             }
                           }}
                         >
-                          <td className="px-4 py-3 text-center">
+                          <td
+                            className={`px-4 py-3 text-center sticky left-0 z-10 ${
+                              index % 2 === 1 ? "bg-[var(--nu-surface-alt)]" : "bg-[var(--nu-surface)]"
+                            }`}
+                          >
                             {isExpanded ? (
                               <ChevronDown size={16} className="text-[var(--nu-accent)]" />
                             ) : (
                               <ChevronRight size={16} className="text-[var(--nu-text-muted)]" />
                             )}
                           </td>
-                          <td className="px-4 py-3 text-[12.5px] font-semibold text-[var(--nu-text)]">{emp.employeeNo}</td>
+                          <td
+                            className={`px-4 py-3 text-[12.5px] font-semibold text-[var(--nu-text)] sticky left-8 z-10 ${
+                              index % 2 === 1 ? "bg-[var(--nu-surface-alt)]" : "bg-[var(--nu-surface)]"
+                            }`}
+                          >
+                            {emp.employeeNo}
+                          </td>
                           <td className="px-4 py-3 text-[12.5px] text-[var(--nu-text)]">{emp.employeeName}</td>
                           <td className="px-4 py-3 text-[12px] text-[var(--nu-text-secondary)]">{emp.designation || "—"}</td>
                           <td className="px-4 py-3 text-[12px] text-[var(--nu-text-secondary)]">{emp.department || "—"}</td>
@@ -477,7 +487,7 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
               subtitle="Combines labor cost from Timesheets with Expense Budget and Commercial Summary."
             />
             <CardBody>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
                 <StatTile
                   icon={<IndianRupee size={14} />}
                   label="Total Man-Hour Cost"

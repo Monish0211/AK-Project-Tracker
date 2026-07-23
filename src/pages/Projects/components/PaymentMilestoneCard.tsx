@@ -270,7 +270,7 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
 
   return (
     <div className="space-y-3.5">
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
         <StatTile
           emphasis="secondary"
           label="Total Payments"

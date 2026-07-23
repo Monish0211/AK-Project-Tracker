@@ -21,7 +21,7 @@ const InvoiceSummaryCards = ({ project }: Props) => {
   const summary = getProjectCommercialSummary(project);
 
   return (
-    <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3.5">
       <StatTile
         icon={<IndianRupee size={15} />}
         label="Total Project Value"

@@ -487,7 +487,7 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
 
   return (
     <div className="space-y-3.5">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
         <StatTile
           emphasis="secondary"
           label="Activities"
@@ -595,7 +595,7 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
             <table className="w-full min-w-[1100px] table-fixed border-collapse text-[12.5px]">
               <thead className="sticky top-0 z-10 bg-[var(--nu-surface-alt)] text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)]">
                 <tr>
-                  <th className="w-12 border-b border-[var(--nu-border)] px-2 py-2 text-center font-medium">
+                  <th className="w-12 border-b border-[var(--nu-border)] px-2 py-2 text-center font-medium sticky left-0 z-20 bg-[var(--nu-surface-alt)]">
                     Sl
                   </th>
                   <th className="border-b border-[var(--nu-border)] px-2 py-2 text-left font-medium">
@@ -640,7 +640,7 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
                         key={item.id}
                         className="bg-[var(--nu-surface)] hover:bg-[var(--nu-surface-alt)] transition-colors"
                       >
-                        <td className="px-2 py-2 text-center text-[var(--nu-text-muted)]">
+                        <td className="px-2 py-2 text-center text-[var(--nu-text-muted)] sticky left-0 z-10 bg-[var(--nu-surface)]">
                           {index + 1}
                         </td>
 
