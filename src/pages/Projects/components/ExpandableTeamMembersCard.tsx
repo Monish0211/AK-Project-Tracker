@@ -38,7 +38,9 @@ interface Props {
   project: Project;
 }
 
-const fmtINR = (v: number) => `₹${v.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+import { formatBusinessINR } from "../../../utils/formatCurrency";
+
+const fmtINR = (v: number) => formatBusinessINR(v || 0);
 const fmtINR2 = (v: number) =>
   `₹${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtHrs = (v: number) => `${v.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 2 })} hrs`;

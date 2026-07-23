@@ -1,6 +1,6 @@
 import { Landmark, Info } from "lucide-react";
 
-import { formatIndianCurrency } from "../../../utils/quantityCalculations";
+import { formatBusinessINR, formatFullINR } from "../../../utils/formatCurrency";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 
 interface Props {
@@ -87,8 +87,8 @@ const CommercialSummaryCard = ({
             <span className="text-[12.5px] font-medium text-[var(--nu-text-secondary)]">
               Total Work Order Value
             </span>
-            <span className="text-[13px] font-bold text-[var(--nu-accent)]">
-              {formatIndianCurrency(workOrderValueINR)}
+            <span className="text-[13px] font-bold text-[var(--nu-accent)] whitespace-nowrap" title={formatFullINR(workOrderValueINR)}>
+              {formatBusinessINR(workOrderValueINR)}
             </span>
           </div>
 
@@ -114,8 +114,8 @@ const CommercialSummaryCard = ({
             <span className="text-[12.5px] font-medium text-[var(--nu-text-secondary)]">
               GST Amount
             </span>
-            <span className="text-[13px] font-bold text-[var(--nu-warning)]">
-              {formatIndianCurrency(gstAmount)}
+            <span className="text-[13px] font-bold text-[var(--nu-warning)] whitespace-nowrap" title={formatFullINR(gstAmount)}>
+              {formatBusinessINR(gstAmount)}
             </span>
           </div>
         </div>
@@ -124,8 +124,8 @@ const CommercialSummaryCard = ({
           <span className="text-[11.5px] font-semibold uppercase tracking-wide text-[var(--nu-success)]">
             Grand Total (Incl. GST)
           </span>
-          <span className="text-[16px] font-bold text-[var(--nu-success)]">
-            {formatIndianCurrency(grandTotal)}
+          <span className="text-[16px] font-bold text-[var(--nu-success)] whitespace-nowrap" title={formatFullINR(grandTotal)}>
+            {formatBusinessINR(grandTotal)}
           </span>
         </div>
       </CardBody>

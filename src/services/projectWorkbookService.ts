@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import type { Project } from "../types/Project";
 import type { QuantityItem } from "../types/QuantityItem";
-import { createEmptyProject } from "../utils/createEmptyProject";
+import { createEmptyProject, inferPrCategory, inferDomesticForeign } from "../utils/createEmptyProject";
 import { syncInvoiceItemsWithQuantity } from "./invoiceSyncService";
 import { getProjectCommercialSummary } from "./invoiceProgressService";
 import { getEmployees } from "./employeeService";
@@ -40,9 +40,11 @@ interface ColumnDef {
 
 const PROJECTS_COLUMNS: ColumnDef[] = [
   { header: "PR Number", key: "prNo", width: 18, required: true },
+  { header: "PR Category", key: "prCategory", width: 18, required: false, validationType: "list", lookupColumn: "B" },
   { header: "PO Month", key: "poMonth", width: 14, validationType: "date", numFmt: "mmm-yyyy" },
   { header: "Client Name", key: "client", width: 22, required: true },
   { header: "Department", key: "department", width: 24, required: true, validationType: "list", lookupColumn: "A" },
+  { header: "Domestic / Foreign", key: "domesticForeign", width: 18, required: false, validationType: "list", lookupColumn: "J" },
   { header: "Project Title", key: "projectTitle", width: 30, required: true },
   { header: "Project Manager", key: "primaryProjectManager", width: 20 },
   { header: "Project Engineer", key: "projectEngineer", width: 20 },
@@ -332,11 +334,15 @@ function addInstructionsSheet(workbook: ExcelJS.Workbook) {
 
 function projectToRow(p: Project) {
   const comm = getProjectCommercialSummary(p);
+  const prCategory = inferPrCategory(p.prNo, p.prCategory);
+  const domesticForeign = inferDomesticForeign(p.currency, prCategory, p.domesticForeign);
   return {
     prNo: p.prNo || "",
+    prCategory,
     poMonth: p.poMonth ? parsePoMonthToDate(p.poMonth) : undefined,
     client: p.client || "",
     department: p.department || "",
+    domesticForeign,
     projectTitle: p.projectTitle || "",
     primaryProjectManager: p.primaryProjectManager || "",
     projectEngineer: p.projectEngineer || "",
@@ -552,6 +558,43 @@ function cellDateKey(cell: ExcelJS.Cell | undefined): string {
   return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
 }
 
+const COLUMN_ALIASES: Record<string, string[]> = {
+  "pr number": ["pr number", "pr no", "pr_number", "pr_no", "prno", "pr #", "pr#"],
+  "pr category": ["pr category", "pr_category", "prcategory", "category", "region", "location", "country", "pr type"],
+  "po month": ["po month", "po_month", "pomonth", "month", "po date"],
+  "client name": ["client name", "client", "client_name", "customer", "customer name", "customer_name"],
+  "department": ["department", "dept", "department name", "business unit", "bu"],
+  "domestic / foreign": ["domestic / foreign", "domestic/foreign", "domestic foreign", "domestic_foreign", "domestic", "foreign", "market type"],
+  "project title": ["project title", "project_title", "projecttitle", "title", "project name", "project_name", "description"],
+  "project manager": ["project manager", "primary project manager", "primary_project_manager", "pm", "project_manager", "manager"],
+  "project engineer": ["project engineer", "project_engineer", "pe", "engineer"],
+  "project coordinator": ["project coordinator", "project_coordinator", "pc", "coordinator"],
+  "pmo coordinator": ["pmo coordinator", "pmo_coordinator", "pmo", "pmo co-ordinator", "pmo manager", "pmo lead", "pmo name"],
+  "project status": ["project status", "project_status", "status", "project_state"],
+  "contract type": ["contract type", "contract_type", "type of contract", "billing type"],
+  "work order status": ["work order status", "work_order_status", "wo status", "wo_status", "po status"],
+  "currency": ["currency", "curr", "currency code"],
+  "exchange rate": ["exchange rate", "exchange_rate", "ex rate", "ex_rate", "forex rate"],
+  "work order value": ["work order value", "work_order_value", "wo value", "wo_value", "po value", "contract value", "value"],
+  "invoice raised": ["invoice raised", "invoice_raised", "invoiced", "total invoiced", "billed"],
+  "payment received": ["payment received", "payment_received", "collected", "total collected", "received"],
+  "outstanding": ["outstanding", "pending due", "balance", "balance due"],
+  "start date": ["start date", "start_date", "project start date", "commencement date"],
+  "end date": ["end date", "end_date", "project end date", "completion date"],
+  "remarks": ["remarks", "remark", "notes", "comments"],
+};
+
+function getCellByAliases(row: ExcelJS.Row, pMap: Record<string, number>, colKey: string): ExcelJS.Cell | undefined {
+  const aliases = COLUMN_ALIASES[colKey.toLowerCase()] || [colKey.toLowerCase()];
+  for (const alias of aliases) {
+    const colIndex = pMap[alias];
+    if (colIndex !== undefined) {
+      return row.getCell(colIndex);
+    }
+  }
+  return undefined;
+}
+
 function readHeaderMap(sheet: ExcelJS.Worksheet, columns: ColumnDef[], errors: string[]): Record<string, number> {
   const headerRow = sheet.getRow(1);
   const map: Record<string, number> = {};
@@ -561,8 +604,12 @@ function readHeaderMap(sheet: ExcelJS.Worksheet, columns: ColumnDef[], errors: s
   });
 
   columns.forEach((col) => {
-    if (map[col.header.toLowerCase()] === undefined) {
-      errors.push(`Sheet "${sheet.name}": missing required column "${col.header}".`);
+    if (col.required) {
+      const aliases = COLUMN_ALIASES[col.header.toLowerCase()] || [col.header.toLowerCase()];
+      const found = aliases.some((alias) => map[alias] !== undefined);
+      if (!found) {
+        errors.push(`Sheet "${sheet.name}": missing required column "${col.header}".`);
+      }
     }
   });
 
@@ -610,11 +657,6 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
   }
   const drafts: DraftProject[] = [];
 
-  // Blank-row detection must check actual cell .value, not ExcelJS's
-  // eachCell/includeEmpty semantics — every row (including the Sample
-  // Template's unfilled placeholder rows) already has font/border/fill/
-  // validation applied by writeDataRow, which makes those cells "exist" in
-  // ExcelJS's internal model even with no value ever set.
   const rowHasAnyValue = (row: ExcelJS.Row, columnIndices: number[]) =>
     columnIndices.some((idx) => {
       const v = row.getCell(idx).value;
@@ -627,15 +669,19 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
     const row = projectsSheet.getRow(r);
     if (!rowHasAnyValue(row, pColumnIndices)) continue;
 
-    const get = (key: string) => row.getCell(pMap[key.toLowerCase()]);
+    const get = (key: string) => getCellByAliases(row, pMap, key);
     const prNo = cellText(get("PR Number"));
+    const prCategoryRaw = cellText(get("PR Category"));
+    const prCategory = inferPrCategory(prNo, prCategoryRaw);
     const client = cellText(get("Client Name"));
     const projectTitle = cellText(get("Project Title"));
     const department = cellText(get("Department"));
+    const domesticForeignRaw = cellText(get("Domestic / Foreign"));
     const currency = cellText(get("Currency")) || "INR";
-    const contractType = cellText(get("Contract Type")) || "LUMP SUM";
+    const domesticForeign = inferDomesticForeign(currency, prCategory, domesticForeignRaw);
+    const contractType = cellText(get("Contract Type"));
     const workOrderStatus = cellText(get("Work Order Status"));
-    const projectStatus = cellText(get("Project Status")) || "Active";
+    const projectStatus = cellText(get("Project Status"));
     const pmoCoordinator = cellText(get("PMO Coordinator"));
     const workOrderValue = cellNumber(get("Work Order Value"));
 
@@ -681,6 +727,8 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
       fields: {
         client,
         department,
+        prCategory,
+        domesticForeign,
         projectTitle,
         primaryProjectManager: cellText(get("Project Manager")),
         projectEngineer: cellText(get("Project Engineer")),
@@ -874,6 +922,8 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
       ...createEmptyProject(),
       prNo: draft.prNo,
       poMonth: draft.fields.poMonth,
+      prCategory: draft.fields.prCategory,
+      domesticForeign: draft.fields.domesticForeign,
       client: draft.fields.client,
       department: draft.fields.department,
       projectTitle: draft.fields.projectTitle,

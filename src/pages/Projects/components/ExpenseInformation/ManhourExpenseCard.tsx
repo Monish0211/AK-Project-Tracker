@@ -9,7 +9,7 @@ import {
   calculateManhourCost,
   getTotalManhourCost,
 } from "../../../../services/expenseService";
-import { formatIndianCurrency } from "../../../../utils/quantityCalculations";
+import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
 
 import ManhourExpenseModal from "./ManhourExpenseModal";
 import ManhourExpenseTable from "./ManhourExpenseTable";
@@ -133,8 +133,8 @@ const ManhourExpenseCard = ({ project, setProject }: Props) => {
               Total Man-Hour Cost
             </p>
 
-            <h2 className="text-2xl font-bold text-blue-700">
-              {formatIndianCurrency(totalManhourCost)}
+            <h2 className="text-2xl font-bold text-blue-700 whitespace-nowrap" title={formatFullINR(totalManhourCost)}>
+              {formatBusinessINR(totalManhourCost)}
             </h2>
 
           </div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { formatBusinessINR } from "../../utils/formatCurrency";
 import {
   FolderKanban,
   Plus,
@@ -253,12 +254,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   );
 
   // Format currency helpers
-  const fmtWOValue = (v: number) => {
-    if (v >= 10000000) {
-      return `₹ ${(v / 10000000).toFixed(2)} Cr`;
-    }
-    return `₹ ${(v / 100000).toFixed(2)} L`;
-  };
+  const fmtWOValue = (v: number) => formatBusinessINR(v || 0);
 
   const fmtCurrency = (v: number) => {
     if (v === 0) return <span className="text-gray-400 dark:text-gray-600 font-medium">—</span>;

@@ -9,6 +9,7 @@ import { updateProject } from "../../services/projectService";
 import { reminderService } from "../../services/reminders/ReminderService";
 import { ReminderCard } from "../Cards/ReminderCard";
 import { ReminderForm } from "../../pages/Projects/components/workspace/ReminderForm";
+import { EmptyState } from "../ui/EmptyState";
 
 interface Props {
   isOpen: boolean;
@@ -122,10 +123,14 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
         onClick={onClose}
       />
 
-      {/* Drawer Panel */}
-      <div className="absolute inset-y-0 right-0 pl-10 max-w-full flex">
+      {/* Drawer / Dialog Panel */}
+      <div className={`absolute inset-y-0 right-0 pl-10 max-w-full flex ${isEditingReminder ? "items-center pr-2 sm:pr-4" : ""}`}>
         <div
-          className={`w-screen md:w-[420px] sm:w-[380px] bg-slate-50 dark:bg-[#0F172A] border-l border-gray-200 dark:border-slate-800 shadow-2xl flex flex-col h-full transform transition-transform duration-300 ease-in-out ${
+          className={`w-screen md:w-[440px] sm:w-[400px] bg-slate-50 dark:bg-[#0F172A] border border-gray-200 dark:border-slate-800 shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out ${
+            isEditingReminder
+              ? "h-auto max-h-[90vh] rounded-2xl overflow-hidden shadow-2xl"
+              : "h-full rounded-l-2xl border-y-0 border-r-0"
+          } ${
             animateShow ? "translate-x-0" : "translate-x-full"
           }`}
         >
@@ -299,17 +304,26 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
                         ))}
                       </div>
                     ) : (
-                      <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 space-y-3 px-6 text-center">
-                        <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30 flex items-center justify-center text-blue-600 dark:text-blue-400 mb-4">
-                          <Bell size={32} strokeWidth={1.5} />
-                        </div>
-                        <p className="text-sm font-medium">No Reminders</p>
-                        {!readOnly && (
-                          <p className="text-xs max-w-[240px]">
-                            Create a reminder to follow up on this project later.
-                          </p>
-                        )}
-                      </div>
+                      <EmptyState
+                        icon={<Bell size={20} strokeWidth={1.5} />}
+                        title="No reminders yet"
+                        description={
+                          readOnly
+                            ? "This project has no reminders."
+                            : "Create reminders for invoices, deliverables, meetings, or project milestones."
+                        }
+                        action={
+                          !readOnly && (
+                            <button
+                              onClick={() => setIsEditingReminder(true)}
+                              className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors"
+                            >
+                              <Plus size={14} />
+                              Add Reminder
+                            </button>
+                          )
+                        }
+                      />
                     )}
                   </div>
                 </>

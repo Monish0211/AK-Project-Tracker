@@ -25,7 +25,9 @@ interface Props {
   teamCount: number;
 }
 
-const formatINR = (value: number): string => `₹${(value || 0).toLocaleString("en-IN")}`;
+import { formatBusinessINR } from "../../../../utils/formatCurrency";
+
+const formatINR = (value: number): string => formatBusinessINR(value || 0);
 
 const ProjectSummaryStrip = ({
   workOrderValue,

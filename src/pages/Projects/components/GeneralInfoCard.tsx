@@ -15,15 +15,7 @@ interface Props {
   clearError?: (field: string) => void;
 }
 
-const prCategories = [
-  "Malaysia",
-  "Oman",
-  "Abu Dhabi",
-  "FZI",
-  "Elixir Qatar",
-  "India",
-  "Qatar",
-];
+import { PR_CATEGORIES as prCategories, PR_NUMBER_PREFIX_MAP as prNumberPrefixMap } from "../../../utils/createEmptyProject";
 
 const departmentOptions = [
   "Design Engineering Services",
@@ -31,16 +23,6 @@ const departmentOptions = [
   "Risk Management",
   "Training",
 ];
-
-const prNumberPrefixMap: Record<string, string> = {
-  Malaysia: "MYPR-",
-  Oman: "EE-",
-  "Abu Dhabi": "PRAD-",
-  FZI: "PRI-",
-  "Elixir Qatar": "EE-Q-",
-  India: "PR-",
-  Qatar: "Q-PR-",
-};
 
 const applyPrNoPrefix = (rawValue: string, prefix: string) => {
   if (!prefix) {
@@ -110,24 +92,13 @@ const PmoCoordinatorAutocomplete = ({
       ) {
         setIsOpen(false);
         const trimmed = searchQuery.trim();
-        if (!trimmed) {
-          setProject((prev) => ({ ...prev, pmoCoordinator: "" }));
-        } else {
-          const match = coordinators.find(
-            (c) => c.toLowerCase() === trimmed.toLowerCase()
-          );
-          if (match) {
-            setProject((prev) => ({ ...prev, pmoCoordinator: match }));
-            setSearchQuery(match);
-          } else {
-            setSearchQuery(project.pmoCoordinator || "");
-          }
-        }
+        setProject((prev) => ({ ...prev, pmoCoordinator: trimmed }));
+        setSearchQuery(trimmed);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [searchQuery, coordinators, project.pmoCoordinator, setProject]);
+  }, [searchQuery, setProject]);
 
   const selectOption = (name: string) => {
     setSearchQuery(name);
@@ -184,9 +155,9 @@ const PmoCoordinatorAutocomplete = ({
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setSearchQuery(val);
+    setProject((prev) => ({ ...prev, pmoCoordinator: val }));
     if (val.trim() === "") {
       setIsOpen(false);
-      setProject((prev) => ({ ...prev, pmoCoordinator: "" }));
     } else {
       setIsOpen(true);
       setHighlightedIndex(0);
@@ -469,7 +440,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
               }}
               className={`${fieldClass} ${errors["domesticForeign"] ? "!border-[var(--nu-danger)]" : ""}`}
             >
-              <option value="">Select</option>
+              <option value="">Select Domestic / Foreign</option>
               <option value="Domestic">Domestic</option>
               <option value="Foreign">Foreign</option>
             </select>
@@ -517,9 +488,11 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
               }}
               className={`${fieldClass} ${errors["workOrderStatus"] ? "!border-[var(--nu-danger)]" : ""}`}
             >
-              <option value="">Select</option>
+              <option value="">Select Work Order Status</option>
               <option value="Received">Received</option>
+              <option value="Yet to Receive">Yet to Receive</option>
               <option value="Pending">Pending</option>
+              <option value="Closed">Closed</option>
               <option value="Cancelled">Cancelled</option>
             </select>
           </Field>
@@ -537,8 +510,10 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
               }}
               className={`${fieldClass} ${errors["projectStatus"] ? "!border-[var(--nu-danger)]" : ""}`}
             >
-              <option value="">Select</option>
+              <option value="">Select Project Status</option>
               <option value="Active">Active</option>
+              <option value="Ongoing">Ongoing</option>
+              <option value="Not Started">Not Started</option>
               <option value="Completed">Completed</option>
               <option value="On Hold">On Hold</option>
               <option value="Cancelled">Cancelled</option>

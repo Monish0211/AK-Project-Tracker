@@ -1,9 +1,18 @@
-import React from "react";
-import { CheckCircle2, Clock, Trash2, Edit2, Calendar, Bell, ExternalLink, RefreshCw } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { CheckCircle2, Trash2, Edit2, Calendar, Clock, Bell, ExternalLink, RefreshCw } from "lucide-react";
 import type { ProjectReminder } from "../../types/ProjectReminder";
 import { reminderService } from "../../services/reminders/ReminderService";
 import { useNavigate } from "react-router-dom";
 import { NotificationRoutes } from "../../notifications/notificationRoutes";
+import { Badge } from "../ui/Badge";
+import { ReminderTypeIcon } from "../ui/ReminderTypeIcon";
+import {
+  formatHumanDateString,
+  formatHumanTime,
+  getReminderStatusDisplay,
+  reminderPriorityTone,
+  reminderStatusTone,
+} from "../../utils/reminderDisplay";
 
 interface Props {
   reminder: ProjectReminder;
@@ -11,9 +20,31 @@ interface Props {
   readOnly?: boolean;
 }
 
+const PRIORITY_STRIPE: Record<ProjectReminder["priority"], string> = {
+  Critical: "border-l-red-900 dark:border-l-red-700",
+  High: "border-l-[var(--nu-danger)]",
+  Medium: "border-l-[var(--nu-warning)]",
+  Low: "border-l-[var(--nu-success)]",
+};
+
+const STATUS_TEXT_TONE: Record<string, string> = {
+  overdue: "text-[var(--nu-danger)]",
+  "due-now": "text-[var(--nu-accent)]",
+  "due-soon": "text-[var(--nu-warning)]",
+  upcoming: "text-[var(--nu-text-muted)]",
+};
+
 export const ReminderCard: React.FC<Props> = ({ reminder, onEdit, readOnly }) => {
   const navigate = useNavigate();
-  
+
+  // Re-renders every 30s so the trigger-status badge and countdown text
+  // (Upcoming -> Due Soon -> Due Now -> Overdue) stay live without a reload.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   const handleComplete = (e: React.MouseEvent) => {
     e.stopPropagation();
     reminderService.updateReminder(reminder.id, { status: "Completed" });
@@ -36,66 +67,70 @@ export const ReminderCard: React.FC<Props> = ({ reminder, onEdit, readOnly }) =>
     navigate(NotificationRoutes.PROJECT_EDIT(reminder.projectId));
   };
 
-  // Status Styling
-  let statusClasses = "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-300";
-  if (reminder.status === "Completed") {
-    statusClasses = "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300";
-  } else if (reminder.priority === "Critical") {
-    statusClasses = "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300";
-  } else if (reminder.priority === "High") {
-    statusClasses = "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800 dark:text-amber-300";
-  }
+  const isActive = reminder.status === "Pending";
+  const trigger = getReminderStatusDisplay(reminder, now);
 
   return (
-    <div className={`p-4 rounded-xl border transition-all ${statusClasses} shadow-sm group`}>
+    <div
+      className={`p-4 rounded-xl border border-l-4 bg-[var(--nu-surface)] border-[var(--nu-border)] ${PRIORITY_STRIPE[reminder.priority]} transition-all shadow-sm group`}
+    >
       <div className="flex justify-between items-start gap-4">
-        
+
         {/* Main Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-white/60 dark:bg-black/20 border border-black/5 dark:border-white/5 truncate max-w-[120px]">
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] text-[var(--nu-text-secondary)] truncate max-w-[140px]">
+              <ReminderTypeIcon type={reminder.reminderType} size={11} className="shrink-0" />
               {reminder.reminderType}
             </span>
             {reminder.projectCode && (
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--nu-text-muted)]">
                 {reminder.projectCode}
               </span>
             )}
             {reminder.repeat !== "None" && (
               <span title={`Repeats: ${reminder.repeat}`}>
-                <RefreshCw size={12} className="text-slate-400 dark:text-slate-500" />
+                <RefreshCw size={12} className="text-[var(--nu-text-muted)]" />
               </span>
             )}
+            {isActive && <Badge tone={reminderStatusTone(trigger.status)} dot>{trigger.label}</Badge>}
+            <Badge tone={reminderPriorityTone(reminder.priority)}>{reminder.priority}</Badge>
           </div>
-          
-          <h3 className={`text-sm font-bold truncate ${reminder.isCompleted ? 'line-through opacity-70' : ''}`}>
+
+          <h3 className={`text-sm font-bold truncate text-[var(--nu-text)] ${reminder.isCompleted ? 'line-through opacity-70' : ''}`}>
             {reminder.title}
           </h3>
-          
+
           {reminder.description && (
-            <p className="text-xs mt-1.5 opacity-80 line-clamp-2 leading-relaxed">
+            <p className="text-xs mt-1.5 text-[var(--nu-text-muted)] line-clamp-2 leading-relaxed">
               {reminder.description}
             </p>
           )}
 
-          <div className="flex items-center gap-4 mt-3 text-[11px] font-semibold opacity-80">
+          <div className="flex items-center gap-4 mt-3 text-[11px] font-semibold text-[var(--nu-text-secondary)] flex-wrap">
             <div className="flex items-center gap-1.5">
               <Calendar size={13} />
-              {reminder.reminderDate}
+              {formatHumanDateString(reminder.reminderDate)}
             </div>
             {reminder.reminderTime && (
               <div className="flex items-center gap-1.5">
                 <Clock size={13} />
-                {reminder.reminderTime}
+                {formatHumanTime(reminder.reminderTime)}
               </div>
             )}
             {reminder.notifyOffset !== "At Due Time" && (
               <div className="flex items-center gap-1.5" title={`Notifies ${reminder.notifyOffset}`}>
                 <Bell size={13} />
-                {reminder.notifyOffset}
+                Notify {reminder.notifyOffset}
               </div>
             )}
           </div>
+
+          {isActive && (
+            <p className={`text-[11px] font-bold mt-1.5 ${STATUS_TEXT_TONE[trigger.status]}`}>
+              {trigger.detail}
+            </p>
+          )}
         </div>
 
         {/* Action Buttons */}

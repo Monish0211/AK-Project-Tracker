@@ -5,7 +5,7 @@ import {
   getTotalNonManhourCost,
 } from "../../../../services/expenseService";
 
-import { formatIndianCurrency } from "../../../../utils/quantityCalculations";
+import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
 
 interface Props {
   manpowerCost: number;
@@ -61,8 +61,8 @@ const CostSummaryCard = ({
             Total Manpower Budget
           </span>
 
-          <span className="text-lg font-semibold text-blue-700">
-            {formatIndianCurrency(manpowerCost)}
+          <span className="text-lg font-semibold text-blue-700 whitespace-nowrap" title={formatFullINR(manpowerCost)}>
+            {formatBusinessINR(manpowerCost)}
           </span>
 
         </div>
@@ -73,8 +73,8 @@ const CostSummaryCard = ({
             Total Other Expenses
           </span>
 
-          <span className="text-lg font-semibold text-orange-700">
-            {formatIndianCurrency(totalOtherExpenses)}
+          <span className="text-lg font-semibold text-orange-700 whitespace-nowrap" title={formatFullINR(totalOtherExpenses)}>
+            {formatBusinessINR(totalOtherExpenses)}
           </span>
 
         </div>
@@ -87,8 +87,8 @@ const CostSummaryCard = ({
               Total Project Cost
             </span>
 
-            <span className="text-2xl font-bold text-green-700">
-              {formatIndianCurrency(totalProjectCost)}
+            <span className="text-2xl font-bold text-green-700 whitespace-nowrap" title={formatFullINR(totalProjectCost)}>
+              {formatBusinessINR(totalProjectCost)}
             </span>
 
           </div>

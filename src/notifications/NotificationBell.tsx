@@ -10,7 +10,10 @@ export const NotificationBell: React.FC = () => {
   return (
     <>
       <button
-        onClick={() => setIsDrawerOpen(true)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsDrawerOpen(prev => !prev);
+        }}
         className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition duration-150 cursor-pointer outline-none border-none bg-transparent"
         title="Notifications"
       >

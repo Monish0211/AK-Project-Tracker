@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
 import type { ChangeEvent } from "react";
 import {
   AlertTriangle,
@@ -586,26 +587,26 @@ const BillingProgressDrawer = ({
             <div className="divide-y divide-slate-100">
               <div className="flex items-center justify-between py-2.5">
                 <span className="text-sm text-slate-500">Work Order Value</span>
-                <span className="text-sm font-semibold text-slate-800">
-                  {formatIndianCurrency(projectValueINR)}
+                <span className="text-sm font-semibold text-slate-800 whitespace-nowrap" title={formatFullINR(projectValueINR)}>
+                  {formatBusinessINR(projectValueINR)}
                 </span>
               </div>
               <div className="flex items-center justify-between py-2.5">
                 <span className="text-sm text-slate-500">Already Invoiced</span>
-                <span className="text-sm font-semibold text-slate-800">
-                  {formatIndianCurrency(projectAlreadyInvoiced)}
+                <span className="text-sm font-semibold text-slate-800 whitespace-nowrap" title={formatFullINR(projectAlreadyInvoiced)}>
+                  {formatBusinessINR(projectAlreadyInvoiced)}
                 </span>
               </div>
               <div className="flex items-center justify-between py-2.5">
                 <span className="text-sm text-slate-500">Current Invoice</span>
-                <span className="text-sm font-semibold text-blue-600">
-                  {formatIndianCurrency(currentInvoiceAmount)}
+                <span className="text-sm font-semibold text-blue-600 whitespace-nowrap" title={formatFullINR(currentInvoiceAmount)}>
+                  {formatBusinessINR(currentInvoiceAmount)}
                 </span>
               </div>
               <div className="flex items-center justify-between py-2.5">
                 <span className="text-sm text-slate-500">Remaining Balance</span>
-                <span className="text-sm font-semibold text-orange-600">
-                  {formatIndianCurrency(remainingBalance)}
+                <span className="text-sm font-semibold text-orange-600 whitespace-nowrap" title={formatFullINR(remainingBalance)}>
+                  {formatBusinessINR(remainingBalance)}
                 </span>
               </div>
             </div>

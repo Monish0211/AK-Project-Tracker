@@ -1,6 +1,7 @@
 import { Clock, Package, Plus, Trash2, Wallet, Layers } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import type { ChangeEvent, Dispatch, SetStateAction } from "react";
+import { formatBusinessINR } from "../../../utils/formatCurrency";
 import type { Project } from "../../../types/Project";
 import type { QuantityItem } from "../../../types/QuantityItem";
 import { getEmployees } from "../../../services/employeeService";
@@ -505,7 +506,7 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
         <StatTile
           emphasis="secondary"
           label="Total WO Value"
-          value={formatIndianCurrency(project.workOrderValueINR)}
+          value={formatBusinessINR(project.workOrderValueINR || 0)}
           icon={<Wallet size={14} />}
           tint="success"
         />

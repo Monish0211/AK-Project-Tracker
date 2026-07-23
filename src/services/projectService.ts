@@ -1,14 +1,24 @@
 import type { Project } from "../types/Project";
-import { createEmptyProject } from "../utils/createEmptyProject";
+import { createEmptyProject, inferPrCategory, inferDomesticForeign } from "../utils/createEmptyProject";
 import { calculateQuantity } from "../utils/quantityCalculations";
 import { syncInvoiceItemsWithQuantity } from "./invoiceSyncService";
 
 const STORAGE_KEY = "projects";
 
-function normalizeProject(project: Project): Project {
+export function normalizeProject(project: Project): Project {
   const defaults = createEmptyProject();
 
+  const normalizedPrNo = project.prNo || "";
+  const normalizedPrCategory = inferPrCategory(normalizedPrNo, project.prCategory);
   const normalizedCurrency = project.currency || "INR";
+  const normalizedDomesticForeign = inferDomesticForeign(normalizedCurrency, normalizedPrCategory, project.domesticForeign);
+  const normalizedWorkOrderStatus = project.workOrderStatus || "";
+  const normalizedProjectStatus = project.projectStatus || "";
+  const normalizedContractType = project.contractType || "";
+  const normalizedDepartment = project.department || "";
+  const normalizedPmoCoordinator = project.pmoCoordinator || "";
+  const normalizedPoMonth = project.poMonth || (project.projectStartDate ? project.projectStartDate.substring(0, 7) : "");
+
   const normalizedCurrentExchangeRate = typeof project.currentExchangeRate === "number" ? project.currentExchangeRate : 1;
   const normalizedContractExchangeRate = typeof project.contractExchangeRate === "number" ? project.contractExchangeRate : 1;
 
@@ -52,22 +62,35 @@ function normalizeProject(project: Project): Project {
     normalizedGstApplicable
   );
 
+  const paymentMilestones = Array.isArray(project.paymentMilestones)
+    ? project.paymentMilestones.map((milestone) => ({
+        ...milestone,
+        milestoneName: milestone.milestoneName || "",
+        amount: (totals.workOrderValueINR * (milestone.paymentPercentage || 0)) / 100,
+      }))
+    : defaults.paymentMilestones;
+
   return {
     ...defaults,
     ...project,
+    prNo: normalizedPrNo,
+    prCategory: normalizedPrCategory,
+    domesticForeign: normalizedDomesticForeign,
+    workOrderStatus: normalizedWorkOrderStatus,
+    projectStatus: normalizedProjectStatus,
+    contractType: normalizedContractType,
+    department: normalizedDepartment,
+    pmoCoordinator: normalizedPmoCoordinator,
+    poMonth: normalizedPoMonth,
     currency: normalizedCurrency,
     currentExchangeRate: normalizedCurrentExchangeRate,
     contractExchangeRate: normalizedContractExchangeRate,
     quantityItems: normalizedQuantityItems,
     gstApplicable: normalizedGstApplicable,
     ...totals,
-    paymentMilestones: Array.isArray(project.paymentMilestones)
-      ? project.paymentMilestones.map((milestone) => ({
-          ...milestone,
-          milestoneName: milestone.milestoneName || "",
-          amount: (totals.workOrderValueINR * (milestone.paymentPercentage || 0)) / 100,
-        }))
-      : defaults.paymentMilestones,
+    paymentMilestones,
+    paymentType: project.paymentType || (paymentMilestones.length > 1 ? "Multiple" : "Single"),
+    paymentTerms: project.paymentTerms || "30% / 40% / 30%",
     milestoneBillings: Array.isArray(project.milestoneBillings)
       ? project.milestoneBillings
       : [],
@@ -103,7 +126,6 @@ function normalizeProject(project: Project): Project {
     lastImportedDate: project.lastImportedDate || "",
     lastImportedBy: project.lastImportedBy || "",
     lastImportedRowsCount: typeof project.lastImportedRowsCount === "number" ? project.lastImportedRowsCount : Number(project.lastImportedRowsCount) || 0,
-    contractType: project.contractType || "LUMP SUM",
     totalHoursBudget: typeof project.totalHoursBudget === "number" ? project.totalHoursBudget : Number(project.totalHoursBudget) || 0,
     totalProjectBudget: totals.workOrderValueINR,
 

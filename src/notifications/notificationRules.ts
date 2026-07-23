@@ -98,42 +98,97 @@ export const evaluateProjectRules = (
     }
   }
 
-  // Rule 3: Project End Date exceeded while active
+  // Rule 3: Proactive Project Timeline Alerts (14-day, 7-day, Due Today, Overdue)
   if (project.projectStatus === "Active" && project.projectEndDate) {
-    const endDate = new Date(project.projectEndDate);
-    if (endDate < new Date()) {
-      notifications.push({
-        id: createRuleId("TIME_OVERRUN", project.id),
-        ruleId: "TIME_OVERRUN",
-        version: 1,
-        title: "Project Delayed",
-        message: `Project ${project.prNo} is active but its end date (${project.projectEndDate}) has passed.`,
-        category: "Critical",
-        severity: "High",
-        source: "Projects",
-        targetAudience: "Project Manager",
-        deliveryChannels: ["InApp"],
-        module: "Projects",
-        projectId: project.id,
-        projectCode: project.prNo,
-        timestamp: now,
-        isRead: false,
-        isArchived: false,
-        persistent: false,
-        autoResolve: true,
-        actionLabel: "Update Schedule",
-        actionRoute: NotificationRoutes.PROJECT_EDIT(project.id),
-      });
-    } else {
-      // Rule 4: Project Ending within 7 days
-      const daysUntilEnd = (endDate.getTime() - new Date().getTime()) / (1000 * 3600 * 24);
-      if (daysUntilEnd >= 0 && daysUntilEnd <= 7) {
+    const endDateObj = new Date(project.projectEndDate);
+    if (!isNaN(endDateObj.getTime())) {
+      const currentDate = new Date();
+      const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+      const endCal = new Date(endDateObj.getFullYear(), endDateObj.getMonth(), endDateObj.getDate());
+      const diffTime = endCal.getTime() - today.getTime();
+      const daysRemaining = Math.round(diffTime / (1000 * 3600 * 24));
+
+      if (daysRemaining < 0) {
+        // Overdue
+        const overdueDays = Math.abs(daysRemaining);
+        notifications.push({
+          id: createRuleId("TIME_OVERRUN", project.id),
+          ruleId: "TIME_OVERRUN",
+          version: 1,
+          title: "Project Overdue",
+          message: `Project ${project.prNo} is active but passed its end date (${project.projectEndDate}) by ${overdueDays} day${overdueDays === 1 ? "" : "s"}.`,
+          category: "Critical",
+          severity: "Critical",
+          source: "Projects",
+          targetAudience: "Project Manager",
+          deliveryChannels: ["InApp"],
+          module: "Projects",
+          projectId: project.id,
+          projectCode: project.prNo,
+          timestamp: now,
+          isRead: false,
+          isArchived: false,
+          persistent: false,
+          autoResolve: true,
+          actionLabel: "Update Schedule",
+          actionRoute: NotificationRoutes.PROJECT_EDIT(project.id),
+        });
+      } else if (daysRemaining === 0) {
+        // Due Today
+        notifications.push({
+          id: createRuleId("PROJECT_DUE_TODAY", project.id),
+          ruleId: "PROJECT_DUE_TODAY",
+          version: 1,
+          title: "Project Due Today",
+          message: `Project ${project.prNo} end date is today (${project.projectEndDate}).`,
+          category: "Critical",
+          severity: "High",
+          source: "Projects",
+          targetAudience: "Project Manager",
+          deliveryChannels: ["InApp"],
+          module: "Projects",
+          projectId: project.id,
+          projectCode: project.prNo,
+          timestamp: now,
+          isRead: false,
+          isArchived: false,
+          persistent: false,
+          autoResolve: true,
+          actionLabel: "Review Project",
+          actionRoute: NotificationRoutes.PROJECT_EDIT(project.id),
+        });
+      } else if (daysRemaining <= 7) {
+        // Due Soon (1 to 7 days)
         notifications.push({
           id: createRuleId("PROJECT_ENDING", project.id),
           ruleId: "PROJECT_ENDING",
           version: 1,
-          title: "Project Ending Soon",
-          message: `Project ${project.prNo} is ending in ${Math.ceil(daysUntilEnd)} days.`,
+          title: "Project Ending Soon (Within 7 Days)",
+          message: `Project ${project.prNo} is due in ${daysRemaining} day${daysRemaining === 1 ? "" : "s"} (${project.projectEndDate}).`,
+          category: "Warning",
+          severity: "High",
+          source: "Projects",
+          targetAudience: "Project Manager",
+          deliveryChannels: ["InApp"],
+          module: "Projects",
+          projectId: project.id,
+          projectCode: project.prNo,
+          timestamp: now,
+          isRead: false,
+          isArchived: false,
+          persistent: false,
+          autoResolve: true,
+          actionLabel: "Review Project",
+          actionRoute: NotificationRoutes.PROJECT_EDIT(project.id),
+        });
+      } else if (daysRemaining <= 14) {
+        // Upcoming (8 to 14 days)
+        notifications.push({
+          id: createRuleId("PROJECT_ENDING_14", project.id),
+          ruleId: "PROJECT_ENDING_14",
+          version: 1,
+          title: "Project Ending in 14 Days",
+          message: `Project ${project.prNo} is due in ${daysRemaining} days (${project.projectEndDate}).`,
           category: "Warning",
           severity: "Medium",
           source: "Projects",

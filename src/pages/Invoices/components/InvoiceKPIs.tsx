@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 
 import { getInvoices } from "../../../services/invoiceService";
+import { formatBusinessINR, formatFullINR } from "../../../utils/formatCurrency";
 
 const InvoiceKPIs = () => {
   const invoices = getInvoices();
@@ -30,31 +31,35 @@ const InvoiceKPIs = () => {
   const cards = [
     {
       title: "Total Invoices",
-      value: totalInvoices,
+      value: String(totalInvoices),
+      tooltip: String(totalInvoices),
       icon: FileText,
-      bg: "bg-blue-100",
-      iconColor: "text-blue-600",
+      bg: "bg-blue-100 dark:bg-blue-950/40",
+      iconColor: "text-blue-600 dark:text-blue-400",
     },
     {
       title: "Invoice Raised",
-      value: `₹ ${totalInvoiceRaised.toLocaleString("en-IN")}`,
+      value: formatBusinessINR(totalInvoiceRaised),
+      tooltip: formatFullINR(totalInvoiceRaised),
       icon: IndianRupee,
-      bg: "bg-green-100",
-      iconColor: "text-green-600",
+      bg: "bg-green-100 dark:bg-green-950/40",
+      iconColor: "text-green-600 dark:text-green-400",
     },
     {
       title: "Payment Received",
-      value: `₹ ${totalPaymentReceived.toLocaleString("en-IN")}`,
+      value: formatBusinessINR(totalPaymentReceived),
+      tooltip: formatFullINR(totalPaymentReceived),
       icon: Landmark,
-      bg: "bg-purple-100",
-      iconColor: "text-purple-600",
+      bg: "bg-purple-100 dark:bg-purple-950/40",
+      iconColor: "text-purple-600 dark:text-purple-400",
     },
     {
       title: "Outstanding",
-      value: `₹ ${totalOutstanding.toLocaleString("en-IN")}`,
+      value: formatBusinessINR(totalOutstanding),
+      tooltip: formatFullINR(totalOutstanding),
       icon: Wallet,
-      bg: "bg-orange-100",
-      iconColor: "text-orange-600",
+      bg: "bg-orange-100 dark:bg-orange-950/40",
+      iconColor: "text-orange-600 dark:text-orange-400",
     },
   ];
 
@@ -67,11 +72,12 @@ const InvoiceKPIs = () => {
         return (
           <div
             key={card.title}
+            title={card.tooltip}
             className="
-              bg-white
+              bg-white dark:bg-slate-900
               rounded-2xl
               border
-              border-gray-100
+              border-gray-100 dark:border-slate-800
               shadow-md
               p-5
               transition-all
@@ -83,11 +89,11 @@ const InvoiceKPIs = () => {
 
               <div>
 
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 dark:text-slate-400">
                   {card.title}
                 </p>
 
-                <h2 className="mt-2 text-2xl font-bold text-slate-800">
+                <h2 className="mt-2 text-2xl font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap">
                   {card.value}
                 </h2>
 

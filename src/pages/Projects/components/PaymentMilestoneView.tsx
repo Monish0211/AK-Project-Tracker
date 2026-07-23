@@ -1,10 +1,9 @@
 import {
-  AlertTriangle,
-  CalendarClock,
   CreditCard,
   ListChecks,
   PieChart,
   Wallet,
+  CalendarClock,
 } from "lucide-react";
 import type { Project } from "../../../types/Project";
 import { isMilestoneBilled } from "../../../services/milestoneBillingService";
@@ -12,6 +11,7 @@ import { Card, CardBody, CardHeader } from "../../../components/ui/Card";
 import { StatTile } from "../../../components/ui/StatTile";
 import { Badge } from "../../../components/ui/Badge";
 import type { Tone } from "../../../components/ui/Badge";
+import { formatBusinessINR, formatFullINR } from "../../../utils/formatCurrency";
 
 interface Props {
   project: Project;
@@ -61,12 +61,6 @@ const formatDate = (dateString: string): string => {
   });
 };
 
-const formatCurrency = (value: number): string =>
-  `₹ ${(value || 0).toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-
 const PaymentMilestoneView = ({ project }: Props) => {
   const milestones = project.paymentMilestones ?? [];
 
@@ -95,7 +89,7 @@ const PaymentMilestoneView = ({ project }: Props) => {
           tint={isPercentageMismatch ? "danger" : "success"}
         />
         <StatTile icon={<PieChart size={15} />} label="Remaining %" value={`${remainingPercentage.toFixed(2)}%`} tint="warning" />
-        <StatTile icon={<Wallet size={15} />} label="Total Amount" value={formatCurrency(totalAmount)} tint="success" />
+        <StatTile icon={<Wallet size={15} />} label="Total Amount" value={formatBusinessINR(totalAmount)} tint="success" />
       </div>
 
       <Card padded={false} elevated>
@@ -108,40 +102,34 @@ const PaymentMilestoneView = ({ project }: Props) => {
           }
         />
         <CardBody className="space-y-3.5">
-          {isPercentageMismatch && (
-            <div className="flex items-center gap-2 rounded-[var(--nu-radius-md)] border border-[var(--nu-danger)]/30 bg-[var(--nu-danger-soft)] px-3.5 py-2.5 text-[12.5px] font-medium text-[var(--nu-danger)]">
-              <AlertTriangle size={14} strokeWidth={2.25} />
-              Total payment percentage does not equal 100%.
-            </div>
-          )}
-
           {milestones.length === 0 ? (
-            <p className="text-center py-8 text-[var(--nu-text-muted)] text-[12.5px]">
-              No payment milestones have been added for this project.
-            </p>
+            <div className="text-center py-8 text-[var(--nu-text-muted)] text-[13px]">
+              No payment milestones defined for this project.
+            </div>
           ) : (
-            <div className="space-y-0">
-              {milestones.map((milestone, index) => {
+            <div className="relative space-y-4">
+              {milestones.map((milestone, idx) => {
                 const daysLeft = getDaysDifference(milestone.dueDate);
                 const status = getStatus(daysLeft);
                 const billed = isMilestoneBilled(project, milestone.id);
                 const amount = (project.workOrderValueINR * (milestone.paymentPercentage || 0)) / 100;
 
                 return (
-                  <div key={milestone.id} className="milestone-connector relative flex gap-3.5 pb-5">
-                    <div className="w-8 h-8 rounded-full bg-[var(--nu-accent)] text-white flex items-center justify-center text-[12px] font-bold shrink-0 z-10">
-                      {index + 1}
+                  <div key={milestone.id || idx} className="milestone-connector relative pl-8 pb-1">
+                    <div className="absolute left-0 top-1 w-7 h-7 rounded-full bg-[var(--nu-surface-alt)] border-2 border-[var(--nu-accent)] flex items-center justify-center text-[11px] font-bold text-[var(--nu-accent)] z-10">
+                      {idx + 1}
                     </div>
-                    <div className="flex-1 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-3.5">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-[14px] font-semibold text-[var(--nu-text)] truncate">
-                            {milestone.milestoneName?.trim() || `Milestone ${index + 1}`}
-                          </p>
-                          <p className="flex items-center gap-1.5 text-[12px] text-[var(--nu-text-muted)] mt-1">
-                            <CalendarClock size={13} className="shrink-0 text-[var(--nu-accent)]" />
-                            {formatDate(milestone.dueDate)} · {getDaysLeftLabel(daysLeft)}
-                          </p>
+
+                    <div className="bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] p-4 transition-colors duration-150 hover:border-[var(--nu-border-strong)]">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <h4 className="text-[14px] font-bold text-[var(--nu-text)]">{milestone.milestoneName || `Milestone ${idx + 1}`}</h4>
+                          {milestone.dueDate && (
+                            <p className="flex items-center gap-1 text-[11.5px] text-[var(--nu-text-muted)] mt-0.5">
+                              <CalendarClock size={13} className="shrink-0 text-[var(--nu-accent)]" />
+                              {formatDate(milestone.dueDate)} · {getDaysLeftLabel(daysLeft)}
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <Badge tone={STATUS_TONE[status]}>{status}</Badge>
@@ -156,7 +144,7 @@ const PaymentMilestoneView = ({ project }: Props) => {
                         </div>
                         <div>
                           <p className="text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)] font-medium">Amount</p>
-                          <p className="text-[13px] font-bold text-[var(--nu-success)]">{formatCurrency(amount)}</p>
+                          <p className="text-[13px] font-bold text-[var(--nu-success)]">{formatFullINR(amount)}</p>
                         </div>
                       </div>
                     </div>

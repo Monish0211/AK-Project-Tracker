@@ -8,8 +8,9 @@ interface Props {
   project: Project;
 }
 
-const formatCurrency = (value: number): string =>
-  `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+import { formatBusinessINR } from "../../../utils/formatCurrency";
+
+const formatCurrency = (value: number): string => formatBusinessINR(value || 0);
 
 export default function ExpenseBudgetView({ project }: Props) {
   const manhourBudgetAmount = project.manhourBudgetAmount || 0;

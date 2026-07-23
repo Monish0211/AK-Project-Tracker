@@ -1,6 +1,58 @@
 import type { Project } from "../types/Project";
 import { syncInvoiceItemsWithQuantity } from "../services/invoiceSyncService";
 
+export const PR_CATEGORIES = [
+  "India",
+  "Malaysia",
+  "Oman",
+  "Abu Dhabi",
+  "FZI",
+  "Elixir Qatar",
+  "Qatar",
+] as const;
+
+export const PR_NUMBER_PREFIX_MAP: Record<string, string> = {
+  India: "PR-",
+  Malaysia: "MYPR-",
+  Oman: "EE-",
+  "Abu Dhabi": "PRAD-",
+  FZI: "PRI-",
+  "Elixir Qatar": "EE-Q-",
+  Qatar: "Q-PR-",
+};
+
+export function inferPrCategory(prNo: string, rawPrCategory?: string): string {
+  if (rawPrCategory && rawPrCategory.trim()) {
+    const trimmed = rawPrCategory.trim();
+    const match = PR_CATEGORIES.find((c) => c.toLowerCase() === trimmed.toLowerCase());
+    if (match) return match;
+    return trimmed;
+  }
+
+  const cleanPr = (prNo || "").trim().toUpperCase();
+  if (cleanPr.startsWith("MYPR")) return "Malaysia";
+  if (cleanPr.startsWith("EE-Q") || cleanPr.startsWith("EEQ")) return "Elixir Qatar";
+  if (cleanPr.startsWith("EE")) return "Oman";
+  if (cleanPr.startsWith("PRAD")) return "Abu Dhabi";
+  if (cleanPr.startsWith("PRI")) return "FZI";
+  if (cleanPr.startsWith("Q-PR") || cleanPr.startsWith("QPR")) return "Qatar";
+  if (cleanPr.startsWith("PR-")) return "India";
+
+  return "";
+}
+
+export function inferDomesticForeign(currency?: string, prCategory?: string, rawValue?: string): string {
+  if (rawValue && rawValue.trim()) {
+    const trimmed = rawValue.trim();
+    if (trimmed.toLowerCase().includes("dom")) return "Domestic";
+    if (trimmed.toLowerCase().includes("for")) return "Foreign";
+  }
+  if ((currency || "INR").toUpperCase() === "INR" || prCategory === "India") {
+    return "Domestic";
+  }
+  return "Foreign";
+}
+
 export function createEmptyProject(): Project {
   const quantityItems = [
     {
