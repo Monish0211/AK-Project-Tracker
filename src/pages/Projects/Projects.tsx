@@ -760,39 +760,45 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
           )}
         </div>
 
-        {/* TABLE CONTAINER */}
+        {/* TABLE CONTAINER — headers stay visible while scrolling the page
+            (sticky top-0), and PR No stays visible while scrolling the table
+            horizontally (sticky left-0), so orientation never gets lost in a
+            wide/long table. */}
         <div className="ts overflow-x-auto">
           <table className="min-w-full text-xs">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                <th onClick={() => toggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left">
+                <th
+                  onClick={() => toggleSort("prNo")}
+                  className="p-3 font-extrabold uppercase select-none text-left sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900"
+                >
                   PR No <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left">
+                <th onClick={() => toggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Client <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("projectTitle")} className="p-3 font-extrabold uppercase select-none text-left">
+                <th onClick={() => toggleSort("projectTitle")} className="p-3 font-extrabold uppercase select-none text-left sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Project Title <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("primaryProjectManager")} className="p-3 font-extrabold uppercase select-none text-left">
+                <th onClick={() => toggleSort("primaryProjectManager")} className="p-3 font-extrabold uppercase select-none text-left sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Manager <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("department")} className="p-3 font-extrabold uppercase select-none text-left">
+                <th onClick={() => toggleSort("department")} className="p-3 font-extrabold uppercase select-none text-left sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Department <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("projectStatus")} className="p-3 font-extrabold uppercase select-none text-center">
+                <th onClick={() => toggleSort("projectStatus")} className="p-3 font-extrabold uppercase select-none text-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Project Status <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("invoiceStatus")} className="p-3 font-extrabold uppercase select-none text-center">
+                <th onClick={() => toggleSort("invoiceStatus")} className="p-3 font-extrabold uppercase select-none text-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Invoice Status <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("workOrderValueINR")} className="p-3 font-extrabold uppercase select-none text-right grp">
+                <th onClick={() => toggleSort("workOrderValueINR")} className="p-3 font-extrabold uppercase select-none text-right grp sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   WO Value (INR) <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th onClick={() => toggleSort("pendingDue")} className="p-3 font-extrabold uppercase select-none text-right">
+                <th onClick={() => toggleSort("pendingDue")} className="p-3 font-extrabold uppercase select-none text-right sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Pending Due <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
-                <th className="p-3 font-extrabold uppercase select-none text-center">
+                <th className="p-3 font-extrabold uppercase select-none text-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Actions
                 </th>
               </tr>
@@ -812,7 +818,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                       key={p.id}
                       className="border-b border-slate-100 dark:border-slate-800/80 hover:bg-blue-50/20 dark:hover:bg-slate-800/30 transition-all duration-100"
                     >
-                      <td className="p-3">
+                      <td className="p-3 sticky left-0 z-10 bg-white dark:bg-slate-900">
                         <span className="prno pmo-prno">{p.prNo}</span>
                       </td>
                       <td className="p-3">

@@ -217,7 +217,7 @@ const Sidebar = () => {
       className="
         pmo-sidebar
         w-[72px]
-        min-[1440px]:w-[260px]
+        min-[1440px]:w-[18rem]
         flex-shrink-0
         bg-gradient-to-b
         from-[var(--sidebar-from)]
@@ -372,7 +372,7 @@ const Sidebar = () => {
           logic (nav's flex-1/min-h-0/overflow-y-auto) determines where Quick
           Summary sits within the viewport; the outer <aside> above is purely
           the full-height background. */}
-      <div className="pmo-sidebar-inner sticky top-0 h-screen flex flex-col">
+      <div className="pmo-sidebar-inner sticky top-0 h-dvh flex flex-col">
         {/* Branding — shrink-0 so it always keeps its natural size and never
             gets compressed by the flex column, regardless of how tall
             Navigation or Quick Summary end up being. */}

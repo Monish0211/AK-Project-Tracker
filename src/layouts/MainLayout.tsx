@@ -46,7 +46,12 @@ const MainLayout = () => {
 
         {/* Page Content */}
         <main className="flex-1 overflow-auto bg-[#F8FAFC] dark:bg-[#0B0F19] transition-colors duration-300">
-          <div className="w-full max-w-[1800px] mx-auto px-6 py-6">
+          {/* Fluid container: padding scales smoothly with viewport width/height
+              instead of jumping at fixed breakpoints, and the max-width ceiling
+              rises on very large monitors so content doesn't feel starved of
+              space on 2K/4K while still avoiding unreadably wide rows on a
+              1366px laptop. */}
+          <div className="w-full max-w-[1800px] 2xl:max-w-[2200px] mx-auto px-[clamp(1rem,2vw,2.5rem)] py-[clamp(1rem,1.5vh,2rem)]">
             <Routes>
 
               {/* Dashboard */}
