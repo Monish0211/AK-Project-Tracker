@@ -1,4 +1,5 @@
 import { Clock, Package, Wallet, Layers, ListChecks } from "lucide-react";
+import { formatBusinessINR } from "../../../utils/formatCurrency";
 import type { Project } from "../../../types/Project";
 import {
   formatIndianCurrency,
@@ -159,7 +160,7 @@ const QuantityTable = ({ project }: Props) => {
         <StatTile
           icon={<Wallet size={15} />}
           label="Total WO Value"
-          value={formatIndianCurrency(project.workOrderValueINR || 0)}
+          value={formatBusinessINR(project.workOrderValueINR || 0)}
           tint="success"
         />
       </div>

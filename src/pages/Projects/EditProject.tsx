@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import type { Project } from "../../types/Project";
-import { getProjectById } from "../../services/projectService";
+import { getProjectById, normalizeProject } from "../../services/projectService";
 import { createEmptyProject } from "../../utils/createEmptyProject";
 import ProjectForm from "./components/ProjectForm";
 import type { TabKey } from "./components/ProjectForm";
@@ -15,13 +15,13 @@ const EditProject = () => {
 
   const existingProject = id ? getProjectById(id) : undefined;
 
-  const [project, setProject] = useState<Project>(
-    existingProject ?? createEmptyProject()
+  const [project, setProject] = useState<Project>(() =>
+    existingProject ? normalizeProject(existingProject) : createEmptyProject()
   );
 
   useEffect(() => {
     if (existingProject) {
-      setProject(existingProject);
+      setProject(normalizeProject(existingProject));
     }
   }, [id]);
 

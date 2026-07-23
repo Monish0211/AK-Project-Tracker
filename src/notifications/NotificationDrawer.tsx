@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { X, Check, Archive, Trash2, AlertCircle, Info, CheckCircle2, AlertTriangle } from "lucide-react";
 import { notificationService } from "./notificationService";
 import type { PMONotification } from "./notificationTypes";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import Portal from "../components/ui/Portal";
 
 interface NotificationDrawerProps {
   isOpen: boolean;
@@ -48,7 +49,37 @@ const groupNotifications = (notifications: PMONotification[]) => {
 
 export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, onClose, notifications }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const drawerRef = useRef<HTMLDivElement>(null);
   const { today, yesterday, earlier } = groupNotifications(notifications);
+
+  // Close drawer on route change
+  useEffect(() => {
+    if (isOpen) onClose();
+  }, [location.pathname]);
+
+  // Handle outside click and escape
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (drawerRef.current && !drawerRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen, onClose]);
 
   const handleAction = (route?: string) => {
     if (route) {
@@ -99,24 +130,20 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
                         {n.actionLabel}
                       </button>
                     )}
-                    <div className="flex items-center gap-3 ml-auto">
-                      {!n.isRead && (
-                        <button 
-                          onClick={() => notificationService.markAsRead(n.id)}
-                          className="text-slate-400 hover:text-blue-600 transition-colors"
-                          title="Mark as Read"
-                        >
-                          <Check size={14} />
-                        </button>
-                      )}
+                    {!n.isRead && (
                       <button 
-                        onClick={() => notificationService.archive(n.id)}
-                        className="text-slate-400 hover:text-red-500 transition-colors"
-                        title="Archive"
+                        onClick={() => notificationService.markAsRead(n.id)}
+                        className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
                       >
-                        <Archive size={14} />
+                        <Check size={12} /> Dismiss
                       </button>
-                    </div>
+                    )}
+                    <button 
+                      onClick={() => notificationService.archive(n.id)}
+                      className="text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 ml-auto"
+                    >
+                      <Archive size={12} /> Archive
+                    </button>
                   </div>
                 </div>
               </div>
@@ -128,17 +155,10 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
   };
 
   return (
-    <>
-      {/* Backdrop */}
-      {isOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-[100]" 
-          onClick={onClose}
-        />
-      )}
-
+    <Portal>
       {/* Drawer */}
       <div 
+        ref={drawerRef}
         className={`fixed top-0 right-0 h-full w-[400px] max-w-[100vw] bg-[#F8FAFC] dark:bg-[#0B0F19] shadow-2xl z-[101] transform transition-transform duration-300 ease-in-out border-l border-slate-200 dark:border-slate-800 flex flex-col ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
@@ -176,22 +196,22 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
           {notifications.filter(n => !n.isArchived).length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-slate-400">
+            <div className="flex flex-col items-center justify-center flex-1 p-5 text-slate-400">
               <CheckCircle2 size={48} className="mb-4 text-slate-300 dark:text-slate-700" />
               <p className="text-sm font-semibold">You're all caught up!</p>
               <p className="text-xs text-slate-500 mt-1">No new notifications</p>
             </div>
           ) : (
-            <>
+            <div className="p-5">
               {renderGroup("Today", today)}
               {renderGroup("Yesterday", yesterday)}
               {renderGroup("Earlier", earlier)}
-            </>
+            </div>
           )}
         </div>
       </div>
-    </>
+    </Portal>
   );
 };

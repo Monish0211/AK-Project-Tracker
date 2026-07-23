@@ -8,7 +8,7 @@ import type { NonManhourExpense } from "../../../../types/NonManhourExpense";
 import {
   calculateNonManhourCost,
 } from "../../../../services/expenseService";
-import { formatIndianCurrency } from "../../../../utils/quantityCalculations";
+import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
 
 import NonManhourExpenseModal from "./NonManhourExpenseModal";
 import NonManhourExpenseTable from "./NonManhourExpenseTable";
@@ -132,8 +132,8 @@ const NonManhourExpenseCard = ({ project, setProject }: Props) => {
               Total Other Expenses
             </p>
 
-            <h3 className="text-2xl font-bold text-orange-700">
-              {formatIndianCurrency(totalOtherExpenses)}
+            <h3 className="text-2xl font-bold text-orange-700 whitespace-nowrap" title={formatFullINR(totalOtherExpenses)}>
+              {formatBusinessINR(totalOtherExpenses)}
             </h3>
 
           </div>

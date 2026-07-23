@@ -14,11 +14,7 @@ interface Props {
   project: Project;
 }
 
-const formatINR = (value: number): string =>
-  `₹ ${value.toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+import { formatBusinessINR, formatFullINR } from "../../../utils/formatCurrency";
 
 const CostSection = ({ project }: Props) => {
   const manhourCost = getTotalManhourCost(project.manhourExpenses);
@@ -38,22 +34,26 @@ const CostSection = ({ project }: Props) => {
     <InfoSection title="Expense Information">
       <InfoField
         label="Manhour Expenses"
-        value={formatINR(manhourCost)}
+        value={formatBusinessINR(manhourCost)}
+        title={formatFullINR(manhourCost)}
       />
 
       <InfoField
         label="Non-Manhour Expenses"
-        value={formatINR(nonManhourCost)}
+        value={formatBusinessINR(nonManhourCost)}
+        title={formatFullINR(nonManhourCost)}
       />
 
       <InfoField
         label="Total Expenses"
-        value={formatINR(totalCost)}
+        value={formatBusinessINR(totalCost)}
+        title={formatFullINR(totalCost)}
       />
 
       <InfoField
         label="Profit"
-        value={formatINR(grossProfit)}
+        value={formatBusinessINR(grossProfit)}
+        title={formatFullINR(grossProfit)}
       />
 
       <InfoField

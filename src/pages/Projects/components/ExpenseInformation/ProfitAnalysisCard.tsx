@@ -6,7 +6,7 @@ import {
   getTotalNonManhourCost,
 } from "../../../../services/expenseService";
 
-import { formatIndianCurrency } from "../../../../utils/quantityCalculations";
+import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
 
 interface Props {
   manpowerCost: number;
@@ -77,8 +77,8 @@ const ProfitAnalysisCard = ({
 
           </div>
 
-          <h3 className="mt-3 text-2xl font-bold text-blue-700">
-            {formatIndianCurrency(revenue)}
+          <h3 className="mt-3 text-2xl font-bold text-blue-700 whitespace-nowrap" title={formatFullINR(revenue)}>
+            {formatBusinessINR(revenue)}
           </h3>
 
         </div>
@@ -100,8 +100,8 @@ const ProfitAnalysisCard = ({
 
           </div>
 
-          <h3 className="mt-3 text-2xl font-bold text-red-700">
-            {formatIndianCurrency(totalCost)}
+          <h3 className="mt-3 text-2xl font-bold text-red-700 whitespace-nowrap" title={formatFullINR(totalCost)}>
+            {formatBusinessINR(totalCost)}
           </h3>
 
         </div>
@@ -124,13 +124,14 @@ const ProfitAnalysisCard = ({
           </div>
 
           <h3
-            className={`mt-3 text-2xl font-bold ${
+            className={`mt-3 text-2xl font-bold whitespace-nowrap ${
               grossProfit >= 0
                 ? "text-green-700"
                 : "text-red-700"
             }`}
+            title={formatFullINR(grossProfit)}
           >
-            {formatIndianCurrency(grossProfit)}
+            {formatBusinessINR(grossProfit)}
           </h3>
 
         </div>

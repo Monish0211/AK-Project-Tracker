@@ -20,19 +20,21 @@ interface Props {
   onEdit: () => void;
 }
 
-const formatINR = (value: number): string => `₹${(value || 0).toLocaleString("en-IN")}`;
+import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
 
-const Field = ({ label, value }: { label: string; value: string }) => (
+const formatINR = (value: number): string => formatBusinessINR(value || 0);
+
+const Field = ({ label, value, tooltip }: { label: string; value: string; tooltip?: string }) => (
   <div className="min-w-0">
     <p className="text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)] font-medium">{label}</p>
-    <p className="text-[13px] font-semibold text-[var(--nu-text)] truncate" title={value}>
+    <p className="text-[13px] font-semibold text-[var(--nu-text)] truncate" title={tooltip || value}>
       {value || "—"}
     </p>
   </div>
 );
 
-const HeroChip = ({ icon, label, value }: { icon: ReactNode; label: string; value: string }) => (
-  <div className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--nu-radius-md)] bg-white/[0.07] border border-white/[0.1] shrink-0">
+const HeroChip = ({ icon, label, value, fullValue }: { icon: ReactNode; label: string; value: string; fullValue?: string }) => (
+  <div className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--nu-radius-md)] bg-white/[0.07] border border-white/[0.1] shrink-0" title={fullValue || value}>
     <div className="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center shrink-0">{icon}</div>
     <div className="leading-tight">
       <p className="text-[9.5px] uppercase tracking-wide text-white/55 font-medium">{label}</p>
@@ -86,9 +88,9 @@ const ProjectWorkspaceHeader = ({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap justify-end">
-          <HeroChip icon={<IndianRupee size={13} className="text-sky-300" />} label="Work Order Value" value={formatINR(project.workOrderValueINR || 0)} />
-          <HeroChip icon={<Wallet size={13} className="text-red-300" />} label="Outstanding" value={formatINR(outstanding)} />
-          <HeroChip icon={<FileText size={13} className="text-emerald-300" />} label="Invoice Raised" value={formatINR(invoiceRaised)} />
+          <HeroChip icon={<IndianRupee size={13} className="text-sky-300" />} label="Work Order Value" value={formatINR(project.workOrderValueINR || 0)} fullValue={formatFullINR(project.workOrderValueINR || 0)} />
+          <HeroChip icon={<Wallet size={13} className="text-red-300" />} label="Outstanding" value={formatINR(outstanding)} fullValue={formatFullINR(outstanding)} />
+          <HeroChip icon={<FileText size={13} className="text-emerald-300" />} label="Invoice Raised" value={formatINR(invoiceRaised)} fullValue={formatFullINR(invoiceRaised)} />
           <HeroChip icon={<Gauge size={13} className="text-amber-300" />} label="Completion" value={`${progressPercent.toFixed(0)}%`} />
         </div>
       </div>
@@ -103,7 +105,7 @@ const ProjectWorkspaceHeader = ({
               <Field label="Project Coordinator" value={project.projectCoordinator} />
               <Field label="PMO Coordinator" value={project.pmoCoordinator || "—"} />
               <Field label="Contract Type" value={project.contractType} />
-              <Field label="Work Order Value" value={formatINR(project.workOrderValueINR || 0)} />
+              <Field label="Work Order Value" value={formatINR(project.workOrderValueINR || 0)} tooltip={formatFullINR(project.workOrderValueINR || 0)} />
             </div>
           </div>
 

@@ -1,11 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, X, FolderKanban, Tag, ChevronDown } from "lucide-react";
+import { X, ChevronDown } from "lucide-react";
 import type { ReminderToastData } from "./toastStore";
 import { NotificationRoutes } from "./notificationRoutes";
 import { reminderService } from "../services/reminders/ReminderService";
 import type { SnoozeOption } from "../services/reminders/ReminderService";
 import { reminderSoundService } from "../services/audio/ReminderSoundService";
+import { ReminderTypeIcon } from "../components/ui/ReminderTypeIcon";
+import { formatHumanDateString, formatHumanTime, getReminderStatusDisplay } from "../utils/reminderDisplay";
+import type { ReminderTriggerStatus } from "../utils/reminderDisplay";
 
 interface Props {
   toast: ReminderToastData;
@@ -20,16 +23,14 @@ const SNOOZE_OPTIONS: { option: SnoozeOption; label: string }[] = [
   { option: "tomorrow", label: "Tomorrow" },
 ];
 
-const formatCountdown = (ms: number): string => {
-  if (ms <= 0) return "Due Now";
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `Due in ${seconds} second${seconds === 1 ? "" : "s"}`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `Due in ${minutes} minute${minutes === 1 ? "" : "s"}`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `Due in ${hours} hour${hours === 1 ? "" : "s"}`;
-  const days = Math.round(hours / 24);
-  return `Due in ${days} day${days === 1 ? "" : "s"}`;
+// This popup is portaled to document.body (see toastStore.ts), outside the
+// .project-workspace-shell scope that defines the --nu-* color tokens — so
+// it deliberately uses raw Tailwind colors here instead of Badge/--nu-*.
+const STATUS_TEXT_CLASSES: Record<ReminderTriggerStatus, string> = {
+  upcoming: "text-slate-600 dark:text-slate-300",
+  "due-soon": "text-amber-600 dark:text-amber-400",
+  "due-now": "text-blue-600 dark:text-blue-400",
+  overdue: "text-red-600 dark:text-red-400",
 };
 
 export const ReminderToast: React.FC<Props> = ({ toast, onDismiss }) => {
@@ -40,10 +41,12 @@ export const ReminderToast: React.FC<Props> = ({ toast, onDismiss }) => {
   const snoozeRef = useRef<HTMLDivElement>(null);
 
   const { reminder } = toast;
-  const dueAt = useMemo(() => new Date(toast.dueAt), [toast.dueAt]);
-  const msRemaining = dueAt.getTime() - now.getTime();
-  const isDueNow = msRemaining <= 0;
-  const isCritical = isDueNow || reminder.priority === "Critical";
+  const trigger = getReminderStatusDisplay(reminder, now);
+  const isUrgent = trigger.status === "due-now" || trigger.status === "overdue" || reminder.priority === "Critical";
+  const scheduledLabel =
+    formatHumanDateString(reminder.reminderDate) === "Today"
+      ? formatHumanTime(reminder.reminderTime)
+      : `${formatHumanDateString(reminder.reminderDate)} · ${formatHumanTime(reminder.reminderTime)}`;
 
   const startExit = (after: () => void) => {
     setPhase("exiting");
@@ -103,7 +106,7 @@ export const ReminderToast: React.FC<Props> = ({ toast, onDismiss }) => {
   return (
     <div
       className={`w-[340px] max-w-[calc(100vw-2rem)] rounded-2xl border shadow-2xl bg-white dark:bg-slate-900 overflow-hidden transition-all duration-300 ease-out ${phaseClasses} ${
-        isCritical
+        isUrgent
           ? "border-red-300 dark:border-red-900/60"
           : "border-slate-200 dark:border-slate-800"
       }`}
@@ -112,7 +115,7 @@ export const ReminderToast: React.FC<Props> = ({ toast, onDismiss }) => {
       {/* Header strip */}
       <div
         className={`flex items-center justify-between gap-2 px-3.5 py-2 border-b ${
-          isCritical
+          isUrgent
             ? "bg-red-50 dark:bg-red-950/40 border-red-100 dark:border-red-900/40"
             : "bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800"
         }`}
@@ -120,19 +123,20 @@ export const ReminderToast: React.FC<Props> = ({ toast, onDismiss }) => {
         <div className="flex items-center gap-1.5 min-w-0">
           <span
             className={`w-2 h-2 rounded-full shrink-0 ${
-              isCritical ? "bg-red-500 animate-pulse" : "bg-blue-500"
+              isUrgent ? "bg-red-500 animate-pulse" : "bg-blue-500"
             }`}
           />
-          <Bell
+          <ReminderTypeIcon
+            type={reminder.reminderType}
             size={13}
-            className={isCritical ? "text-red-600 dark:text-red-400 shrink-0" : "text-blue-600 dark:text-blue-400 shrink-0"}
+            className={isUrgent ? "text-red-600 dark:text-red-400 shrink-0" : "text-blue-600 dark:text-blue-400 shrink-0"}
           />
           <span
             className={`text-[11px] font-extrabold uppercase tracking-wide truncate ${
-              isCritical ? "text-red-700 dark:text-red-300" : "text-blue-700 dark:text-blue-300"
+              isUrgent ? "text-red-700 dark:text-red-300" : "text-blue-700 dark:text-blue-300"
             }`}
           >
-            {isDueNow ? "Reminder Due Now" : "Reminder"}
+            {reminder.reminderType} Reminder
           </span>
         </div>
         <button
@@ -146,29 +150,21 @@ export const ReminderToast: React.FC<Props> = ({ toast, onDismiss }) => {
       </div>
 
       {/* Body */}
-      <div className="px-3.5 py-3 space-y-2">
+      <div className="px-3.5 py-3 space-y-2.5">
         <h4 className="text-[13.5px] font-bold text-slate-900 dark:text-white leading-snug truncate" title={reminder.title}>
           {reminder.title}
         </h4>
 
-        <div className="flex items-center gap-3 flex-wrap text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-          <span className="flex items-center gap-1">
-            <FolderKanban size={12} className="shrink-0" />
-            {reminder.projectCode || "—"}
-          </span>
-          <span className="flex items-center gap-1">
-            <Tag size={12} className="shrink-0" />
-            {reminder.reminderType}
-          </span>
-        </div>
+        <div className="grid grid-cols-[72px_1fr] gap-x-2 gap-y-1 text-[11.5px]">
+          <span className="font-semibold text-slate-400 dark:text-slate-500">Project</span>
+          <span className="font-bold text-slate-700 dark:text-slate-200 truncate">{reminder.projectCode || "—"}</span>
 
-        <p
-          className={`text-[12px] font-bold ${
-            isDueNow ? "text-red-600 dark:text-red-400" : "text-slate-700 dark:text-slate-300"
-          }`}
-        >
-          {formatCountdown(msRemaining)}
-        </p>
+          <span className="font-semibold text-slate-400 dark:text-slate-500">Scheduled</span>
+          <span className="font-bold text-slate-700 dark:text-slate-200">{scheduledLabel}</span>
+
+          <span className="font-semibold text-slate-400 dark:text-slate-500">Status</span>
+          <span className={`font-bold ${STATUS_TEXT_CLASSES[trigger.status]}`}>{trigger.detail}</span>
+        </div>
       </div>
 
       {/* Actions */}

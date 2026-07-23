@@ -1,9 +1,9 @@
 import { ClipboardList, Receipt } from "lucide-react";
+import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
 
 import type { Project } from "../../../../types/Project";
 
 import { getProjectCommercialSummary } from "../../../../services/invoiceProgressService";
-import { formatIndianCurrency } from "../../../../utils/quantityCalculations";
 import { Card, CardBody, CardHeader } from "../../../../components/ui/Card";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 
@@ -71,17 +71,17 @@ const InvoiceProgressTable = ({ project }: Props) => {
         <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3.5">
           <div>
             <p className="text-[10.5px] font-medium uppercase tracking-wide text-[var(--nu-text-muted)]">Total Invoice Raised</p>
-            <p className="mt-1 text-[16px] font-bold text-[var(--nu-accent)]">{formatIndianCurrency(totalInvoiceRaised)}</p>
+            <p className="mt-1 text-[16px] font-bold text-[var(--nu-accent)] whitespace-nowrap" title={formatFullINR(totalInvoiceRaised)}>{formatBusinessINR(totalInvoiceRaised)}</p>
           </div>
 
           <div>
             <p className="text-[10.5px] font-medium uppercase tracking-wide text-[var(--nu-text-muted)]">Total Project Value</p>
-            <p className="mt-1 text-[16px] font-bold text-[var(--nu-text)]">{formatIndianCurrency(totalWorkPackageValue)}</p>
+            <p className="mt-1 text-[16px] font-bold text-[var(--nu-text)] whitespace-nowrap" title={formatFullINR(totalWorkPackageValue)}>{formatBusinessINR(totalWorkPackageValue)}</p>
           </div>
 
           <div>
             <p className="text-[10.5px] font-medium uppercase tracking-wide text-[var(--nu-text-muted)]">Balance Remaining</p>
-            <p className="mt-1 text-[16px] font-bold text-[var(--nu-warning)]">{formatIndianCurrency(balanceRemaining)}</p>
+            <p className="mt-1 text-[16px] font-bold text-[var(--nu-warning)] whitespace-nowrap" title={formatFullINR(balanceRemaining)}>{formatBusinessINR(balanceRemaining)}</p>
           </div>
 
           <div>

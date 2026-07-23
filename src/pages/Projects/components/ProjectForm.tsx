@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { inferPrCategory } from "../../../utils/createEmptyProject";
 import {
   Pencil,
   Plus,
@@ -151,7 +152,7 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
     { label: "PR Number", value: project.prNo, icon: Hash },
     { label: "Client", value: project.client, icon: Building2 },
     { label: "Project Title", value: project.projectTitle, icon: Briefcase },
-    { label: "PR Category", value: project.prCategory, icon: Layers },
+    { label: "PR Category", value: inferPrCategory(project.prNo, project.prCategory), icon: Layers },
     { label: "Department", value: project.department, icon: Layers },
     { label: "Project Status", value: project.projectStatus, icon: Activity },
     {

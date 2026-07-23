@@ -10,7 +10,7 @@ import type { Project } from "../../../../types/Project";
 import {
   getProjectCommercialSummary,
 } from "../../../../services/invoiceProgressService";
-import { formatIndianCurrency } from "../../../../utils/quantityCalculations";
+import { formatBusinessINR } from "../../../../utils/formatCurrency";
 import { StatTile } from "../../../../components/ui/StatTile";
 
 interface Props {
@@ -25,21 +25,21 @@ const InvoiceSummaryCards = ({ project }: Props) => {
       <StatTile
         icon={<IndianRupee size={15} />}
         label="Total Project Value"
-        value={formatIndianCurrency(summary.projectValueINR)}
+        value={formatBusinessINR(summary.projectValueINR)}
         tint="accent"
       />
 
       <StatTile
         icon={<FileText size={15} />}
         label="Total Invoice Raised"
-        value={formatIndianCurrency(summary.totalInvoiceRaised)}
+        value={formatBusinessINR(summary.totalInvoiceRaised)}
         tint="info"
       />
 
       <StatTile
         icon={<Wallet size={15} />}
         label="Balance Remaining"
-        value={formatIndianCurrency(summary.pendingDue)}
+        value={formatBusinessINR(summary.pendingDue)}
         tint="warning"
       />
 
@@ -55,7 +55,7 @@ const InvoiceSummaryCards = ({ project }: Props) => {
       <StatTile
         icon={<Clock size={15} />}
         label="Outstanding Collection"
-        value={formatIndianCurrency(summary.outstandingCollection)}
+        value={formatBusinessINR(summary.outstandingCollection)}
         tint="danger"
       />
     </div>

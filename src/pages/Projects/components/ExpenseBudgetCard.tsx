@@ -3,6 +3,7 @@ import { Briefcase, Clock, FileText, IndianRupee, Wallet, TrendingUp, TrendingDo
 import type { Project } from "../../../types/Project";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { StatTile } from "../../../components/ui/StatTile";
+import { formatBusinessINR } from "../../../utils/formatCurrency";
 
 interface Props {
   project: Project;
@@ -23,8 +24,8 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
 
   const totalProjectBudget = project.workOrderValueINR || 0;
   const totalProjectCost = manhourBudgetAmount + nonManhourBudgetAmount;
-  const formatINR = (value: number) =>
-    `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const formatINR = (value: number) => formatBusinessINR(value || 0);
 
   const formatK = (value: number) => {
     if (value === 0) return "₹0";
@@ -36,16 +37,7 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
   const budgetedProfitAmount = totalProjectBudget - totalProjectCost;
   const budgetedProfitPercent = totalProjectBudget > 0 ? (budgetedProfitAmount / totalProjectBudget) * 100 : 0;
 
-  const formattedProfitAmount =
-    budgetedProfitAmount < 0
-      ? `-₹${Math.abs(budgetedProfitAmount).toLocaleString("en-IN", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}`
-      : `₹${budgetedProfitAmount.toLocaleString("en-IN", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}`;
+  const formattedProfitAmount = formatBusinessINR(budgetedProfitAmount);
 
   const formattedProfitPercent = `${budgetedProfitPercent.toFixed(2)} %`;
 

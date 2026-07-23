@@ -1,4 +1,5 @@
 import type { Project } from "../../../types/Project";
+import { inferPrCategory, inferDomesticForeign } from "../../../utils/createEmptyProject";
 import InfoField from "./InfoField";
 import InfoSection from "./InfoSection";
 
@@ -6,11 +7,7 @@ interface Props {
   project: Project;
 }
 
-const formatCurrencyValue = (value: number): string =>
-  `₹ ${(value || 0).toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+import { formatBusinessINR, formatFullINR } from "../../../utils/formatCurrency";
 
 const GeneralView = ({ project }: Props) => {
   return (
@@ -27,7 +24,7 @@ const GeneralView = ({ project }: Props) => {
 
       <InfoField
         label="PR Category"
-        value={project.prCategory}
+        value={inferPrCategory(project.prNo, project.prCategory)}
       />
 
       <InfoField
@@ -42,7 +39,7 @@ const GeneralView = ({ project }: Props) => {
 
       <InfoField
         label="Domestic / Foreign"
-        value={project.domesticForeign}
+        value={inferDomesticForeign(project.currency, project.prCategory || inferPrCategory(project.prNo), project.domesticForeign)}
       />
 
       <InfoField
@@ -100,7 +97,8 @@ const GeneralView = ({ project }: Props) => {
 
       <InfoField
         label="Work Order Value"
-        value={formatCurrencyValue(project.workOrderValue)}
+        value={formatBusinessINR(project.workOrderValue || 0)}
+        title={formatFullINR(project.workOrderValue || 0)}
       />
     </InfoSection>
   );
