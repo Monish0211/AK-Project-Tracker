@@ -44,8 +44,22 @@ const MainLayout = () => {
         {/* Navbar */}
         <Navbar />
 
-        {/* Page Content */}
-        <main className="flex-1 overflow-auto bg-[#F8FAFC] dark:bg-[#0B0F19] transition-colors duration-300">
+        {/* Page Content — deliberately has no overflow property. html/body is
+            the single intended scroll container for the whole app (nothing
+            constrains html/body/#root to the viewport, so the page grows and
+            scrolls naturally with content — this is also why Sidebar has no
+            explicit height and instead stretches to match the full document
+            height). Neither this <main> nor its ancestors have a definite
+            height (only min-h-screen floors), so an overflow-auto/overflow-y
+            here never has a real bounded box to scroll within; at best it's
+            inert, at worst sub-pixel flex-stretch rounding makes its content
+            appear a hair taller than its own box, producing a second, barely
+            usable scrollbar right next to the real one. Do not add
+            overflow-auto/overflow-y-auto back here without also giving this
+            element (and every ancestor up to here) a definite height (h-screen/
+            h-dvh, not min-h-screen) plus min-h-0 — otherwise this duplicate-
+            scrollbar bug reappears. */}
+        <main className="flex-1 bg-[#F8FAFC] dark:bg-[#0B0F19] transition-colors duration-300">
           {/* Fluid container: padding scales smoothly with viewport width/height
               instead of jumping at fixed breakpoints, and the max-width ceiling
               rises on very large monitors so content doesn't feel starved of
