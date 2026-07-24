@@ -80,7 +80,7 @@ const NonManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
   return (
     <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50 p-5">
 
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl">
+      <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-xl w-full max-w-3xl">
 
         {/* Header */}
 

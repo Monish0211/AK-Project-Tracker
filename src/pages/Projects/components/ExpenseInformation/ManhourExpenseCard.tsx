@@ -79,7 +79,7 @@ const ManhourExpenseCard = ({ project, setProject }: Props) => {
 
   return (
     <>
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
 
         {/* Header */}
 
@@ -93,7 +93,7 @@ const ManhourExpenseCard = ({ project, setProject }: Props) => {
 
             <div>
 
-              <h2 className="text-lg font-semibold text-gray-800">
+              <h2 className="text-lg font-semibold text-gray-800 dark:text-slate-100">
                 Man-Hour Expenses
               </h2>
 

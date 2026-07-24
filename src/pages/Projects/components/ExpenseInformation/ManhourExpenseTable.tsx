@@ -85,7 +85,7 @@ const ManhourExpenseTable = ({ expenses, onEdit, onDelete }: Props) => {
                     <Users size={30} className="text-blue-500" />
                   </div>
 
-                  <h3 className="mt-4 text-lg font-semibold text-gray-700">
+                  <h3 className="mt-4 text-lg font-semibold text-gray-700 dark:text-slate-200">
                     No Employees Added
                   </h3>
 
@@ -106,10 +106,10 @@ const ManhourExpenseTable = ({ expenses, onEdit, onDelete }: Props) => {
 
               <tr
                 key={expense.id}
-                className="text-sm text-gray-700 hover:bg-gray-50"
+                className="text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50"
               >
 
-                <td className="px-4 py-3 font-medium text-gray-800">
+                <td className="px-4 py-3 font-medium text-gray-800 dark:text-slate-100">
                   {expense.employeeName}
                 </td>
 

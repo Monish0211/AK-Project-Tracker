@@ -13,10 +13,10 @@ interface Props {
 
 const ManhourExpenseView = ({ expenses }: Props) => {
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+    <div className="rounded-2xl border border-gray-100 dark:border-slate-800 bg-white dark:bg-[#1E293B] shadow-sm overflow-hidden">
 
-      <div className="border-b border-gray-100 px-6 py-5">
-        <h3 className="text-base font-semibold text-slate-800">
+      <div className="border-b border-gray-100 dark:border-slate-800 px-6 py-5">
+        <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">
           Man-Hour Expenses
         </h3>
         <p className="text-sm text-slate-500">
@@ -82,7 +82,7 @@ const ManhourExpenseView = ({ expenses }: Props) => {
                       <Users size={30} className="text-blue-500" />
                     </div>
 
-                    <h3 className="mt-4 text-lg font-semibold text-gray-700">
+                    <h3 className="mt-4 text-lg font-semibold text-gray-700 dark:text-slate-200">
                       No Man-Hour Expenses Recorded
                     </h3>
 
@@ -103,10 +103,10 @@ const ManhourExpenseView = ({ expenses }: Props) => {
 
                 <tr
                   key={expense.id}
-                  className="text-sm text-gray-700 hover:bg-gray-50"
+                  className="text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50"
                 >
 
-                  <td className="px-4 py-3 font-medium text-gray-800">
+                  <td className="px-4 py-3 font-medium text-gray-800 dark:text-slate-100">
                     {expense.employeeName}
                   </td>
 

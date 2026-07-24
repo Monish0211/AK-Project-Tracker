@@ -80,34 +80,34 @@ const ProjectTable = () => {
   ]);
 
   return (
-    <div className="bg-white rounded-2xl shadow-md border border-gray-100">
+    <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-md border border-gray-100 dark:border-slate-800">
 
       {/* Header */}
 
-      <div className="flex justify-between items-center p-6 border-b">
+      <div className="flex justify-between items-center p-6 border-b border-[var(--nu-border)]">
 
         <div className="flex items-center gap-3">
 
-          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
             <FolderKanban
               size={20}
-              className="text-blue-600"
+              className="text-blue-600 dark:text-blue-400"
             />
           </div>
 
           <div>
-            <h2 className="text-xl font-semibold">
+            <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">
               Project Repository
             </h2>
 
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-slate-400">
               Search and manage all projects
             </p>
           </div>
 
         </div>
 
-        <span className="px-4 py-2 rounded-xl bg-blue-50 text-blue-700 font-medium">
+        <span className="px-4 py-2 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium">
           Total Projects : {filteredProjects.length}
         </span>
 
@@ -115,7 +115,7 @@ const ProjectTable = () => {
 
       {/* Filters */}
 
-      <div className="grid grid-cols-3 gap-4 p-6 border-b">
+      <div className="grid grid-cols-3 gap-4 p-6 border-b border-[var(--nu-border)]">
 
         {/* Search */}
 
@@ -123,7 +123,7 @@ const ProjectTable = () => {
 
           <Search
             size={18}
-            className="absolute left-3 top-3 text-gray-400"
+            className="absolute left-3 top-3 text-gray-400 dark:text-slate-500"
           />
 
           <input
@@ -133,7 +133,7 @@ const ProjectTable = () => {
             onChange={(e) =>
               setSearch(e.target.value)
             }
-            className="w-full border rounded-xl pl-10 pr-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 rounded-xl pl-10 pr-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
           />
 
         </div>
@@ -145,7 +145,7 @@ const ProjectTable = () => {
           onChange={(e) =>
             setDepartment(e.target.value)
           }
-          className="border rounded-xl px-3 py-2"
+          className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-2 outline-none"
         >
           {departments.map((dept) => (
             <option
@@ -164,7 +164,7 @@ const ProjectTable = () => {
           onChange={(e) =>
             setStatus(e.target.value)
           }
-          className="border rounded-xl px-3 py-2"
+          className="border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-2 outline-none"
         >
           <option value="All">All Status</option>
           <option value="Active">Active</option>
@@ -178,7 +178,7 @@ const ProjectTable = () => {
       {/* Table */}
 
       {filteredProjects.length === 0 ? (
-        <div className="py-16 text-center text-gray-500">
+        <div className="py-16 text-center text-gray-500 dark:text-slate-400">
           No Projects Found
         </div>
       ) : (
@@ -186,9 +186,9 @@ const ProjectTable = () => {
 
           <table className="min-w-full">
 
-            <thead className="bg-slate-50 sticky top-0">
+            <thead className="bg-slate-50 dark:bg-slate-900/80 sticky top-0 border-b border-[var(--nu-border)]">
 
-              <tr className="text-sm text-slate-700">
+              <tr className="text-sm text-slate-700 dark:text-slate-300">
 
                 <th className="px-4 py-4 text-left">
                   PR No

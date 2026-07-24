@@ -480,7 +480,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, managersList }: UserDr
                             : "border-[var(--nu-border)] bg-transparent"
                         }`}
                       >
-                        {isChecked && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        {isChecked && <span className="w-1.5 h-1.5 rounded-full bg-white dark:bg-[#1E293B]" />}
                       </span>
                     </button>
                   );
@@ -571,7 +571,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, managersList }: UserDr
                             : "border-[var(--nu-border)] bg-transparent"
                         }`}
                       >
-                        {isEnabled && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        {isEnabled && <span className="w-1.5 h-1.5 rounded-full bg-white dark:bg-[#1E293B]" />}
                       </span>
                     </button>
                   );

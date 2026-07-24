@@ -40,7 +40,7 @@ const STATUS_BADGE_STYLES: Record<InvoiceStatus, string> = {
   "Partially Paid": "bg-amber-50 text-amber-700 border-amber-200",
   Paid: "bg-green-50 text-green-700 border-green-200",
   Overdue: "bg-red-50 text-red-700 border-red-200",
-  Cancelled: "bg-slate-100 text-slate-600 border-slate-200",
+  Cancelled: "bg-slate-100 text-slate-600 border-slate-200 dark:border-slate-700",
 };
 
 const createEmptyInvoice = (): Invoice => ({
@@ -240,7 +240,7 @@ const InvoiceForm = ({
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-2xl border border-gray-100 bg-white p-6 shadow-md"
+      className="rounded-2xl border border-gray-100 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-6 shadow-md"
     >
       {/* Header */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -249,7 +249,7 @@ const InvoiceForm = ({
             <FileText size={20} strokeWidth={2.25} />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-slate-800">{heading}</h2>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{heading}</h2>
             <p className="text-sm text-slate-500">{subheading}</p>
           </div>
         </div>
@@ -269,7 +269,7 @@ const InvoiceForm = ({
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {/* Project */}
         <div className="sm:col-span-2 lg:col-span-1">
-          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
             <Building2 size={15} className="text-blue-600" />
             Project
           </label>
@@ -288,7 +288,7 @@ const InvoiceForm = ({
 
         {/* PR No */}
         <div>
-          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
             <Hash size={15} className="text-blue-600" />
             PR No
           </label>
@@ -297,13 +297,13 @@ const InvoiceForm = ({
             value={formData.prNo}
             readOnly
             disabled
-            className="h-10 w-full rounded-lg border border-gray-200 bg-slate-50 px-3 text-sm text-slate-500 outline-none"
+            className="h-10 w-full rounded-lg border border-gray-200 dark:border-slate-700 bg-slate-50 px-3 text-sm text-slate-500 outline-none"
           />
         </div>
 
         {/* Client */}
         <div>
-          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
             <Building2 size={15} className="text-blue-600" />
             Client
           </label>
@@ -312,13 +312,13 @@ const InvoiceForm = ({
             value={formData.client}
             readOnly
             disabled
-            className="h-10 w-full rounded-lg border border-gray-200 bg-slate-50 px-3 text-sm text-slate-500 outline-none"
+            className="h-10 w-full rounded-lg border border-gray-200 dark:border-slate-700 bg-slate-50 px-3 text-sm text-slate-500 outline-none"
           />
         </div>
 
         {/* Invoice Reference */}
         <div>
-          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
             <FileText size={15} className="text-blue-600" />
             Invoice Reference
           </label>
@@ -327,13 +327,13 @@ const InvoiceForm = ({
             value={formData.invoiceRef}
             readOnly
             disabled
-            className="h-10 w-full rounded-lg border border-gray-200 bg-slate-50 px-3 text-sm text-slate-500 outline-none"
+            className="h-10 w-full rounded-lg border border-gray-200 dark:border-slate-700 bg-slate-50 px-3 text-sm text-slate-500 outline-none"
           />
         </div>
 
         {/* Invoice Date */}
         <div>
-          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
             <CalendarDays size={15} className="text-blue-600" />
             Invoice Date
           </label>
@@ -342,10 +342,10 @@ const InvoiceForm = ({
             value={formData.invoiceDate}
             disabled={readOnly}
             onChange={(e) => handleChange("invoiceDate", e.target.value)}
-            className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 ${
+            className={`h-10 w-full rounded-lg border bg-white dark:bg-[#1E293B] px-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition-all duration-150 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 ${
               errors.invoiceDate
                 ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                : "border-gray-200 focus:border-blue-500 focus:ring-blue-500/20"
+                : "border-gray-200 dark:border-slate-700 focus:border-blue-500 focus:ring-blue-500/20"
             }`}
           />
           {errors.invoiceDate && (
@@ -357,7 +357,7 @@ const InvoiceForm = ({
 
         {/* Due Date */}
         <div>
-          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
             <CalendarDays size={15} className="text-blue-600" />
             Due Date
           </label>
@@ -366,10 +366,10 @@ const InvoiceForm = ({
             value={formData.dueDate}
             disabled={readOnly}
             onChange={(e) => handleChange("dueDate", e.target.value)}
-            className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 ${
+            className={`h-10 w-full rounded-lg border bg-white dark:bg-[#1E293B] px-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition-all duration-150 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 ${
               errors.dueDate
                 ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                : "border-gray-200 focus:border-blue-500 focus:ring-blue-500/20"
+                : "border-gray-200 dark:border-slate-700 focus:border-blue-500 focus:ring-blue-500/20"
             }`}
           />
           {errors.dueDate && (
@@ -381,7 +381,7 @@ const InvoiceForm = ({
 
         {/* Invoice Amount */}
         <div>
-          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
             <IndianRupee size={15} className="text-blue-600" />
             Invoice Amount
           </label>
@@ -399,10 +399,10 @@ const InvoiceForm = ({
                 handleChange("invoiceAmount", Number(e.target.value) || 0)
               }
               placeholder="0"
-              className={`h-10 w-full rounded-lg border bg-white pl-7 pr-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 ${
+              className={`h-10 w-full rounded-lg border bg-white dark:bg-[#1E293B] pl-7 pr-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition-all duration-150 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 ${
                 errors.invoiceAmount
                   ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                  : "border-gray-200 focus:border-blue-500 focus:ring-blue-500/20"
+                  : "border-gray-200 dark:border-slate-700 focus:border-blue-500 focus:ring-blue-500/20"
               }`}
             />
           </div>
@@ -415,7 +415,7 @@ const InvoiceForm = ({
 
         {/* Received Amount */}
         <div>
-          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
             <Wallet size={15} className="text-blue-600" />
             Received Amount
           </label>
@@ -435,10 +435,10 @@ const InvoiceForm = ({
                 handleChange("receivedAmount", Number(e.target.value) || 0)
               }
               placeholder="0"
-              className={`h-10 w-full rounded-lg border bg-white pl-7 pr-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 ${
+              className={`h-10 w-full rounded-lg border bg-white dark:bg-[#1E293B] pl-7 pr-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition-all duration-150 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 ${
                 errors.receivedAmount
                   ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                  : "border-gray-200 focus:border-blue-500 focus:ring-blue-500/20"
+                  : "border-gray-200 dark:border-slate-700 focus:border-blue-500 focus:ring-blue-500/20"
               }`}
             />
           </div>
@@ -451,7 +451,7 @@ const InvoiceForm = ({
 
         {/* Outstanding Amount (auto-calculated) */}
         <div>
-          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
             <CircleDollarSign size={15} className="text-blue-600" />
             Outstanding Amount
           </label>
@@ -464,7 +464,7 @@ const InvoiceForm = ({
 
         {/* Status */}
         <div>
-          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
             <CircleDollarSign size={15} className="text-blue-600" />
             Status
           </label>
@@ -474,7 +474,7 @@ const InvoiceForm = ({
             onChange={(e) =>
               handleChange("status", e.target.value as InvoiceStatus)
             }
-            className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+            className="h-10 w-full rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] px-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
           >
             {STATUS_OPTIONS.map((status) => (
               <option key={status} value={status}>
@@ -486,7 +486,7 @@ const InvoiceForm = ({
 
         {/* Remarks */}
         <div className="sm:col-span-2 lg:col-span-3">
-          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
             <MessageSquare size={15} className="text-blue-600" />
             Remarks
           </label>
@@ -496,7 +496,7 @@ const InvoiceForm = ({
             onChange={(e) => handleChange("remarks", e.target.value)}
             rows={3}
             placeholder="Add any additional notes about this invoice..."
-            className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition-all duration-150 placeholder:text-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+            className="w-full resize-none rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] px-3 py-2.5 text-sm text-slate-800 dark:text-slate-100 outline-none transition-all duration-150 placeholder:text-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
           />
         </div>
       </div>
@@ -511,11 +511,11 @@ const InvoiceForm = ({
       )}
 
       {/* Actions */}
-      <div className="mt-6 flex flex-col-reverse gap-3 border-t border-gray-100 pt-5 sm:flex-row sm:justify-end">
+      <div className="mt-6 flex flex-col-reverse gap-3 border-t border-gray-100 dark:border-slate-800 pt-5 sm:flex-row sm:justify-end">
         <button
           type="button"
           onClick={onCancel}
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 transition-all duration-150 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] px-4 py-2.5 text-sm font-medium text-slate-600 transition-all duration-150 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-300"
         >
           <X size={16} />
           {readOnly ? "Close" : "Cancel"}

@@ -19,7 +19,7 @@ const data = [
 
 const RevenueChart = () => {
   return (
-    <div className="bg-white rounded-xl shadow-md p-6 h-96">
+    <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-md p-6 h-96">
       <h2 className="text-xl font-semibold mb-6">
         Revenue Trend (₹ Cr)
       </h2>

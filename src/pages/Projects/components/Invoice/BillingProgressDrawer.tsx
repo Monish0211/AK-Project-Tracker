@@ -40,7 +40,7 @@ const getAutoStatus = (
 };
 
 const STATUS_BADGE_STYLES: Record<string, string> = {
-  Pending: "bg-gray-100 text-gray-600 border-gray-200",
+  Pending: "bg-gray-100 text-gray-600 border-gray-200 dark:border-slate-700",
   "Partially Invoiced": "bg-orange-50 text-orange-700 border-orange-200",
   Completed: "bg-green-50 text-green-700 border-green-200",
 };
@@ -335,14 +335,14 @@ const BillingProgressDrawer = ({
 
       {/* Drawer */}
       <aside
-        className={`fixed right-0 top-0 z-50 flex h-full w-full max-w-[560px] flex-col bg-white shadow-2xl transition-transform duration-200 ease-out sm:w-[38%] sm:min-w-[420px] ${
+        className={`fixed right-0 top-0 z-50 flex h-full w-full max-w-[560px] flex-col bg-white dark:bg-[#1E293B] shadow-2xl transition-transform duration-200 ease-out sm:w-[38%] sm:min-w-[420px] ${
           show ? "translate-x-0" : "translate-x-full"
         }`}
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 dark:border-slate-800 px-6 py-5">
           <div>
-            <h2 className="text-xl font-bold text-slate-800">
+            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">
               {drawerTitle}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
@@ -364,14 +364,14 @@ const BillingProgressDrawer = ({
         <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
           {/* Dropdown for Work Package selection (Create Mode & Global drawer only) */}
           {mode === "create" && !initialItemId && !isMilestoneOnlyView && (
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] p-5 shadow-sm">
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Select Work Package / Activity
               </label>
               <select
                 value={selectedItemId}
                 onChange={(e) => setSelectedItemId(e.target.value)}
-                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                className="h-11 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] px-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
               >
                 {project.invoiceItems.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -384,8 +384,8 @@ const BillingProgressDrawer = ({
 
           {/* Package Summary (Read Only) - Hidden if milestone billing only */}
           {!isMilestoneOnlyView && selectedItem && (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
-              <h3 className="text-base font-semibold text-slate-800">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 p-5">
+              <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">
                 {selectedItem.description || "Work Package"}
               </h3>
 
@@ -403,7 +403,7 @@ const BillingProgressDrawer = ({
                   <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
                     Already Invoiced
                   </p>
-                  <p className="mt-1 text-sm font-bold text-slate-700">
+                  <p className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-200">
                     {formatIndianCurrency(alreadyInvoiced)}
                   </p>
                 </div>
@@ -422,28 +422,28 @@ const BillingProgressDrawer = ({
 
           {/* Section 1 - Quantity Progress (Hidden if milestone billing only) */}
           {!isMilestoneOnlyView && selectedItem && (
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <Package size={18} className="text-blue-600" />
-                <h4 className="text-sm font-bold text-slate-800">
+                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">
                   Quantity Progress
                 </h4>
               </div>
 
               <div className="grid grid-cols-3 gap-4 mb-4 text-center">
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total Qty</p>
-                  <p className="mt-1 text-sm font-bold text-slate-700">
+                  <p className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-200">
                     {formatIndianNumber(totalQty)} {selectedItem.uom}
                   </p>
                 </div>
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Already Completed</p>
                   <p className="mt-1 text-sm font-bold text-green-600">
                     {formatIndianNumber(completedQty)} {selectedItem.uom}
                   </p>
                 </div>
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Remaining Qty</p>
                   <p className="mt-1 text-sm font-bold text-orange-600">
                     {formatIndianNumber(remainingQty)} {selectedItem.uom}
@@ -462,23 +462,23 @@ const BillingProgressDrawer = ({
                   value={quantityInput}
                   onChange={handleNumberChange(setQuantityInput)}
                   disabled={isViewMode}
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-50 disabled:text-slate-500"
+                  className="h-11 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] px-3.5 text-sm text-slate-800 dark:text-slate-100 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-50 disabled:text-slate-500"
                 />
               </div>
             </div>
           )}
 
           {isMilestoneOnlyView && (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 text-center text-sm text-slate-400">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 p-5 text-center text-sm text-slate-400">
               Quantity progress is not applicable for project milestone billing.
             </div>
           )}
 
           {/* Section 2 - Payment Milestone */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] p-5 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
               <CreditCard size={18} className="text-blue-600" />
-              <h4 className="text-sm font-bold text-slate-800">
+              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">
                 Payment Milestone
               </h4>
             </div>
@@ -510,10 +510,10 @@ const BillingProgressDrawer = ({
                         isSelected
                           ? "border-blue-600 bg-blue-50/60"
                           : isBilled
-                          ? "cursor-not-allowed border-slate-100 bg-slate-50/50 opacity-60"
+                          ? "cursor-not-allowed border-slate-100 dark:border-slate-800 bg-slate-50/50 opacity-60"
                           : isViewMode
-                          ? "border-slate-100 bg-white"
-                          : "border-slate-100 bg-white hover:border-slate-200"
+                          ? "border-slate-100 dark:border-slate-800 bg-white dark:bg-[#1E293B]"
+                          : "border-slate-100 bg-white dark:bg-[#1E293B] hover:border-slate-200 dark:border-slate-700"
                       }`}
                     >
                       <div className="flex items-center gap-3">
@@ -523,14 +523,14 @@ const BillingProgressDrawer = ({
                               ? "border-blue-600 bg-blue-600 text-white"
                               : isBilled
                               ? "border-slate-300 bg-slate-200"
-                              : "border-slate-300 bg-white"
+                              : "border-slate-300 bg-white dark:bg-[#1E293B]"
                           }`}
                         >
-                          {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                          {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-white dark:bg-[#1E293B]" />}
                         </span>
 
                         <div>
-                          <p className="text-sm font-semibold text-slate-800">
+                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                             Milestone {index + 1}
                           </p>
                           <p className="text-xs text-slate-500">
@@ -558,12 +558,12 @@ const BillingProgressDrawer = ({
 
             {/* Display Auto Populated Milestone Info if Selected */}
             {selectedMilestone && (
-              <div className="mt-4 grid grid-cols-2 gap-4 rounded-xl border border-slate-100 bg-slate-50/60 p-3.5">
+              <div className="mt-4 grid grid-cols-2 gap-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 p-3.5">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                     Milestone Percentage
                   </p>
-                  <p className="mt-0.5 text-sm font-bold text-slate-800">
+                  <p className="mt-0.5 text-sm font-bold text-slate-800 dark:text-slate-100">
                     {formatIndianNumber(selectedMilestone.paymentPercentage)}%
                   </p>
                 </div>
@@ -580,21 +580,21 @@ const BillingProgressDrawer = ({
           </div>
 
           {/* Billing Summary Card */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h4 className="mb-4 text-sm font-bold text-slate-800">
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] p-5 shadow-sm">
+            <h4 className="mb-4 text-sm font-bold text-slate-800 dark:text-slate-100">
               Billing Summary
             </h4>
 
             <div className="divide-y divide-slate-100">
               <div className="flex items-center justify-between py-2.5">
                 <span className="text-sm text-slate-500">Work Order Value</span>
-                <span className="text-sm font-semibold text-slate-800 whitespace-nowrap" title={formatFullINR(projectValueINR)}>
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap" title={formatFullINR(projectValueINR)}>
                   {formatBusinessINR(projectValueINR)}
                 </span>
               </div>
               <div className="flex items-center justify-between py-2.5">
                 <span className="text-sm text-slate-500">Already Invoiced</span>
-                <span className="text-sm font-semibold text-slate-800 whitespace-nowrap" title={formatFullINR(projectAlreadyInvoiced)}>
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap" title={formatFullINR(projectAlreadyInvoiced)}>
                   {formatBusinessINR(projectAlreadyInvoiced)}
                 </span>
               </div>
@@ -643,7 +643,7 @@ const BillingProgressDrawer = ({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-4">
+        <div className="flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800 px-6 py-4">
           <Button variant="secondary" onClick={handleClose} className="px-5 py-2.5">
             Cancel
           </Button>

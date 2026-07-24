@@ -207,21 +207,21 @@ const EmployeeModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
 
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+      <div className="bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
 
         {/* Header */}
 
-        <div className="flex justify-between items-center border-b p-6 shrink-0">
+        <div className="flex justify-between items-center border-b border-gray-200 dark:border-slate-700 p-6 shrink-0">
 
           <div>
 
-            <h2 className="text-2xl font-bold text-slate-800">
+            <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
               {isEditMode ? "Edit Employee" : "Add Employee"}
             </h2>
 
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
               {isEditMode
                 ? "Update employee details."
                 : "Create a new employee record."}
@@ -231,7 +231,7 @@ const EmployeeModal = ({
 
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100"
+            className="p-2 rounded-xl text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition"
           >
             <X size={20} />
           </button>

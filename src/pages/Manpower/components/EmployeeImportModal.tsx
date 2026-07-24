@@ -120,21 +120,21 @@ const EmployeeImportModal = ({
   const canImport = Boolean(selectedFile) && !error;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
 
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+      <div className="bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-lg">
 
         {/* Header */}
 
-        <div className="flex justify-between items-center border-b p-6">
+        <div className="flex justify-between items-center border-b border-gray-200 dark:border-slate-700 p-6">
 
           <div>
 
-            <h2 className="text-2xl font-bold text-slate-800">
+            <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
               Import Employee Master
             </h2>
 
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
               Upload an Excel file to bulk import employee records.
             </p>
 
@@ -142,7 +142,7 @@ const EmployeeImportModal = ({
 
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100"
+            className="p-2 rounded-xl text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition"
           >
             <X size={20} />
           </button>
@@ -165,10 +165,10 @@ const EmployeeImportModal = ({
               cursor-pointer transition-colors duration-150
               ${
                 isDragOver
-                  ? "border-blue-500 bg-blue-50"
+                  ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40"
                   : selectedFile
-                  ? "border-green-300 bg-green-50"
-                  : "border-gray-300 bg-gray-50 hover:bg-gray-100"
+                  ? "border-green-300 dark:border-emerald-800 bg-green-50 dark:bg-emerald-950/40"
+                  : "border-gray-300 dark:border-slate-700 bg-gray-50 dark:bg-slate-900/60 hover:bg-gray-100 dark:hover:bg-slate-800/80"
               }
             `}
           >
@@ -188,14 +188,14 @@ const EmployeeImportModal = ({
                 <CheckCircle2
                   size={40}
                   strokeWidth={1.75}
-                  className="text-green-600 mb-3"
+                  className="text-green-600 dark:text-emerald-400 mb-3"
                 />
 
-                <p className="text-sm font-medium text-gray-500">
+                <p className="text-sm font-medium text-gray-500 dark:text-slate-400">
                   Selected File
                 </p>
 
-                <p className="mt-1 text-base font-semibold text-slate-800 break-all">
+                <p className="mt-1 text-base font-semibold text-slate-800 dark:text-slate-100 break-all">
                   {selectedFile.name}
                 </p>
 

@@ -28,7 +28,7 @@ export const MyProfileModal = ({ isOpen, onClose, profile }: Props) => {
         <div className="flex justify-between items-center pb-4 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
             <User className="text-blue-600 dark:text-blue-400" size={20} />
-            <h3 className="text-lg font-bold text-slate-800">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
               My Profile
             </h3>
           </div>
@@ -48,7 +48,7 @@ export const MyProfileModal = ({ isOpen, onClose, profile }: Props) => {
               {profile.fullName.split(" ").map(n => n[0]).join("")}
             </div>
             <div>
-              <h4 className="text-lg font-bold text-slate-800">
+              <h4 className="text-lg font-bold text-slate-800 dark:text-slate-100">
                 {profile.fullName}
               </h4>
               <p className="text-sm font-medium text-blue-600 dark:text-blue-400 mt-0.5">
@@ -67,7 +67,7 @@ export const MyProfileModal = ({ isOpen, onClose, profile }: Props) => {
                 <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
                   Employee ID
                 </p>
-                <p className="text-sm font-semibold text-slate-800 mt-0.5">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
                   {profile.employeeId}
                 </p>
               </div>
@@ -82,7 +82,7 @@ export const MyProfileModal = ({ isOpen, onClose, profile }: Props) => {
                 <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
                   Department
                 </p>
-                <p className="text-sm font-semibold text-slate-800 mt-0.5">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
                   {profile.department}
                 </p>
               </div>
@@ -97,7 +97,7 @@ export const MyProfileModal = ({ isOpen, onClose, profile }: Props) => {
                 <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
                   Email Address
                 </p>
-                <p className="text-sm font-semibold text-slate-800 mt-0.5 break-all">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5 break-all">
                   {profile.email}
                 </p>
               </div>
@@ -112,7 +112,7 @@ export const MyProfileModal = ({ isOpen, onClose, profile }: Props) => {
                 <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
                   Phone Number
                 </p>
-                <p className="text-sm font-semibold text-slate-800 mt-0.5">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
                   {profile.phone}
                 </p>
               </div>
@@ -127,7 +127,7 @@ export const MyProfileModal = ({ isOpen, onClose, profile }: Props) => {
                 <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
                   Work Location
                 </p>
-                <p className="text-sm font-semibold text-slate-800 mt-0.5">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
                   {profile.location}
                 </p>
               </div>
@@ -139,7 +139,7 @@ export const MyProfileModal = ({ isOpen, onClose, profile }: Props) => {
         <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-slate-700 gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-semibold border border-gray-300 dark:border-slate-750 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 transition"
+            className="px-4 py-2 text-sm font-semibold border border-gray-300 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 transition"
           >
             Close
           </button>

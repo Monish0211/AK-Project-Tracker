@@ -10,7 +10,7 @@ const EmployeeFilter = ({
   setSearch,
 }: Props) => {
   return (
-    <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-5">
+    <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-md border border-gray-100 dark:border-slate-800 p-5">
 
       <div className="relative">
 

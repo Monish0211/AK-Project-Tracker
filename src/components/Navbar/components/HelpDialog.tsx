@@ -26,7 +26,7 @@ export const HelpDialog = ({ isOpen, onClose }: Props) => {
         <div className="flex justify-between items-center pb-4 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
             <HelpCircle className="text-blue-600 dark:text-blue-400" size={20} />
-            <h3 className="text-lg font-bold text-slate-800">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
               Help & Information
             </h3>
           </div>
@@ -41,7 +41,7 @@ export const HelpDialog = ({ isOpen, onClose }: Props) => {
         {/* Content Body */}
         <div className="py-5 space-y-5">
           <div className="space-y-1">
-            <h4 className="text-sm font-bold text-slate-800">PMO Portal Support</h4>
+            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">PMO Portal Support</h4>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
               For technical support or issues importing timesheet files, contact the support team:
             </p>
@@ -50,18 +50,18 @@ export const HelpDialog = ({ isOpen, onClose }: Props) => {
           <div className="space-y-3.5">
             {/* Version */}
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-gray-100 dark:border-slate-850">
+              <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-gray-100 dark:border-slate-800">
                 <Info size={16} />
               </div>
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Application Version</p>
-                <p className="text-xs font-semibold text-slate-800">iFluids PMO Portal v2.1.0-prod</p>
+                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">iFluids PMO Portal v2.1.0-prod</p>
               </div>
             </div>
 
             {/* Support Email */}
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-gray-100 dark:border-slate-850">
+              <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-gray-100 dark:border-slate-800">
                 <Mail size={16} />
               </div>
               <div>
@@ -74,7 +74,7 @@ export const HelpDialog = ({ isOpen, onClose }: Props) => {
 
             {/* Documentation */}
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-gray-100 dark:border-slate-850">
+              <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-gray-100 dark:border-slate-800">
                 <Globe size={16} />
               </div>
               <div>
@@ -92,10 +92,10 @@ export const HelpDialog = ({ isOpen, onClose }: Props) => {
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end pt-3 border-t border-gray-200 dark:border-slate-750 gap-3">
+        <div className="flex justify-end pt-3 border-t border-gray-200 dark:border-slate-700 gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-semibold border border-gray-300 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-805 transition"
+            className="px-4 py-2 text-sm font-semibold border border-gray-300 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 transition"
           >
             Close
           </button>

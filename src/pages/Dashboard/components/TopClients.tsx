@@ -42,7 +42,7 @@ const TopClients: React.FC = () => {
             {clients.map((client, index) => (
               <div
                 key={client.client}
-                className="flex justify-between items-center rounded-xl px-2.5 py-1.5 hover:bg-slate-50/50 dark:hover:bg-slate-800/40 border border-transparent hover:border-slate-100 dark:hover:border-slate-800 transition-all duration-150"
+                className="flex justify-between items-center rounded-xl px-2.5 py-1.5 hover:bg-slate-50/50 dark:hover:bg-slate-800/40 border border-transparent hover:border-slate-100 dark:border-slate-800 dark:hover:border-slate-800 transition-all duration-150"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-xs shrink-0 border-2 ${

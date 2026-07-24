@@ -363,16 +363,16 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
   return (
     <div className="space-y-6">
       {/* ================= SECTION 1: PROJECT LEADERSHIP ================= */}
-      <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm space-y-4">
-        <h3 className="text-lg font-bold text-slate-800 border-b pb-3 flex items-center gap-2">
-          <User size={20} className="text-blue-500" />
+      <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-6 border border-gray-100 dark:border-slate-800 shadow-sm space-y-4">
+        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 border-b border-[var(--nu-border)] pb-3 flex items-center gap-2">
+          <User size={20} className="text-blue-500 dark:text-blue-400" />
           Project Leadership
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {/* Primary Project Manager */}
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
               Primary Project Manager <span className="text-red-500">*</span>
             </label>
             <AutocompleteInput
@@ -386,7 +386,7 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
 
           {/* Secondary Project Manager */}
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
               Secondary Project Manager
             </label>
             <AutocompleteInput
@@ -399,7 +399,7 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
 
           {/* Project Coordinator */}
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
               Project Coordinator
             </label>
             <AutocompleteInput
@@ -412,7 +412,7 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
 
           {/* Project Engineer */}
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
               Project Engineer
             </label>
             <AutocompleteInput
@@ -425,7 +425,7 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
 
           {/* Client Coordinator */}
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
               Client Coordinator
             </label>
             <input
@@ -433,7 +433,7 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
               value={project.clientCoordinator || ""}
               onChange={(e) => handleLeadershipChange("clientCoordinator", e.target.value)}
               placeholder="Enter Client Coordinator Name"
-              className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
             />
           </div>
         </div>
@@ -442,70 +442,70 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
       {/* ================= SECTION 2: SUMMARY CARDS ================= */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Team Members */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex flex-col justify-between">
+        <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 border border-gray-100 dark:border-slate-800 shadow-sm flex flex-col justify-between">
           <div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400">
               <Users size={18} strokeWidth={2.25} />
             </div>
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Team Members
             </p>
           </div>
-          <p className="mt-2 text-2xl font-bold text-slate-800">{uniqueEmployeesCount}</p>
+          <p className="mt-2 text-2xl font-bold text-slate-800 dark:text-slate-100">{uniqueEmployeesCount}</p>
         </div>
 
         {/* Total Hours Budget */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex flex-col justify-between">
+        <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 border border-gray-100 dark:border-slate-800 shadow-sm flex flex-col justify-between">
           <div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-50 text-green-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-50 dark:bg-emerald-900/40 text-green-600 dark:text-emerald-400">
               <Clock size={18} strokeWidth={2.25} />
             </div>
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Total Hours Budget
             </p>
           </div>
-          <p className="mt-2 text-2xl font-bold text-slate-800">
+          <p className="mt-2 text-2xl font-bold text-slate-800 dark:text-slate-100">
             {totalHoursSum.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Hrs
           </p>
         </div>
 
         {/* Total Project Budget */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex flex-col justify-between">
+        <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 border border-gray-100 dark:border-slate-800 shadow-sm flex flex-col justify-between">
           <div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400">
               <IndianRupee size={18} strokeWidth={2.25} />
             </div>
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Total Project Budget
             </p>
           </div>
-          <p className="mt-2 text-2xl font-bold text-slate-800">
+          <p className="mt-2 text-2xl font-bold text-slate-800 dark:text-slate-100">
             ₹{(project.workOrderValueINR || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
           </p>
         </div>
 
         {/* Total Manpower Budget */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex flex-col justify-between">
+        <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 border border-gray-100 dark:border-slate-800 shadow-sm flex flex-col justify-between">
           <div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 dark:bg-amber-900/40 text-orange-600 dark:text-amber-400">
               <IndianRupee size={18} strokeWidth={2.25} />
             </div>
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Total Manpower Budget
             </p>
           </div>
-          <p className="mt-2 text-2xl font-bold text-slate-800">
+          <p className="mt-2 text-2xl font-bold text-slate-800 dark:text-slate-100">
             ₹{totalManpowerBudget.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
           </p>
         </div>
       </div>
 
       {/* ================= SECTION 3: ACTIONS AND TEAM TABLE ================= */}
-      <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm space-y-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
+      <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-6 border border-gray-100 dark:border-slate-800 shadow-sm space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-[var(--nu-border)] pb-4">
           <div>
-            <h3 className="text-lg font-bold text-slate-800">Team Members</h3>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Team Members</h3>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
               Assigned project engineers, designers and inspectors.
             </p>
           </div>

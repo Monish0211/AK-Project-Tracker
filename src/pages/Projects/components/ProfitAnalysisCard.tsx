@@ -5,7 +5,7 @@ import {
 
 const ProfitAnalysisCard = () => {
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-200">
+    <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-sm border border-gray-200 dark:border-slate-700">
 
       {/* Header */}
 
@@ -22,7 +22,7 @@ const ProfitAnalysisCard = () => {
 
         <div>
 
-          <h2 className="text-lg font-semibold text-gray-800">
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-slate-100">
             Profit Analysis
           </h2>
 
