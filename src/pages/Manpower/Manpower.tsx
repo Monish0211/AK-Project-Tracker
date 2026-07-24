@@ -55,28 +55,7 @@ const Manpower = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  // Clock State for Hero
-  const [currentTime, setCurrentTime] = useState("");
 
-  // Sync clock
-  useEffect(() => {
-    const tick = () => {
-      const now = new Date();
-      setCurrentTime(
-        now.toLocaleString("en-IN", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        }) + " IST"
-      );
-    };
-    tick();
-    const interval = setInterval(tick, 60000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Computed statistics (dynamic live summaries)
   const stats = useMemo(() => {
@@ -335,39 +314,16 @@ const Manpower = () => {
               <span className="eye-dot w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-sm"></span>
               iFluids Engineering · Resource Control
             </div>
-            <h1 className="pmo-hero-title text-3xl font-extrabold text-white tracking-tight leading-none">
+            <h1 className="pmo-hero-title text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-none">
               Manpower Master
             </h1>
-            <p className="text-slate-300/80 text-sm mt-1 max-w-xl leading-relaxed">
+            <p className="text-slate-300/80 text-xs sm:text-sm mt-1.5 max-w-xl leading-relaxed">
               Manage employee records, project allocations, departments and engineering resources across the PMO Portal.
             </p>
-            {/* Status counts */}
-            <div className="chips flex items-center gap-2 mt-4">
-              <div className="pmo-chip">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 mb-1"></span>
-                <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.total}</span>
-                <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Staff</span>
-              </div>
-              <div className="pmo-chip">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mb-1"></span>
-                <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.active}</span>
-                <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">Active</span>
-              </div>
-              <div className="pmo-chip">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mb-1"></span>
-                <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.depts}</span>
-                <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">Departments</span>
-              </div>
-              <div className="pmo-chip">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mb-1"></span>
-                <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.locations}</span>
-                <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">Locations</span>
-              </div>
-            </div>
           </div>
 
-          {/* Right actions & clock */}
-          <div className="flex flex-col items-end gap-3 shrink-0">
+          {/* Right action button */}
+          <div className="flex flex-col items-end gap-3 shrink-0 z-10">
             <Button
               variant="hero"
               onClick={() => setShowAddModal(true)}
@@ -376,22 +332,6 @@ const Manpower = () => {
             >
               Add Employee
             </Button>
-            <div className="text-right flex flex-col items-end gap-1.5">
-              <span className="pmo-live-pill">
-                <span className="pmo-live-dot"></span>
-                Live Sync
-              </span>
-              <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                <Users size={13} className="text-slate-500" />
-                Manpower DB &nbsp;
-                <strong className="text-slate-100 font-extrabold">{stats.total} Employees</strong>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                <ChevronRight size={13} className="text-slate-500" />
-                Updated &nbsp;
-                <strong className="text-slate-100 font-extrabold">{currentTime || "Loading..."}</strong>
-              </div>
-            </div>
           </div>
         </div>
       </div>
