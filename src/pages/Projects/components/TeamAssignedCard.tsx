@@ -21,6 +21,8 @@ import {
   TimesheetImportError,
   type ImportReport,
 } from "../../../services/timesheetImportService";
+import { Button } from "../../../components/ui/Button";
+import { Input } from "../../../components/ui/Input";
 
 
 interface Props {
@@ -91,7 +93,7 @@ const AutocompleteInput = ({
 
   return (
     <div ref={containerRef} className="relative w-full">
-      <input
+      <Input
         type="text"
         value={value}
         onChange={handleChange}
@@ -99,7 +101,6 @@ const AutocompleteInput = ({
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         required={required}
-        className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
       />
       {isOpen && suggestions.length > 0 && (
         <div className="absolute left-0 right-0 z-50 mt-1 max-h-36 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
@@ -527,14 +528,15 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
               Import Timesheet
             </button>
 
-            <button
+            <Button
               type="button"
+              variant="primary"
               onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition"
+              className="gap-2 px-4 py-2.5 text-sm"
             >
               <Plus size={16} />
               Add Team Member
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -876,14 +878,15 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
                     Cancel
                   </button>
 
-                  <button
+                  <Button
                     type="button"
+                    variant="primary"
                     disabled={importing}
                     onClick={handleExecuteImport}
-                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
+                    className="px-5 py-2 text-sm disabled:opacity-50"
                   >
                     {importing ? "Importing..." : "Execute Import"}
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -910,13 +913,14 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
                   >
                     Close
                   </button>
-                  <button
+                  <Button
                     type="button"
+                    variant="primary"
                     onClick={() => setImportError(null)}
-                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition"
+                    className="px-5 py-2 text-sm"
                   >
                     Try Again
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -938,13 +942,14 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
                 <ImportDiagnostics report={importReport} />
 
                 <div className="flex justify-end gap-3 pt-3 border-t">
-                  <button
+                  <Button
                     type="button"
+                    variant="primary"
                     onClick={closeImportModal}
-                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition"
+                    className="px-5 py-2 text-sm"
                   >
                     Done
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -962,13 +967,14 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
                 <h4 className="text-xl font-bold text-slate-800">Add Team Member</h4>
                 <p className="text-xs text-gray-500 mt-0.5">Assign resource from the Employee Master.</p>
               </div>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon"
                 onClick={() => setShowAddModal(false)}
-                className="p-1.5 rounded-lg hover:bg-gray-100"
               >
                 <X size={20} />
-              </button>
+              </Button>
             </div>
 
             {/* Body */}
@@ -1069,13 +1075,14 @@ export default function TeamAssignedCard({ project, onChange }: Props) {
               >
                 Cancel
               </button>
-              <button
+              <Button
                 type="button"
+                variant="primary"
                 onClick={handleAddMember}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition font-semibold"
+                className="px-5 py-2 font-semibold"
               >
                 Add Resource
-              </button>
+              </Button>
             </div>
           </div>
         </div>

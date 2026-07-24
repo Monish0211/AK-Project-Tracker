@@ -24,11 +24,34 @@
   --nu-danger: #b91c1c;
   --nu-danger-soft: #fbe9e9;
   --nu-info: #0e7490;
+
+  --nu-success-strong: #166534;
+  --nu-warning-strong: #92400e;
+  --nu-danger-strong: #991b1b;
+
   --nu-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
   --nu-shadow-md: 0 2px 8px rgba(16, 24, 40, 0.08);
+  --nu-shadow-lg: 0 8px 24px rgba(16, 24, 40, 0.12);
   --nu-radius-sm: 6px;
   --nu-radius-md: 8px;
   --nu-radius-lg: 10px;
+  --nu-radius-full: 9999px;
+
+  --nu-space-1: 4px;
+  --nu-space-2: 8px;
+  --nu-space-3: 12px;
+  --nu-space-4: 16px;
+  --nu-space-5: 24px;
+  --nu-space-6: 32px;
+
+  --nu-text-2xs: 10px;
+  --nu-text-xs: 11px;
+  --nu-text-sm: 12.5px;
+  --nu-text-base: 13px;
+  --nu-text-md: 14px;
+  --nu-text-lg: 16px;
+  --nu-text-xl: 18px;
+  --nu-text-2xl: 22px;
 
   background: var(--nu-bg);
   color: var(--nu-text);
@@ -54,12 +77,62 @@ html.dark .timesheets-shell {
   --nu-danger: #f87171;
   --nu-danger-soft: rgba(248, 113, 113, 0.12);
   --nu-info: #22d3ee;
+
+  --nu-success-strong: #6ee7b7;
+  --nu-warning-strong: #fcd34d;
+  --nu-danger-strong: #fca5a5;
+
   --nu-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
   --nu-shadow-md: 0 2px 10px rgba(0, 0, 0, 0.32);
+  --nu-shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.44);
 }
 
 .timesheets-shell * {
   box-sizing: border-box;
+}
+
+/* Primary Button — the exact "Export Archive" button treatment (Completed
+   Projects header), reused verbatim: translucent white fill, white/20
+   border, backdrop blur, Tailwind's literal shadow-sm. No invented base
+   color — this is a direct copy of that button's own class list
+   (bg-white/10 hover:bg-white/20 border-white/20 backdrop-blur-md
+   shadow-sm), not an approximation. */
+.nu-btn-primary {
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #ffffff;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+.nu-btn-primary:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+.nu-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Canonical table treatment — one header/hover/zebra convention instead of
+   the several competing ones found across the app. */
+.timesheets-shell .nu-table-th {
+  background: var(--nu-surface-alt);
+  color: var(--nu-text-muted);
+  font-size: var(--nu-text-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--nu-border);
+}
+.timesheets-shell .nu-table-row {
+  border-bottom: 1px solid var(--nu-border);
+  transition: background-color 0.12s ease;
+}
+.timesheets-shell .nu-table-row:hover {
+  background: var(--nu-surface-alt);
+}
+.timesheets-shell .nu-table-row-zebra:nth-child(even) {
+  background: var(--nu-surface-alt);
 }
 
 .timesheets-shell .nu-scrollbar::-webkit-scrollbar {

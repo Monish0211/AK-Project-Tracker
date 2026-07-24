@@ -5,6 +5,7 @@ import { getProjectById, normalizeProject } from "../../services/projectService"
 import { createEmptyProject } from "../../utils/createEmptyProject";
 import ProjectForm from "./components/ProjectForm";
 import type { TabKey } from "./components/ProjectForm";
+import { Button } from "../../components/ui/Button";
 
 const EditProject = () => {
   const navigate = useNavigate();
@@ -32,13 +33,9 @@ const EditProject = () => {
           Project Not Found
         </h1>
 
-        <button
-          type="button"
-          onClick={() => navigate("/projects")}
-          className="px-5 py-3 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition"
-        >
+        <Button variant="primary" type="button" onClick={() => navigate("/projects")}>
           Back to Projects
-        </button>
+        </Button>
       </div>
     );
   }

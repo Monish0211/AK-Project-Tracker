@@ -13,7 +13,7 @@ const RecentProjects: React.FC = () => {
   const projects = getRecentProjects().slice(0, 5); // Limit to top 5 recent projects
 
   return (
-    <Card padded={false} className="h-[325px] flex flex-col justify-between bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-md rounded-2xl hover:shadow-lg transition-all duration-200">
+    <Card padded={false} elevated className="h-[325px] flex flex-col justify-between transition-all duration-200">
       {/* Header */}
       <CardHeader
         icon={<Clock3 size={14} className="text-slate-500 dark:text-slate-400" />}
@@ -78,7 +78,7 @@ const RecentProjects: React.FC = () => {
       </CardBody>
 
       {/* Bottom Summary Strip (Fixed) */}
-      <div className="shrink-0 bg-slate-50/80 dark:bg-slate-800/40 border-t border-slate-200/60 dark:border-slate-800/60 p-2 px-3 sm:px-4 rounded-b-2xl flex items-center justify-between flex-wrap gap-1.5 text-[11px] font-semibold text-slate-650 dark:text-slate-400">
+      <div className="shrink-0 bg-slate-50/80 dark:bg-slate-800/40 border-t border-slate-200/60 dark:border-slate-800/60 p-2 px-3 sm:px-4 rounded-b-[var(--nu-radius-lg)] flex items-center justify-between flex-wrap gap-1.5 text-[11px] font-semibold text-slate-650 dark:text-slate-400">
         <div className="flex items-center gap-1.5 truncate">
           <Info size={13} className="text-slate-450 shrink-0" />
           <span className="truncate">Showing most recently created project entries.</span>

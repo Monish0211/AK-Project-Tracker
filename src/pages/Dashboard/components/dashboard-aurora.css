@@ -1,0 +1,147 @@
+/*
+  Dashboard Aurora — experimental ambient background (prototype).
+
+  Purely decorative: absolutely positioned, non-interactive, z-indexed
+  behind all dashboard content. Colors read from static values here rather
+  than --nu-* tokens so the palette stays intentionally curated per theme.
+
+  Positioning note: this container is sized via `inset: 0` to match
+  .dashboard-shell's full scrollable height (thousands of px, not one
+  viewport), so blob offsets are deliberately `px`/`%`-of-width — NEVER
+  `%` of the container's height — otherwise an offset like "-25%" resolves
+  against that huge height and pushes a blob thousands of pixels off-canvas.
+
+  Composition: three large, heavily-overlapping blobs with long, single-stop
+  falloffs (no held-color "core" plateau, which reads as a visible disc)
+  blend into one continuous glow across the Hero/KPI area, tapering to
+  near-nothing by the middle of the dashboard — depth near the top, not a
+  wash over the whole page, and no single blob's edge should be identifiable
+  on its own.
+
+  Two extra static layers sit above the blobs: a fixed dot-matrix (an
+  "engineering drafting table" texture) and a faint noise/grain layer to
+  break up the flat-digital look. Neither is animated.
+
+  To remove entirely: delete this file + DashboardAurora.tsx, drop the
+  `dashboard-aurora` import + <DashboardAurora /> line in Dashboard.tsx.
+  To disable without removing: flip ENABLE_AURORA_BACKGROUND to false in
+  Dashboard.tsx.
+*/
+
+.dashboard-aurora {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dashboard-aurora__blob {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+/* Blob 1 — top-left, very large, partially off-screen: the main light
+   source. Single long falloff (no held core) so it dissolves gradually
+   instead of reading as a disc. */
+.dashboard-aurora__blob--a {
+  width: clamp(850px, 58vw, 1150px);
+  height: clamp(850px, 58vw, 1150px);
+  top: -260px;
+  left: -300px;
+  background: radial-gradient(circle, var(--aurora-c1) 0%, transparent 88%);
+  animation: aurora-drift-a 42s ease-in-out infinite;
+}
+
+/* Blob 2 — top-right, very large, partially off-screen: blends into the
+   Hero Banner rather than sitting beside it. */
+.dashboard-aurora__blob--b {
+  width: clamp(700px, 49vw, 950px);
+  height: clamp(700px, 49vw, 950px);
+  top: -40px;
+  right: -260px;
+  background: radial-gradient(circle, var(--aurora-c1) 0%, transparent 85%);
+  animation: aurora-drift-b 45s ease-in-out infinite;
+  animation-delay: -14s;
+}
+
+/* Blob 3 — center-top, the largest of the three: bridges blobs 1 and 2 into
+   one continuous wash instead of two separate glows with a flat gap
+   between them. Extremely soft, longest falloff. */
+.dashboard-aurora__blob--c {
+  width: clamp(950px, 66vw, 1300px);
+  height: clamp(950px, 66vw, 1300px);
+  top: 40px;
+  left: 18%;
+  background: radial-gradient(circle, var(--aurora-c1) 0%, transparent 92%);
+  animation: aurora-drift-c 38s ease-in-out infinite;
+  animation-delay: -22s;
+}
+
+/* Light mode — subtle by design; the app is primarily used in light mode. */
+.dashboard-aurora__blob--a { --aurora-c1: rgba(173, 199, 230, 0.1); }  /* steel blue */
+.dashboard-aurora__blob--b { --aurora-c1: rgba(190, 216, 240, 0.08); } /* soft azure */
+.dashboard-aurora__blob--c { --aurora-c1: rgba(214, 226, 240, 0.05); } /* blue-gray / cool white */
+
+html.dark .dashboard-aurora__blob--a { --aurora-c1: rgba(30, 58, 95, 0.2); }   /* deep navy */
+html.dark .dashboard-aurora__blob--b { --aurora-c1: rgba(23, 37, 64, 0.16); }  /* midnight blue */
+html.dark .dashboard-aurora__blob--c { --aurora-c1: rgba(51, 65, 85, 0.1); }   /* slate */
+
+/* Closed-loop translate-only paths (100% === 0%, no rotation — rotating a
+   symmetric circular gradient has no visible effect, so it's not worth the
+   extra keyframe complexity). Small amplitude so motion stays at the edge
+   of perception, per "barely perceive movement". */
+@keyframes aurora-drift-a {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(3%, 2%); }
+  50% { transform: translate(1.5%, 4%); }
+  75% { transform: translate(-2%, 1.5%); }
+  100% { transform: translate(0, 0); }
+}
+
+@keyframes aurora-drift-b {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-3%, -3%); }
+  50% { transform: translate(-4%, -1%); }
+  75% { transform: translate(-1.5%, -3.5%); }
+  100% { transform: translate(0, 0); }
+}
+
+@keyframes aurora-drift-c {
+  0% { transform: translate(0, 0); }
+  33% { transform: translate(2%, -2.5%); }
+  66% { transform: translate(-2%, 2%); }
+  100% { transform: translate(0, 0); }
+}
+
+/* Engineering texture — a static, unmoving dot-matrix grid ("drafting
+   table" feel). Dot color/alpha differ per theme; nothing else changes. */
+.dashboard-aurora__texture {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--dot-color) 1px, transparent 1px);
+  background-size: 112px 112px;
+  --dot-color: rgba(100, 116, 139, 0.03); /* light gray */
+}
+html.dark .dashboard-aurora__texture {
+  --dot-color: rgba(148, 163, 184, 0.05); /* slate gray */
+}
+
+/* Noise/grain — a static inline SVG fractal-noise tile, applied at very low
+   opacity purely to break up flat digital color fields. No JS, no image
+   asset, no animation; decoded once and composited like any background. */
+.dashboard-aurora__noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.015;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+/* Ambient lighting, not motion graphics — freeze in place if requested. */
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-aurora__blob {
+    animation: none;
+  }
+}

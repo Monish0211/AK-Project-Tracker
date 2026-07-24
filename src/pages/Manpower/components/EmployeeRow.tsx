@@ -16,7 +16,7 @@ const EmployeeRow = ({
   onDelete,
 }: Props) => {
   return (
-    <tr className="border-b last:border-b-0 hover:bg-slate-50 transition text-sm text-slate-700">
+    <tr className="nu-table-row transition text-sm text-slate-700">
 
       {/* Sl No */}
       <td className="px-6 py-4 text-center font-medium">

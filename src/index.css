@@ -16,6 +16,28 @@
   animation: ecg-heartbeat 2.5s linear infinite;
 }
 
+/* Primary Button — the exact "Export Archive" button treatment (Completed
+   Projects header), reused verbatim: translucent white fill, white/20
+   border, backdrop blur, Tailwind's literal shadow-sm. No invented base
+   color — this is a direct copy of that button's own class list
+   (bg-white/10 hover:bg-white/20 border-white/20 backdrop-blur-md
+   shadow-sm), not an approximation. Global (unscoped) so it works even on
+   pages with no --nu-* theme shell (e.g. the Projects list page) — the 7
+   page-level *-theme.css files also declare this identically. */
+.nu-btn-primary {
+  background-color: var(--nu-accent);
+  border: 1px solid transparent;
+  color: #ffffff;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+.nu-btn-primary:hover {
+  background-color: var(--nu-accent-strong);
+}
+.nu-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* Light / Dark Mode Color Overrides for Tailwind CSS v4 */
 :root {
   --bg-main: #F8FAFC;
@@ -57,6 +79,26 @@
   --color-gray-800: var(--text-primary);
   --color-gray-900: var(--text-primary);
   --color-slate-200: var(--border-color);
+
+  /* Global fallback tokens for shared UI components (src/components/ui/Button.tsx) */
+  --nu-bg: #f8fafc;
+  --nu-surface: #ffffff;
+  --nu-surface-alt: #f1f5f9;
+  --nu-border: #e2e8f0;
+  --nu-border-strong: #cbd5e1;
+  --nu-text: #0f172a;
+  --nu-text-secondary: #475569;
+  --nu-text-muted: #64748b;
+  --nu-accent: #2563eb;
+  --nu-accent-soft: #e0e7ff;
+  --nu-accent-strong: #1d4ed8;
+  --nu-danger: #dc2626;
+  --nu-danger-strong: #b91c1c;
+  --nu-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --nu-shadow-md: 0 2px 8px rgba(16, 24, 40, 0.08);
+  --nu-radius-sm: 6px;
+  --nu-radius-md: 8px;
+  --nu-radius-lg: 10px;
 }
 
 html.dark {
@@ -74,10 +116,45 @@ html.dark {
   --text-secondary: #CBD5E1;
   --text-muted: #94A3B8;
   --border-color: #334155;
-  
+
   /* Additional Tailwind overrides */
   --color-slate-50: #111827;
   --color-gray-50: #111827;
+
+  /* Global dark fallback tokens for shared UI components */
+  --nu-bg: #0f172a;
+  --nu-surface: #1e293b;
+  --nu-surface-alt: #334155;
+  --nu-border: #475569;
+  --nu-border-strong: #64748b;
+  --nu-text: #f8fafc;
+  --nu-text-secondary: #cbd5e1;
+  --nu-text-muted: #94a3b8;
+  --nu-accent: #3b82f6;
+  --nu-accent-soft: rgba(59, 130, 246, 0.16);
+  --nu-accent-strong: #60a5fa;
+  --nu-danger: #f87171;
+  --nu-danger-strong: #ef4444;
+  --nu-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --nu-shadow-md: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+/* Reusable Excel-like Sticky Frozen Column Utilities for Tables */
+.nu-sticky-th-first {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 30;
+  background-color: var(--nu-surface-alt);
+  border-right: 1px solid var(--nu-border);
+}
+
+.nu-sticky-td-first {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  border-right: 1px solid var(--nu-border);
+  transition: background-color 0.15s ease;
 }
 
 /* Base style transition for all elements to make theme transitions silky smooth */
@@ -564,4 +641,44 @@ html.dark .custom-scrollbar-timeline:hover::-webkit-scrollbar-thumb {
 }
 .animate-pmo-fade-up {
   animation: pmoFadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Glass Reflection Sweep Animation - Global Banner Enhancement */
+.pmo-glass-reflection-sweep {
+  position: absolute;
+  top: -60%;
+  left: -120%;
+  width: 70%;
+  height: 220%;
+  background: linear-gradient(
+    115deg,
+    transparent 25%,
+    rgba(255, 255, 255, 0.015) 40%,
+    rgba(255, 255, 255, 0.07) 50%,
+    rgba(255, 255, 255, 0.015) 60%,
+    transparent 75%
+  );
+  transform: skewX(-25deg) translate3d(0, 0, 0);
+  pointer-events: none;
+  z-index: 1;
+  will-change: transform;
+  animation: heroGlassSweep 22s ease-in-out infinite;
+}
+
+@keyframes heroGlassSweep {
+  0% {
+    transform: skewX(-25deg) translate3d(0, 0, 0);
+    opacity: 0;
+  }
+  1% {
+    opacity: 0.85;
+  }
+  12% {
+    transform: skewX(-25deg) translate3d(380%, 0, 0);
+    opacity: 0.85;
+  }
+  13%, 100% {
+    transform: skewX(-25deg) translate3d(380%, 0, 0);
+    opacity: 0;
+  }
 }

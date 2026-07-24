@@ -10,6 +10,7 @@ import { reminderService } from "../../services/reminders/ReminderService";
 import { ReminderCard } from "../Cards/ReminderCard";
 import { ReminderForm } from "../../pages/Projects/components/workspace/ReminderForm";
 import { EmptyState } from "../ui/EmptyState";
+import { Button } from "../ui/Button";
 
 interface Props {
   isOpen: boolean;
@@ -171,29 +172,35 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
                 </div>
 
                 {/* Tabs */}
-                <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+                <div className="flex bg-slate-100 dark:bg-slate-800/90 rounded-lg p-1 border border-slate-200/60 dark:border-slate-700/60">
                   <button
+                    type="button"
                     onClick={() => setActiveTab("notes")}
-                    className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-colors flex items-center justify-center gap-2 ${
-                      activeTab === "notes" 
-                        ? "bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm" 
-                        : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                    className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all duration-150 flex items-center justify-center gap-2 ${
+                      activeTab === "notes"
+                        ? "bg-blue-600 text-white shadow-sm font-bold"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
                     }`}
                   >
                     📝 Notes
                   </button>
                   <button
+                    type="button"
                     onClick={() => setActiveTab("reminders")}
-                    className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-colors flex items-center justify-center gap-2 ${
-                      activeTab === "reminders" 
-                        ? "bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm" 
-                        : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                    className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all duration-150 flex items-center justify-center gap-2 ${
+                      activeTab === "reminders"
+                        ? "bg-blue-600 text-white shadow-sm font-bold"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
                     }`}
                   >
                     🔔 Reminders
-                    {reminders.filter(r => r.status === "Pending").length > 0 && (
-                      <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                        {reminders.filter(r => r.status === "Pending").length}
+                    {reminders.filter((r) => r.status === "Pending").length > 0 && (
+                      <span
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full transition-colors ${
+                          activeTab === "reminders" ? "bg-white/25 text-white" : "bg-red-500 text-white"
+                        }`}
+                      >
+                        {reminders.filter((r) => r.status === "Pending").length}
                       </span>
                     )}
                   </button>
@@ -214,18 +221,15 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
                           placeholder="Type a new project note here..."
                           className="w-full bg-slate-50 dark:bg-[#0F172A] border border-gray-200 dark:border-slate-700 rounded-xl p-3 pr-10 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[90px] custom-scrollbar transition-all shadow-sm"
                         />
-                        <button
+                        <Button
+                          variant="primary"
+                          size="icon"
                           onClick={handleSaveNote}
                           disabled={noteText.trim() === ""}
-                          className={`absolute bottom-3 right-3 p-1.5 rounded-lg flex items-center justify-center transition-all ${
-                            noteText.trim() === ""
-                              ? "bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed"
-                              : "bg-blue-600 hover:bg-blue-700 text-white shadow-sm cursor-pointer hover:scale-105 active:scale-95"
-                          }`}
                           title="Save Note"
-                        >
-                          <MessageSquarePlus size={16} />
-                        </button>
+                          className="absolute bottom-3 right-3 !bg-blue-600 hover:!bg-blue-700 active:!bg-blue-800 !text-white disabled:!bg-blue-400/50 disabled:dark:!bg-blue-900/40 disabled:!text-white/60 disabled:cursor-not-allowed shadow-sm transition-all rounded-lg"
+                          icon={<MessageSquarePlus size={16} />}
+                        />
                       </div>
                       <div className="flex justify-between items-center mt-2 px-1">
                         <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500">
@@ -278,10 +282,11 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
                   {!readOnly && (
                     <div className="p-4 border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] shrink-0">
                       <button
+                        type="button"
                         onClick={() => setIsEditingReminder(true)}
-                        className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-bold shadow-sm transition-colors"
+                        className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm rounded-xl shadow-sm transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer"
                       >
-                        <Plus size={18} />
+                        <Plus size={18} strokeWidth={2.5} />
                         Add Reminder
                       </button>
                     </div>
@@ -311,17 +316,6 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
                           readOnly
                             ? "This project has no reminders."
                             : "Create reminders for invoices, deliverables, meetings, or project milestones."
-                        }
-                        action={
-                          !readOnly && (
-                            <button
-                              onClick={() => setIsEditingReminder(true)}
-                              className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors"
-                            >
-                              <Plus size={14} />
-                              Add Reminder
-                            </button>
-                          )
                         }
                       />
                     )}

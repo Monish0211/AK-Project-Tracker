@@ -17,7 +17,9 @@ import {
   Receipt,
   Lock,
   Check,
+  StickyNote,
 } from "lucide-react";
+import { Button } from "../../../components/ui/Button";
 
 import type { Project } from "../../../types/Project";
 import type { Dispatch, SetStateAction } from "react";
@@ -185,17 +187,17 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
           </div>
 
           {mode === "edit" && (
-            <button
-              type="button"
+            <Button
+              variant="primary"
               onClick={() => setIsNotesOpen(true)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] font-semibold bg-[var(--nu-accent)] hover:bg-[var(--nu-accent-strong)] text-white shadow-[var(--nu-shadow-sm)] transition-colors self-start sm:self-auto text-[12.5px] shrink-0"
+              className="self-start sm:self-auto shrink-0"
+              icon={<StickyNote size={13} />}
             >
-              <span>📝</span>
-              <span>Workspace</span>
+              Workspace
               <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-[11px] font-bold ml-0.5">
                 {project.notes?.length || 0}
               </span>
-            </button>
+            </Button>
           )}
         </div>
 

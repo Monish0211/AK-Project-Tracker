@@ -21,6 +21,9 @@ import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { FormLabel, RequiredAsterisk } from "../../../components/ui/FormLabel";
 import { StatTile } from "../../../components/ui/StatTile";
 import { Button } from "../../../components/ui/Button";
+import { Input } from "../../../components/ui/Input";
+import { Select } from "../../../components/ui/Select";
+import { EmptyStateRow } from "../../../components/ui/EmptyStateRow";
 
 import { FieldError } from "../../../components/ui/FieldError";
 
@@ -47,8 +50,6 @@ const CURRENCY_OPTIONS = ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR"];
 
 const DEFAULT_CURRENCY = "INR";
 
-const fieldClass =
-  "h-9 w-full rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] text-[12.5px] text-[var(--nu-text)] outline-none transition-shadow focus:ring-2 focus:ring-[var(--nu-accent)]/25 focus:border-[var(--nu-accent)]";
 
 interface NumericInputProps {
   value: number;
@@ -101,7 +102,7 @@ const NumericInput = ({
   };
 
   const input = (
-    <input
+    <Input
       type="text"
       inputMode="decimal"
       placeholder="0"
@@ -110,11 +111,12 @@ const NumericInput = ({
       value={rawValue}
       disabled={disabled}
       onChange={handleChange}
-      className={`${fieldClass} text-right ${prefix ? "pl-6 pr-2" : "px-2"} ${
+      invalid={hasError}
+      className={`h-9 text-[12.5px] text-right ${prefix ? "pl-6 pr-2" : "px-2"} ${
         disabled
           ? "bg-[var(--nu-surface-alt)] text-[var(--nu-text-muted)] cursor-not-allowed"
           : hasError
-          ? "border-[var(--nu-danger)] bg-[var(--nu-danger-soft)] focus:border-[var(--nu-danger)] focus:ring-[var(--nu-danger)]/20"
+          ? "bg-[var(--nu-danger-soft)]"
           : ""
       } ${className}`}
     />
@@ -249,14 +251,14 @@ const AssignedToInput = ({ value, onChange, ariaLabel }: AssignedToInputProps) =
 
   return (
     <div ref={containerRef} className="relative w-full text-left">
-      <input
+      <Input
         type="text"
         value={filterQuery}
         onChange={handleChange}
         onFocus={handleFocus}
         onKeyDown={handleKeyDown}
         aria-label={ariaLabel}
-        className={fieldClass + " px-2"}
+        className="h-9 px-2 text-[12.5px]"
         placeholder="Type manager name..."
       />
       {showDropdown && (
@@ -554,21 +556,22 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
               <FormLabel required={true} className="mb-1 !text-[11px] uppercase">
                 Currency
               </FormLabel>
-              <select
+              <Select
                 data-field="currency"
                 value={project.currency || DEFAULT_CURRENCY}
                 onChange={(e) => {
                   handleProjectCurrencyChange(e.target.value);
                   clearError?.("currency");
                 }}
-                className={`${fieldClass} px-2 ${errors["currency"] ? "!border-[var(--nu-danger)]" : ""}`}
+                invalid={!!errors["currency"]}
+                className="h-9 px-2 text-[12.5px]"
               >
                 {CURRENCY_OPTIONS.map((currencyOption) => (
                   <option key={currencyOption} value={currencyOption}>
                     {currencyOption}
                   </option>
                 ))}
-              </select>
+              </Select>
               <FieldError error={errors["currency"]} />
             </div>
 
@@ -596,31 +599,31 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
             <table className="w-full min-w-[1100px] table-fixed border-collapse text-[12.5px]">
               <thead className="sticky top-0 z-10 bg-[var(--nu-surface-alt)] text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)]">
                 <tr>
-                  <th className="w-12 border-b border-[var(--nu-border)] px-2 py-2 text-center font-medium sticky left-0 z-20 bg-[var(--nu-surface-alt)]">
+                  <th className="nu-table-th w-12 border-b border-[var(--nu-border)] px-2 py-2 text-center font-medium sticky left-0 z-20 bg-[var(--nu-surface-alt)]">
                     Sl
                   </th>
-                  <th className="border-b border-[var(--nu-border)] px-2 py-2 text-left font-medium">
+                  <th className="nu-table-th border-b border-[var(--nu-border)] px-2 py-2 text-left font-medium">
                     Description <RequiredAsterisk />
                   </th>
-                  <th className="w-20 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
+                  <th className="nu-table-th w-20 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
                     Qty <RequiredAsterisk />
                   </th>
-                  <th className="w-28 border-b border-[var(--nu-border)] px-2 py-2 text-center font-medium">
+                  <th className="nu-table-th w-28 border-b border-[var(--nu-border)] px-2 py-2 text-center font-medium">
                     UOM <RequiredAsterisk />
                   </th>
-                  <th className="w-24 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
+                  <th className="nu-table-th w-24 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
                     Unit Rate <RequiredAsterisk />
                   </th>
-                  <th className="w-28 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
+                  <th className="nu-table-th w-28 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
                     Rate (INR)
                   </th>
-                  <th className="w-32 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
+                  <th className="nu-table-th w-32 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
                     WO Value
                   </th>
-                  <th className="w-44 border-b border-[var(--nu-border)] px-2 py-2 text-left font-medium">
+                  <th className="nu-table-th w-44 border-b border-[var(--nu-border)] px-2 py-2 text-left font-medium">
                     Assigned To
                   </th>
-                  <th className="w-14 border-b border-[var(--nu-border)] px-2 py-2 text-center font-medium">
+                  <th className="nu-table-th w-14 border-b border-[var(--nu-border)] px-2 py-2 text-center font-medium">
                     Del
                   </th>
                 </tr>
@@ -628,25 +631,25 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
 
               <tbody className="divide-y divide-[var(--nu-border)]">
                 {project.quantityItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="py-8 text-center text-[var(--nu-text-muted)]">
-                      No activities added. Click &quot;Add Activity&quot; to get started.
-                    </td>
-                  </tr>
+                  <EmptyStateRow
+                    colSpan={9}
+                    title="No activities added"
+                    description='Click "Add Activity" to get started.'
+                  />
                 ) : (
                   project.quantityItems.map((item, index) => {
                     const canRemove = canRemoveQuantityItem(project.quantityItems);
                     return (
                       <tr
                         key={item.id}
-                        className="bg-[var(--nu-surface)] hover:bg-[var(--nu-surface-alt)] transition-colors"
+                        className="nu-table-row bg-[var(--nu-surface)] hover:bg-[var(--nu-surface-alt)] transition-colors"
                       >
                         <td className="px-2 py-2 text-center text-[var(--nu-text-muted)] sticky left-0 z-10 bg-[var(--nu-surface)]">
                           {index + 1}
                         </td>
 
                         <td className="px-2 py-2 align-top">
-                          <input
+                          <Input
                             type="text"
                             data-field={`qty_desc_${index}`}
                             value={item.description}
@@ -659,7 +662,8 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
                             onChange={(e) =>
                               handleDescriptionChange(index, e.target.value)
                             }
-                            className={`${fieldClass} px-2 ${errors[`qty_desc_${index}`] ? "!border-[var(--nu-danger)]" : ""}`}
+                            invalid={!!errors[`qty_desc_${index}`]}
+                            className="h-9 px-2 text-[12.5px]"
                           />
                           <FieldError error={errors[`qty_desc_${index}`]} />
                         </td>
@@ -679,21 +683,22 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
                         </td>
 
                         <td className="px-2 py-2 align-top">
-                          <select
+                          <Select
                             data-field={`qty_uom_${index}`}
                             value={item.uom || "DAY"}
                             aria-label={`UOM for row ${index + 1}`}
                             onChange={(e) =>
                               handleFieldChange(index, "uom", e.target.value)
                             }
-                            className={`${fieldClass} px-1.5 ${errors[`qty_uom_${index}`] ? "!border-[var(--nu-danger)]" : ""}`}
+                            invalid={!!errors[`qty_uom_${index}`]}
+                            className="h-9 px-1.5 text-[12.5px]"
                           >
                             {UOM_OPTIONS.map((opt) => (
                               <option key={opt} value={opt}>
                                 {opt}
                               </option>
                             ))}
-                          </select>
+                          </Select>
                           <FieldError error={errors[`qty_uom_${index}`]} />
                         </td>
 

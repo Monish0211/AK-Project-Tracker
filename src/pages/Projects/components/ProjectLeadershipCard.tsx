@@ -4,14 +4,13 @@ import { UserCheck } from "lucide-react";
 import type { Project } from "../../../types/Project";
 import { getEmployees } from "../../../services/employeeService";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
+import { Input } from "../../../components/ui/Input";
 
 interface Props {
   project: Project;
   setProject: Dispatch<SetStateAction<Project>>;
 }
 
-const fieldClass =
-  "w-full h-10 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] px-3 text-[13px] text-[var(--nu-text)] outline-none transition-shadow focus:ring-2 focus:ring-[var(--nu-accent)]/25 focus:border-[var(--nu-accent)]";
 const labelClass = "block text-[11.5px] font-medium text-[var(--nu-text-secondary)] mb-1.5";
 
 interface AutocompleteFieldProps {
@@ -55,7 +54,7 @@ const AutocompleteField = ({
       <label className={labelClass}>
         {label} {required && <span className="text-[var(--nu-danger)]">*</span>}
       </label>
-      <input
+      <Input
         type="text"
         value={value}
         onChange={(e) => {
@@ -68,7 +67,6 @@ const AutocompleteField = ({
         }}
         placeholder={placeholder}
         required={required}
-        className={fieldClass}
       />
       {isOpen && filtered.length > 0 && (
         <div className="absolute left-0 right-0 z-50 mt-1 max-h-40 overflow-y-auto rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] py-1 shadow-[var(--nu-shadow-md)]">
@@ -162,12 +160,11 @@ const ProjectLeadershipCard = ({ project, setProject }: Props) => {
           />
           <div>
             <label className={labelClass}>Client Coordinator</label>
-            <input
+            <Input
               type="text"
               value={project.clientCoordinator || ""}
               onChange={(e) => handleChange("clientCoordinator", e.target.value)}
               placeholder="Enter name"
-              className={fieldClass}
             />
           </div>
         </div>

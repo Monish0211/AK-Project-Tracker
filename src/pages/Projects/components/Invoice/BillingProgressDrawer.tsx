@@ -13,6 +13,7 @@ import type { InvoiceEntry } from "../../../../types/InvoiceItem";
 
 import { getTotalWorkPackageValue } from "../../../../services/invoiceProgressService";
 import { formatIndianCurrency, formatIndianNumber } from "../../../../utils/quantityCalculations";
+import { Button } from "../../../../components/ui/Button";
 
 interface Props {
   project: Project;
@@ -643,21 +644,19 @@ const BillingProgressDrawer = ({
 
         {/* Footer */}
         <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-4">
-          <button
-            onClick={handleClose}
-            className="rounded-xl border border-gray-300 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-gray-50"
-          >
+          <Button variant="secondary" onClick={handleClose} className="px-5 py-2.5">
             Cancel
-          </button>
+          </Button>
 
           {!isViewMode && (
-            <button
+            <Button
+              variant="primary"
               onClick={handleSave}
               disabled={!canSave}
-              className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="px-5 py-2.5 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isEditMode ? "Update Progress" : "Save Invoice"}
-            </button>
+            </Button>
           )}
         </div>
       </aside>

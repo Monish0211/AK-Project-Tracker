@@ -3,6 +3,8 @@ import { Briefcase, Clock, FileText, IndianRupee, Wallet, TrendingUp, TrendingDo
 import type { Project } from "../../../types/Project";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { StatTile } from "../../../components/ui/StatTile";
+import { Input } from "../../../components/ui/Input";
+import { Textarea } from "../../../components/ui/Textarea";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 
 interface Props {
@@ -10,8 +12,6 @@ interface Props {
   setProject: Dispatch<SetStateAction<Project>>;
 }
 
-const fieldClass =
-  "w-full h-10 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] px-3 text-[13px] text-[var(--nu-text)] outline-none transition-shadow focus:ring-2 focus:ring-[var(--nu-accent)]/25 focus:border-[var(--nu-accent)]";
 const labelClass = "block text-[11.5px] font-medium text-[var(--nu-text-secondary)] mb-1.5";
 
 export default function ExpenseBudgetCard({ project, setProject }: Props) {
@@ -171,7 +171,7 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--nu-text-muted)] text-[13px] font-semibold">
                   ₹
                 </span>
-                <input
+                <Input
                   type="number"
                   value={manhourBudgetAmount || ""}
                   onChange={(e) =>
@@ -181,14 +181,14 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                     }))
                   }
                   placeholder="Enter Man-Hour Budget Amount"
-                  className={fieldClass + " pl-7"}
+                  className="pl-7"
                 />
               </div>
             </div>
 
             <div>
               <label className={labelClass}>Budget Hours</label>
-              <input
+              <Input
                 type="number"
                 value={manhourBudgetHours || ""}
                 onChange={(e) =>
@@ -198,13 +198,12 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                   }))
                 }
                 placeholder="Enter Budget Hours"
-                className={fieldClass}
               />
             </div>
 
             <div>
               <label className={labelClass}>Remarks</label>
-              <textarea
+              <Textarea
                 value={manhourBudgetRemarks}
                 onChange={(e) =>
                   setProject((prev) => ({
@@ -214,7 +213,7 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                 }
                 placeholder="Enter remarks (e.g. Engineering Estimate)"
                 rows={3}
-                className={fieldClass + " !h-auto py-2 resize-none"}
+                className="resize-none"
               />
             </div>
           </CardBody>
@@ -235,7 +234,7 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--nu-text-muted)] text-[13px] font-semibold">
                   ₹
                 </span>
-                <input
+                <Input
                   type="number"
                   value={nonManhourBudgetAmount || ""}
                   onChange={(e) =>
@@ -245,14 +244,14 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                     }))
                   }
                   placeholder="Enter Non Man-Hour Budget Amount"
-                  className={fieldClass + " pl-7"}
+                  className="pl-7"
                 />
               </div>
             </div>
 
             <div>
               <label className={labelClass}>Remarks</label>
-              <textarea
+              <Textarea
                 value={nonManhourBudgetRemarks}
                 onChange={(e) =>
                   setProject((prev) => ({
@@ -262,7 +261,7 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                 }
                 placeholder="Enter remarks (e.g. Travel, Hotel, Accommodation)"
                 rows={7}
-                className={fieldClass + " !h-auto py-2 resize-none"}
+                className="resize-none"
               />
             </div>
           </CardBody>

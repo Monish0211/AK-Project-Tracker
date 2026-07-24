@@ -7,6 +7,7 @@ import { reminderService } from "../services/reminders/ReminderService";
 import type { SnoozeOption } from "../services/reminders/ReminderService";
 import { reminderSoundService } from "../services/audio/ReminderSoundService";
 import { ReminderTypeIcon } from "../components/ui/ReminderTypeIcon";
+import { Button } from "../components/ui/Button";
 import { formatHumanDateString, formatHumanTime, getReminderStatusDisplay } from "../utils/reminderDisplay";
 import type { ReminderTriggerStatus } from "../utils/reminderDisplay";
 
@@ -169,13 +170,9 @@ export const ReminderToast: React.FC<Props> = ({ toast, onDismiss }) => {
 
       {/* Actions */}
       <div className="px-3.5 pb-3 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={handleOpenProject}
-          className="flex-1 text-[11.5px] font-bold px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
-        >
+        <Button variant="primary" size="sm" onClick={handleOpenProject} className="flex-1">
           Open Project
-        </button>
+        </Button>
 
         <div className="relative" ref={snoozeRef}>
           <button

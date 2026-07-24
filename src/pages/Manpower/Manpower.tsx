@@ -1,3 +1,4 @@
+import "./manpower-theme.css";
 import { useEffect, useMemo, useState, useRef } from "react";
 import {
   Users,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 
 import type { Employee } from "../../types/EmployeeModel";
+import { GlassReflectionOverlay } from "../../components/ui/GlassReflectionOverlay";
 import {
   getEmployees,
   deleteEmployee,
@@ -24,6 +26,8 @@ import {
   downloadEmployeeTemplate,
 } from "../../services/employeeService";
 import EmployeeModal from "./components/EmployeeModal";
+import { Button } from "../../components/ui/Button";
+import { EmptyStateRow } from "../../components/ui/EmptyStateRow";
 
 const Manpower = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -322,7 +326,8 @@ const Manpower = () => {
       ` }} />
 
       {/* ═══════════ HERO BANNER ═══════════ */}
-      <div className="pmo-hero shadow-lg">
+      <div className="pmo-hero shadow-lg relative overflow-hidden">
+        <GlassReflectionOverlay />
         <div className="pmo-hero-in">
           {/* Left info */}
           <div className="text-left flex-1 min-w-0">
@@ -363,13 +368,14 @@ const Manpower = () => {
 
           {/* Right actions & clock */}
           <div className="flex flex-col items-end gap-3 shrink-0">
-            <button
+            <Button
+              variant="hero"
               onClick={() => setShowAddModal(true)}
-              className="btn-add flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg transition duration-150 transform hover:-translate-y-px"
+              className="btn-add shadow-[var(--nu-shadow-lg)] transition duration-150 transform hover:-translate-y-px"
+              icon={<Plus size={15} />}
             >
-              <Plus size={15} />
               Add Employee
-            </button>
+            </Button>
             <div className="text-right flex flex-col items-end gap-1.5">
               <span className="pmo-live-pill">
                 <span className="pmo-live-dot"></span>
@@ -630,16 +636,16 @@ const Manpower = () => {
             </thead>
             <tbody>
               {paginatedEmployees.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="p-8 text-center text-slate-400">
-                    No Employees Found matching selected filter criteria.
-                  </td>
-                </tr>
+                <EmptyStateRow
+                  colSpan={10}
+                  title="No Employees Found"
+                  description="No employees match the selected filter criteria."
+                />
               ) : (
                 paginatedEmployees.map((e) => (
                   <tr
                     key={e.id}
-                    className="border-b border-slate-100 dark:border-slate-800/80 hover:bg-blue-50/20 dark:hover:bg-slate-800/30 transition-all duration-100"
+                    className="nu-table-row transition-all duration-100"
                   >
                     <td className="p-3 font-semibold pmo-prno sticky left-0 z-10 bg-white dark:bg-slate-900">{e.employeeNo}</td>
                     <td className="p-3">
@@ -762,7 +768,9 @@ const Manpower = () => {
               >
                 Cancel
               </button>
-              <button
+              <Button
+                variant="danger"
+                size="sm"
                 onClick={() => {
                   if (deleteConfirmId) {
                     deleteEmployee(deleteConfirmId);
@@ -770,10 +778,9 @@ const Manpower = () => {
                     setDeleteConfirmId(null);
                   }
                 }}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold"
               >
                 Delete
-              </button>
+              </Button>
             </div>
           </div>
         </div>

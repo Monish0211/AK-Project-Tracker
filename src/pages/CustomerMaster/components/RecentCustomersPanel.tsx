@@ -10,12 +10,12 @@ interface Props {
 const RecentCustomersPanel = ({ customers }: Props) => {
   const recent = [...customers]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5);
+    .slice(0, 10);
 
   return (
     <Card padded={false} elevated className="h-full flex flex-col">
       <CardHeader icon={<UserPlus size={15} />} title="Recently Added" subtitle="Latest customer records" />
-      <CardBody className="flex-1">
+      <CardBody className="flex-1 overflow-auto nu-scrollbar">
         {recent.length === 0 ? (
           <EmptyState icon={<UserPlus size={18} />} title="No customers yet" description="New customers will appear here first." />
         ) : (

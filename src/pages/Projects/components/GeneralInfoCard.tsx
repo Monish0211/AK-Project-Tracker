@@ -5,6 +5,8 @@ import type { Project } from "../../../types/Project";
 import { getCustomers } from "../../../services/customerService";
 import { getPmoCoordinators } from "../../../services/pmoCoordinatorService";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
+import { Input } from "../../../components/ui/Input";
+import { Select } from "../../../components/ui/Select";
 
 import { FieldError } from "../../../components/ui/FieldError";
 
@@ -40,8 +42,6 @@ const applyPrNoPrefix = (rawValue: string, prefix: string) => {
 
 import { FormLabel } from "../../../components/ui/FormLabel";
 
-const fieldClass =
-  "w-full h-10 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] px-3 text-[13px] text-[var(--nu-text)] outline-none transition-shadow focus:ring-2 focus:ring-[var(--nu-accent)]/25 focus:border-[var(--nu-accent)]";
 const labelClass = ""; // handled by FormLabel now
 
 const Field = ({ label, children, required, error }: { label: string; children: React.ReactNode; required?: boolean; error?: string }) => (
@@ -166,13 +166,13 @@ const PmoCoordinatorAutocomplete = ({
 
   return (
     <div ref={containerRef} className="relative w-full">
-      <input
+      <Input
         type="text"
         value={searchQuery}
         onChange={handleChange}
         onFocus={() => setIsOpen(true)}
         onKeyDown={handleKeyDown}
-        className={`${fieldClass} ${hasError ? "!border-[var(--nu-danger)]" : ""}`}
+        invalid={hasError}
         placeholder="Search PMO Coordinator..."
       />
       {showDropdown && (
@@ -258,7 +258,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
         />
         <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="PO Month" required={true} error={errors["poMonth"]}>
-            <input
+            <Input
               type="month"
               data-field="poMonth"
               value={project.poMonth}
@@ -269,12 +269,12 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                 });
                 clearError?.("poMonth");
               }}
-              className={`${fieldClass} ${errors["poMonth"] ? "!border-[var(--nu-danger)]" : ""}`}
+              invalid={!!errors["poMonth"]}
             />
           </Field>
 
           <Field label="PR Category" required={true} error={errors["prCategory"]}>
-            <select
+            <Select
               data-field="prCategory"
               value={project.prCategory}
               onChange={(e) => {
@@ -293,7 +293,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                 });
                 clearError?.("prCategory");
               }}
-              className={`${fieldClass} ${errors["prCategory"] ? "!border-[var(--nu-danger)]" : ""}`}
+              invalid={!!errors["prCategory"]}
             >
               <option value="">Select PR Category</option>
 
@@ -302,11 +302,11 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                   {category}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
 
           <Field label="PR Number" required={true} error={errors["prNo"]}>
-            <input
+            <Input
               type="text"
               data-field="prNo"
               value={project.prNo}
@@ -319,7 +319,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                 });
                 clearError?.("prNo");
               }}
-              className={`${fieldClass} ${errors["prNo"] ? "!border-[var(--nu-danger)]" : ""}`}
+              invalid={!!errors["prNo"]}
               placeholder={
                 prNumberPrefixMap[project.prCategory]
                   ? `${prNumberPrefixMap[project.prCategory]}Enter Number`
@@ -329,7 +329,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
           </Field>
 
           <Field label="Project Title" required={true} error={errors["projectTitle"]}>
-            <input
+            <Input
               type="text"
               data-field="projectTitle"
               value={project.projectTitle}
@@ -340,7 +340,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                 });
                 clearError?.("projectTitle");
               }}
-              className={`${fieldClass} ${errors["projectTitle"] ? "!border-[var(--nu-danger)]" : ""}`}
+              invalid={!!errors["projectTitle"]}
               placeholder="Enter Project Title"
             />
           </Field>
@@ -358,7 +358,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
         <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="relative sm:col-span-2" ref={clientDropdownRef}>
             <FormLabel required={true}>Client Name</FormLabel>
-            <input
+            <Input
               type="text"
               data-field="client"
               value={project.client}
@@ -371,7 +371,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                 clearError?.("client");
               }}
               onFocus={() => setIsClientDropdownOpen(true)}
-              className={`${fieldClass} ${errors["client"] ? "!border-[var(--nu-danger)]" : ""}`}
+              invalid={!!errors["client"]}
               placeholder="Enter Client Name"
             />
             <FieldError error={errors["client"]} />
@@ -399,7 +399,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
           </div>
 
           <Field label="Department" required={true} error={errors["department"]}>
-            <select
+            <Select
               data-field="department"
               value={isOtherDepartment ? "Others" : project.department}
               onChange={(e) => {
@@ -415,7 +415,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                   department: e.target.value,
                 });
               }}
-              className={`${fieldClass} ${errors["department"] ? "!border-[var(--nu-danger)]" : ""}`}
+              invalid={!!errors["department"]}
             >
               <option value="">Select Department</option>
               {departmentOptions.map((department) => (
@@ -424,11 +424,11 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                 </option>
               ))}
               <option value="Others">Others</option>
-            </select>
+            </Select>
           </Field>
 
           <Field label="Domestic / Foreign" required={true} error={errors["domesticForeign"]}>
-            <select
+            <Select
               data-field="domesticForeign"
               value={project.domesticForeign}
               onChange={(e) => {
@@ -438,18 +438,18 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                 });
                 clearError?.("domesticForeign");
               }}
-              className={`${fieldClass} ${errors["domesticForeign"] ? "!border-[var(--nu-danger)]" : ""}`}
+              invalid={!!errors["domesticForeign"]}
             >
               <option value="">Select Domestic / Foreign</option>
               <option value="Domestic">Domestic</option>
               <option value="Foreign">Foreign</option>
-            </select>
+            </Select>
           </Field>
 
           {isOtherDepartment && (
             <div className="sm:col-span-2">
               <label className={labelClass}>Other Department</label>
-              <input
+              <Input
                 type="text"
                 value={project.department}
                 onChange={(e) =>
@@ -458,7 +458,6 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                     department: e.target.value,
                   })
                 }
-                className={fieldClass}
                 placeholder="Enter Department"
               />
             </div>
@@ -476,7 +475,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
         />
         <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Work Order Status" required={true} error={errors["workOrderStatus"]}>
-            <select
+            <Select
               data-field="workOrderStatus"
               value={project.workOrderStatus}
               onChange={(e) => {
@@ -486,7 +485,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                 });
                 clearError?.("workOrderStatus");
               }}
-              className={`${fieldClass} ${errors["workOrderStatus"] ? "!border-[var(--nu-danger)]" : ""}`}
+              invalid={!!errors["workOrderStatus"]}
             >
               <option value="">Select Work Order Status</option>
               <option value="Received">Received</option>
@@ -494,11 +493,11 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
               <option value="Pending">Pending</option>
               <option value="Closed">Closed</option>
               <option value="Cancelled">Cancelled</option>
-            </select>
+            </Select>
           </Field>
 
           <Field label="Project Status" required={true} error={errors["projectStatus"]}>
-            <select
+            <Select
               data-field="projectStatus"
               value={project.projectStatus}
               onChange={(e) => {
@@ -508,7 +507,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                 });
                 clearError?.("projectStatus");
               }}
-              className={`${fieldClass} ${errors["projectStatus"] ? "!border-[var(--nu-danger)]" : ""}`}
+              invalid={!!errors["projectStatus"]}
             >
               <option value="">Select Project Status</option>
               <option value="Active">Active</option>
@@ -517,11 +516,11 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
               <option value="Completed">Completed</option>
               <option value="On Hold">On Hold</option>
               <option value="Cancelled">Cancelled</option>
-            </select>
+            </Select>
           </Field>
 
           <Field label="Project Start Date" required={true} error={errors["projectStartDate"]}>
-            <input
+            <Input
               type="date"
               data-field="projectStartDate"
               value={project.projectStartDate}
@@ -532,12 +531,12 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                 });
                 clearError?.("projectStartDate");
               }}
-              className={`${fieldClass} ${errors["projectStartDate"] ? "!border-[var(--nu-danger)]" : ""}`}
+              invalid={!!errors["projectStartDate"]}
             />
           </Field>
 
           <Field label="Project End Date">
-            <input
+            <Input
               type="date"
               value={project.projectEndDate}
               onChange={(e) =>
@@ -546,7 +545,6 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                   projectEndDate: e.target.value,
                 })
               }
-              className={fieldClass}
             />
           </Field>
         </CardBody>
@@ -562,7 +560,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
         />
         <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Contract Type" required={true} error={errors["contractType"]}>
-            <select
+            <Select
               data-field="contractType"
               value={project.contractType || "LUMP SUM"}
               onChange={(e) => {
@@ -572,11 +570,11 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
                 });
                 clearError?.("contractType");
               }}
-              className={`${fieldClass} ${errors["contractType"] ? "!border-[var(--nu-danger)]" : ""}`}
+              invalid={!!errors["contractType"]}
             >
               <option value="LUMP SUM">LUMP SUM</option>
               <option value="ARC">ARC</option>
-            </select>
+            </Select>
           </Field>
 
           <Field label="PR No. Preview">

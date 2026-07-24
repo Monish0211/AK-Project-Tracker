@@ -7,6 +7,8 @@ import { Button } from "../../../../components/ui/Button";
 import ProjectHealthRing from "./ProjectHealthRing";
 import { getProjectHealthStatus } from "./getProjectHealthStatus";
 
+import { GlassReflectionOverlay } from "../../../../components/ui/GlassReflectionOverlay";
+
 interface Props {
   project: Project;
   progressPercent: number;
@@ -63,9 +65,10 @@ const ProjectWorkspaceHeader = ({
     <div className="rounded-[var(--nu-radius-lg)] overflow-hidden border border-[var(--nu-border)] shadow-[var(--nu-shadow-sm)]">
       {/* Hero band */}
       <div
-        className="relative px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+        className="relative overflow-hidden px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
         style={{ background: "linear-gradient(120deg, #0f2447 0%, #14335f 45%, #0e5a73 100%)" }}
       >
+        <GlassReflectionOverlay />
         <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-widest text-white/50 font-semibold mb-1">Projects</p>
           <div className="flex items-center gap-2.5 flex-wrap">
@@ -115,9 +118,9 @@ const ProjectWorkspaceHeader = ({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2.5 mt-4 pt-3.5 border-t border-[var(--nu-border)]">
-          <Button variant="secondary" size="sm" icon={<StickyNote size={13} />} onClick={onOpenNotes}>
+          <Button variant="primary" size="sm" onClick={onOpenNotes} icon={<StickyNote size={13} />}>
             Workspace
-            <span className="bg-[var(--nu-accent)] text-white px-1.5 py-0.5 rounded-full text-[10px] font-bold ml-0.5">
+            <span className="bg-white/25 text-white px-1.5 py-0.5 rounded-full text-[10px] font-bold ml-0.5">
               {notesCount}
             </span>
           </Button>

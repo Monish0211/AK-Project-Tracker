@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Building2, CalendarDays, Plus, UserCheck, UserX } from "lucide-react";
+import { GlassReflectionOverlay } from "../../../components/ui/GlassReflectionOverlay";
 import { Button } from "../../../components/ui/Button";
 
 interface Props {
@@ -23,12 +24,13 @@ const InfoChip = ({ icon, label, value }: { icon: ReactNode; label: string; valu
 const CustomerHero = ({ total, active, inactive, addedToday, onAddCustomer }: Props) => {
   return (
     <div
-      className="relative overflow-hidden rounded-[var(--nu-radius-lg)] px-5 flex items-center justify-between gap-6 flex-wrap h-[112px]"
+      className="relative overflow-hidden rounded-[var(--nu-radius-lg)] px-5 py-4 flex items-center justify-between gap-6 flex-wrap min-h-[112px]"
       style={{ background: "linear-gradient(120deg, #0f2447 0%, #14335f 45%, #0e5a73 100%)" }}
     >
+      <GlassReflectionOverlay />
       <div className="min-w-0">
         <h1 className="text-[26px] font-bold text-white leading-tight">Customer Master</h1>
-        <p className="text-[13px] text-[#a9bfda] mt-1 max-w-2xl leading-snug hidden md:block">
+        <p className="text-[13px] text-[#a9bfda] mt-1 max-w-2xl leading-snug">
           Manage customer organizations used throughout the Engineering PMO Portal.
         </p>
       </div>
@@ -39,7 +41,7 @@ const CustomerHero = ({ total, active, inactive, addedToday, onAddCustomer }: Pr
         <InfoChip icon={<UserX size={13} className="text-red-300" />} label="Inactive" value={inactive} />
         <InfoChip icon={<CalendarDays size={13} className="text-amber-300" />} label="Added Today" value={addedToday} />
 
-        <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={onAddCustomer} className="ml-1">
+        <Button variant="hero" size="sm" onClick={onAddCustomer} icon={<Plus size={14} strokeWidth={2.5} />} className="shrink-0">
           Add Customer
         </Button>
       </div>

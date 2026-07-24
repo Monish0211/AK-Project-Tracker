@@ -11,7 +11,7 @@ interface Props {
 
 const CustomerTable = ({ customers, onEdit, onDelete }: Props) => {
   return (
-    <div className="max-h-[560px] overflow-auto nu-scrollbar">
+    <div className="flex-1 min-h-[500px] max-h-[calc(100vh-270px)] overflow-auto nu-scrollbar">
       {customers.length === 0 ? (
         <EmptyState
           icon={<Users size={18} />}

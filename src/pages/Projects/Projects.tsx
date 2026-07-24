@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import ExcelJS from "exceljs";
 
+import { Button } from "../../components/ui/Button";
 import type { Project } from "../../types/Project";
 import {
   getProjects,
@@ -521,13 +522,14 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                 Export Archive
               </button>
             ) : (
-              <button
+              <Button
+                variant="hero"
                 onClick={() => navigate("/projects/add")}
-                className="btn-add flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg transition duration-150 transform hover:-translate-y-px"
+                className="btn-add transform hover:-translate-y-px"
+                icon={<Plus size={15} />}
               >
-                <Plus size={15} />
                 Add Project
-              </button>
+              </Button>
             )}
             <div className="text-right flex flex-col items-end gap-1.5">
               <span className="pmo-live-pill">

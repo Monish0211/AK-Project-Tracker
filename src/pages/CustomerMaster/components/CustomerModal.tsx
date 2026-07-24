@@ -4,6 +4,9 @@ import { X } from "lucide-react";
 import { addCustomer, updateCustomer } from "../../../services/customerService";
 import type { CustomerInput } from "../../../services/customerService";
 import type { Customer } from "../../../types/CustomerModel";
+import { Input } from "../../../components/ui/Input";
+import { Select } from "../../../components/ui/Select";
+import { Button } from "../../../components/ui/Button";
 
 interface Props {
   mode: "add" | "edit";
@@ -80,86 +83,86 @@ const CustomerModal = ({ mode, customer, onClose }: Props) => {
             <label className="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">
               Customer Name <span className="text-red-500">*</span>
             </label>
-            <input
+            <Input
               type="text"
               value={form.customerName}
               onChange={(e) => update("customerName", e.target.value)}
               placeholder="Enter Customer Name"
-              className="w-full border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Customer ID</label>
-            <input
+            <Input
               type="text"
               value={form.customerId}
               onChange={(e) => update("customerId", e.target.value)}
               placeholder="Optional"
-              className="w-full border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Company Name</label>
-            <input
+            <Input
               type="text"
               value={form.companyName}
               onChange={(e) => update("companyName", e.target.value)}
-              className="w-full border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Country</label>
-            <input
+            <Input
               type="text"
               value={form.country}
               onChange={(e) => update("country", e.target.value)}
-              className="w-full border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Contact Person</label>
-            <input
+            <Input
               type="text"
               value={form.contactPerson}
               onChange={(e) => update("contactPerson", e.target.value)}
-              className="w-full border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Email</label>
-            <input
+            <Input
               type="email"
               value={form.email}
               onChange={(e) => update("email", e.target.value)}
-              className="w-full border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Phone</label>
-            <input
+            <Input
               type="text"
               value={form.phone}
               onChange={(e) => update("phone", e.target.value)}
-              className="w-full border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Status</label>
-            <select
+            <Select
               value={form.status}
               onChange={(e) => update("status", e.target.value as Customer["status"])}
-              className="w-full border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full"
             >
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
-            </select>
+            </Select>
           </div>
 
           {error && (
@@ -169,16 +172,13 @@ const CustomerModal = ({ mode, customer, onClose }: Props) => {
 
         {/* Footer */}
         <div className="flex justify-end gap-3 border-t border-gray-100 dark:border-slate-700 p-6">
-          <button
-            onClick={onClose}
-            className="px-5 py-2 rounded-xl border border-gray-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-700"
-          >
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
+          </Button>
 
-          <button onClick={handleSave} className="px-5 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700">
+          <Button variant="primary" onClick={handleSave}>
             {mode === "add" ? "Save Customer" : "Update Customer"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

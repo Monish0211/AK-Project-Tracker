@@ -11,9 +11,7 @@ import {
   Briefcase,
   UserCog,
   TrendingUp,
-  TrendingDown,
   Wallet,
-  PieChart,
 } from "lucide-react";
 import type { Project } from "../../../types/Project";
 import {
@@ -26,8 +24,6 @@ import {
   formatMonthDisplay,
   getAllTimesheetImports,
 } from "../../../services/timesheetService";
-import { getTotalNonManhourCost } from "../../../services/expenseService";
-import { getProjectCommercialSummary } from "../../../services/invoiceProgressService";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { StatTile } from "../../../components/ui/StatTile";
 import { Badge } from "../../../components/ui/Badge";
@@ -126,16 +122,6 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
     return { totalEmployees, totalHours, totalWorkingDays, totalManHourCost, avgHoursPerEmployee, avgHourlyRate };
   }, [employees]);
 
-  // Project Resource Cost Summary — combines this card's live Man-Hour Cost
-  // with the existing Non-Man-Hour totals (Expense Budget) and Work Order
-  // Value (Commercial Summary). Reuses those modules' own exported
-  // calculations untouched; only the roll-up below is new.
-  const nonManhourCost = getTotalNonManhourCost(project.nonManhourExpenses);
-  const workOrderValue = getProjectCommercialSummary(project).projectValueINR;
-  const totalProjectCost = resourceSummary.totalManHourCost + nonManhourCost;
-  const profit = workOrderValue - totalProjectCost;
-  const profitPercent = workOrderValue > 0 ? (profit / workOrderValue) * 100 : 0;
-  const remainingBudget = workOrderValue - totalProjectCost;
 
   const handleExpandToggle = (employeeNo: string) => {
     setExpandedEmployeeNo(expandedEmployeeNo === employeeNo ? null : employeeNo);
@@ -479,46 +465,6 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
                 </tbody>
               </table>
             </div>
-          </Card>
-
-          {/* Project Resource Cost Summary */}
-          <Card padded={false}>
-            <CardHeader
-              icon={<PieChart size={15} />}
-              title="Project Resource Cost Summary"
-              subtitle="Combines labor cost from Timesheets with Expense Budget and Commercial Summary."
-            />
-            <CardBody>
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
-                <StatTile
-                  icon={<IndianRupee size={14} />}
-                  label="Total Man-Hour Cost"
-                  value={fmtINR(resourceSummary.totalManHourCost)}
-                  tint="accent"
-                />
-                <StatTile icon={<Wallet size={14} />} label="Non-Man-Hour Cost" value={fmtINR(nonManhourCost)} tint="warning" />
-                <StatTile icon={<IndianRupee size={14} />} label="Total Project Cost" value={fmtINR(totalProjectCost)} tint="info" />
-                <StatTile icon={<Briefcase size={14} />} label="Work Order Value" value={fmtINR(workOrderValue)} tint="accent" />
-                <StatTile
-                  icon={profit >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                  label="Profit"
-                  value={fmtINR(profit)}
-                  tint={profit >= 0 ? "success" : "danger"}
-                />
-                <StatTile
-                  icon={profit >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                  label="Profit %"
-                  value={`${profitPercent.toFixed(1)}%`}
-                  tint={profit >= 0 ? "success" : "danger"}
-                />
-                <StatTile
-                  icon={<Wallet size={14} />}
-                  label="Remaining Budget"
-                  value={fmtINR(remainingBudget)}
-                  tint={remainingBudget >= 0 ? "success" : "danger"}
-                />
-              </div>
-            </CardBody>
           </Card>
         </>
       )}

@@ -7,6 +7,7 @@ import { deleteEmployee } from "../../../services/employeeService";
 
 import EmployeeRow from "./EmployeeRow";
 import EmployeeModal from "./EmployeeModal";
+import { EmptyStateRow } from "../../../components/ui/EmptyStateRow";
 
 interface Props {
   employees: Employee[];
@@ -48,51 +49,51 @@ const EmployeeTable = ({
 
           <table className="w-full min-w-[1200px] border-collapse">
 
-            <thead className="bg-slate-100 text-slate-600 text-sm font-semibold uppercase tracking-wide">
+            <thead>
 
               <tr>
 
-                <th className="px-6 py-4 text-center w-16">
+                <th className="nu-table-th px-6 py-4 text-center w-16">
                   Sl No
                 </th>
 
-                <th className="px-6 py-4 text-left w-32">
+                <th className="nu-table-th px-6 py-4 text-left w-32">
                   Employee No
                 </th>
 
-                <th className="px-6 py-4 text-left">
+                <th className="nu-table-th px-6 py-4 text-left">
                   Employee Name
                 </th>
 
-                <th className="px-6 py-4 text-left">
+                <th className="nu-table-th px-6 py-4 text-left">
                   Designation
                 </th>
 
-                <th className="px-6 py-4 text-left">
+                <th className="nu-table-th px-6 py-4 text-left">
                   Department
                 </th>
 
-                <th className="px-6 py-4 text-left">
+                <th className="nu-table-th px-6 py-4 text-left">
                   Location
                 </th>
 
-                <th className="px-6 py-4 text-left">
+                <th className="nu-table-th px-6 py-4 text-left">
                   Reporting Manager
                 </th>
 
-                <th className="px-6 py-4 text-center w-28">
+                <th className="nu-table-th px-6 py-4 text-center w-28">
                   Employee Grade
                 </th>
 
-                <th className="px-6 py-4 text-right w-36">
+                <th className="nu-table-th px-6 py-4 text-right w-36">
                   Man-hour Expenses
                 </th>
 
-                <th className="px-6 py-4 text-center w-28">
+                <th className="nu-table-th px-6 py-4 text-center w-28">
                   Status
                 </th>
 
-                <th className="px-6 py-4 text-center w-32">
+                <th className="nu-table-th px-6 py-4 text-center w-32">
                   Action
                 </th>
 
@@ -104,16 +105,7 @@ const EmployeeTable = ({
 
               {employees.length === 0 ? (
 
-                <tr>
-
-                  <td
-                    colSpan={11}
-                    className="py-12 text-center text-gray-500"
-                  >
-                    No Employees Found
-                  </td>
-
-                </tr>
+                <EmptyStateRow colSpan={11} title="No Employees Found" />
 
               ) : (
 
