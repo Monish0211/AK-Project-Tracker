@@ -106,7 +106,7 @@ const HoursOverrunWidget: React.FC = () => {
   const hasOverrunProjects = displayProjects.length > 0;
 
   return (
-    <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-2xl shadow-md border border-slate-200/80 dark:border-slate-800/80 border-l-4 border-l-red-500 p-4 sm:p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-lg">
+    <div className="bg-[var(--nu-surface)] backdrop-blur-md rounded-[var(--nu-radius-lg)] shadow-[var(--nu-shadow-md)] border border-[var(--nu-border)] border-l-4 border-l-red-500 p-4 sm:p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-lg">
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
         <div className="flex items-start gap-3 min-w-0">

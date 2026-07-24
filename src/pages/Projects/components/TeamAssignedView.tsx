@@ -45,9 +45,9 @@ export default function TeamAssignedView({ project }: Props) {
       </Card>
 
       {/* Team Assigned — Project Resource Cost Management module: resource
-          summary, per-employee cost, expandable daily entries, and the
-          Project Resource Cost Summary all live inside this one component so
-          Edit Project and View Project never show conflicting numbers. */}
+          summary, per-employee cost, and expandable daily entries all live
+          inside this one component so Edit Project and View Project never
+          show conflicting numbers. */}
       <ExpandableTeamMembersCard project={project} />
     </div>
   );

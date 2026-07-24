@@ -20,7 +20,7 @@ const ProjectsInLossHoursWidget: React.FC = () => {
   const hasProjects = top5Projects.length > 0;
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-md border border-red-200 dark:border-red-900/60 p-3 sm:p-3.5 h-[275px] flex flex-col justify-between transition-all duration-200 hover:shadow-lg">
+    <div className="bg-[var(--nu-surface)] rounded-[var(--nu-radius-lg)] shadow-[var(--nu-shadow-md)] border border-[var(--nu-danger)]/30 p-3 sm:p-3.5 h-[275px] flex flex-col justify-between transition-all duration-200 hover:shadow-lg">
       {/* Header (Fixed) */}
       <div className="shrink-0 pb-1.5 border-b border-slate-100 dark:border-slate-800">
         <div className="flex items-center justify-between gap-2">

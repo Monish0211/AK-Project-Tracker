@@ -308,7 +308,7 @@ const WelcomeCard = () => {
             {/* Add Project Button */}
             <Link
               to="/projects/add"
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-xl font-semibold shadow-lg transition duration-200 animate-fade-in-up"
+              className="inline-flex items-center justify-center gap-2 rounded-[var(--nu-radius-md)] font-medium transition-colors duration-150 whitespace-nowrap text-[13px] px-3.5 py-2 bg-[var(--nu-accent)] text-white hover:bg-[var(--nu-accent-strong)] border border-transparent shadow-[var(--nu-shadow-lg)] animate-fade-in-up"
               style={{ animationDelay: "500ms" }}
             >
               <Plus size={16} />

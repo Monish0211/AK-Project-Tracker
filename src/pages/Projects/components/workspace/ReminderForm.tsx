@@ -9,6 +9,10 @@ import type {
 } from "../../../../types/ProjectReminder";
 import { NOTIFY_OFFSET_OPTIONS } from "../../../../types/ProjectReminder";
 import { getReminderPreview } from "../../../../utils/reminderDisplay";
+import { Button } from "../../../../components/ui/Button";
+import { Input } from "../../../../components/ui/Input";
+import { Select } from "../../../../components/ui/Select";
+import { Textarea } from "../../../../components/ui/Textarea";
 
 interface Props {
   reminder?: ProjectReminder | null;
@@ -86,12 +90,11 @@ export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">
               Reminder Title *
             </label>
-            <input
+            <Input
               type="text"
               required
               value={formData.title}
               onChange={(e) => setFormData({...formData, title: e.target.value})}
-              className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all dark:text-white"
               placeholder="e.g. Submit July Invoice"
             />
           </div>
@@ -101,26 +104,24 @@ export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">
                 Type
               </label>
-              <select
+              <Select
                 value={formData.reminderType}
                 onChange={(e) => setFormData({...formData, reminderType: e.target.value})}
-                className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
               >
                 {REMINDER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
+              </Select>
             </div>
             
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">
                 Priority
               </label>
-              <select
+              <Select
                 value={formData.priority}
                 onChange={(e) => setFormData({...formData, priority: e.target.value as ReminderPriority})}
-                className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
               >
                 {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
 
@@ -129,23 +130,21 @@ export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">
                 Due Date *
               </label>
-              <input
+              <Input
                 type="date"
                 required
                 value={formData.reminderDate}
                 onChange={(e) => setFormData({...formData, reminderDate: e.target.value})}
-                className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
               />
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">
                 Time
               </label>
-              <input
+              <Input
                 type="time"
                 value={formData.reminderTime}
                 onChange={(e) => setFormData({...formData, reminderTime: e.target.value})}
-                className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
               />
             </div>
           </div>
@@ -155,25 +154,23 @@ export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">
                 Notify
               </label>
-              <select
+              <Select
                 value={formData.notifyOffset}
                 onChange={(e) => setFormData({...formData, notifyOffset: e.target.value as ReminderNotifyOffset})}
-                className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
               >
                 {NOTIFY_OFFSET_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
+              </Select>
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">
                 Repeat
               </label>
-              <select
+              <Select
                 value={formData.repeat}
                 onChange={(e) => setFormData({...formData, repeat: e.target.value as ReminderRepeat})}
-                className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
               >
                 {REPEATS.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
 
@@ -198,11 +195,11 @@ export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">
               Description (Optional)
             </label>
-            <textarea
+            <Textarea
               rows={3}
               value={formData.description}
               onChange={(e) => setFormData({...formData, description: e.target.value})}
-              className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 transition-all dark:text-white resize-none custom-scrollbar"
+              className="resize-none custom-scrollbar"
               placeholder="Add more details here..."
             />
           </div>
@@ -210,21 +207,13 @@ export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode
       </div>
 
       <div className="sticky bottom-0 z-20 p-4 border-t border-slate-200 dark:border-slate-800 shrink-0 bg-white/95 dark:bg-[#0F172A]/95 backdrop-blur-md shadow-[0_-4px_12px_rgba(0,0,0,0.06)] flex items-center justify-end gap-3">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors border border-slate-200 dark:border-slate-700"
-        >
+        <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel
-        </button>
-        <button
-          type="submit"
-          form="reminder-form"
-          className="px-5 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 rounded-lg transition-all flex items-center gap-2 shadow-sm hover:shadow active:scale-[0.98]"
-        >
+        </Button>
+        <Button type="submit" form="reminder-form" variant="primary">
           <Save size={16} />
           Save Reminder
-        </button>
+        </Button>
       </div>
     </div>
   );

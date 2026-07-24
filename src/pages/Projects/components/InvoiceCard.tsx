@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { History, Plus, Receipt } from "lucide-react";
 
 import type { Project } from "../../../types/Project";
+import { Button } from "../../../components/ui/Button";
 
 import InvoiceSummaryCards from "./Invoice/InvoiceSummaryCards";
 import InvoiceProgressTable from "./Invoice/InvoiceProgressTable";
@@ -102,7 +103,7 @@ const InvoiceCard = ({ project, setProject }: Props) => {
 
   return (
     <>
-      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-[var(--nu-shadow-sm)] overflow-hidden">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 border-b">
           <div className="flex items-center gap-3 min-w-0">
@@ -124,24 +125,21 @@ const InvoiceCard = ({ project, setProject }: Props) => {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button
+            <Button
+              variant="secondary"
               onClick={() => {
                 setIsDrawerOpen(false);
                 setIsHistoryOpen(true);
               }}
-              className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-slate-700 px-4 py-2 rounded-xl transition"
+              className="gap-2 px-4 py-2"
             >
               <History size={16} />
               Billing History
-            </button>
+            </Button>
 
-            <button
-              onClick={handleOpenCreateDrawer}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl transition"
-            >
-              <Plus size={16} />
+            <Button variant="primary" onClick={handleOpenCreateDrawer} icon={<Plus size={16} />}>
               Update Billing Progress
-            </button>
+            </Button>
           </div>
         </div>
 

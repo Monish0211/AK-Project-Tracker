@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { FileText } from "lucide-react";
 
 import type { Invoice } from "../../../types/Invoice";
 
@@ -8,6 +9,7 @@ import {
 } from "../../../services/invoiceService";
 
 import InvoiceRow from "./InvoiceRow";
+import { EmptyState } from "../../../components/ui/EmptyState";
 
 const InvoiceTable = () => {
   const [invoices, setInvoices] = useState<Invoice[]>(
@@ -47,17 +49,11 @@ const InvoiceTable = () => {
 
       {invoices.length === 0 ? (
 
-        <div className="py-16 text-center">
-
-          <h3 className="text-xl font-semibold text-slate-700">
-            No Invoices Found
-          </h3>
-
-          <p className="mt-2 text-gray-500">
-            Click "Add Invoice" to create your first invoice.
-          </p>
-
-        </div>
+        <EmptyState
+          icon={<FileText size={20} />}
+          title="No Invoices Found"
+          description='Click "Add Invoice" to create your first invoice.'
+        />
 
       ) : (
 
@@ -65,47 +61,47 @@ const InvoiceTable = () => {
 
           <table className="min-w-full">
 
-            <thead className="bg-slate-100">
+            <thead>
 
               <tr className="text-sm text-slate-700">
 
-                <th className="p-4 text-left sticky top-0 left-0 z-30 bg-slate-100">
+                <th className="nu-table-th p-4 text-left sticky top-0 left-0 z-30">
                   PR No
                 </th>
 
-                <th className="p-4 text-left sticky top-0 z-20 bg-slate-100">
+                <th className="nu-table-th p-4 text-left sticky top-0 z-20">
                   Invoice Ref
                 </th>
 
-                <th className="p-4 text-left sticky top-0 z-20 bg-slate-100">
+                <th className="nu-table-th p-4 text-left sticky top-0 z-20">
                   Client
                 </th>
 
-                <th className="p-4 text-left sticky top-0 z-20 bg-slate-100">
+                <th className="nu-table-th p-4 text-left sticky top-0 z-20">
                   Invoice Date
                 </th>
 
-                <th className="p-4 text-left sticky top-0 z-20 bg-slate-100">
+                <th className="nu-table-th p-4 text-left sticky top-0 z-20">
                   Due Date
                 </th>
 
-                <th className="p-4 text-right sticky top-0 z-20 bg-slate-100">
+                <th className="nu-table-th p-4 text-right sticky top-0 z-20">
                   Invoice Amount
                 </th>
 
-                <th className="p-4 text-right sticky top-0 z-20 bg-slate-100">
+                <th className="nu-table-th p-4 text-right sticky top-0 z-20">
                   Received
                 </th>
 
-                <th className="p-4 text-right sticky top-0 z-20 bg-slate-100">
+                <th className="nu-table-th p-4 text-right sticky top-0 z-20">
                   Outstanding
                 </th>
 
-                <th className="p-4 text-center sticky top-0 z-20 bg-slate-100">
+                <th className="nu-table-th p-4 text-center sticky top-0 z-20">
                   Status
                 </th>
 
-                <th className="p-4 text-center sticky top-0 z-20 bg-slate-100">
+                <th className="nu-table-th p-4 text-center sticky top-0 z-20">
                   Actions
                 </th>
 

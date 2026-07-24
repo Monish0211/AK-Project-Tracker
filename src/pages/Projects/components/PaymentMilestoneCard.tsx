@@ -6,6 +6,7 @@ import { FormLabel } from "../../../components/ui/FormLabel";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { StatTile } from "../../../components/ui/StatTile";
 import { Button } from "../../../components/ui/Button";
+import { Input } from "../../../components/ui/Input";
 
 import { FieldError } from "../../../components/ui/FieldError";
 
@@ -67,8 +68,6 @@ function createEmptyMilestone(): PaymentMilestone {
   };
 }
 
-const fieldClass =
-  "h-9 w-full rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] px-2.5 text-[12.5px] text-[var(--nu-text)] outline-none transition-shadow focus:ring-2 focus:ring-[var(--nu-accent)]/25 focus:border-[var(--nu-accent)]";
 
 interface NumericInputProps {
   value: number;
@@ -115,7 +114,7 @@ const NumericInput = ({
   };
 
   const input = (
-    <input
+    <Input
       type="text"
       inputMode="decimal"
       placeholder="0"
@@ -123,7 +122,7 @@ const NumericInput = ({
       value={rawValue}
       disabled={disabled}
       onChange={handleChange}
-      className={`${fieldClass} text-right ${suffix ? "pr-6" : ""} ${
+      className={`h-9 text-[12.5px] text-right ${suffix ? "pr-6" : ""} ${
         disabled
           ? "bg-[var(--nu-surface-alt)] text-[var(--nu-text-muted)] cursor-not-allowed"
           : ""
@@ -353,14 +352,15 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
                     <FormLabel required={true} className="!text-[11px] !text-[var(--nu-text-muted)] mb-1">
                       Milestone Name
                     </FormLabel>
-                    <input
+                    <Input
                       type="text"
                       data-field="milestone_name_0"
                       value={singleMilestone?.milestoneName ?? ""}
                       placeholder="e.g. Submission Draft"
                       aria-label="Milestone Name"
                       onChange={(e) => handleMilestoneNameChange(0, e.target.value)}
-                      className={`${fieldClass} ${errors["milestone_name_0"] ? "!border-[var(--nu-danger)]" : ""}`}
+                      invalid={!!errors["milestone_name_0"]}
+                      className="h-9 px-2.5 text-[12.5px]"
                     />
                     <FieldError error={errors["milestone_name_0"]} />
                   </div>
@@ -380,22 +380,22 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
                       Due Date
                     </label>
                     {isDateRangeMissing ? (
-                      <input
+                      <Input
                         type="text"
                         disabled
                         placeholder="Please select Project Start & End Date"
-                        className={`${fieldClass} bg-[var(--nu-surface-alt)] text-[var(--nu-text-muted)] cursor-not-allowed`}
+                        className="h-9 px-2.5 text-[12.5px]"
                       />
                     ) : (
                       <>
-                        <input
+                        <Input
                           type="date"
                           value={singleMilestone?.dueDate ?? ""}
                           min={project.projectStartDate}
                           max={project.projectEndDate}
                           aria-label="Due Date"
                           onChange={(e) => handleDueDateChange(0, e.target.value)}
-                          className={fieldClass}
+                          className="h-9 px-2.5 text-[12.5px]"
                         />
                       </>
                     )}
@@ -433,7 +433,7 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
                       <FormLabel required={true} className="!text-[11px] !text-[var(--nu-text-muted)] mb-1">
                         Milestone Name
                       </FormLabel>
-                      <input
+                      <Input
                         type="text"
                         data-field={`milestone_name_${index}`}
                         value={milestone.milestoneName ?? ""}
@@ -442,7 +442,8 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
                         onChange={(e) =>
                           handleMilestoneNameChange(index, e.target.value)
                         }
-                        className={`${fieldClass} ${errors[`milestone_name_${index}`] ? "!border-[var(--nu-danger)]" : ""}`}
+                        invalid={!!errors[`milestone_name_${index}`]}
+                        className="h-9 px-2.5 text-[12.5px]"
                       />
                       <FieldError error={errors[`milestone_name_${index}`]} />
                     </div>
@@ -468,15 +469,15 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
                         Due Date
                       </label>
                       {isDateRangeMissing ? (
-                        <input
+                        <Input
                           type="text"
                           disabled
                           placeholder="Please select Project Start & End Date"
-                          className={`${fieldClass} bg-[var(--nu-surface-alt)] text-[var(--nu-text-muted)] cursor-not-allowed`}
+                          className="h-9 px-2.5 text-[12.5px]"
                         />
                       ) : (
                         <>
-                          <input
+                          <Input
                             type="date"
                             value={milestone.dueDate}
                             min={project.projectStartDate}
@@ -485,7 +486,7 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
                             onChange={(e) =>
                               handleDueDateChange(index, e.target.value)
                             }
-                            className={fieldClass}
+                            className="h-9 px-2.5 text-[12.5px]"
                           />
                         </>
                       )}

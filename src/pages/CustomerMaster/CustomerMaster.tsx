@@ -15,7 +15,6 @@ import { useLiveRefresh } from "../../hooks/useLiveRefresh";
 import { Card, CardHeader } from "../../components/ui/Card";
 
 import CustomerHero from "./components/CustomerHero";
-import CustomerKPIStrip from "./components/CustomerKPIStrip";
 import CustomerToolbar from "./components/CustomerToolbar";
 import type { SortKey, StatusFilter } from "./components/CustomerToolbar";
 import CustomerTable from "./components/CustomerTable";
@@ -134,11 +133,9 @@ const CustomerMaster = () => {
           onAddCustomer={() => setFormModal({ mode: "add" })}
         />
 
-        <CustomerKPIStrip total={stats.total} active={stats.active} inactive={stats.inactive} addedToday={stats.addedToday} />
-
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-3.5 items-start">
-          <div className="xl:col-span-3">
-            <Card padded={false} elevated>
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-3.5 items-stretch">
+          <div className="xl:col-span-3 flex flex-col h-full">
+            <Card padded={false} elevated className="flex-1 flex flex-col h-full">
               <CardHeader
                 icon={<Building2 size={15} />}
                 title="Customer Repository"

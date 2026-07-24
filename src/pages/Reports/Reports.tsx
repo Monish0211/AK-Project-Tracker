@@ -1,3 +1,4 @@
+import "./reports-theme.css";
 import { useEffect, useMemo, useState } from "react";
 import {
   BarChart,
@@ -32,6 +33,8 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
+import { GlassReflectionOverlay } from "../../components/ui/GlassReflectionOverlay";
+
 import { getProjects } from "../../services/projectService";
 import { getEmployees } from "../../services/employeeService";
 import { getInvoices } from "../../services/invoiceService";
@@ -39,6 +42,7 @@ import { getProjectCommercialSummary } from "../../services/invoiceProgressServi
 import { getTotalProjectCost, getGrossProfit } from "../../services/expenseService";
 import { getAllTimesheetImports } from "../../services/timesheetService";
 import { getProcessedEmployeeTotalHours } from "../../services/timesheetProcessingService";
+import { EmptyStateRow } from "../../components/ui/EmptyStateRow";
 
 const Reports = () => {
   // Live State
@@ -736,7 +740,8 @@ const Reports = () => {
       <div className="no-print space-y-4">
         
         {/* ═══════════ HERO BANNER ═══════════ */}
-        <div className="pmo-hero shadow-lg">
+        <div className="pmo-hero shadow-lg relative overflow-hidden">
+          <GlassReflectionOverlay />
           <div className="pmo-hero-in">
             <div className="text-left flex-1 min-w-0">
               <div className="hero-eye text-xs font-bold tracking-wider text-slate-400/90 mb-1.5 flex items-center gap-1.5 uppercase">
@@ -1322,108 +1327,123 @@ const Reports = () => {
                   {/* Financials Tab Header */}
                   {(activeTab === "financial" || activeTab === "executive") && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">PR No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("title")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Project Title <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Client <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("department")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Department <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("woValue")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">WO Value <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("billed")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Billed Amount <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("outstanding")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Outstanding <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("profit")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Profit <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Status <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("prNo")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30">PR No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("title")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Project Title <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("client")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Client <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("department")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Department <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("woValue")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">WO Value <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("billed")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Billed Amount <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("outstanding")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Outstanding <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("profit")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Profit <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("status")} className="nu-table-th p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20">Status <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
 
                   {/* Project Performance Tab Header */}
                   {activeTab === "project" && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">PR No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("title")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Project Title <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Client <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("manager")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Manager <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("startDate")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Start Date <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("endDate")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">End Date <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("category")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Category <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Status <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("prNo")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30">PR No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("title")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Project Title <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("client")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Client <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("manager")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Manager <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("startDate")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Start Date <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("endDate")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">End Date <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("category")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Category <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("status")} className="nu-table-th p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20">Status <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
 
                   {/* Resource Utilization Tab Header */}
                   {activeTab === "resource" && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">Project No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("projectTitle")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Project Title <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("name")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Resource Name <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("empNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Emp No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("designation")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Designation <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("dept")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Department <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("hours")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Logged Hours <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Status <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("prNo")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30">Project No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("projectTitle")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Project Title <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("name")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Resource Name <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("empNo")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Emp No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("designation")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Designation <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("dept")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Department <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("hours")} className="nu-table-th p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20">Logged Hours <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("status")} className="nu-table-th p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20">Status <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
 
                   {/* Manpower Analytics Tab Header */}
                   {activeTab === "manpower" && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("employeeNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">Emp No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("employeeName")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Employee Name <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("grade")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Grade <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("department")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Department <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("manhourExpenses")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Hourly Rate <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Status <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("employeeNo")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30">Emp No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("employeeName")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Employee Name <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("grade")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Grade <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("department")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Department <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("manhourExpenses")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Hourly Rate <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("status")} className="nu-table-th p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20">Status <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
 
                   {/* Invoice Analytics Tab Header */}
                   {activeTab === "invoice" && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("invoiceRef")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">Invoice Ref <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("invoiceDate")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Date <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">PR No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Client <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("invoiceAmount")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Amount <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("receivedAmount")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Paid <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("outstandingAmount")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Outstanding <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("status")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Status <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("invoiceRef")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30">Invoice Ref <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("invoiceDate")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Date <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("prNo")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">PR No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("client")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Client <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("invoiceAmount")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Amount <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("receivedAmount")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Paid <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("outstandingAmount")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Outstanding <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("status")} className="nu-table-th p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20">Status <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
 
                   {/* Expense Analytics Tab Header */}
                   {activeTab === "expense" && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("prNo")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">PR No <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("title")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Project Title <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("woValue")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Budget (WO Value) <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("manhourCost")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Manhour Cost <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("nonManhourCost")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Non-Manhour Cost <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("totalCost")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Total Expense <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("margin")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Margin (%) <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("prNo")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30">PR No <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("title")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 z-20">Project Title <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("woValue")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Budget (WO Value) <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("manhourCost")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Manhour Cost <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("nonManhourCost")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Non-Manhour Cost <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("totalCost")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Total Expense <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("margin")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Margin (%) <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
 
                   {/* Customer Analytics Tab Header */}
                   {activeTab === "customer" && (
                     <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                      <th onClick={() => handleToggleSort("client")} className="p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30 bg-slate-50 dark:bg-slate-900">Client Name <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("count")} className="p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Project Count <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("woValue")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Total WO Value <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("billed")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Total Billed <ArrowUpDown size={8} className="inline" /></th>
-                      <th onClick={() => handleToggleSort("outstanding")} className="p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Outstanding <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("client")} className="nu-table-th p-3 font-extrabold uppercase select-none text-left cursor-pointer sticky top-0 left-0 z-30">Client Name <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("count")} className="nu-table-th p-3 font-extrabold uppercase select-none text-center cursor-pointer sticky top-0 z-20">Project Count <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("woValue")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Total WO Value <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("billed")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Total Billed <ArrowUpDown size={8} className="inline" /></th>
+                      <th onClick={() => handleToggleSort("outstanding")} className="nu-table-th p-3 font-extrabold uppercase select-none text-right cursor-pointer sticky top-0 z-20">Outstanding <ArrowUpDown size={8} className="inline" /></th>
                     </tr>
                   )}
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                 {paginatedLedgerRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="p-6 text-center text-slate-400">
-                      No matching records found.
-                    </td>
-                  </tr>
+                  <EmptyStateRow
+                    colSpan={
+                      activeTab === "financial" || activeTab === "executive"
+                        ? 9
+                        : activeTab === "project"
+                        ? 8
+                        : activeTab === "resource"
+                        ? 8
+                        : activeTab === "manpower"
+                        ? 6
+                        : activeTab === "invoice"
+                        ? 8
+                        : activeTab === "expense"
+                        ? 7
+                        : activeTab === "customer"
+                        ? 5
+                        : 9
+                    }
+                    title="No matching records found."
+                  />
                 ) : (
                   paginatedLedgerRows.map((r: any, idx) => (
                     <tr
                       key={idx}
-                      className="hover:bg-blue-50/20 dark:hover:bg-slate-800/30 transition-all duration-100"
+                      className="nu-table-row transition-all duration-100"
                     >
                       {/* Financials / Executive Tab Rows */}
                       {(activeTab === "financial" || activeTab === "executive") && (

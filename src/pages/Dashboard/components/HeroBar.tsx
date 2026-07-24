@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CalendarDays, Clock3, FolderKanban } from "lucide-react";
 import { getDashboardMetrics } from "../../../services/dashboardService";
+import { GlassReflectionOverlay } from "../../../components/ui/GlassReflectionOverlay";
 
 interface Props {
   lastUpdated: Date;
@@ -56,6 +57,7 @@ const HeroBar = ({ lastUpdated }: Props) => {
 
   return (
     <div className="pmo-hero relative overflow-hidden rounded-[var(--nu-radius-lg)] shadow-lg border border-slate-200 dark:border-slate-800">
+      <GlassReflectionOverlay />
 
       <style dangerouslySetInnerHTML={{ __html: `
 
@@ -89,6 +91,47 @@ const HeroBar = ({ lastUpdated }: Props) => {
           pointer-events: none;
           animation: orbFloat 16s ease-in-out infinite;
         }
+
+        /* ══ Glass Reflection Prototype ══════════════════════════════ */
+        .pmo-glass-reflection {
+          position: absolute;
+          top: -60%;
+          left: -120%;
+          width: 70%;
+          height: 220%;
+          background: linear-gradient(
+            115deg,
+            transparent 25%,
+            rgba(255, 255, 255, 0.015) 40%,
+            rgba(255, 255, 255, 0.07) 50%,
+            rgba(255, 255, 255, 0.015) 60%,
+            transparent 75%
+          );
+          transform: skewX(-25deg) translate3d(0, 0, 0);
+          pointer-events: none;
+          z-index: 1;
+          will-change: transform;
+          animation: heroGlassSweep 22s ease-in-out infinite;
+        }
+
+        @keyframes heroGlassSweep {
+          0% {
+            transform: skewX(-25deg) translate3d(0, 0, 0);
+            opacity: 0;
+          }
+          1% {
+            opacity: 0.85;
+          }
+          12% {
+            transform: skewX(-25deg) translate3d(380%, 0, 0);
+            opacity: 0.85;
+          }
+          13%, 100% {
+            transform: skewX(-25deg) translate3d(380%, 0, 0);
+            opacity: 0;
+          }
+        }
+
         @keyframes heroGradientShift {
           0%   { background-position: 0% 50%; }
           50%  { background-position: 100% 50%; }

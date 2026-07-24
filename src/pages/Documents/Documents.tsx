@@ -1,8 +1,11 @@
+import { GlassReflectionOverlay } from "../../components/ui/GlassReflectionOverlay";
+
 const Documents = () => {
   return (
     <div className="space-y-6">
 
-      <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6">
+      <div className="relative overflow-hidden bg-white rounded-2xl shadow-md border border-gray-100 p-6">
+        <GlassReflectionOverlay />
 
         <h1 className="text-3xl font-bold text-slate-800">
           Documents

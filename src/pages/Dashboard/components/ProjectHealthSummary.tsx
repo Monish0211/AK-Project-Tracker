@@ -18,7 +18,7 @@ const ProjectHealthSummary: React.FC = () => {
   const max = Math.max(health.onTrack, health.atRisk, health.delayed, health.notStarted, 1);
 
   return (
-    <Card padded={false} className="h-[325px] flex flex-col justify-between bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-md rounded-[var(--nu-radius-lg)] hover:shadow-lg transition-all duration-200">
+    <Card padded={false} elevated className="h-[325px] flex flex-col justify-between transition-all duration-200">
       {/* Header */}
       <CardHeader
         icon={<HeartPulse size={14} className="text-emerald-500 dark:text-emerald-400" />}

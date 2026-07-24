@@ -16,6 +16,7 @@ import type { Invoice } from "../../../types/Invoice";
 import type { Project } from "../../../types/Project";
 import { getInvoices } from "../../../services/invoiceService";
 import ProjectSearch from "../../../components/Search/ProjectSearch";
+import { Button } from "../../../components/ui/Button";
 interface InvoiceFormProps {
   projects: Project[];
   invoice?: Invoice | null;
@@ -521,13 +522,9 @@ const InvoiceForm = ({
         </button>
 
         {!readOnly && (
-          <button
-            type="submit"
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all duration-150 hover:bg-blue-700 hover:shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:bg-blue-800"
-          >
-            <Save size={16} />
+          <Button type="submit" variant="primary" icon={<Save size={16} />}>
             {isEditMode ? "Update Invoice" : "Save Invoice"}
-          </button>
+          </Button>
         )}
       </div>
     </form>

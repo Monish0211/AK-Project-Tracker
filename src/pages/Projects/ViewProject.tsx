@@ -86,12 +86,9 @@ const ViewProject = () => {
     return (
       <div className="bg-white rounded-2xl shadow-md p-8">
         <h1 className="text-3xl font-bold text-red-600 mb-4">Project Not Found</h1>
-        <button
-          onClick={() => navigate(backDestination)}
-          className="px-5 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition"
-        >
+        <Button variant="primary" onClick={() => navigate(backDestination)}>
           Back to Projects
-        </button>
+        </Button>
       </div>
     );
   }

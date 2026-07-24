@@ -1,0 +1,137 @@
+/*
+  Dashboard Atmosphere — production-quality ambient background.
+
+  Replaces the earlier Aurora prototype (kept on disk, unused — see
+  DashboardAurora.tsx/dashboard-aurora.css) with a structurally different
+  approach: instead of discrete floating blobs, this is ONE blended
+  gradient-mesh "light field" plus a static blueprint drafting-grid, with
+  the whole composition faded out via a single mask instead of per-element
+  sizing/positioning.
+
+  Layers (bottom to top):
+    1. mesh--a / mesh--b — two overlapping radial-gradient bands, each
+       composited with mix-blend-mode (multiply in light mode, screen in
+       dark) so they read as soft light/shadow diffusion through the
+       surface rather than a flat blue tint sitting on top of it.
+    2. grid — a static (unanimated) blueprint/drafting-table line grid,
+       the "engineering identity" signature. Lines, not dots, to stay
+       visually distinct from Aurora's dot-matrix.
+
+  Masking note: `.dashboard-atmosphere` is sized via `inset: 0` to match
+  .dashboard-shell's full scrollable height (thousands of px, not one
+  viewport) — so the fade-out mask below is expressed in lengths derived
+  from --atmo-reach (itself viewport-height-relative), never a `%` of the
+  container, or it would resolve against that huge scrollable height
+  instead of the visible workspace.
+
+  --atmo-reach is the single responsive knob: a clamp(floor, vh, ceiling)
+  that scales with viewport height (not width, so ultrawide monitors are
+  handled for free) instead of a fixed px number, verified against
+  1366x768 through 3840x2160. The mesh bands are sized to `--atmo-reach`
+  PLUS extra headroom so they physically extend past where the mask
+  finishes fading them out — the fade must come from the mask, not from
+  the mesh's own edge, or the cutoff looks abrupt.
+
+  Toggle: see ENABLE_DASHBOARD_BACKGROUND in Dashboard.tsx. To remove
+  entirely: delete this file + DashboardAtmosphere.tsx and drop its
+  import/usage in Dashboard.tsx.
+*/
+
+:root {
+  /* Floor/ceiling keep coverage roughly at "Hero + KPI + first dashboard
+     row + start of the second row" on typical laptop/desktop heights,
+     while growing on taller displays instead of looking stunted there. */
+  --atmo-reach: clamp(820px, 78vh, 1450px);
+}
+
+.dashboard-atmosphere {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  -webkit-mask-image: linear-gradient(to bottom, black 0px, black calc(var(--atmo-reach) * 0.62), transparent var(--atmo-reach));
+  mask-image: linear-gradient(to bottom, black 0px, black calc(var(--atmo-reach) * 0.62), transparent var(--atmo-reach));
+}
+
+.dashboard-atmosphere__mesh {
+  position: absolute;
+  top: clamp(-180px, -10vh, -100px);
+  left: -12%;
+  right: -12%;
+  height: calc(var(--atmo-reach) + 220px);
+  will-change: transform;
+}
+
+.dashboard-atmosphere__mesh--a {
+  background:
+    radial-gradient(ellipse 62% 55% at 14% 20%, var(--atmo-c1) 0%, transparent 68%),
+    radial-gradient(ellipse 58% 50% at 86% 8%, var(--atmo-c2) 0%, transparent 66%);
+  mix-blend-mode: var(--atmo-blend);
+  animation: atmosphere-drift-a 56s ease-in-out infinite;
+}
+
+.dashboard-atmosphere__mesh--b {
+  background: radial-gradient(ellipse 72% 58% at 48% 42%, var(--atmo-c3) 0%, transparent 74%);
+  mix-blend-mode: var(--atmo-blend);
+  animation: atmosphere-drift-b 48s ease-in-out infinite;
+  animation-delay: -20s;
+}
+
+/* Light mode — multiply reads as soft cool shading/depth rather than a
+   glow sitting on top, which stays well clear of "hero animation" energy. */
+:root {
+  --atmo-blend: multiply;
+  --atmo-c1: rgba(186, 206, 228, 0.35); /* steel blue */
+  --atmo-c2: rgba(205, 224, 240, 0.32); /* azure */
+  --atmo-c3: rgba(214, 232, 236, 0.22); /* soft cyan, restrained */
+}
+
+/* Dark mode — screen lifts these dark tones as soft light without ever
+   brightening past the surrounding surface color. */
+html.dark {
+  --atmo-blend: screen;
+  --atmo-c1: rgba(30, 58, 95, 0.3);  /* deep navy */
+  --atmo-c2: rgba(23, 37, 64, 0.32); /* midnight blue */
+  --atmo-c3: rgba(51, 65, 85, 0.22); /* slate */
+}
+
+/* Closed-loop, translate-only drift (100% === 0%, so there's never a
+   visible reset). Amplitude stays small relative to the mesh's own size
+   so motion sits at the edge of perception. */
+@keyframes atmosphere-drift-a {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(2.5%, 2%); }
+  50% { transform: translate(1%, 3.5%); }
+  75% { transform: translate(-2%, 1%); }
+  100% { transform: translate(0, 0); }
+}
+
+@keyframes atmosphere-drift-b {
+  0% { transform: translate(0, 0); }
+  33% { transform: translate(-2.5%, -2%); }
+  66% { transform: translate(2%, -3%); }
+  100% { transform: translate(0, 0); }
+}
+
+/* Engineering identity — a static blueprint/drafting-table line grid.
+   Lines (not dots) to stay visually distinct from the Aurora prototype's
+   dot-matrix texture. Never animated. */
+.dashboard-atmosphere__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(to right, var(--grid-line) 0px, var(--grid-line) 1px, transparent 1px, transparent 96px),
+    repeating-linear-gradient(to bottom, var(--grid-line) 0px, var(--grid-line) 1px, transparent 1px, transparent 96px);
+  --grid-line: rgba(100, 116, 139, 0.035); /* light gray */
+}
+html.dark .dashboard-atmosphere__grid {
+  --grid-line: rgba(148, 163, 184, 0.05); /* slate gray */
+}
+
+/* Ambient atmosphere, not motion graphics — freeze in place if requested. */
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-atmosphere__mesh {
+    animation: none;
+  }
+}

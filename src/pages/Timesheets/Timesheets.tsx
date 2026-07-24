@@ -15,6 +15,8 @@ import {
   ChevronRight,
   Plus,
 } from "lucide-react";
+import { GlassReflectionOverlay } from "../../components/ui/GlassReflectionOverlay";
+
 import type { TimesheetEntry, TimesheetImportMonth } from "../../types/Timesheet";
 import {
   extractTimesheetEntries,
@@ -43,6 +45,7 @@ import { StatTile } from "../../components/ui/StatTile";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { Input } from "../../components/ui/Input";
 import "./timesheets-theme.css";
 
 const timesheetStorage = {
@@ -53,8 +56,6 @@ const timesheetStorage = {
 const controlClass =
   "h-9 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] text-[12.5px] text-[var(--nu-text)] outline-none focus:ring-2 focus:ring-[var(--nu-accent)]/30 focus:border-[var(--nu-accent)] transition-shadow";
 
-const fieldClass =
-  "w-full h-9 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] px-3 text-[12.5px] text-[var(--nu-text)] outline-none focus:ring-2 focus:ring-[var(--nu-accent)]/30 focus:border-[var(--nu-accent)] transition-shadow";
 const fieldLabelClass = "block text-[11px] font-medium text-[var(--nu-text-secondary)] mb-1";
 
 const toDateKey = (d: Date) => {
@@ -105,7 +106,7 @@ const EmployeeAutocomplete = ({ value, onChange, onSelect, employees }: Employee
 
   return (
     <div ref={containerRef} className="relative">
-      <input
+      <Input
         type="text"
         value={value}
         onChange={(e) => {
@@ -114,7 +115,7 @@ const EmployeeAutocomplete = ({ value, onChange, onSelect, employees }: Employee
         }}
         onFocus={() => setIsOpen(true)}
         placeholder="Type employee name or number..."
-        className={fieldClass}
+        className="h-9 text-[12.5px]"
       />
       {isOpen && suggestions.length > 0 && (
         <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface)] py-1 shadow-[var(--nu-shadow-md)]">
@@ -143,9 +144,7 @@ const Timesheets = () => {
   const [allMonths, setAllMonths] = useState<TimesheetImportMonth[]>(
     timesheetStorage.getMonths()
   );
-  const [selectedMonth, setSelectedMonth] = useState<string>(
-    allMonths[allMonths.length - 1]?.month || ""
-  );
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [selectedProject, setSelectedProject] = useState<string>("all");
   const [searchEmployee, setSearchEmployee] = useState<string>("");
 
@@ -172,8 +171,13 @@ const Timesheets = () => {
   const [formTotalHours, setFormTotalHours] = useState("");
   const [formError, setFormError] = useState("");
 
-  const currentMonthData = selectedMonth ? allMonths.find((m) => m.month === selectedMonth) : undefined;
-  const entries: TimesheetEntry[] = currentMonthData?.entries || [];
+  const currentMonthData = selectedMonth && selectedMonth !== "all" ? allMonths.find((m) => m.month === selectedMonth) : undefined;
+  const entries: TimesheetEntry[] = useMemo(() => {
+    if (selectedMonth === "all") {
+      return allMonths.flatMap((m) => m.entries);
+    }
+    return currentMonthData?.entries || [];
+  }, [selectedMonth, allMonths, currentMonthData]);
 
   const uniqueProjects = useMemo(() => {
     const projects = new Set(entries.map((e) => e.projectCode));
@@ -193,10 +197,11 @@ const Timesheets = () => {
 
   const employeeGroups: Record<string, TimesheetEntry[]> = {};
   filteredEntries.forEach((entry) => {
-    if (!employeeGroups[entry.employeeNo]) {
-      employeeGroups[entry.employeeNo] = [];
+    const key = `${entry.employeeNo}___${entry.projectCode}`;
+    if (!employeeGroups[key]) {
+      employeeGroups[key] = [];
     }
-    employeeGroups[entry.employeeNo].push(entry);
+    employeeGroups[key].push(entry);
   });
 
   const allEmployees = useMemo(() => {
@@ -580,19 +585,39 @@ const Timesheets = () => {
   };
 
   const handleDeleteEntry = (emp: (typeof allEmployees)[number]) => {
-    if (!currentMonthData) return;
+    const targetMonthKey = selectedMonth !== "all" ? selectedMonth : getMonthFromDate(emp.startDate);
+    const targetMonthData = allMonths.find((m) => m.month === targetMonthKey);
+    if (!targetMonthData) return;
+
     if (
       !window.confirm(
-        `Remove ${emp.employeeName} (${emp.employeeNo}) from ${emp.projectCode} for ${formatMonthDisplay(selectedMonth)}?`
+        `Remove ${emp.employeeName} (${emp.employeeNo}) from ${emp.projectCode} for ${formatMonthDisplay(targetMonthKey)}?`
       )
     ) {
       return;
     }
 
-    const updatedEntries = currentMonthData.entries.filter(
+    const updatedEntries = targetMonthData.entries.filter(
       (e) => !(e.employeeNo === emp.employeeNo && e.projectCode === emp.projectCode)
     );
-    persistMonthEntries(updatedEntries);
+
+    const updatedMonth: TimesheetImportMonth = {
+      ...targetMonthData,
+      entries: updatedEntries,
+      summary: computeSummary(updatedEntries),
+    };
+
+    const updatedMonths = allMonths.map((m) => (m.month === targetMonthKey ? updatedMonth : m));
+    timesheetStorage.save(updatedMonths);
+    setAllMonths(updatedMonths);
+
+    try {
+      const allProjects = getProjects();
+      const synced = syncTimesheetToProjects(allProjects, updatedMonth);
+      synced.forEach((project) => updateProject(project));
+    } catch (syncErr) {
+      console.warn("Sync warning:", syncErr);
+    }
   };
 
   return (
@@ -611,6 +636,7 @@ const Timesheets = () => {
           className="relative overflow-hidden rounded-[var(--nu-radius-lg)] px-5 py-4 md:py-0 flex items-center justify-between gap-6 flex-wrap md:h-[112px]"
           style={{ background: "linear-gradient(120deg, #0f2447 0%, #14335f 45%, #0e5a73 100%)" }}
         >
+          <GlassReflectionOverlay />
           <div className="min-w-0">
             <h1 className="text-[26px] font-bold text-white leading-tight">Timesheets</h1>
             <p className="text-[13px] text-[#a9bfda] mt-1 max-w-2xl leading-snug hidden md:block">
@@ -618,13 +644,13 @@ const Timesheets = () => {
             </p>
           </div>
 
-          <Button variant="primary" size="sm" icon={<Upload size={14} />} onClick={() => fileInputRef.current?.click()}>
+          <Button variant="hero" size="sm" icon={<Upload size={14} />} onClick={() => fileInputRef.current?.click()}>
             Upload Timesheet
           </Button>
         </div>
 
         {/* ═══ KPI Strip ═══ */}
-        {currentMonthData && (
+        {(selectedMonth === "all" ? allMonths.length > 0 : !!currentMonthData) && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <StatTile emphasis="secondary" label="Total Employees" value={summaryStats.totalEmployees.toString()} icon={<Users size={14} />} tint="accent" />
             <StatTile
@@ -655,7 +681,7 @@ const Timesheets = () => {
                 className={`${controlClass} px-2.5 shrink-0`}
                 title="Period"
               >
-                <option value="">Select Period</option>
+                <option value="all">All Months</option>
                 {allMonths.map((month) => (
                   <option key={month.month} value={month.month}>
                     {formatMonthDisplay(month.month)}
@@ -724,7 +750,7 @@ const Timesheets = () => {
               <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--nu-border)]">
                 <div className="min-w-0">
                   <p className="text-[13.5px] font-semibold text-[var(--nu-text)]">
-                    {formatMonthDisplay(selectedMonth)}
+                    {selectedMonth === "all" ? "All Months" : formatMonthDisplay(selectedMonth)}
                   </p>
                   <p className="text-[11.5px] text-[var(--nu-text-muted)] mt-0.5">
                     {allEmployees.length} total employees ({currentPage * pageSize > allEmployees.length ? allEmployees.length : currentPage * pageSize} showing)
@@ -752,10 +778,12 @@ const Timesheets = () => {
                 {allEmployees.length === 0 ? (
                   <EmptyState icon={<Users size={18} />} title="No matching employees" description="Try adjusting the project filter or search term." />
                 ) : (
-                  <table className="w-full border-collapse text-left">
-                    <thead className="sticky top-0 z-10">
+                  <table className="w-full min-w-[980px] border-collapse text-left">
+                    <thead className="sticky top-0 z-20">
                       <tr className="bg-[var(--nu-surface-alt)] text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)] border-b border-[var(--nu-border)]">
-                        <th className="px-4 py-2.5 font-medium sticky left-0 z-20 bg-[var(--nu-surface-alt)]">Employee No</th>
+                        <th className="px-4 py-2.5 font-medium sticky top-0 left-0 z-30 bg-[var(--nu-surface-alt)] border-r border-[var(--nu-border)] shadow-xs">
+                          Employee No
+                        </th>
                         <th className="px-4 py-2.5 font-medium">Employee Name</th>
                         <th className="px-4 py-2.5 font-medium">Project Code</th>
                         <th className="px-4 py-2.5 font-medium">Project Name</th>
@@ -770,13 +798,15 @@ const Timesheets = () => {
                       {paginatedEmployees.map((emp, index) => (
                         <tr
                           key={`${emp.employeeNo}-${emp.projectCode}`}
-                          className={`border-b border-[var(--nu-border)] last:border-none hover:bg-[var(--nu-accent-soft)] transition-colors ${
+                          className={`group border-b border-[var(--nu-border)] last:border-none hover:bg-[var(--nu-accent-soft)] transition-colors ${
                             index % 2 === 1 ? "bg-[var(--nu-surface-alt)]" : "bg-[var(--nu-surface)]"
                           }`}
                         >
                           <td
-                            className={`px-4 py-3 text-[12.5px] font-semibold text-[var(--nu-text)] sticky left-0 z-10 ${
-                              index % 2 === 1 ? "bg-[var(--nu-surface-alt)]" : "bg-[var(--nu-surface)]"
+                            className={`px-4 py-3 text-[12.5px] font-semibold text-[var(--nu-text)] sticky left-0 z-10 border-r border-[var(--nu-border)] transition-colors ${
+                              index % 2 === 1
+                                ? "bg-[var(--nu-surface-alt)] group-hover:bg-[var(--nu-accent-soft)]"
+                                : "bg-[var(--nu-surface)] group-hover:bg-[var(--nu-accent-soft)]"
                             }`}
                           >
                             {emp.employeeNo}
@@ -1037,56 +1067,56 @@ const Timesheets = () => {
 
               <div>
                 <label className={fieldLabelClass}>Project Code</label>
-                <input
+                <Input
                   type="text"
                   value={formProjectCode}
                   onChange={(e) => setFormProjectCode(e.target.value)}
                   placeholder="e.g. PR-11058"
-                  className={fieldClass}
+                  className="h-9 text-[12.5px]"
                 />
               </div>
 
               <div>
                 <label className={fieldLabelClass}>Project Name</label>
-                <input
+                <Input
                   type="text"
                   value={formProjectName}
                   onChange={(e) => setFormProjectName(e.target.value)}
                   placeholder="Optional"
-                  className={fieldClass}
+                  className="h-9 text-[12.5px]"
                 />
               </div>
 
               <div>
                 <label className={fieldLabelClass}>Start Date</label>
-                <input
+                <Input
                   type="date"
                   value={formStartDate}
                   onChange={(e) => setFormStartDate(e.target.value)}
-                  className={fieldClass}
+                  className="h-9 text-[12.5px]"
                 />
               </div>
 
               <div>
                 <label className={fieldLabelClass}>End Date</label>
-                <input
+                <Input
                   type="date"
                   value={formEndDate}
                   onChange={(e) => setFormEndDate(e.target.value)}
-                  className={fieldClass}
+                  className="h-9 text-[12.5px]"
                 />
               </div>
 
               <div className="sm:col-span-2">
                 <label className={fieldLabelClass}>Total Hours</label>
-                <input
+                <Input
                   type="number"
                   min="0"
                   step="0.1"
                   value={formTotalHours}
                   onChange={(e) => setFormTotalHours(e.target.value)}
                   placeholder="Enter total hours for this date range"
-                  className={fieldClass}
+                  className="h-9 text-[12.5px]"
                 />
               </div>
             </div>
