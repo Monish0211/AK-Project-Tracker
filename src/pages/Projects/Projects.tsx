@@ -85,28 +85,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 10;
 
-  // Clock State for Hero
-  const [currentTime, setCurrentTime] = useState("");
 
-  // Sync clock
-  useEffect(() => {
-    const tick = () => {
-      const now = new Date();
-      setCurrentTime(
-        now.toLocaleString("en-IN", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        }) + " IST"
-      );
-    };
-    tick();
-    const interval = setInterval(tick, 60000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Live synchronization whenever project data changes (via add/edit/delete/import).
   // Re-scoping on every change is what makes a status edit to/from Completed
@@ -474,45 +453,16 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
               <span className="eye-dot w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-sm"></span>
               iFluids Engineering · Project Management Office
             </div>
-            <h1 className="pmo-hero-title text-3xl font-extrabold text-white tracking-tight leading-none">
+            <h1 className="pmo-hero-title text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-none">
               {pageTitle}
             </h1>
-            <p className="text-slate-300/80 text-sm mt-1 max-w-lg leading-relaxed">
+            <p className="text-slate-300/80 text-xs sm:text-sm mt-1.5 max-w-lg leading-relaxed">
               Engineering project tracking · Commercial management · Invoicing · Execution lifecycle
             </p>
-            {/* Status counts */}
-            <div className="chips flex items-center gap-2 mt-4">
-              {mode !== "completed" && (
-                <>
-                  <div className="pmo-chip">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mb-1"></span>
-                    <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.active}</span>
-                    <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">Active</span>
-                  </div>
-                  <div className="pmo-chip">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mb-1"></span>
-                    <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.onHold}</span>
-                    <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">On Hold</span>
-                  </div>
-                </>
-              )}
-              <div className="pmo-chip">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mb-1"></span>
-                <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.completed}</span>
-                <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">Completed</span>
-              </div>
-              {mode !== "completed" && (
-                <div className="pmo-chip">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 mb-1"></span>
-                  <span className="chip-count text-2xl font-black text-white leading-none tracking-tight">{stats.cancelled}</span>
-                  <span className="chip-lbl text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cancelled</span>
-                </div>
-              )}
-            </div>
           </div>
 
-          {/* Right actions & clock */}
-          <div className="flex flex-col items-end gap-3 shrink-0">
+          {/* Right actions & count */}
+          <div className="flex flex-col items-end gap-2.5 shrink-0 z-10">
             {mode === "completed" ? (
               <button
                 onClick={handleExport}
@@ -531,21 +481,10 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                 Add Project
               </Button>
             )}
-            <div className="text-right flex flex-col items-end gap-1.5">
-              <span className="pmo-live-pill">
-                <span className="pmo-live-dot"></span>
-                Live Sync
-              </span>
-              <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                <FolderKanban size={13} className="text-slate-500" />
-                Total Value &nbsp;
-                <strong className="text-slate-100 font-extrabold">{fmtWOValue(stats.totalWOValue)}</strong>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                <ChevronRight size={13} className="text-slate-500" />
-                Updated &nbsp;
-                <strong className="text-slate-100 font-extrabold">{currentTime || "Loading..."}</strong>
-              </div>
+            <div className="flex items-center gap-1.5 text-xs text-slate-300/90 font-medium">
+              <FolderKanban size={13} className="text-slate-400" />
+              Total Projects &nbsp;
+              <strong className="text-white font-extrabold">{projects.length}</strong>
             </div>
           </div>
         </div>

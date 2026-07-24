@@ -130,7 +130,6 @@ const CustomerMaster = () => {
           active={stats.active}
           inactive={stats.inactive}
           addedToday={stats.addedToday}
-          onAddCustomer={() => setFormModal({ mode: "add" })}
         />
 
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-3.5 items-stretch">

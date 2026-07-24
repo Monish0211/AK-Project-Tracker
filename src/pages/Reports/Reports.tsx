@@ -754,42 +754,14 @@ const Reports = () => {
               <p className="text-slate-300/80 text-sm mt-1 max-w-xl leading-relaxed">
                 Generate financial rollups, project performance stats, resource utilization reviews, timesheet costs, and customer master metrics.
               </p>
-              
-              {/* Dynamic Sub-metrics */}
-              <div className="chips flex items-center gap-2 mt-4">
-                <div className="pmo-chip">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 mb-1"></span>
-                  <span className="chip-count text-[15px] font-black text-white leading-none tracking-tight">₹{(pmoKPIs.totalWO / 100000).toFixed(1)} L</span>
-                  <span className="chip-lbl text-[8px] font-bold text-slate-400 uppercase tracking-widest">Total WO</span>
-                </div>
-                <div className="pmo-chip">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mb-1"></span>
-                  <span className="chip-count text-[15px] font-black text-white leading-none tracking-tight">₹{(pmoKPIs.totalBilled / 100000).toFixed(1)} L</span>
-                  <span className="chip-lbl text-[8px] font-bold text-slate-400 uppercase tracking-widest">Billed</span>
-                </div>
-                <div className="pmo-chip">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 mb-1"></span>
-                  <span className="chip-count text-[15px] font-black text-white leading-none tracking-tight">₹{(pmoKPIs.totalOutstanding / 100000).toFixed(1)} L</span>
-                  <span className="chip-lbl text-[8px] font-bold text-slate-400 uppercase tracking-widest">Outstanding</span>
-                </div>
-              </div>
             </div>
 
-            {/* Right Live Sync Indicator */}
-            <div className="flex flex-col items-end gap-2 shrink-0">
-              <span className="pmo-live-pill">
-                <span className="pmo-live-dot"></span>
-                Connected Live
-              </span>
-              <div className="text-right flex flex-col items-end">
-                <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                  <Clock size={12} className="text-slate-500" />
-                  Clock: &nbsp;<strong className="text-slate-100 font-extrabold">{currentTime || "Loading..."}</strong>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-1">
-                  <Briefcase size={12} className="text-slate-500" />
-                  Cohort: &nbsp;<strong className="text-slate-100 font-extrabold">{pmoKPIs.totalProjects} Projects</strong>
-                </div>
+            {/* Right side count */}
+            <div className="flex flex-col items-end gap-2 shrink-0 z-10">
+              <div className="flex items-center gap-1.5 text-xs text-slate-300/90 font-medium">
+                <TrendingUp size={13} className="text-slate-400" />
+                Completed Reports &nbsp;
+                <strong className="text-white font-extrabold">6</strong>
               </div>
             </div>
           </div>
