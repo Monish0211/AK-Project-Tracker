@@ -27,11 +27,11 @@ const ProfitAnalysisCard = ({
   const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] shadow-sm">
 
       {/* Header */}
 
-      <div className="flex items-center gap-3 border-b border-slate-200 px-6 py-5">
+      <div className="flex items-center gap-3 border-b border-slate-200 dark:border-slate-700 px-6 py-5">
 
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-100">
 
@@ -44,7 +44,7 @@ const ProfitAnalysisCard = ({
 
         <div>
 
-          <h2 className="text-lg font-semibold text-slate-800">
+          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
             Profit Analysis
           </h2>
 

@@ -23,10 +23,10 @@ const getStatusColor = (status: string) => {
       return "bg-red-100 text-red-700";
 
     case "Cancelled":
-      return "bg-gray-100 text-gray-700";
+      return "bg-gray-100 text-gray-700 dark:text-slate-200";
 
     default:
-      return "bg-gray-100 text-gray-700";
+      return "bg-gray-100 text-gray-700 dark:text-slate-200";
   }
 };
 
@@ -39,7 +39,7 @@ const InvoiceRow = ({
   return (
     <tr className="nu-table-row">
 
-      <td className="p-3 sticky left-0 z-10 bg-white">{invoice.prNo}</td>
+      <td className="p-3 sticky left-0 z-10 bg-white dark:bg-[#1E293B]">{invoice.prNo}</td>
 
       <td className="p-3 font-medium">
         {invoice.invoiceRef}

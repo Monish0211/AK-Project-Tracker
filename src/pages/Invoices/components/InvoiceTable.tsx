@@ -31,13 +31,13 @@ const InvoiceTable = () => {
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6">
+    <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-md border border-gray-100 dark:border-slate-800 p-6">
 
       {/* Header */}
 
       <div className="flex justify-between items-center mb-6">
 
-        <h2 className="text-2xl font-semibold text-slate-800">
+        <h2 className="text-2xl font-semibold text-slate-800 dark:text-slate-100">
           Invoice List
         </h2>
 
@@ -57,13 +57,13 @@ const InvoiceTable = () => {
 
       ) : (
 
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-slate-700">
 
           <table className="min-w-full">
 
             <thead>
 
-              <tr className="text-sm text-slate-700">
+              <tr className="text-sm text-slate-700 dark:text-slate-200">
 
                 <th className="nu-table-th p-4 text-left sticky top-0 left-0 z-30">
                   PR No

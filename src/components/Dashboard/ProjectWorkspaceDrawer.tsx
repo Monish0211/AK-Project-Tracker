@@ -179,7 +179,7 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
                     className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all duration-150 flex items-center justify-center gap-2 ${
                       activeTab === "notes"
                         ? "bg-blue-600 text-white shadow-sm font-bold"
-                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100 dark:hover:text-slate-100 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
                     }`}
                   >
                     📝 Notes
@@ -190,7 +190,7 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
                     className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all duration-150 flex items-center justify-center gap-2 ${
                       activeTab === "reminders"
                         ? "bg-blue-600 text-white shadow-sm font-bold"
-                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100 dark:hover:text-slate-100 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
                     }`}
                   >
                     🔔 Reminders

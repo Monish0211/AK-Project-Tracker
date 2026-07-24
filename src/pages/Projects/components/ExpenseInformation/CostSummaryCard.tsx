@@ -22,11 +22,11 @@ const CostSummaryCard = ({
   const totalProjectCost = manpowerCost + totalOtherExpenses;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] shadow-sm">
 
       {/* Header */}
 
-      <div className="flex items-center gap-3 border-b border-slate-200 px-6 py-5">
+      <div className="flex items-center gap-3 border-b border-slate-200 dark:border-slate-700 px-6 py-5">
 
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-100">
 
@@ -39,7 +39,7 @@ const CostSummaryCard = ({
 
         <div>
 
-          <h2 className="text-lg font-semibold text-slate-800">
+          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
             Cost Breakdown Summary
           </h2>
 
@@ -79,11 +79,11 @@ const CostSummaryCard = ({
 
         </div>
 
-        <div className="border-t border-slate-200 pt-5">
+        <div className="border-t border-slate-200 dark:border-slate-700 pt-5">
 
           <div className="flex items-center justify-between">
 
-            <span className="text-lg font-bold text-slate-800">
+            <span className="text-lg font-bold text-slate-800 dark:text-slate-100">
               Total Project Cost
             </span>
 

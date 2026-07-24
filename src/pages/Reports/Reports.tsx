@@ -792,7 +792,7 @@ const Reports = () => {
                   className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
                     activeTab === tab.id
                       ? "bg-blue-600 text-white shadow-sm"
-                      : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-100"
+                      : "text-slate-500 hover:text-slate-800 dark:text-slate-100 dark:hover:text-slate-100"
                   }`}
                 >
                   {tab.label}
@@ -1574,17 +1574,17 @@ const Reports = () => {
         {/* Print Header */}
         <div className="flex justify-between items-center border-b pb-4">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-900">iFluids Engineering</h1>
+            <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">iFluids Engineering</h1>
             <p className="text-xs text-slate-500 uppercase tracking-widest">PMO Reporting & Analytics Summary</p>
           </div>
           <div className="text-right">
-            <span className="text-xs font-bold text-slate-700">Report Category: {activeTab.toUpperCase()}</span>
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Report Category: {activeTab.toUpperCase()}</span>
             <p className="text-[10px] text-slate-400 mt-1">Generated Date: {currentTime || new Date().toLocaleString()}</p>
           </div>
         </div>
 
         {/* Applied Filters Metadata */}
-        <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs grid grid-cols-5 gap-2">
+        <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs grid grid-cols-5 gap-2">
           <div><strong>Department:</strong> {deptFilter}</div>
           <div><strong>Client:</strong> {clientFilter}</div>
           <div><strong>Status:</strong> {statusFilter}</div>
@@ -1594,29 +1594,29 @@ const Reports = () => {
 
         {/* KPI Summaries */}
         <div className="grid grid-cols-4 gap-4">
-          <div className="border border-slate-200 rounded-lg p-3">
+          <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-3">
             <div className="text-[9px] font-bold uppercase text-slate-400">Total Work Order Value</div>
-            <div className="text-base font-black text-slate-900 mt-1">₹ {pmoKPIs.totalWO.toLocaleString("en-IN")}</div>
+            <div className="text-base font-black text-slate-900 dark:text-slate-100 mt-1">₹ {pmoKPIs.totalWO.toLocaleString("en-IN")}</div>
           </div>
-          <div className="border border-slate-200 rounded-lg p-3">
+          <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-3">
             <div className="text-[9px] font-bold uppercase text-slate-400">Total Billed (Raised)</div>
-            <div className="text-base font-black text-slate-900 mt-1">₹ {pmoKPIs.totalBilled.toLocaleString("en-IN")}</div>
+            <div className="text-base font-black text-slate-900 dark:text-slate-100 mt-1">₹ {pmoKPIs.totalBilled.toLocaleString("en-IN")}</div>
           </div>
-          <div className="border border-slate-200 rounded-lg p-3">
+          <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-3">
             <div className="text-[9px] font-bold uppercase text-slate-400">Outstanding Invoices</div>
-            <div className="text-base font-black text-slate-900 mt-1">₹ {pmoKPIs.totalOutstanding.toLocaleString("en-IN")}</div>
+            <div className="text-base font-black text-slate-900 dark:text-slate-100 mt-1">₹ {pmoKPIs.totalOutstanding.toLocaleString("en-IN")}</div>
           </div>
-          <div className="border border-slate-200 rounded-lg p-3">
+          <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-3">
             <div className="text-[9px] font-bold uppercase text-slate-400">Total Gross Profit</div>
-            <div className="text-base font-black text-slate-900 mt-1">₹ {pmoKPIs.totalProfit.toLocaleString("en-IN")} ({pmoKPIs.profitPct.toFixed(1)}%)</div>
+            <div className="text-base font-black text-slate-900 dark:text-slate-100 mt-1">₹ {pmoKPIs.totalProfit.toLocaleString("en-IN")} ({pmoKPIs.profitPct.toFixed(1)}%)</div>
           </div>
         </div>
 
         {/* Report Ledger Grid Table (Displays all records without pagination during printing) */}
-        <div className="border border-slate-200 rounded-lg overflow-hidden">
+        <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
           <table className="min-w-full text-xs">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase">
+              <tr className="bg-slate-50 border-b border-slate-200 dark:border-slate-700 text-slate-600 font-bold uppercase">
                 <th className="p-3 text-left">Record Detail</th>
                 <th className="p-3 text-right">Value 1</th>
                 <th className="p-3 text-right">Value 2</th>
@@ -1627,7 +1627,7 @@ const Reports = () => {
             <tbody className="divide-y divide-slate-100">
               {sortedLedgerRows.slice(0, 25).map((row: any, idx) => (
                 <tr key={idx}>
-                  <td className="p-3 font-semibold text-slate-800">
+                  <td className="p-3 font-semibold text-slate-800 dark:text-slate-100">
                     {row.prNo || row.employeeNo || row.invoiceRef || row.client} - {row.title || row.employeeName || row.name || row.client}
                   </td>
                   <td className="p-3 text-right pmo-prno">

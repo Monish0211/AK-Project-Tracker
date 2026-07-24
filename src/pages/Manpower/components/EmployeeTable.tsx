@@ -43,7 +43,7 @@ const EmployeeTable = ({
 
   return (
     <>
-      <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden">
+      <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-md border border-gray-100 dark:border-slate-800 overflow-hidden">
 
         <div className="overflow-x-auto">
 

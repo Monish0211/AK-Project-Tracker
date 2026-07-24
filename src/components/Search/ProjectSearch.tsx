@@ -141,14 +141,14 @@ const ProjectSearch = ({
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Search by PR No, Client or Project Title..."
-          className="h-10 w-full rounded-lg border border-gray-200 bg-white pl-9 pr-3 text-sm text-slate-800 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+          className="h-10 w-full rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] pl-9 pr-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition-all duration-150 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
         />
       </div>
 
       {isOpen && !disabled && (
         <div
           role="listbox"
-          className="absolute z-20 mt-1.5 max-h-64 w-full overflow-y-auto rounded-xl border border-gray-100 bg-white shadow-md"
+          className="absolute z-20 mt-1.5 max-h-64 w-full overflow-y-auto rounded-xl border border-gray-100 dark:border-slate-800 bg-white dark:bg-[#1E293B] shadow-md"
         >
           {results.length === 0 ? (
             <p className="px-4 py-3 text-sm text-slate-400">
@@ -169,7 +169,7 @@ const ProjectSearch = ({
                     : "hover:bg-slate-50"
                 }`}
               >
-                <span className="text-sm font-semibold text-slate-800">
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                   {project.prNo}
                 </span>
                 <span className="text-xs text-slate-500">

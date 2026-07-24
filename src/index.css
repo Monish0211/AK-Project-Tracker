@@ -55,31 +55,6 @@
   --text-muted: #94A3B8;
   --border-color: #E5E7EB;
 
-  /* Overrides for standard Tailwind v4 color variables so existing classes automatically adapt */
-  --color-slate-50: #F8FAFC;
-  --color-slate-100: var(--bg-main);
-  --color-white: var(--bg-card);
-  --color-slate-900: var(--bg-sidebar);
-  
-  --color-slate-800: var(--text-primary);
-  --color-slate-700: var(--text-primary);
-  --color-slate-650: var(--text-secondary);
-  --color-slate-600: var(--text-secondary);
-  --color-slate-500: var(--text-secondary);
-  --color-slate-400: var(--text-muted);
-  
-  --color-gray-50: #F8FAFC;
-  --color-gray-100: var(--bg-main);
-  --color-gray-200: var(--border-color);
-  --color-gray-300: var(--border-color);
-  --color-gray-400: var(--text-muted);
-  --color-gray-500: var(--text-secondary);
-  --color-gray-600: var(--text-secondary);
-  --color-gray-700: var(--text-primary);
-  --color-gray-800: var(--text-primary);
-  --color-gray-900: var(--text-primary);
-  --color-slate-200: var(--border-color);
-
   /* Global fallback tokens for shared UI components (src/components/ui/Button.tsx) */
   --nu-bg: #f8fafc;
   --nu-surface: #ffffff;
@@ -116,10 +91,6 @@ html.dark {
   --text-secondary: #CBD5E1;
   --text-muted: #94A3B8;
   --border-color: #334155;
-
-  /* Additional Tailwind overrides */
-  --color-slate-50: #111827;
-  --color-gray-50: #111827;
 
   /* Global dark fallback tokens for shared UI components */
   --nu-bg: #0f172a;

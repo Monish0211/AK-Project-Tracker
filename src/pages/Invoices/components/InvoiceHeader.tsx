@@ -7,7 +7,7 @@ const InvoiceHeader = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="relative overflow-hidden bg-white rounded-2xl shadow-md border border-gray-100 p-6">
+    <div className="relative overflow-hidden bg-white dark:bg-[#1E293B] rounded-2xl shadow-md border border-gray-100 dark:border-slate-800 p-6">
       <GlassReflectionOverlay />
 
       <div className="flex items-center justify-between">
@@ -27,7 +27,7 @@ const InvoiceHeader = () => {
 
           <div>
 
-            <h1 className="text-3xl font-bold text-slate-800">
+            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-100">
               Invoices
             </h1>
 

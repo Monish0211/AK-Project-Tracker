@@ -9,7 +9,7 @@ interface Props {
 
 const DocumentCard = ({ project, setProject }: Props) => {
   return (
-    <div className="bg-white rounded-xl shadow-md p-6">
+    <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-md p-6">
 
       <h2 className="text-2xl font-semibold mb-6">
         Document Information

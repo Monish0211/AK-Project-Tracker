@@ -131,7 +131,7 @@ const FinancialRiskWidget: React.FC = () => {
 
                 <td className="py-3 px-3 text-right whitespace-nowrap">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-800 text-white border border-red-900/40 shadow-xs">
-                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-white dark:bg-[#1E293B] animate-pulse" />
                     {item.severity}
                   </span>
                 </td>
@@ -154,7 +154,7 @@ const FinancialRiskWidget: React.FC = () => {
                 {item.prNumber}
               </span>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold bg-red-800 text-white border border-red-900/40 shadow-xs">
-                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-white dark:bg-[#1E293B] animate-pulse" />
                 {item.severity}
               </span>
             </div>

@@ -84,7 +84,7 @@ const ViewProject = () => {
 
   if (!project) {
     return (
-      <div className="bg-white rounded-2xl shadow-md p-8">
+      <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-md p-8">
         <h1 className="text-3xl font-bold text-red-600 mb-4">Project Not Found</h1>
         <Button variant="primary" onClick={() => navigate(backDestination)}>
           Back to Projects

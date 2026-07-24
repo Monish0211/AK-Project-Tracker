@@ -71,7 +71,7 @@ const AutocompleteInput = ({
 
       {isOpen && filteredSuggestions.length > 0 && (
 
-        <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+        <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] shadow-lg">
 
           {filteredSuggestions.map((item) => (
 
@@ -190,7 +190,7 @@ const ManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
   return (
     <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50 p-5">
 
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl">
+      <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-xl w-full max-w-3xl">
 
         {/* Header */}
 
