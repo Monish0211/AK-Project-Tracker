@@ -378,6 +378,12 @@ export interface HoursOverrunWidgetResult {
   top5Projects: HoursOverrunProjectSummary[];
 }
 
+export interface HoursOverrunWidgetResult {
+  totalMatchingProjects: number;
+  top5Projects: HoursOverrunProjectSummary[];
+  allMatchingProjects: HoursOverrunProjectSummary[];
+}
+
 export const getProjectsWithHoursOverrun = (): HoursOverrunWidgetResult => {
   const projects = getProjects().filter(
     (p) => p.projectStatus !== "Archived" && p.projectStatus !== "Cancelled"
@@ -387,17 +393,9 @@ export const getProjectsWithHoursOverrun = (): HoursOverrunWidgetResult => {
   const overrunProjects: HoursOverrunProjectSummary[] = [];
 
   projects.forEach((p) => {
-    // Budget Hours from Expense Budget -> Budget Hours (or totalHoursBudget fallback)
     const budget = Number(p.manhourBudgetHours) || Number(p.totalHoursBudget) || 0;
-
-    // Actual Hours: the project's LIFETIME total from TimesheetProcessingService
-    // (every imported month for this project summed, consolidated by
-    // Employee + Project + Work Date) — never just the month currently
-    // selected in Team Assigned. That month selector is a display-only UI
-    // filter; changing it must never change this widget's numbers.
     const actual = getProjectActualHours(p.prNo, timesheetImports);
 
-    // Filter Logic: BudgetHours > 0 AND ActualHours > BudgetHours
     const isIncluded = budget > 0 && actual > budget;
     const overrun = actual - budget;
 
@@ -424,12 +422,12 @@ export const getProjectsWithHoursOverrun = (): HoursOverrunWidgetResult => {
     }
   });
 
-  // Sort descending by Hours Overrun (largest overrun first)
   overrunProjects.sort((a, b) => b.hoursOverrun - a.hoursOverrun);
 
   return {
     totalMatchingProjects: overrunProjects.length,
     top5Projects: overrunProjects.slice(0, 5),
+    allMatchingProjects: overrunProjects,
   };
 };
 
@@ -459,6 +457,7 @@ export interface DurationOverrunProjectSummary {
 export interface ProjectTimelineAlertWidgetResult {
   totalMatchingProjects: number;
   top5Projects: DurationOverrunProjectSummary[];
+  allAlertProjects: DurationOverrunProjectSummary[];
   dueSoonCount: number;
   upcomingCount: number;
   dueTodayCount: number;
@@ -504,8 +503,6 @@ export const getProjectTimelineAlerts = (): ProjectTimelineAlertWidgetResult => 
     let sortRank: number;
 
     if (daysRemaining < 0) {
-      // 5. Past Due (Beginning the day AFTER the due date)
-      // Status: Overdue | Color: Dark Red
       const overdueDays = Math.abs(daysRemaining);
       priority = "DarkRed";
       statusText = "Overdue";
@@ -513,32 +510,24 @@ export const getProjectTimelineAlerts = (): ProjectTimelineAlertWidgetResult => 
       sortRank = 4;
       overdueCount++;
     } else if (daysRemaining === 0) {
-      // 4. Due Today (Exact due date)
-      // Status: Due Today | Color: Red
       priority = "Red";
       statusText = "Due Today";
       daysDisplay = "Due Today";
       sortRank = 3;
       dueTodayCount++;
     } else if (daysRemaining <= 7) {
-      // 1. Due within the next 7 calendar days
-      // Status: Due Soon | Color: Orange | Highest priority in table (rank 1)
       priority = "Orange";
       statusText = "Due Soon";
       daysDisplay = `${daysRemaining} Day${daysRemaining === 1 ? "" : "s"} Left`;
       sortRank = 1;
       dueSoonCount++;
     } else if (daysRemaining <= 14) {
-      // 2. Due within 8–14 calendar days
-      // Status: Upcoming | Color: Yellow (rank 2)
       priority = "Yellow";
       statusText = "Upcoming";
       daysDisplay = `${daysRemaining} Day${daysRemaining === 1 ? "" : "s"} Left`;
       sortRank = 2;
       upcomingCount++;
     } else {
-      // 3. Due in more than 14 days
-      // Status: On Track | Color: Green (rank 5)
       priority = "Green";
       statusText = "On Track";
       daysDisplay = `${daysRemaining} Day${daysRemaining === 1 ? "" : "s"} Left`;
@@ -583,13 +572,6 @@ export const getProjectTimelineAlerts = (): ProjectTimelineAlertWidgetResult => 
     });
   });
 
-  // Sorting Priority Order:
-  // 1. Due Soon (Orange) - sortRank 1
-  // 2. Upcoming (Yellow) - sortRank 2
-  // 3. Due Today (Red) - sortRank 3
-  // 4. Overdue (Dark Red) - sortRank 4
-  // 5. On Track (Green) - sortRank 5
-  // Secondary sort: daysRemaining ascending
   alerts.sort((a, b) => {
     if (a.sortRank !== b.sortRank) {
       return a.sortRank - b.sortRank;
@@ -597,9 +579,12 @@ export const getProjectTimelineAlerts = (): ProjectTimelineAlertWidgetResult => 
     return a.daysRemaining - b.daysRemaining;
   });
 
+  const alertProjects = alerts.filter((a) => a.priority !== "Green");
+
   return {
     totalMatchingProjects: alerts.length,
     top5Projects: alerts.slice(0, 5),
+    allAlertProjects: alertProjects,
     dueSoonCount,
     upcomingCount,
     dueTodayCount,

@@ -25,6 +25,10 @@ import {
 } from "../../services/projectService";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import {
+  getProjectsWithHoursOverrun,
+  getProjectTimelineAlerts,
+} from "../../services/dashboardService";
+import {
   buildExportWorkbook,
   buildSampleTemplateWorkbook,
   downloadWorkbook,
@@ -34,15 +38,6 @@ import {
 type ProjectsMode = "repository" | "completed";
 
 interface ProjectsProps {
-  /**
-   * "repository" (default): every project except Completed — the primary
-   * working repository. "completed": only Completed projects. This is the
-   * only difference between the Project Repository and Completed Projects
-   * pages — same component, same table/search/filters/sorting/pagination,
-   * just a different base dataset. Today that's a client-side filter;
-   * swapping to a REST API later only means changing this query
-   * (WHERE ProjectStatus <> 'Completed' vs = 'Completed'), not this component.
-   */
   mode?: ProjectsMode;
 }
 
@@ -56,6 +51,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const statusParam = searchParams.get("status") || "All";
+  const filterParam = searchParams.get("filter");
 
   const pageTitle = mode === "completed" ? "Completed Projects" : "Projects";
   const repoCardTitle = mode === "completed" ? "Completed Projects" : "Project Repository";
@@ -64,8 +60,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       ? "Search, filter, and review all completed engineering projects"
       : "Search, filter, and manage all engineering projects";
 
-  // Live project state — already scoped to this page's dataset (Repository
-  // excludes Completed, Completed Projects shows only Completed).
+  // Live project state — already scoped to this page's dataset
   const [projects, setProjects] = useState<Project[]>(() => scopeProjectsByMode(getProjects(), mode));
 
   // Search & Filter State
@@ -85,11 +80,6 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 10;
 
-
-
-  // Live synchronization whenever project data changes (via add/edit/delete/import).
-  // Re-scoping on every change is what makes a status edit to/from Completed
-  // move a project between this page and the other one automatically.
   useEffect(() => {
     const handleDataChange = () => {
       setProjects(scopeProjectsByMode(getProjects(), mode));
@@ -100,7 +90,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     };
   }, [mode]);
 
-  // Computed statistics (dynamic live summaries)
+  // Computed statistics
   const stats = useMemo(() => {
     const active = projects.filter((p) => p.projectStatus === "Active").length;
     const onHold = projects.filter((p) => p.projectStatus === "On Hold").length;
@@ -170,12 +160,32 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     setStatus("All");
     const newParams = new URLSearchParams(searchParams);
     newParams.delete("status");
+    newParams.delete("filter");
+    setSearchParams(newParams);
+  };
+
+  const handleClearFilter = () => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.delete("filter");
     setSearchParams(newParams);
   };
 
   // Filtered & Sorted Projects
   const processedProjects = useMemo(() => {
-    let result = projects.filter((p) => {
+    let result = projects;
+
+    // Apply URL contextual drill-down filters from Dashboard
+    if (filterParam === "financial-loss") {
+      const lossProjects = getProjectsWithHoursOverrun().allMatchingProjects;
+      const lossIds = new Set(lossProjects.map((p) => p.id));
+      result = result.filter((p) => lossIds.has(p.id));
+    } else if (filterParam === "timeline-alerts") {
+      const alertProjects = getProjectTimelineAlerts().allAlertProjects;
+      const alertIds = new Set(alertProjects.map((p) => p.id));
+      result = result.filter((p) => alertIds.has(p.id));
+    }
+
+    result = result.filter((p) => {
       const matchSearch =
         !search ||
         (p.prNo || "").toLowerCase().includes(search.toLowerCase()) ||
@@ -194,7 +204,6 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       let valA: any = a[sortField as keyof Project] ?? "";
       let valB: any = b[sortField as keyof Project] ?? "";
 
-      // Specific commercial summary sort resolution
       if (sortField === "pendingDue") {
         valA = getProjectCommercialSummary(a).pendingDue;
         valB = getProjectCommercialSummary(b).pendingDue;
@@ -215,12 +224,12 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     });
 
     return result;
-  }, [projects, search, department, status, sortField, sortAsc]);
+  }, [projects, search, department, status, sortField, sortAsc, filterParam]);
 
   // Reset page when filters modify result counts
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, department, status]);
+  }, [search, department, status, filterParam]);
 
   // Pagination bounds
   const paginatedProjects = useMemo(() => {
@@ -563,6 +572,40 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
             Showing {processedProjects.length} of {projects.length} Projects
           </span>
         </div>
+
+        {/* ── Contextual Drill-Down Filter Banner ── */}
+        {filterParam === "financial-loss" && (
+          <div className="mx-4 mt-3 p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 flex items-center justify-between gap-3 text-xs shadow-xs">
+            <div className="flex items-center gap-2 text-red-800 dark:text-red-300 font-bold">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse"></span>
+              <span>Showing: Projects in Financial Loss ({processedProjects.length})</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleClearFilter}
+              className="px-3 py-1 text-[11px] font-bold text-red-700 hover:text-red-900 dark:text-red-300 dark:hover:text-white bg-white dark:bg-slate-900 border border-red-300 dark:border-red-800 rounded-lg shadow-xs hover:bg-red-50 transition-all cursor-pointer"
+            >
+              Clear Filter
+            </button>
+          </div>
+        )}
+
+        {filterParam === "timeline-alerts" && (
+          <div className="mx-4 mt-3 p-3 rounded-xl bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/50 flex items-center justify-between gap-3 text-xs shadow-xs">
+            <div className="flex items-center gap-2 text-orange-800 dark:text-orange-300 font-bold">
+              <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse"></span>
+              <span>Showing: Project Timeline Alerts ({processedProjects.length})</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleClearFilter}
+              className="px-3 py-1 text-[11px] font-bold text-orange-700 hover:text-orange-900 dark:text-orange-300 dark:hover:text-white bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-800 rounded-lg shadow-xs hover:bg-orange-50 transition-all cursor-pointer"
+            >
+              Clear Filter
+            </button>
+          </div>
+        )}
+
 
         {/* Toolbar */}
         <div className="toolbar flex items-center justify-between gap-2 p-3 bg-slate-50/50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800 flex-wrap">
