@@ -7,7 +7,15 @@ const ProjectsInLossTimeWidget: React.FC = () => {
   const navigate = useNavigate();
 
   // Retrieve proactive timeline alert data from Dashboard Service
-  const { totalMatchingProjects, top5Projects, overdueCount, dueSoonCount, upcomingCount } = getProjectTimelineAlerts();
+  const {
+    totalMatchingProjects,
+    top5Projects,
+    dueSoonCount,
+    upcomingCount,
+    dueTodayCount,
+    overdueCount,
+    onTrackCount,
+  } = getProjectTimelineAlerts();
 
   const handleNavigateToProjects = (projectId?: string) => {
     if (projectId) {
@@ -21,33 +29,42 @@ const ProjectsInLossTimeWidget: React.FC = () => {
 
   const renderPriorityBadge = (priority: TimelineAlertPriority) => {
     switch (priority) {
-      case "Red":
-        return (
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800/60 shadow-xs">
-            Red
-          </span>
-        );
       case "Orange":
         return (
           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800/60 shadow-xs">
-            Orange
+            High
           </span>
         );
       case "Yellow":
         return (
           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 shadow-xs">
-            Yellow
+            Moderate
+          </span>
+        );
+      case "Red":
+      case "DarkRed":
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800/60 shadow-xs">
+            Critical
+          </span>
+        );
+      case "Green":
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shadow-xs">
+            Low
           </span>
         );
     }
   };
 
   const renderStatusBadge = (priority: TimelineAlertPriority, status: string) => {
-    let bgCls = "bg-amber-500 text-white font-bold";
-    if (priority === "Red") {
+    let bgCls = "bg-orange-500 text-white font-bold";
+    if (priority === "Yellow") {
+      bgCls = "bg-amber-500 text-white font-bold";
+    } else if (priority === "Red" || priority === "DarkRed") {
       bgCls = "bg-red-500 text-white font-bold";
-    } else if (priority === "Orange") {
-      bgCls = "bg-orange-500 text-white font-bold";
+    } else if (priority === "Green") {
+      bgCls = "bg-emerald-600 text-white font-bold";
     }
 
     return (
@@ -57,16 +74,40 @@ const ProjectsInLossTimeWidget: React.FC = () => {
     );
   };
 
+  const getDaysDisplayClass = (priority: TimelineAlertPriority) => {
+    switch (priority) {
+      case "Orange":
+        return "text-orange-600 dark:text-orange-400 font-bold";
+      case "Yellow":
+        return "text-amber-600 dark:text-amber-400 font-semibold";
+      case "Red":
+      case "DarkRed":
+        return "text-red-600 dark:text-red-400 font-extrabold";
+      case "Green":
+        return "text-emerald-600 dark:text-emerald-400 font-medium";
+    }
+  };
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-md border border-orange-200 dark:border-orange-900/60 p-3 sm:p-3.5 h-[275px] flex flex-col justify-between transition-all duration-200 hover:shadow-lg">
       {/* Header (Fixed) */}
       <div className="shrink-0 pb-1.5 border-b border-slate-100 dark:border-slate-800">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <span className={`w-3 h-3 rounded-full shrink-0 animate-pulse shadow-xs ${overdueCount > 0 ? "bg-red-500" : dueSoonCount > 0 ? "bg-orange-500" : "bg-amber-500"}`} />
+            <span
+              className={`w-3 h-3 rounded-full shrink-0 animate-pulse shadow-xs ${
+                dueSoonCount > 0
+                  ? "bg-orange-500"
+                  : upcomingCount > 0
+                  ? "bg-amber-500"
+                  : dueTodayCount > 0 || overdueCount > 0
+                  ? "bg-red-500"
+                  : "bg-emerald-500"
+              }`}
+            />
             <h3 className="text-xs sm:text-sm font-extrabold tracking-wide uppercase text-orange-600 dark:text-orange-400 leading-tight flex items-center gap-1 truncate">
               <span className="truncate">PROJECT TIMELINE ALERTS</span>
-              <span title="Proactive monitoring for upcoming completion deadlines (within 14 days) & overdue schedules.">
+              <span title="Proactive monitoring for project completion deadlines & overdue schedules.">
                 <Info size={13} className="text-slate-400 dark:text-slate-500 hover:text-orange-500 transition-colors cursor-help shrink-0" />
               </span>
             </h3>
@@ -139,7 +180,7 @@ const ProjectsInLossTimeWidget: React.FC = () => {
                     </td>
 
                     <td className="py-1.5 px-2 whitespace-nowrap">
-                      <span className={project.priority === "Red" ? "text-red-600 dark:text-red-400 font-extrabold" : project.priority === "Orange" ? "text-orange-600 dark:text-orange-400 font-bold" : "text-amber-600 dark:text-amber-400 font-semibold"}>
+                      <span className={getDaysDisplayClass(project.priority)}>
                         {project.daysDisplay}
                       </span>
                     </td>
@@ -193,7 +234,7 @@ const ProjectsInLossTimeWidget: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-slate-400 text-[9.5px] uppercase font-medium">Remaining / Overdue</p>
-                    <p className={project.priority === "Red" ? "text-red-600 dark:text-red-400 font-extrabold" : project.priority === "Orange" ? "text-orange-600 dark:text-orange-400 font-bold" : "text-amber-600 dark:text-amber-400 font-semibold"}>
+                    <p className={getDaysDisplayClass(project.priority)}>
                       {project.daysDisplay}
                     </p>
                   </div>
@@ -212,24 +253,32 @@ const ProjectsInLossTimeWidget: React.FC = () => {
             <span>✅ Excellent</span>
           </h4>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 max-w-sm">
-            All active projects are currently on schedule (&gt; 14 days remaining).
+            All active projects are currently on schedule.
           </p>
         </div>
       )}
 
       {/* Bottom Summary Strip (Fixed) */}
-      <div className="shrink-0 bg-orange-50/80 dark:bg-orange-950/40 border-t border-orange-100 dark:border-orange-900/40 -mx-3 sm:-mx-3.5 -mb-3 sm:-mb-3.5 p-2 px-3 sm:px-4 rounded-b-2xl flex items-center justify-between flex-wrap gap-1.5 text-[11px] font-semibold text-orange-800 dark:text-orange-300">
-        <div className="flex items-center gap-1.5 truncate">
+      <div className="shrink-0 bg-slate-50/90 dark:bg-slate-800/60 border-t border-slate-200/70 dark:border-slate-800/80 -mx-3 sm:-mx-3.5 -mb-3 sm:-mb-3.5 p-2 px-3 sm:px-4 rounded-b-2xl flex items-center justify-between flex-wrap gap-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+        <div className="flex items-center gap-1.5 flex-wrap truncate">
           <AlertTriangle size={13} className="text-orange-600 shrink-0" />
-          <span className="truncate">
-            ⚠ {totalMatchingProjects} active project{totalMatchingProjects === 1 ? "" : "s"} require timeline attention ({overdueCount} Overdue/Due Today, {dueSoonCount} Due Soon, {upcomingCount} Upcoming).
+          <span className="truncate flex items-center gap-1.5 flex-wrap">
+            <span className="font-extrabold text-orange-600 dark:text-orange-400">{dueSoonCount} Due Soon</span>
+            <span className="text-slate-300 dark:text-slate-600">•</span>
+            <span className="font-extrabold text-amber-600 dark:text-amber-400">{upcomingCount} Upcoming</span>
+            <span className="text-slate-300 dark:text-slate-600">•</span>
+            <span className="font-extrabold text-red-600 dark:text-red-400">{dueTodayCount} Due Today</span>
+            <span className="text-slate-300 dark:text-slate-600">•</span>
+            <span className="font-extrabold text-red-600 dark:text-red-400">{overdueCount} Overdue</span>
+            <span className="text-slate-300 dark:text-slate-600">•</span>
+            <span className="font-extrabold text-emerald-600 dark:text-emerald-400">{onTrackCount} On Track</span>
           </span>
         </div>
 
         <button
           type="button"
           onClick={() => handleNavigateToProjects()}
-          className="text-orange-700 dark:text-orange-300 hover:text-orange-900 dark:hover:text-white transition-colors flex items-center gap-1 font-bold hover:underline cursor-pointer ml-auto sm:ml-0 shrink-0"
+          className="text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 transition-colors flex items-center gap-1 font-bold hover:underline cursor-pointer ml-auto sm:ml-0 shrink-0"
         >
           <span>View All Projects</span>
           <ArrowRight size={12} />
