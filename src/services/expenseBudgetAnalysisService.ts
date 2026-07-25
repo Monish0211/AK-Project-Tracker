@@ -71,9 +71,9 @@ export interface BudgetExecution {
 }
 
 export const UTILIZATION_BADGE: Record<BudgetUtilizationTier, { label: string; tone: Tone }> = {
-  healthy: { label: "Healthy", tone: "success" },
+  healthy: { label: "Within Budget", tone: "success" },
   approaching: { label: "Approaching Budget", tone: "warning" },
-  onBudget: { label: "Exactly On Budget", tone: "accent" },
+  onBudget: { label: "On Budget", tone: "accent" },
   over: { label: "Over Budget", tone: "danger" },
 };
 
