@@ -11,9 +11,9 @@ const ProjectsInLossHoursWidget: React.FC = () => {
 
   const handleNavigateToProjects = (projectId?: string) => {
     if (projectId) {
-      navigate(`/projects/view/${projectId}`);
+      navigate(`/projects/edit/${projectId}`);
     } else {
-      navigate("/projects?filter=financial-loss");
+      navigate("/projects/financial-loss");
     }
   };
 
