@@ -7,8 +7,6 @@ import {
   TrendingUp,
   Gauge,
   ArrowUpRight,
-  ArrowDownRight,
-  Minus,
   CheckCircle2,
   AlertTriangle,
   AlertOctagon,
@@ -43,21 +41,21 @@ const formatHours = (value: number): string => `${value.toLocaleString("en-IN")}
 const formatVarianceCurrency = (value: number): string => {
   const formatted = formatCurrency(Math.abs(value));
   if (value > 0) return `+${formatted}`;
-  if (value < 0) return `-${formatted}`;
   return formatted;
 };
 
 const formatVarianceHours = (value: number): string => {
-  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
-  return `${sign}${Math.abs(value).toLocaleString("en-IN")} Hrs`;
+  const formatted = `${Math.abs(value).toLocaleString("en-IN")} Hrs`;
+  if (value > 0) return `+${formatted}`;
+  return formatted;
 };
 
-/** Variance % as a rounded integer string, e.g. "-100%" or "+28%" */
+/** Variance % formatted as '↗ 31%' for over budget or '↗ 6%' for under budget */
 const formatVariancePercent = (planned: number, variance: number): string => {
   if (planned === 0) return "—";
-  const pct = Math.round((variance / Math.abs(planned)) * 100);
-  if (pct > 0) return `+${pct}%`;
-  return `${pct}%`;
+  const pct = Math.round((Math.abs(variance) / Math.abs(planned)) * 100);
+  if (variance !== 0) return `↗ ${pct}%`;
+  return `0%`;
 };
 
 const clampCalloutPosition = (utilizationPercent: number): number => {
@@ -78,9 +76,8 @@ const remainingTone = (value: number): string => {
 };
 
 const VarianceIcon = ({ value }: { value: number }) => {
-  if (value > 0) return <ArrowUpRight size={13} className="shrink-0" />;
-  if (value < 0) return <ArrowDownRight size={13} className="shrink-0" />;
-  return <Minus size={13} className="shrink-0" />;
+  if (value !== 0) return <ArrowUpRight size={13} className="shrink-0" />;
+  return null;
 };
 
 /** Badge chip for the VARIANCE % column — green for negative (under budget), red for positive (over), grey for zero */

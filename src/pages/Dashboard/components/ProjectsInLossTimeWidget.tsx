@@ -19,43 +19,15 @@ const ProjectsInLossTimeWidget: React.FC = () => {
 
   const handleNavigateToProjects = (projectId?: string) => {
     if (projectId) {
-      navigate(`/projects/view/${projectId}`);
+      navigate(`/projects/edit/${projectId}`);
     } else {
-      navigate("/projects?filter=timeline-alerts");
+      navigate("/projects/timeline-alerts");
     }
   };
 
   const hasProjects = top5Projects.length > 0;
 
-  const renderPriorityBadge = (priority: TimelineAlertPriority) => {
-    switch (priority) {
-      case "Orange":
-        return (
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800/60 shadow-xs">
-            High
-          </span>
-        );
-      case "Yellow":
-        return (
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 shadow-xs">
-            Moderate
-          </span>
-        );
-      case "Red":
-      case "DarkRed":
-        return (
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800/60 shadow-xs">
-            Critical
-          </span>
-        );
-      case "Green":
-        return (
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shadow-xs">
-            Low
-          </span>
-        );
-    }
-  };
+
 
   const renderStatusBadge = (priority: TimelineAlertPriority, status: string) => {
     let bgCls = "bg-orange-500 text-white font-bold";
@@ -138,10 +110,9 @@ const ProjectsInLossTimeWidget: React.FC = () => {
                 <tr className="border-b border-orange-100 dark:border-orange-900/40 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[9.5px] bg-orange-50/60 dark:bg-slate-800/60">
                   <th className="py-1.5 px-2 rounded-l-lg">PR NO.</th>
                   <th className="py-1.5 px-2">PROJECT</th>
+                  <th className="py-1.5 px-2">DAYS REMAINING / OVERDUE</th>
                   <th className="py-1.5 px-2">START DATE</th>
                   <th className="py-1.5 px-2">END DATE</th>
-                  <th className="py-1.5 px-2">DAYS REMAINING / OVERDUE</th>
-                  <th className="py-1.5 px-2">PRIORITY</th>
                   <th className="py-1.5 px-2 text-right rounded-r-lg">STATUS</th>
                 </tr>
               </thead>
@@ -171,22 +142,18 @@ const ProjectsInLossTimeWidget: React.FC = () => {
                       </div>
                     </td>
 
-                    <td className="py-1.5 px-2 text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap">
-                      {project.startDate}
-                    </td>
-
-                    <td className="py-1.5 px-2 text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">
-                      {project.endDate}
-                    </td>
-
                     <td className="py-1.5 px-2 whitespace-nowrap">
                       <span className={getDaysDisplayClass(project.priority)}>
                         {project.daysDisplay}
                       </span>
                     </td>
 
-                    <td className="py-1.5 px-2 whitespace-nowrap">
-                      {renderPriorityBadge(project.priority)}
+                    <td className="py-1.5 px-2 text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap">
+                      {project.startDate}
+                    </td>
+
+                    <td className="py-1.5 px-2 text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">
+                      {project.endDate}
                     </td>
 
                     <td className="py-1.5 px-2 text-right whitespace-nowrap">
@@ -211,7 +178,6 @@ const ProjectsInLossTimeWidget: React.FC = () => {
                     {project.prNumber}
                   </span>
                   <div className="flex items-center gap-1.5">
-                    {renderPriorityBadge(project.priority)}
                     {renderStatusBadge(project.priority, project.status)}
                   </div>
                 </div>
