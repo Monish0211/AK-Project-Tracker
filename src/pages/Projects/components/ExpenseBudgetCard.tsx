@@ -118,7 +118,7 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
             MH {formatK(manhourBudgetAmount)} • NMH {formatK(nonManhourBudgetAmount)}
           </div>
         </div>
-        
+
         {/* Budgeted Profit Card */}
         <div
           className="relative bg-[var(--nu-surface)] border rounded-[var(--nu-radius-lg)] transition-all duration-150 hover:shadow-[var(--nu-shadow-md)] px-3.5 pt-3.5 pb-3 flex flex-col justify-between gap-2.5 min-w-0 h-full border-[var(--nu-border)] shadow-[var(--nu-shadow-sm)] min-h-[122px]"
