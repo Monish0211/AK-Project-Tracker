@@ -21,7 +21,7 @@ const ProjectsInLossTimeWidget: React.FC = () => {
     if (projectId) {
       navigate(`/projects/view/${projectId}`);
     } else {
-      navigate("/projects");
+      navigate("/projects?filter=timeline-alerts");
     }
   };
 
