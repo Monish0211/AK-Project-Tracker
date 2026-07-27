@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { History, Plus, Receipt } from "lucide-react";
+import { FlaskConical, History, Plus, Receipt } from "lucide-react";
 
 import type { Project } from "../../../types/Project";
 import { Button } from "../../../components/ui/Button";
@@ -9,6 +9,10 @@ import InvoiceSummaryCards from "./Invoice/InvoiceSummaryCards";
 import InvoiceProgressTable from "./Invoice/InvoiceProgressTable";
 import BillingProgressDrawer from "./Invoice/BillingProgressDrawer";
 import BillingHistoryModal from "./Invoice/BillingHistoryModal";
+// PROTOTYPE — remove this import + the toggle button + the conditional
+// render block below to fully remove the Quantity-Based Invoice Tracking
+// preview. Nothing else in this file depends on it.
+import QuantityInvoiceTrackingPrototype from "./Invoice/prototype/QuantityInvoiceTrackingPrototype";
 
 interface Props {
   project: Project;
@@ -18,6 +22,10 @@ interface Props {
 const InvoiceCard = ({ project, setProject }: Props) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  // PROTOTYPE — defaults to false so existing behavior is unchanged unless a
+  // reviewer explicitly opts in. Remove this line + its toggle button below
+  // to fully revert.
+  const [showPrototype, setShowPrototype] = useState(false);
 
   // Drawer View/Edit state
   const [drawerMode, setDrawerMode] = useState<"create" | "view" | "edit">("create");
@@ -125,6 +133,18 @@ const InvoiceCard = ({ project, setProject }: Props) => {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* PROTOTYPE — remove this button to fully revert */}
+            <Button
+              variant={showPrototype ? "primary" : "outline"}
+              size="sm"
+              onClick={() => setShowPrototype((prev) => !prev)}
+              className="gap-1.5"
+              title="Preview an experimental quantity-based invoice tracking workflow — for review only, nothing here is saved."
+            >
+              <FlaskConical size={14} />
+              {showPrototype ? "Exit Prototype Preview" : "Preview: Quantity-Based Tracking"}
+            </Button>
+
             <Button
               variant="secondary"
               onClick={() => {
@@ -145,9 +165,16 @@ const InvoiceCard = ({ project, setProject }: Props) => {
 
         {/* Body */}
         <div className="p-6 space-y-6">
-          <InvoiceSummaryCards project={project} />
-
-          <InvoiceProgressTable project={project} />
+          {showPrototype ? (
+            // PROTOTYPE — remove this branch (and the ternary, keeping only
+            // the existing content below) to fully revert.
+            <QuantityInvoiceTrackingPrototype project={project} />
+          ) : (
+            <>
+              <InvoiceSummaryCards project={project} />
+              <InvoiceProgressTable project={project} />
+            </>
+          )}
         </div>
       </div>
 

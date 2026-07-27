@@ -9,13 +9,17 @@ const ProjectsInLossTimeWidget: React.FC = () => {
   // Retrieve proactive timeline alert data from Dashboard Service
   const {
     totalMatchingProjects,
-    top5Projects,
+    allAlertProjects,
     dueSoonCount,
     upcomingCount,
     dueTodayCount,
     overdueCount,
     onTrackCount,
   } = getProjectTimelineAlerts();
+
+  // The Dashboard stays lightweight by rendering only the first ten projects
+  // from the existing urgency-ordered timeline dataset. Counts remain global.
+  const displayedProjects = allAlertProjects.slice(0, 10);
 
   const handleNavigateToProjects = (projectId?: string) => {
     if (projectId) {
@@ -25,7 +29,7 @@ const ProjectsInLossTimeWidget: React.FC = () => {
     }
   };
 
-  const hasProjects = top5Projects.length > 0;
+  const hasProjects = displayedProjects.length > 0;
 
 
 
@@ -117,7 +121,7 @@ const ProjectsInLossTimeWidget: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-[11px]">
-                {top5Projects.map((project) => (
+                {displayedProjects.map((project) => (
                   <tr
                     key={project.id}
                     onClick={() => handleNavigateToProjects(project.id)}
@@ -167,7 +171,7 @@ const ProjectsInLossTimeWidget: React.FC = () => {
 
           {/* Mobile Stacked View */}
           <div className="sm:hidden space-y-2">
-            {top5Projects.map((project) => (
+            {displayedProjects.map((project) => (
               <div
                 key={project.id}
                 onClick={() => handleNavigateToProjects(project.id)}
@@ -235,20 +239,25 @@ const ProjectsInLossTimeWidget: React.FC = () => {
             <span className="text-slate-300 dark:text-slate-600">•</span>
             <span className="font-extrabold text-red-600 dark:text-red-400">{dueTodayCount} Due Today</span>
             <span className="text-slate-300 dark:text-slate-600">•</span>
-            <span className="font-extrabold text-red-600 dark:text-red-400">{overdueCount} Overdue</span>
-            <span className="text-slate-300 dark:text-slate-600">•</span>
             <span className="font-extrabold text-emerald-600 dark:text-emerald-400">{onTrackCount} On Track</span>
+            <span className="text-slate-300 dark:text-slate-600">•</span>
+            <span className="font-extrabold text-red-600 dark:text-red-400">{overdueCount} Overdue</span>
           </span>
         </div>
 
-        <button
-          type="button"
-          onClick={() => handleNavigateToProjects()}
-          className="text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 transition-colors flex items-center gap-1 font-bold hover:underline cursor-pointer ml-auto sm:ml-0 shrink-0"
-        >
-          <span>View All Projects</span>
-          <ArrowRight size={12} />
-        </button>
+        <div className="ml-auto flex items-center gap-3 shrink-0">
+          <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">
+            Showing {displayedProjects.length} of {totalMatchingProjects} Timeline Projects
+          </span>
+          <button
+            type="button"
+            onClick={() => handleNavigateToProjects()}
+            className="text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 transition-colors flex items-center gap-1 font-bold hover:underline cursor-pointer"
+          >
+            <span>View All Projects</span>
+            <ArrowRight size={12} />
+          </button>
+        </div>
       </div>
     </div>
   );
