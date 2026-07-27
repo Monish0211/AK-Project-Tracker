@@ -444,14 +444,6 @@ export interface DurationOverrunProjectSummary {
   priority: TimelineAlertPriority;
   status: string;
   sortRank: number;
-  plannedDurationDays: number;
-  actualDurationDays: number;
-  delayDays: number;
-  percentDelay: number;
-  formattedPlannedDuration: string;
-  formattedActualDuration: string;
-  formattedDelayDays: string;
-  formattedPercentDelay: string;
 }
 
 export interface ProjectTimelineAlertWidgetResult {
@@ -470,11 +462,55 @@ export interface DurationOverrunWidgetResult {
   top5Projects: DurationOverrunProjectSummary[];
 }
 
+const DAY_IN_MILLISECONDS = 1000 * 60 * 60 * 24;
+
+const toLocalCalendarDate = (value: string): Date | null => {
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const date = new Date(Number(year), Number(month) - 1, Number(day));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+};
+
+const getLocalDayNumber = (date: Date): number =>
+  Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / DAY_IN_MILLISECONDS;
+
+/** Single source of truth: status is based only on End Date and local today. */
+export const calculateTimelineAlert = (
+  projectEndDate: string,
+  currentDate = new Date()
+): Pick<DurationOverrunProjectSummary, "daysRemaining" | "daysDisplay" | "priority" | "status" | "sortRank"> | null => {
+  const endDate = toLocalCalendarDate(projectEndDate);
+  if (!endDate) return null;
+
+  const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+  const daysRemaining = getLocalDayNumber(endDate) - getLocalDayNumber(today);
+
+  if (daysRemaining < 0) {
+    const overdueDays = Math.abs(daysRemaining);
+    return { daysRemaining, daysDisplay: `${overdueDays} Day${overdueDays === 1 ? "" : "s"} Overdue`, priority: "DarkRed", status: "Overdue", sortRank: 5 };
+  }
+  if (daysRemaining === 0) {
+    return { daysRemaining, daysDisplay: "Due Today", priority: "Red", status: "Due Today", sortRank: 1 };
+  }
+  if (daysRemaining <= 7) {
+    return { daysRemaining, daysDisplay: `${daysRemaining} Day${daysRemaining === 1 ? "" : "s"} Left`, priority: "Orange", status: "Due Soon", sortRank: 2 };
+  }
+  if (daysRemaining <= 14) {
+    return { daysRemaining, daysDisplay: `${daysRemaining} Day${daysRemaining === 1 ? "" : "s"} Left`, priority: "Yellow", status: "Upcoming", sortRank: 3 };
+  }
+  return { daysRemaining, daysDisplay: `${daysRemaining} Day${daysRemaining === 1 ? "" : "s"} Left`, priority: "Green", status: "On Track", sortRank: 4 };
+};
+
 export const getProjectTimelineAlerts = (): ProjectTimelineAlertWidgetResult => {
-  // Business Rule: Display ONLY Active projects
-  const projects = getProjects().filter((p) => p.projectStatus === "Active");
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // Only active projects remain eligible for schedule monitoring. Completed
+  // and Cancelled projects are excluded before any timeline calculation.
+  const projects = getProjects().filter((project) => project.projectStatus === "Active");
 
   const alerts: DurationOverrunProjectSummary[] = [];
   let dueSoonCount = 0;
@@ -484,67 +520,15 @@ export const getProjectTimelineAlerts = (): ProjectTimelineAlertWidgetResult => 
   let onTrackCount = 0;
 
   projects.forEach((p) => {
-    if (!p.projectStartDate || !p.projectEndDate) return;
+    if (!p.projectEndDate) return;
+    const timeline = calculateTimelineAlert(p.projectEndDate);
+    if (!timeline) return;
 
-    const startDateObj = new Date(p.projectStartDate);
-    const endDateObj = new Date(p.projectEndDate);
-
-    if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) return;
-
-    const endCal = new Date(endDateObj.getFullYear(), endDateObj.getMonth(), endDateObj.getDate());
-    const startCal = new Date(startDateObj.getFullYear(), startDateObj.getMonth(), startDateObj.getDate());
-
-    const diffTime = endCal.getTime() - today.getTime();
-    const daysRemaining = Math.round(diffTime / (1000 * 3600 * 24));
-
-    let priority: TimelineAlertPriority;
-    let statusText: string;
-    let daysDisplay: string;
-    let sortRank: number;
-
-    if (daysRemaining < 0) {
-      const overdueDays = Math.abs(daysRemaining);
-      priority = "DarkRed";
-      statusText = "Overdue";
-      daysDisplay = `${overdueDays} Day${overdueDays === 1 ? "" : "s"} Overdue`;
-      sortRank = 4;
-      overdueCount++;
-    } else if (daysRemaining === 0) {
-      priority = "Red";
-      statusText = "Due Today";
-      daysDisplay = "Due Today";
-      sortRank = 3;
-      dueTodayCount++;
-    } else if (daysRemaining <= 7) {
-      priority = "Orange";
-      statusText = "Due Soon";
-      daysDisplay = `${daysRemaining} Day${daysRemaining === 1 ? "" : "s"} Left`;
-      sortRank = 1;
-      dueSoonCount++;
-    } else if (daysRemaining <= 14) {
-      priority = "Yellow";
-      statusText = "Upcoming";
-      daysDisplay = `${daysRemaining} Day${daysRemaining === 1 ? "" : "s"} Left`;
-      sortRank = 2;
-      upcomingCount++;
-    } else {
-      priority = "Green";
-      statusText = "On Track";
-      daysDisplay = `${daysRemaining} Day${daysRemaining === 1 ? "" : "s"} Left`;
-      sortRank = 5;
-      onTrackCount++;
-    }
-
-    const plannedDurationDays = Math.max(
-      1,
-      Math.round((endCal.getTime() - startCal.getTime()) / (1000 * 3600 * 24))
-    );
-    const actualDurationDays = Math.max(
-      0,
-      Math.round((today.getTime() - startCal.getTime()) / (1000 * 3600 * 24))
-    );
-    const delayDays = daysRemaining < 0 ? Math.abs(daysRemaining) : 0;
-    const percentDelay = parseFloat(((delayDays / plannedDurationDays) * 100).toFixed(1));
+    if (timeline.status === "Due Today") dueTodayCount++;
+    else if (timeline.status === "Due Soon") dueSoonCount++;
+    else if (timeline.status === "Upcoming") upcomingCount++;
+    else if (timeline.status === "On Track") onTrackCount++;
+    else overdueCount++;
 
     const name = p.client
       ? `${p.client} – ${p.projectTitle}`
@@ -554,21 +538,10 @@ export const getProjectTimelineAlerts = (): ProjectTimelineAlertWidgetResult => 
       id: p.id,
       prNumber: p.prNo || "N/A",
       projectName: name,
+      // Kept only for the existing table column; it does not affect timeline logic.
       startDate: p.projectStartDate,
       endDate: p.projectEndDate,
-      daysRemaining,
-      daysDisplay,
-      priority,
-      status: statusText,
-      sortRank,
-      plannedDurationDays,
-      actualDurationDays,
-      delayDays,
-      percentDelay,
-      formattedPlannedDuration: `${plannedDurationDays} Days`,
-      formattedActualDuration: `${actualDurationDays} Days`,
-      formattedDelayDays: delayDays > 0 ? `+${delayDays} Days` : "0 Days",
-      formattedPercentDelay: `${percentDelay.toFixed(1)}%`,
+      ...timeline,
     });
   });
 
@@ -579,7 +552,7 @@ export const getProjectTimelineAlerts = (): ProjectTimelineAlertWidgetResult => 
     return a.daysRemaining - b.daysRemaining;
   });
 
-  const alertProjects = alerts.filter((a) => a.priority !== "Green");
+  const alertProjects = alerts;
 
   return {
     totalMatchingProjects: alerts.length,

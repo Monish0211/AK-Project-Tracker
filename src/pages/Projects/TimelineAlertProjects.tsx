@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import {
   FolderKanban,
   Search,
-  ArrowUpDown,
   Download,
+  ChevronDown,
   Clock,
 } from "lucide-react";
 import { getProjects } from "../../services/projectService";
@@ -18,18 +18,22 @@ import {
   downloadWorkbook,
 } from "../../services/projectWorkbookService";
 
+const TIMELINE_FILTERS = ["All", "Due Soon", "Upcoming", "On Track", "Overdue"] as const;
+type TimelineStatusFilter = (typeof TIMELINE_FILTERS)[number];
+
 export default function TimelineAlertProjects() {
   const navigate = useNavigate();
 
-  // Retrieve timeline alert data live (excludes On Track projects for drill-down)
+  // Use the same complete, priority-ordered timeline dataset as the Dashboard.
+  // This includes every timeline status, including On Track.
   const [alertProjects, setAlertProjects] = useState<DurationOverrunProjectSummary[]>(
     () => getProjectTimelineAlerts().allAlertProjects
   );
 
-  // Search & Sorting state
+  // Search and repository status filter state.
   const [search, setSearch] = useState("");
-  const [sortField, setSortField] = useState<string>("sortRank");
-  const [sortAsc, setSortAsc] = useState<boolean>(true);
+  const [activeStatusFilter, setActiveStatusFilter] = useState<TimelineStatusFilter>("All");
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -62,9 +66,18 @@ export default function TimelineAlertProjects() {
     });
   }, [alertProjects]);
 
-  // Filtered & Sorted list
+  const statusCounts = useMemo(() => ({
+    All: alertProjects.length,
+    "Due Soon": alertProjects.filter((item) => item.status === "Due Soon").length,
+    Upcoming: alertProjects.filter((item) => item.status === "Upcoming").length,
+    "On Track": alertProjects.filter((item) => item.status === "On Track").length,
+    Overdue: alertProjects.filter((item) => item.status === "Overdue").length,
+  }), [alertProjects]);
+
+  // Filtered list keeps the fixed shared priority order used by the Dashboard.
   const processedProjects = useMemo(() => {
-    let result = enrichedProjects.filter((item) => {
+    const result = enrichedProjects.filter((item) => {
+      if (activeStatusFilter !== "All" && item.status !== activeStatusFilter) return false;
       if (!search) return true;
       const q = search.toLowerCase();
       return (
@@ -76,24 +89,10 @@ export default function TimelineAlertProjects() {
       );
     });
 
-    result.sort((a, b) => {
-      let valA: any = a[sortField as keyof typeof a] ?? "";
-      let valB: any = b[sortField as keyof typeof b] ?? "";
-
-      if (typeof valA === "string") {
-        return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
-      } else {
-        return sortAsc ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
-      }
-    });
+    result.sort((a, b) => a.sortRank - b.sortRank || a.daysRemaining - b.daysRemaining);
 
     return result;
-  }, [enrichedProjects, search, sortField, sortAsc]);
-
-  // Reset pagination when search changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search]);
+  }, [enrichedProjects, search, activeStatusFilter]);
 
   // Paginated slice
   const paginatedProjects = useMemo(() => {
@@ -103,26 +102,36 @@ export default function TimelineAlertProjects() {
 
   const totalPages = Math.max(Math.ceil(processedProjects.length / pageSize), 1);
 
-  const toggleSort = (field: string) => {
-    if (sortField === field) {
-      setSortAsc(!sortAsc);
-    } else {
-      setSortField(field);
-      setSortAsc(true);
-    }
-  };
-
-  const handleExport = async () => {
+  const handleExport = async (scope: "visible" | TimelineStatusFilter) => {
     const allProjects = getProjects();
-    const alertIds = new Set(alertProjects.map((p) => p.id));
-    const exportData = allProjects.filter((p) => alertIds.has(p.id));
+    const summaries = scope === "visible"
+      ? processedProjects
+      : scope === "All"
+        ? alertProjects
+        : alertProjects.filter((item) => item.status === scope);
+    const projectsById = new Map(allProjects.map((project) => [project.id, project]));
+    const exportData = summaries
+      .map((summary) => projectsById.get(summary.id))
+      .filter((project): project is NonNullable<typeof project> => Boolean(project));
 
     if (exportData.length === 0) {
-      alert("No timeline alert project data available to export.");
+      alert("No matching timeline project data available to export.");
       return;
     }
     const workbook = await buildExportWorkbook(exportData);
-    await downloadWorkbook(workbook, "timeline_alert_projects_export.xlsx");
+    const fileScope = scope === "visible" ? "visible" : scope.toLowerCase().replace(/\s+/g, "_");
+    await downloadWorkbook(workbook, `timeline_alert_projects_${fileScope}_export.xlsx`);
+    setIsExportMenuOpen(false);
+  };
+
+  const getFilterChipClass = (filter: TimelineStatusFilter) => {
+    const isActive = activeStatusFilter === filter;
+    const shared = "rounded-full border px-3 py-1.5 text-xs font-bold transition-colors whitespace-nowrap";
+    if (filter === "Due Soon") return `${shared} ${isActive ? "bg-orange-500 border-orange-500 text-white shadow-sm" : "bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 dark:bg-orange-950/30 dark:border-orange-900/60 dark:text-orange-300"}`;
+    if (filter === "Upcoming") return `${shared} ${isActive ? "bg-amber-500 border-amber-500 text-white shadow-sm" : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/30 dark:border-amber-900/60 dark:text-amber-300"}`;
+    if (filter === "On Track") return `${shared} ${isActive ? "bg-emerald-600 border-emerald-600 text-white shadow-sm" : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-900/60 dark:text-emerald-300"}`;
+    if (filter === "Overdue") return `${shared} ${isActive ? "bg-red-500 border-red-500 text-white shadow-sm" : "bg-red-50 border-red-200 text-red-700 hover:bg-red-100 dark:bg-red-950/30 dark:border-red-900/60 dark:text-red-300"}`;
+    return `${shared} ${isActive ? "bg-slate-800 border-slate-800 text-white shadow-sm dark:bg-slate-100 dark:border-slate-100 dark:text-slate-900" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100 dark:bg-slate-950 dark:border-slate-800 dark:text-slate-300"}`;
   };
 
 
@@ -172,18 +181,46 @@ export default function TimelineAlertProjects() {
               Timeline Alert Projects
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-xl">
-              Dedicated repository for projects requiring schedule attention (Due Soon, Upcoming, Due Today, Overdue). Excludes On Track projects.
+              Dedicated repository for all project timeline statuses: Due Soon, Upcoming, Due Today, On Track, and Overdue.
             </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            <button
-              onClick={handleExport}
-              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold px-3.5 py-2 rounded-xl backdrop-blur-md transition-all text-xs cursor-pointer shadow-xs"
-            >
-              <Download size={14} />
-              Export List
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsExportMenuOpen((open) => !open)}
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold px-3.5 py-2 rounded-xl backdrop-blur-md transition-all text-xs cursor-pointer shadow-xs"
+                aria-expanded={isExportMenuOpen}
+                aria-haspopup="menu"
+              >
+                <Download size={14} />
+                Export
+                <ChevronDown size={14} className={isExportMenuOpen ? "rotate-180 transition-transform" : "transition-transform"} />
+              </button>
+              {isExportMenuOpen && (
+                <div role="menu" className="absolute right-0 z-30 mt-2 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-slate-700 shadow-xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                  {([
+                    ["visible", "Export Visible"],
+                    ["All", "Export All"],
+                    ["Due Soon", "Export Due Soon"],
+                    ["Upcoming", "Export Upcoming"],
+                    ["On Track", "Export On Track"],
+                    ["Overdue", "Export Overdue"],
+                  ] as const).map(([scope, label]) => (
+                    <button
+                      key={scope}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => handleExport(scope)}
+                      className="block w-full px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="bg-orange-950/80 border border-orange-800/60 rounded-xl px-3.5 py-2 text-right">
               <p className="text-[10px] uppercase font-bold text-orange-300">Alert Projects</p>
               <p className="text-xl font-black text-white">{alertProjects.length}</p>
@@ -205,7 +242,7 @@ export default function TimelineAlertProjects() {
                 Timeline Alert Repository
               </h2>
               <p className="text-xs text-slate-400">
-                Proactive schedule monitoring ordered by urgency (Due Soon → Upcoming → Due Today → Overdue)
+                Proactive schedule monitoring ordered by priority (Due Soon → Upcoming → Due Today → On Track → Overdue)
               </p>
             </div>
           </div>
@@ -223,23 +260,35 @@ export default function TimelineAlertProjects() {
                 type="text"
                 placeholder="Search PR No · Client · Project · Manager · Status..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full pl-8 pr-8 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 outline-none focus:border-orange-500"
               />
               {search && (
-                <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <button onClick={() => { setSearch(""); setCurrentPage(1); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                   ×
                 </button>
               )}
             </div>
 
-            <button
-              onClick={() => toggleSort("sortRank")}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 hover:bg-slate-50 transition-colors"
-            >
-              <ArrowUpDown size={12} />
-              <span>Sort by Priority</span>
-            </button>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 max-w-full" aria-label="Timeline status filters">
+              {TIMELINE_FILTERS.map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => {
+                    setActiveStatusFilter(filter);
+                    setCurrentPage(1);
+                  }}
+                  className={getFilterChipClass(filter)}
+                  aria-pressed={activeStatusFilter === filter}
+                >
+                  {filter} ({statusCounts[filter]})
+                </button>
+              ))}
+            </div>
           </div>
 
           <button
