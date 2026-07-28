@@ -446,6 +446,14 @@ const Timesheets = () => {
     }
   };
 
+  const handleDeleteAllMonths = () => {
+    if (window.confirm("Are you sure you want to delete all imported timesheet records?")) {
+      timesheetStorage.save([]);
+      setAllMonths([]);
+      setSelectedMonth("");
+    }
+  };
+
   // Persist an updated entry set for the current month and re-sync matching
   // projects. Projects/Team Assigned reads timesheet data live (matching
   // Project Code = PR Number on every render), so saving here is enough for
@@ -756,21 +764,35 @@ const Timesheets = () => {
                     {allEmployees.length} total employees ({currentPage * pageSize > allEmployees.length ? allEmployees.length : currentPage * pageSize} showing)
                   </p>
                 </div>
-                {currentMonthData && (
+                {selectedMonth === "all" ? (
                   <div className="flex items-center gap-2 shrink-0">
-                    <Button variant="secondary" size="sm" icon={<Plus size={13} />} onClick={openAddEntry}>
-                      Add Entry
-                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       icon={<Trash2 size={13} />}
-                      onClick={() => handleDeleteMonth(selectedMonth)}
+                      onClick={handleDeleteAllMonths}
                       className="!text-[var(--nu-danger)] hover:!bg-[var(--nu-danger-soft)]"
                     >
-                      Delete Period
+                      Delete All Timesheets
                     </Button>
                   </div>
+                ) : (
+                  currentMonthData && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button variant="secondary" size="sm" icon={<Plus size={13} />} onClick={openAddEntry}>
+                        Add Entry
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<Trash2 size={13} />}
+                        onClick={() => handleDeleteMonth(selectedMonth)}
+                        className="!text-[var(--nu-danger)] hover:!bg-[var(--nu-danger-soft)]"
+                      >
+                        Delete Period
+                      </Button>
+                    </div>
+                  )
                 )}
               </div>
 

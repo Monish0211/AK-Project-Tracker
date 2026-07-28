@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../auth/authContext";
 import { useTheme } from "../../context/ThemeContext";
+import SplashScreen from "../../components/Splash/SplashScreen";
 
 export default function Login() {
   const { login } = useAuth();
@@ -180,76 +181,7 @@ export default function Login() {
 
   // Splash Screen Rendering Mode
   if (showSplash) {
-    return (
-      <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-[#0B132B] overflow-hidden">
-        <style>{`
-          @keyframes splash-fade-scale {
-            0% { opacity: 0; transform: scale(0.85); }
-            100% { opacity: 1; transform: scale(1); }
-          }
-          @keyframes glow-pulse {
-            0% { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 0 0 rgba(14, 165, 233, 0); }
-            50% { box-shadow: 0 4px 25px rgba(0, 0, 0, 0.08), 0 0 35px rgba(14, 165, 233, 0.45); }
-            100% { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 0 0 rgba(14, 165, 233, 0); }
-          }
-          @keyframes light-sweep {
-            0% { transform: translateX(-150%) skewX(-15deg); }
-            100% { transform: translateX(150%) skewX(-15deg); }
-          }
-          @keyframes gentle-float {
-            0%, 100% { transform: translateY(0px); }
-            50% { transform: translateY(-8px); }
-          }
-          .splash-logo-wrapper {
-            animation: 
-              splash-fade-scale 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards,
-              gentle-float 3.5s ease-in-out infinite 0.9s;
-          }
-          .glow-effect {
-            animation: glow-pulse 2.2s ease-in-out infinite 0.8s;
-          }
-          .sweep-effect {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 40%;
-            height: 100%;
-            background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.7), transparent);
-            animation: light-sweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) 1s forwards;
-          }
-        `}</style>
-
-        <div className="absolute inset-0 pointer-events-none opacity-[0.04]" 
-             style={{
-               backgroundImage: `
-                 linear-gradient(to right, rgba(56, 189, 248, 0.3) 1px, transparent 1px),
-                 linear-gradient(to bottom, rgba(56, 189, 248, 0.3) 1px, transparent 1px)
-               `,
-               backgroundSize: "40px 40px"
-             }} 
-        />
-        
-        <div className="text-center space-y-6">
-          <div className="splash-logo-wrapper glow-effect relative overflow-hidden bg-white px-7 py-5.5 rounded-[22px] shadow-2xl border border-white/20 inline-flex items-center justify-center max-w-[280px]">
-            <img 
-              src="/logo.png" 
-              alt="iFluids Logo" 
-              className="h-10 sm:h-12 w-auto object-contain relative z-10" 
-            />
-            <div className="sweep-effect" />
-          </div>
-
-          <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-4 delay-500 duration-700">
-            <h1 className="text-[14px] font-black tracking-[0.25em] text-cyan-400 uppercase">
-              PMO PORTAL
-            </h1>
-            <p className="text-[12px] text-slate-400 font-medium">
-              Initializing Engineering Platform...
-            </p>
-          </div>
-        </div>
-      </div>
-    );
+    return <SplashScreen />;
   }
 
   return (
