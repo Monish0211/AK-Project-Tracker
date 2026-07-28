@@ -1,4 +1,5 @@
 import type { Invoice } from "../types/Invoice";
+import { isSameProjectCode } from "../utils/projectMatching";
 
 const STORAGE_KEY = "ifluids-invoices";
 
@@ -97,7 +98,7 @@ export const generateInvoiceRef = (
   prNo: string
 ): string => {
   const invoices = getInvoices().filter(
-    (invoice) => invoice.prNo === prNo
+    (invoice) => isSameProjectCode(invoice.prNo, prNo)
   );
 
   const nextNumber = invoices.length + 1;

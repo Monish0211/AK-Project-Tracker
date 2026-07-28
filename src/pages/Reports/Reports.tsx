@@ -43,6 +43,7 @@ import { getTotalProjectCost, getGrossProfit } from "../../services/expenseServi
 import { getAllTimesheetImports } from "../../services/timesheetService";
 import { getProcessedEmployeeTotalHours } from "../../services/timesheetProcessingService";
 import { EmptyStateRow } from "../../components/ui/EmptyStateRow";
+import { normalizeProjectCode } from "../../utils/projectMatching";
 
 const Reports = () => {
   // Live State
@@ -241,11 +242,11 @@ const Reports = () => {
       return matchDept && matchClient && matchStatus && matchCategory && matchDate && matchComm;
     });
 
-    const projectPrNos = new Set(filteredProjects.map((p) => p.prNo));
+    const projectPrNos = new Set(filteredProjects.map((p) => normalizeProjectCode(p.prNo)));
 
     // 2. Filter Invoices based on project links
     const filteredInvoices = invoices.filter((i) => {
-      const belongsToProject = projectPrNos.has(i.prNo);
+      const belongsToProject = projectPrNos.has(normalizeProjectCode(i.prNo));
       let matchInvoiceDate = true;
       const startBound = calculatedDateBounds.start;
       const endBound = calculatedDateBounds.end;
