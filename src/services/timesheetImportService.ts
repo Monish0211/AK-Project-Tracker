@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import type { ProjectResource } from "../types/Project";
 import { getEmployees } from "./employeeService";
+import { normalizeProjectCode } from "../utils/projectMatching";
 
 // ---------------------------------------------------------------------------
 // Header normalization & column matching
@@ -263,36 +264,11 @@ export function getCellText(row: unknown[], index: number | undefined): string {
 // Project matching
 // ---------------------------------------------------------------------------
 
-// Project code cells often carry more than just the code, e.g. "PR-10039 - HAZOP"
-// or "PR10039 Revamp". This extracts the leading code token — stopping at an
-// explicit " - " separator, or at the first trailing word that has no digits —
-// then strips hyphens/underscores/spaces and case so "PR-10039", "PR 10039",
-// "PR_10039" and "pr10039" all normalize to the same value.
-export function normalizeProjectCode(raw: string): string {
-  const collapsed = String(raw ?? "")
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, " ");
-
-  if (!collapsed) return "";
-
-  const tokens = collapsed.split(" ");
-  const codeTokens: string[] = [];
-
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (token === "-" || token === "–" || token === "—") break;
-
-    codeTokens.push(token);
-
-    if (/\d/.test(token)) {
-      const next = tokens[i + 1];
-      if (next && /^[A-Z]+$/.test(next)) break;
-    }
-  }
-
-  return codeTokens.join("").replace(/[-_]+/g, "");
-}
+// Re-exported so every existing importer of normalizeProjectCode from this
+// file keeps working unchanged — the canonical implementation (PR Number +
+// Job Number aware) now lives in utils/projectMatching.ts, shared by every
+// module that needs to reconcile a project code, not just timesheet import.
+export { normalizeProjectCode };
 
 export function matchProject(row: unknown[], indices: Record<FieldKey, number>, projectPRNo: string): boolean {
   const rowCode = normalizeProjectCode(getCellText(row, indices.projectCode));

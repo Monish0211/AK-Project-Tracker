@@ -1,6 +1,7 @@
 import type { Project } from "../types/Project";
 import { getInvoices } from "./invoiceService";
 import { reminderService } from "./reminders/ReminderService";
+import { isSameProjectCode } from "../utils/projectMatching";
 
 export type ProjectActivityCategory = "Project" | "Invoice" | "Payment" | "Notes" | "Team" | "Milestone" | "Reminders";
 
@@ -99,7 +100,7 @@ export const getProjectActivityTimeline = (project: Project, limit = 20): Projec
   });
 
   getInvoices()
-    .filter((invoice) => invoice.prNo === project.prNo)
+    .filter((invoice) => isSameProjectCode(invoice.prNo, project.prNo))
     .forEach((invoice) => {
       events.push({
         id: `invoice-${invoice.id}`,
