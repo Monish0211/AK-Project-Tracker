@@ -184,7 +184,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = () => {
               transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translateZ(10px)`,
               transition: tilt.x === 0 && tilt.y === 0 ? "transform 0.5s ease-out" : "transform 0.1s ease-out",
             }}
-            className="relative z-10 backdrop-blur-2xl bg-slate-900/75 border border-cyan-500/30 rounded-3xl p-7 sm:p-9 shadow-[0_0_50px_rgba(6,182,212,0.2)] flex items-center justify-center max-w-[260px] sm:max-w-[290px] overflow-hidden group hover:border-cyan-400/60 transition-colors"
+            className="relative z-10 backdrop-blur-2xl bg-slate-900/75 border border-cyan-500/30 rounded-3xl p-7 sm:p-9 shadow-[0_0_50px_rgba(6,182,212,0.2)] flex items-center justify-center max-w-[260px] sm:max-w-[305px] overflow-hidden group hover:border-cyan-400/60 transition-colors"
           >
             {/* Top Border Light Sweep Accent */}
             <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent" />
@@ -200,11 +200,13 @@ export const SplashScreen: React.FC<SplashScreenProps> = () => {
               }}
             />
 
-            {/* High-Contrast White Inner Card for Perfect Logo Visibility */}
-            <div className="relative z-20 bg-white px-5 sm:px-6.5 py-3.5 sm:py-4 rounded-2xl shadow-xl border border-white/60 flex items-center justify-center">
+            {/* High-Contrast Logo Card for Perfect Logo Visibility */}
+            <div className="relative z-20">
               <Logo
                 alt="iFluids Engineering PMO Logo"
-                className="h-9 sm:h-11 w-auto object-contain"
+                imageClassName="h-13 sm:h-16 w-auto object-contain"
+                darkImageClassName="h-18 sm:h-21 w-auto object-contain"
+                containerClassName="px-5 sm:px-6.5 py-3.5 sm:py-4"
               />
             </div>
           </div>

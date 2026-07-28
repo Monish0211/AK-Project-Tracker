@@ -248,13 +248,6 @@ export default function Login() {
         .btn-glow:hover {
           box-shadow: 0 0 32px rgba(14, 165, 233, 0.55);
         }
-        @keyframes logo-breathe {
-          0%, 100% { transform: translateY(0px) scale(1); filter: drop-shadow(0 4px 10px rgba(0,0,0,0.06)); }
-          50% { transform: translateY(-4px) scale(1.02); filter: drop-shadow(0 8px 16px rgba(14, 165, 233, 0.12)); }
-        }
-        .persistent-logo-anim {
-          animation: logo-breathe 4.5s ease-in-out infinite;
-        }
         @keyframes fade-up-scale {
           0% { opacity: 0; transform: translateY(16px) scale(0.96); }
           100% { opacity: 1; transform: translateY(0px) scale(1); }
@@ -282,7 +275,7 @@ export default function Login() {
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .animate-float-1, .animate-float-2, .persistent-logo-anim, .splash-logo-wrapper, .glow-effect, .sweep-effect {
+          .animate-float-1, .animate-float-2, .splash-logo-wrapper, .glow-effect, .sweep-effect {
             animation: none !important;
             transform: none !important;
             box-shadow: none !important;
@@ -366,12 +359,12 @@ export default function Login() {
         <div className="flex-1 lg:w-[55%] flex flex-col justify-between py-6">
           <div className="space-y-4">
             <div className="flex items-center gap-3.5 animate-fade-up">
-              <div className="bg-white px-4.5 py-2.5 rounded-[14px] shadow-md border border-white/30 flex items-center justify-center">
-                <Logo
-                  alt="iFluids Official Logo"
-                  className="h-8.5 w-auto object-contain"
-                />
-              </div>
+              <Logo
+                alt="iFluids Official Logo"
+                imageClassName="h-11 w-auto object-contain"
+                darkImageClassName="h-17 w-auto object-contain"
+                containerClassName="px-4.5 py-2.5"
+              />
               <div>
                 <h4 className="text-[12.5px] font-black tracking-[0.2em] text-blue-600 dark:text-cyan-400 uppercase leading-none">
                   PMO PORTAL
@@ -501,12 +494,12 @@ export default function Login() {
             
             {/* Header / Logo */}
             <div className="text-center mb-6 animate-fade-up delay-300">
-              <div className="inline-flex items-center justify-center bg-white px-5 py-3 rounded-2xl shadow-md border border-white/20 mb-4 persistent-logo-anim">
-                <Logo
-                  alt="iFluids Header Logo"
-                  className="h-8.5 w-auto object-contain"
-                />
-              </div>
+              <Logo
+                alt="iFluids Header Logo"
+                imageClassName="h-10.5 w-auto object-contain"
+                darkImageClassName="h-16 w-auto object-contain"
+                containerClassName="px-5.5 py-3.5 mb-4"
+              />
               <h2 className="text-[20px] font-extrabold text-slate-900 dark:text-white tracking-tight">
                 Welcome Back
               </h2>
