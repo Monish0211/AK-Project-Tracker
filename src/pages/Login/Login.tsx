@@ -7,6 +7,7 @@ import {
 import { useAuth } from "../../auth/authContext";
 import { useTheme } from "../../context/ThemeContext";
 import SplashScreen from "../../components/Splash/SplashScreen";
+import { Logo } from "../../components/ui/Logo";
 
 export default function Login() {
   const { login } = useAuth();
@@ -366,10 +367,9 @@ export default function Login() {
           <div className="space-y-4">
             <div className="flex items-center gap-3.5 animate-fade-up">
               <div className="bg-white px-4.5 py-2.5 rounded-[14px] shadow-md border border-white/30 flex items-center justify-center">
-                <img 
-                  src="/logo.png" 
-                  alt="iFluids Official Logo" 
-                  className="h-8.5 w-auto object-contain" 
+                <Logo
+                  alt="iFluids Official Logo"
+                  className="h-8.5 w-auto object-contain"
                 />
               </div>
               <div>
@@ -502,10 +502,9 @@ export default function Login() {
             {/* Header / Logo */}
             <div className="text-center mb-6 animate-fade-up delay-300">
               <div className="inline-flex items-center justify-center bg-white px-5 py-3 rounded-2xl shadow-md border border-white/20 mb-4 persistent-logo-anim">
-                <img 
-                  src="/logo.png" 
-                  alt="iFluids Header Logo" 
-                  className="h-8.5 w-auto object-contain" 
+                <Logo
+                  alt="iFluids Header Logo"
+                  className="h-8.5 w-auto object-contain"
                 />
               </div>
               <h2 className="text-[20px] font-extrabold text-slate-900 dark:text-white tracking-tight">
@@ -649,7 +648,7 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className={`w-full h-11 mt-2.5 rounded-xl text-[13.5px] font-bold transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-85 disabled:cursor-not-allowed btn-glow text-white animate-fade-up delay-700 ${
+                className={`w-full h-11 rounded-xl text-[13.5px] font-bold transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-85 disabled:cursor-not-allowed btn-glow text-white animate-fade-up delay-700 ${
                   isSuccess 
                     ? "bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/20" 
                     : "bg-gradient-to-r from-blue-600 to-teal-500 hover:from-blue-700 hover:to-teal-600"
@@ -674,7 +673,7 @@ export default function Login() {
             </form>
 
             {/* Footer company warnings & version info */}
-            <div className="text-center mt-7 pt-6 border-t border-slate-200 dark:border-slate-800/80 flex flex-col gap-1 animate-fade-up delay-800">
+            <div className="text-center mt-5 pt-4 border-t border-slate-200 dark:border-slate-800/80 flex flex-col gap-1 animate-fade-up delay-800">
               <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
                 For Internal Company Use Only
               </p>

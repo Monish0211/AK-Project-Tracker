@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Logo } from "../ui/Logo";
 
 interface SplashScreenProps {
   onComplete?: () => void;
@@ -201,8 +202,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = () => {
 
             {/* High-Contrast White Inner Card for Perfect Logo Visibility */}
             <div className="relative z-20 bg-white px-5 sm:px-6.5 py-3.5 sm:py-4 rounded-2xl shadow-xl border border-white/60 flex items-center justify-center">
-              <img
-                src="/logo.png"
+              <Logo
                 alt="iFluids Engineering PMO Logo"
                 className="h-9 sm:h-11 w-auto object-contain"
               />

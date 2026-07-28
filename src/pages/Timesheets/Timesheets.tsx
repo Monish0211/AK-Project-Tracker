@@ -912,15 +912,15 @@ const Timesheets = () => {
 
       {/* ═══ Import Modal ═══ */}
       {showImportModal && selectedFile && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-[var(--nu-shadow-md)] w-full max-w-md p-5 space-y-4 max-h-[85vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden">
             {!importReport && !importError && (
               <>
-                <div className="flex items-start gap-3">
+                <div className="shrink-0 p-5 border-b border-[var(--nu-border)] flex items-start gap-3">
                   <div className="w-10 h-10 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] flex items-center justify-center shrink-0">
                     {importing ? <Loader size={18} className="animate-spin" /> : <Upload size={18} />}
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <h2 className="text-[15px] font-semibold text-[var(--nu-text)]">
                       {importing ? "Importing Timesheet…" : "Import Timesheet"}
                     </h2>
@@ -930,20 +930,22 @@ const Timesheets = () => {
                   </div>
                 </div>
 
-                {importing && (
-                  <div className="bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] p-3">
-                    <div className="flex items-center gap-2 text-[12.5px] text-[var(--nu-text-secondary)]">
-                      <Loader size={14} className="animate-spin" />
-                      Processing timesheet entries...
+                <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4 custom-scrollbar">
+                  {importing && (
+                    <div className="bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] p-3">
+                      <div className="flex items-center gap-2 text-[12.5px] text-[var(--nu-text-secondary)]">
+                        <Loader size={14} className="animate-spin" />
+                        Processing timesheet entries...
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                <p className="text-[12.5px] text-[var(--nu-text-secondary)]">
-                  This timesheet will be validated for duplicates and synced to projects.
-                </p>
+                  <p className="text-[12.5px] text-[var(--nu-text-secondary)]">
+                    This timesheet will be validated for duplicates and synced to projects.
+                  </p>
+                </div>
 
-                <div className="flex justify-end gap-2.5 pt-3 border-t border-[var(--nu-border)]">
+                <div className="shrink-0 sticky bottom-0 z-10 p-4 bg-[var(--nu-surface)] border-t border-[var(--nu-border)] flex items-center justify-end gap-2.5">
                   <Button variant="secondary" size="sm" onClick={closeImportModal} disabled={importing}>
                     Cancel
                   </Button>
@@ -962,17 +964,20 @@ const Timesheets = () => {
 
             {importError && (
               <>
-                <div className="flex items-start gap-3">
+                <div className="shrink-0 p-5 border-b border-[var(--nu-border)] flex items-start gap-3">
                   <div className="w-10 h-10 rounded-[var(--nu-radius-md)] bg-[var(--nu-danger-soft)] text-[var(--nu-danger)] flex items-center justify-center shrink-0">
                     <AlertTriangle size={18} />
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <h2 className="text-[15px] font-semibold text-[var(--nu-text)]">Import Failed</h2>
-                    <p className="text-[12.5px] text-[var(--nu-danger)] mt-1 font-medium">{importError}</p>
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-2.5 pt-3 border-t border-[var(--nu-border)]">
+                <div className="flex-1 min-h-0 overflow-y-auto p-5 custom-scrollbar">
+                  <p className="text-[12.5px] text-[var(--nu-danger)] font-medium">{importError}</p>
+                </div>
+
+                <div className="shrink-0 sticky bottom-0 z-10 p-4 bg-[var(--nu-surface)] border-t border-[var(--nu-border)] flex items-center justify-end gap-2.5">
                   <Button variant="secondary" size="sm" onClick={closeImportModal}>
                     Close
                   </Button>
@@ -985,19 +990,19 @@ const Timesheets = () => {
 
             {importReport && (
               <>
-                <div className="flex items-start gap-3">
+                <div className="shrink-0 p-5 border-b border-[var(--nu-border)] flex items-start gap-3">
                   <div className="w-10 h-10 rounded-[var(--nu-radius-md)] bg-[var(--nu-success-soft)] text-[var(--nu-success)] flex items-center justify-center shrink-0">
                     <Check size={18} />
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <h2 className="text-[15px] font-semibold text-[var(--nu-text)]">Import Completed</h2>
-                    <p className="text-[12.5px] text-[var(--nu-text-secondary)] mt-1">
+                    <p className="text-[12.5px] text-[var(--nu-text-secondary)] mt-0.5">
                       {importReport.matchedRows} entries imported successfully.
                     </p>
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-3 custom-scrollbar">
                   <div className="grid grid-cols-3 gap-2">
                     <div className="bg-[var(--nu-surface-alt)] rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] p-2 text-center">
                       <p className="text-[10px] uppercase tracking-wide text-[var(--nu-text-muted)]">Total Rows</p>
@@ -1039,7 +1044,7 @@ const Timesheets = () => {
                   )}
                 </div>
 
-                <div className="flex justify-end gap-2.5 pt-3 border-t border-[var(--nu-border)]">
+                <div className="shrink-0 sticky bottom-0 z-10 p-4 bg-[var(--nu-surface)] border-t border-[var(--nu-border)] flex items-center justify-end gap-2.5">
                   <Button variant="primary" size="sm" onClick={closeImportModal}>
                     Done
                   </Button>
@@ -1052,13 +1057,14 @@ const Timesheets = () => {
 
       {/* ═══ Add / Edit Entry Modal ═══ */}
       {entryModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-[var(--nu-shadow-md)] w-full max-w-lg p-5 space-y-4 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-start gap-3">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="shrink-0 p-5 border-b border-[var(--nu-border)] flex items-start gap-3">
               <div className="w-10 h-10 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] flex items-center justify-center shrink-0">
                 {entryModal.mode === "add" ? <Plus size={18} /> : <Pencil size={18} />}
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <h2 className="text-[15px] font-semibold text-[var(--nu-text)]">
                   {entryModal.mode === "add" ? "Add Timesheet Entry" : "Edit Timesheet Entry"}
                 </h2>
@@ -1070,87 +1076,91 @@ const Timesheets = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div className="sm:col-span-2">
-                <label className={fieldLabelClass}>Employee</label>
-                <EmployeeAutocomplete
-                  value={formEmployeeSearch}
-                  onChange={(val) => {
-                    setFormEmployeeSearch(val);
-                    setFormEmployeeNo("");
-                  }}
-                  onSelect={(employeeNo, displayText) => {
-                    setFormEmployeeNo(employeeNo);
-                    setFormEmployeeSearch(displayText);
-                  }}
-                  employees={masterEmployees}
-                />
+            {/* Scrollable Body */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4 custom-scrollbar">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="sm:col-span-2">
+                  <label className={fieldLabelClass}>Employee</label>
+                  <EmployeeAutocomplete
+                    value={formEmployeeSearch}
+                    onChange={(val) => {
+                      setFormEmployeeSearch(val);
+                      setFormEmployeeNo("");
+                    }}
+                    onSelect={(employeeNo, displayText) => {
+                      setFormEmployeeNo(employeeNo);
+                      setFormEmployeeSearch(displayText);
+                    }}
+                    employees={masterEmployees}
+                  />
+                </div>
+
+                <div>
+                  <label className={fieldLabelClass}>Project Code</label>
+                  <Input
+                    type="text"
+                    value={formProjectCode}
+                    onChange={(e) => setFormProjectCode(e.target.value)}
+                    placeholder="e.g. PR-11058"
+                    className="h-9 text-[12.5px]"
+                  />
+                </div>
+
+                <div>
+                  <label className={fieldLabelClass}>Project Name</label>
+                  <Input
+                    type="text"
+                    value={formProjectName}
+                    onChange={(e) => setFormProjectName(e.target.value)}
+                    placeholder="Optional"
+                    className="h-9 text-[12.5px]"
+                  />
+                </div>
+
+                <div>
+                  <label className={fieldLabelClass}>Start Date</label>
+                  <Input
+                    type="date"
+                    value={formStartDate}
+                    onChange={(e) => setFormStartDate(e.target.value)}
+                    className="h-9 text-[12.5px]"
+                  />
+                </div>
+
+                <div>
+                  <label className={fieldLabelClass}>End Date</label>
+                  <Input
+                    type="date"
+                    value={formEndDate}
+                    onChange={(e) => setFormEndDate(e.target.value)}
+                    className="h-9 text-[12.5px]"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className={fieldLabelClass}>Total Hours</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={formTotalHours}
+                    onChange={(e) => setFormTotalHours(e.target.value)}
+                    placeholder="Enter total hours for this date range"
+                    className="h-9 text-[12.5px]"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className={fieldLabelClass}>Project Code</label>
-                <Input
-                  type="text"
-                  value={formProjectCode}
-                  onChange={(e) => setFormProjectCode(e.target.value)}
-                  placeholder="e.g. PR-11058"
-                  className="h-9 text-[12.5px]"
-                />
-              </div>
-
-              <div>
-                <label className={fieldLabelClass}>Project Name</label>
-                <Input
-                  type="text"
-                  value={formProjectName}
-                  onChange={(e) => setFormProjectName(e.target.value)}
-                  placeholder="Optional"
-                  className="h-9 text-[12.5px]"
-                />
-              </div>
-
-              <div>
-                <label className={fieldLabelClass}>Start Date</label>
-                <Input
-                  type="date"
-                  value={formStartDate}
-                  onChange={(e) => setFormStartDate(e.target.value)}
-                  className="h-9 text-[12.5px]"
-                />
-              </div>
-
-              <div>
-                <label className={fieldLabelClass}>End Date</label>
-                <Input
-                  type="date"
-                  value={formEndDate}
-                  onChange={(e) => setFormEndDate(e.target.value)}
-                  className="h-9 text-[12.5px]"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className={fieldLabelClass}>Total Hours</label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={formTotalHours}
-                  onChange={(e) => setFormTotalHours(e.target.value)}
-                  placeholder="Enter total hours for this date range"
-                  className="h-9 text-[12.5px]"
-                />
-              </div>
+              {formError && (
+                <div className="bg-[var(--nu-danger-soft)] border border-[var(--nu-danger)]/20 rounded-[var(--nu-radius-md)] p-3 flex items-start gap-2">
+                  <AlertTriangle size={14} className="text-[var(--nu-danger)] shrink-0 mt-0.5" />
+                  <p className="text-[12px] text-[var(--nu-danger)] font-medium">{formError}</p>
+                </div>
+              )}
             </div>
 
-            {formError && (
-              <div className="bg-[var(--nu-danger-soft)] border border-[var(--nu-danger)]/20 rounded-[var(--nu-radius-md)] p-3 flex items-start gap-2">
-                <AlertTriangle size={14} className="text-[var(--nu-danger)] shrink-0 mt-0.5" />
-                <p className="text-[12px] text-[var(--nu-danger)] font-medium">{formError}</p>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2.5 pt-3 border-t border-[var(--nu-border)]">
+            {/* Sticky Footer */}
+            <div className="shrink-0 sticky bottom-0 z-10 p-4 bg-[var(--nu-surface)] border-t border-[var(--nu-border)] flex items-center justify-end gap-2.5">
               <Button variant="secondary" size="sm" onClick={closeEntryModal}>
                 Cancel
               </Button>
