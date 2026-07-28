@@ -84,7 +84,7 @@ export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode
         </button>
       </div>
 
-      <div className="overflow-y-auto p-4 custom-scrollbar shrink min-h-0">
+      <div className="overflow-y-auto p-4 custom-scrollbar flex-1 min-h-0">
         <form id="reminder-form" onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">

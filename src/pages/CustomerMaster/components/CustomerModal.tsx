@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 
 import { addCustomer, updateCustomer } from "../../../services/customerService";
@@ -17,6 +17,14 @@ interface Props {
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const CustomerModal = ({ mode, customer, onClose }: Props) => {
+  useEffect(() => {
+    const originalStyle = window.getComputedStyle(document.body).overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalStyle;
+    };
+  }, []);
+
   const [form, setForm] = useState<CustomerInput>({
     customerId: customer?.customerId || "",
     customerName: customer?.customerName || "",
@@ -59,26 +67,26 @@ const CustomerModal = ({ mode, customer, onClose }: Props) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white dark:bg-[#161d2c] rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+      <div className="bg-white dark:bg-[#161d2c] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 dark:border-slate-700 p-6">
+        <div className="shrink-0 flex items-center justify-between border-b border-gray-100 dark:border-slate-700 p-5 sm:p-6">
           <div>
-            <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100">
               {mode === "add" ? "Add Customer" : "Edit Customer"}
             </h2>
-            <p className="text-gray-500 dark:text-slate-400 mt-1">
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400 mt-0.5">
               {mode === "add" ? "Create a new customer organization." : "Update customer organization details."}
             </p>
           </div>
 
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700">
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer">
             <X size={20} className="text-slate-600 dark:text-slate-300" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-5 custom-scrollbar">
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">
               Customer Name <span className="text-red-500">*</span>
@@ -171,7 +179,7 @@ const CustomerModal = ({ mode, customer, onClose }: Props) => {
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 border-t border-gray-100 dark:border-slate-700 p-6">
+        <div className="shrink-0 sticky bottom-0 z-10 flex items-center justify-end gap-3 border-t border-gray-100 dark:border-slate-700 p-4 sm:p-5 bg-white dark:bg-[#161d2c]">
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>

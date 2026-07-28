@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 
 import type { NonManhourExpense } from "../../../../types/NonManhourExpense";
@@ -24,6 +24,14 @@ const EXPENSE_CATEGORIES = [
 ];
 
 const NonManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
+  useEffect(() => {
+    const originalStyle = window.getComputedStyle(document.body).overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalStyle;
+    };
+  }, []);
+
   const isEditMode = Boolean(expense);
 
   const [category, setCategory] = useState(expense?.category ?? "");
@@ -78,21 +86,21 @@ const NonManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50 p-5">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex justify-center items-center z-50 p-4">
 
-      <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-xl w-full max-w-3xl">
+      <div className="bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
 
         {/* Header */}
 
-        <div className="flex justify-between items-center border-b px-6 py-5">
+        <div className="flex justify-between items-center border-b border-gray-200 dark:border-slate-700 px-6 py-5 shrink-0">
 
           <div>
 
-            <h2 className="text-2xl font-bold">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-slate-100">
               {isEditMode ? "Edit Project Expense" : "Add Project Expense"}
             </h2>
 
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400 mt-1">
               Record non man-hour project expenses.
             </p>
 
@@ -100,16 +108,16 @@ const NonManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
 
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100"
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 cursor-pointer"
           >
-            <X size={20} />
+            <X size={20} className="text-slate-600 dark:text-slate-300" />
           </button>
 
         </div>
 
         {/* Body */}
 
-        <div className="p-6">
+        <div className="p-5 sm:p-6 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
 
           <div className="grid grid-cols-2 gap-5">
 
@@ -233,15 +241,15 @@ const NonManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
 
         {/* Footer */}
 
-        <div className="border-t px-6 py-5 flex justify-between items-center">
+        <div className="border-t border-gray-200 dark:border-slate-700 px-5 sm:px-6 py-4 flex justify-between items-center shrink-0 sticky bottom-0 z-10 bg-white dark:bg-[#1E293B]">
 
           <div>
 
-            <p className="text-sm text-gray-500">
+            <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">
               Total Expense
             </p>
 
-            <h2 className="text-3xl font-bold text-orange-600">
+            <h2 className="text-2xl sm:text-3xl font-bold text-orange-600 dark:text-orange-400">
               ₹ {totalCost.toLocaleString("en-IN")}
             </h2>
 
@@ -251,14 +259,14 @@ const NonManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
 
             <button
               onClick={onClose}
-              className="border rounded-xl px-5 py-2.5 hover:bg-gray-100"
+              className="border border-gray-300 dark:border-slate-700 rounded-xl px-5 py-2.5 hover:bg-gray-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 cursor-pointer font-medium"
             >
               Cancel
             </button>
 
             <button
               onClick={handleSave}
-              className="bg-orange-600 text-white rounded-xl px-5 py-2.5 hover:bg-orange-700"
+              className="bg-orange-600 text-white rounded-xl px-5 py-2.5 hover:bg-orange-700 font-bold cursor-pointer"
             >
               {isEditMode ? "Update Expense" : "Save Expense"}
             </button>

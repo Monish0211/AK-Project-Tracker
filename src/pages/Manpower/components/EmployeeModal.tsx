@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 
 import type { Employee } from "../../../types/EmployeeModel";
@@ -34,6 +34,13 @@ const EmployeeModal = ({
   setEmployees,
   onClose,
 }: Props) => {
+  useEffect(() => {
+    const originalStyle = window.getComputedStyle(document.body).overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalStyle;
+    };
+  }, []);
   const isEditMode = Boolean(employee);
 
   const isKnownDepartment = employee
@@ -209,19 +216,19 @@ const EmployeeModal = ({
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
 
-      <div className="bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+      <div className="bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
 
         {/* Header */}
 
-        <div className="flex justify-between items-center border-b border-gray-200 dark:border-slate-700 p-6 shrink-0">
+        <div className="flex justify-between items-center border-b border-gray-200 dark:border-slate-700 p-5 sm:p-6 shrink-0">
 
           <div>
 
-            <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100">
               {isEditMode ? "Edit Employee" : "Add Employee"}
             </h2>
 
-            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400 mt-1">
               {isEditMode
                 ? "Update employee details."
                 : "Create a new employee record."}
@@ -231,7 +238,7 @@ const EmployeeModal = ({
 
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition"
+            className="p-2 rounded-xl text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition cursor-pointer"
           >
             <X size={20} />
           </button>
@@ -240,7 +247,7 @@ const EmployeeModal = ({
 
         {/* Body */}
 
-        <div className="p-6 space-y-5 overflow-y-auto flex-1">
+        <div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1 min-h-0 custom-scrollbar">
 
           {/* Employee Number */}
           <div>
@@ -542,7 +549,7 @@ const EmployeeModal = ({
 
         {/* Footer */}
 
-        <div className="flex justify-end gap-3 border-t p-6 shrink-0">
+        <div className="flex items-center justify-end gap-3 border-t border-gray-200 dark:border-slate-700 p-4 sm:p-5 shrink-0 sticky bottom-0 z-10 bg-white dark:bg-[#1E293B]">
 
           <button
             onClick={onClose}
@@ -552,6 +559,8 @@ const EmployeeModal = ({
               rounded-xl
               border
               hover:bg-gray-100
+              dark:hover:bg-slate-800
+              cursor-pointer
             "
           >
             Cancel
@@ -566,6 +575,8 @@ const EmployeeModal = ({
               bg-blue-600
               hover:bg-blue-700
               text-white
+              font-bold
+              cursor-pointer
             "
           >
             {isEditMode ? "Update Employee" : "Save Employee"}
