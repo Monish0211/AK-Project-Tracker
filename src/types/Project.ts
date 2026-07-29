@@ -2,7 +2,7 @@ import type { QuantityItem } from "./QuantityItem";
 import type { ManhourExpense } from "./ManhourExpense";
 import type { NonManhourExpense } from "./NonManhourExpense";
 import type { InvoiceItem } from "./InvoiceItem";
-import type { MilestoneBilling } from "./MilestoneBilling";
+import type { QuantityRevision } from "./QuantityRevision";
 import type { ProjectNote } from "./ProjectNote";
 import type { TimesheetImportMonth } from "./Timesheet";
 
@@ -95,9 +95,10 @@ export interface Project {
 
   invoiceItems: InvoiceItem[];
 
-  // Payment Milestone (commercial) billing history — entirely independent of
-  // Quantity Based Billing recorded on invoiceItems[].invoices.
-  milestoneBillings: MilestoneBilling[];
+  // Future-ready placeholder — see types/QuantityRevision.ts. No mutation
+  // logic exists yet; only backs the Invoice History "Quantity Revisions"
+  // section layout.
+  quantityRevisions?: QuantityRevision[];
 
   // Collection received against raised invoices.
   // Not yet editable from the UI — kept ready for backend/payment

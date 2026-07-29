@@ -1,19 +1,40 @@
 /**
- * A Quantity Based Billing entry — physical engineering progress recorded
- * against one activity. Completely independent of Payment Milestone billing
- * (see types/MilestoneBilling.ts) — never merge the two.
+ * One billing line raised against an Activity (InvoiceItem). The Invoice
+ * Management module's single billing primitive — supports both the PMO
+ * team's quantity-driven workflow and the Accounts team's need to bill
+ * without being forced into a payment-milestone percentage.
+ *
+ * A milestone reference is always OPTIONAL — see milestoneId/milestoneName.
+ * When absent, `description` carries the free-text billing reason instead
+ * (a completed deliverable, a manual billing stage, etc).
  */
-export interface InvoiceEntry {
+export type InvoiceLineStatus = "Pending" | "Paid" | "Cancelled";
+
+export interface InvoiceLine {
   id: string;
 
-  /** Auto-recorded (today's date) — no longer entered manually. */
+  invoiceNo: string;
   invoiceDate: string;
 
-  /** Quantity completed and billed in this entry. */
+  /** Optional reference into project.paymentMilestones — never mandatory. */
+  milestoneId?: string;
+  /** Snapshotted at billing time so a later rename of the milestone doesn't rewrite history. */
+  milestoneName?: string;
+
+  /** Free-text billing description — used when no milestone is referenced, or to add context alongside one. */
+  description?: string;
+
+  /** Quantity completed and billed in this line. */
   quantityBilled: number;
 
   /** quantityBilled × the activity's unit rate at the time of billing (INR). */
   invoiceAmountINR: number;
+
+  clientReference?: string;
+  remarks?: string;
+
+  status: InvoiceLineStatus;
+  createdBy: string;
 }
 
 export interface InvoiceItem {
@@ -32,5 +53,5 @@ export interface InvoiceItem {
 
   totalPrice: number;
 
-  invoices: InvoiceEntry[];
+  invoices: InvoiceLine[];
 }

@@ -6,7 +6,7 @@ import {
   CalendarClock,
 } from "lucide-react";
 import type { Project } from "../../../types/Project";
-import { isMilestoneBilled } from "../../../services/milestoneBillingService";
+import { isMilestoneBilled } from "../../../services/invoiceProgressService";
 import { Card, CardBody, CardHeader } from "../../../components/ui/Card";
 import { StatTile } from "../../../components/ui/StatTile";
 import { Badge } from "../../../components/ui/Badge";
