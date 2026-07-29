@@ -4,6 +4,7 @@ import type { InvoiceItem } from "../../../../types/InvoiceItem";
 import { Badge, type Tone } from "../../../../components/ui/Badge";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
+import { formatBusinessINR } from "../../../../utils/formatCurrency";
 import {
   getActivityCompletedQty,
   getActivityRemainingQty,
@@ -30,11 +31,11 @@ const MILESTONE_STATUS_BADGE: Record<MilestoneRowStatus, { label: string; tone: 
  * (see ActivityRow.tsx).
  */
 export function ActivityDetails({ project, item }: Props) {
-  const completedQty = getActivityCompletedQty(item);
-  const remainingQty = getActivityRemainingQty(item);
+  const milestones = getMilestonesForProject(project);
+  const completedQty = getActivityCompletedQty(item, project);
+  const remainingQty = getActivityRemainingQty(item, project);
   const progressPercent = item.qty > 0 ? Math.min((completedQty / item.qty) * 100, 100) : 0;
 
-  const milestones = getMilestonesForProject(project);
   const milestoneRows = getMilestoneSummaryForActivity(item, milestones);
 
   return (
@@ -74,14 +75,14 @@ export function ActivityDetails({ project, item }: Props) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] border-collapse text-[12.5px]">
+            <table className="w-full min-w-[620px] border-collapse text-[12.5px]">
               <thead>
                 <tr>
                   <th className="nu-table-th px-4 py-2 text-left">Milestone</th>
                   <th className="nu-table-th px-4 py-2 text-center">%</th>
-                  <th className="nu-table-th px-4 py-2 text-right">Completed Qty</th>
-                  <th className="nu-table-th px-4 py-2 text-right">Invoiced Qty</th>
-                  <th className="nu-table-th px-4 py-2 text-right">Pending Qty</th>
+                  <th className="nu-table-th px-4 py-2 text-right">Milestone Value</th>
+                  <th className="nu-table-th px-4 py-2 text-right">Already Invoiced</th>
+                  <th className="nu-table-th px-4 py-2 text-right">Balance</th>
                   <th className="nu-table-th px-4 py-2 text-center">Status</th>
                 </tr>
               </thead>
@@ -92,9 +93,9 @@ export function ActivityDetails({ project, item }: Props) {
                     <tr key={row.id} className="nu-table-row">
                       <td className="px-4 py-2.5 font-semibold text-[var(--nu-text)] break-words">{row.label}</td>
                       <td className="px-4 py-2.5 text-center tabular-nums text-[var(--nu-text-secondary)]">{row.percent}%</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{formatIndianNumber(row.completedQty)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{formatIndianNumber(row.invoicedQty)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-[var(--nu-text-secondary)]">{formatIndianNumber(row.pendingQty)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-medium text-slate-800 dark:text-slate-200">{formatBusinessINR(row.milestoneValue)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-slate-600 dark:text-slate-400">{formatBusinessINR(row.alreadyInvoiced)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-700 dark:text-slate-300">{formatBusinessINR(row.balance)}</td>
                       <td className="px-4 py-2.5 text-center">
                         <Badge tone={badge.tone} dot className="text-[10.5px]">
                           {badge.label}

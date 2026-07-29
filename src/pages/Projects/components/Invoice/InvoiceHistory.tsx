@@ -9,6 +9,7 @@ import { Select } from "../../../../components/ui/Select";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
+import { getMilestonesForProject, inferBillingQuantityMode } from "./InvoiceCalculations";
 
 interface Props {
   project: Project;
@@ -29,6 +30,7 @@ interface HistoryRow {
   description: string;
   qty: number;
   uom: string;
+  isReferenceQty: boolean;
   amount: number;
   status: InvoiceLineStatus;
   createdBy: string;
@@ -60,10 +62,12 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
   const [search, setSearch] = useState("");
 
   const items = useMemo(() => project.invoiceItems ?? [], [project.invoiceItems]);
+  const milestones = useMemo(() => getMilestonesForProject(project), [project]);
 
   const rows: HistoryRow[] = useMemo(() => {
     const all: HistoryRow[] = [];
     items.forEach((item) => {
+      const isReferenceQty = inferBillingQuantityMode(item, milestones) === "reference";
       (item.invoices ?? []).forEach((line) => {
         all.push({
           key: line.id,
@@ -71,8 +75,9 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
           invoiceDate: line.invoiceDate,
           activity: item.description,
           description: line.milestoneName || line.description || "—",
-          qty: line.quantityBilled,
+          qty: isReferenceQty ? item.qty : line.quantityBilled,
           uom: item.uom,
+          isReferenceQty,
           amount: line.invoiceAmountINR,
           status: line.status,
           createdBy: line.createdBy,
@@ -82,7 +87,7 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
       });
     });
     return all.sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate) || b.invoiceNo.localeCompare(a.invoiceNo));
-  }, [items]);
+  }, [items, milestones]);
 
   const filteredRows = rows.filter((row) => {
     if (activityFilter !== "all" && row.item.id !== activityFilter) return false;
@@ -130,9 +135,10 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
                   <th className="nu-table-th px-3 py-2.5 text-left">Invoice No</th>
                   <th className="nu-table-th px-3 py-2.5 text-left">Date</th>
                   <th className="nu-table-th px-3 py-2.5 text-left">Activity</th>
-                  <th className="nu-table-th px-3 py-2.5 text-left">Description</th>
+                  <th className="nu-table-th px-3 py-2.5 text-left">Milestone</th>
                   <th className="nu-table-th px-3 py-2.5 text-right">Qty</th>
-                  <th className="nu-table-th px-3 py-2.5 text-right">Amount</th>
+                  <th className="nu-table-th px-3 py-2.5 text-right">Invoice Amount</th>
+                  <th className="nu-table-th px-3 py-2.5 text-right">Commercial Adj.</th>
                   <th className="nu-table-th px-3 py-2.5 text-center">Status</th>
                   <th className="nu-table-th px-3 py-2.5 text-left">Created By</th>
                   <th className="nu-table-th px-3 py-2.5 text-center">Actions</th>
@@ -144,15 +150,30 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
                     <td className="px-3 py-2.5 font-semibold text-[var(--nu-text)] whitespace-nowrap">{row.invoiceNo}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-[var(--nu-text-secondary)]">{formatDate(row.invoiceDate)}</td>
                     <td className="px-3 py-2.5 max-w-[180px] truncate" title={row.activity}>{row.activity}</td>
-                    <td className="px-3 py-2.5 max-w-[180px] truncate" title={row.description}>{row.description}</td>
+                    <td className="px-3 py-2.5 max-w-[180px] truncate font-medium text-[var(--nu-text)]" title={row.description}>{row.description}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
-                      {formatIndianNumber(row.qty)} {row.uom}
+                      {row.isReferenceQty ? (
+                        <span title="Reference quantity — this activity is billed by milestone %, not quantity.">
+                          <span className="text-[var(--nu-text-muted)]">Ref:</span> {formatIndianNumber(row.qty)} {row.uom}
+                        </span>
+                      ) : (
+                        <span>{formatIndianNumber(row.qty)} {row.uom}</span>
+                      )}
                     </td>
                     <td
                       className="px-3 py-2.5 text-right tabular-nums font-semibold text-[var(--nu-accent)] whitespace-nowrap"
                       title={formatFullINR(row.amount)}
                     >
                       {formatBusinessINR(row.amount)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap text-xs font-mono">
+                      {row.line.commercialAdjustmentINR && Math.abs(row.line.commercialAdjustmentINR) > 0.01 ? (
+                        <span className={`font-semibold ${row.line.commercialAdjustmentINR < 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                          {row.line.commercialAdjustmentINR < 0 ? "-" : "+"}{formatBusinessINR(Math.abs(row.line.commercialAdjustmentINR))}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-center">
                       <Badge tone={STATUS_BADGE[row.status]} dot className="text-[10.5px]">
