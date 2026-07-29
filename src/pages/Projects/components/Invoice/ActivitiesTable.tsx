@@ -10,11 +10,10 @@ interface Props {
   project: Project;
   readOnly?: boolean;
   onRaiseInvoice: (item: InvoiceItem) => void;
-  onViewHistory: (item: InvoiceItem) => void;
 }
 
 /** Section 2 — one row per Quantity Details activity, always mirrored automatically (see services/invoiceSyncService.ts). */
-export function ActivitiesTable({ project, readOnly = false, onRaiseInvoice, onViewHistory }: Props) {
+export function ActivitiesTable({ project, readOnly = false, onRaiseInvoice }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const items = project.invoiceItems ?? [];
 
@@ -61,7 +60,6 @@ export function ActivitiesTable({ project, readOnly = false, onRaiseInvoice, onV
                   isExpanded={expandedId === item.id}
                   onToggleExpand={() => setExpandedId((prev) => (prev === item.id ? null : item.id))}
                   onRaiseInvoice={() => onRaiseInvoice(item)}
-                  onViewHistory={() => onViewHistory(item)}
                 />
               ))}
             </tbody>

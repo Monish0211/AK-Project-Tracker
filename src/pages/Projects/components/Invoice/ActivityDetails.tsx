@@ -1,12 +1,9 @@
-import { Banknote, ClipboardList, History, PlusCircle, Receipt, RefreshCcw, Wallet } from "lucide-react";
+import { ClipboardList } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem } from "../../../../types/InvoiceItem";
 import { Badge, type Tone } from "../../../../components/ui/Badge";
-import { Button } from "../../../../components/ui/Button";
 import { EmptyState } from "../../../../components/ui/EmptyState";
-import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
-import { getInvoiceRaisedAmount, getInvoiceStatus, getPaymentReceivedAmount } from "../../../../services/invoiceProgressService";
 import {
   getActivityCompletedQty,
   getActivityRemainingQty,
@@ -14,14 +11,10 @@ import {
   getMilestoneSummaryForActivity,
   type MilestoneRowStatus,
 } from "./InvoiceCalculations";
-import { SummaryCards } from "./SummaryCards";
 
 interface Props {
   project: Project;
   item: InvoiceItem;
-  readOnly?: boolean;
-  onRaiseInvoice: () => void;
-  onViewHistory: () => void;
 }
 
 const MILESTONE_STATUS_BADGE: Record<MilestoneRowStatus, { label: string; tone: Tone }> = {
@@ -30,24 +23,19 @@ const MILESTONE_STATUS_BADGE: Record<MilestoneRowStatus, { label: string; tone: 
   pending: { label: "Pending", tone: "neutral" },
 };
 
-export function ActivityDetails({ project, item, readOnly = false, onRaiseInvoice, onViewHistory }: Props) {
-  const milestones = getMilestonesForProject(project);
+/**
+ * Expanded row content — Quantity Progress + Milestone Summary. The
+ * Billing Summary cards and Raise Invoice quick action were dropped since
+ * they duplicated figures/actions already on the collapsed row itself
+ * (see ActivityRow.tsx).
+ */
+export function ActivityDetails({ project, item }: Props) {
   const completedQty = getActivityCompletedQty(item);
   const remainingQty = getActivityRemainingQty(item);
-  const invoiceRaised = getInvoiceRaisedAmount(item);
-  const balance = Math.max(item.totalPrice - invoiceRaised, 0);
-  const paymentReceived = Math.min(getPaymentReceivedAmount(item), invoiceRaised);
-  const outstanding = Math.max(invoiceRaised - paymentReceived, 0);
-  const status = getInvoiceStatus(item);
   const progressPercent = item.qty > 0 ? Math.min((completedQty / item.qty) * 100, 100) : 0;
-  const milestoneRows = getMilestoneSummaryForActivity(item, milestones);
 
-  const billingTiles = [
-    { key: "value", label: "Contract Value", value: formatBusinessINR(item.totalPrice), icon: <Banknote size={15} />, tint: "accent" as const },
-    { key: "raised", label: "Invoice Raised", value: formatBusinessINR(invoiceRaised), icon: <Receipt size={15} />, tint: "info" as const },
-    { key: "balance", label: "Balance", value: formatBusinessINR(balance), icon: <Wallet size={15} />, tint: "warning" as const },
-    { key: "outstanding", label: "Outstanding", value: formatBusinessINR(outstanding), icon: <Wallet size={15} />, tint: "danger" as const },
-  ];
+  const milestones = getMilestonesForProject(project);
+  const milestoneRows = getMilestoneSummaryForActivity(item, milestones);
 
   return (
     <div className="space-y-4">
@@ -120,44 +108,6 @@ export function ActivityDetails({ project, item, readOnly = false, onRaiseInvoic
           </div>
         )}
       </div>
-
-      {/* Billing Summary */}
-      <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] p-4">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--nu-text-muted)] mb-2.5">Billing Summary</p>
-        <SummaryCards tiles={billingTiles} className="grid grid-cols-2 lg:grid-cols-4 gap-3" />
-        <p className="mt-2.5 text-[11px] font-semibold whitespace-nowrap" title={formatFullINR(invoiceRaised)}>
-          <span className="text-[var(--nu-text-muted)]">Status: </span>
-          <span className="text-[var(--nu-text)]">{status}</span>
-        </p>
-      </div>
-
-      {/* Quick Actions */}
-      {!readOnly && (
-        <div className="flex flex-wrap items-center gap-2.5">
-          {remainingQty <= 0 ? (
-            <Button variant="primary" size="sm" disabled className="disabled:cursor-not-allowed disabled:opacity-50">
-              Fully Invoiced — No Remaining Quantity
-            </Button>
-          ) : (
-            <Button variant="primary" size="sm" icon={<PlusCircle size={14} />} onClick={onRaiseInvoice}>
-              Raise Invoice
-            </Button>
-          )}
-          <Button variant="outline" size="sm" icon={<History size={14} />} onClick={onViewHistory}>
-            View History
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<RefreshCcw size={14} />}
-            disabled
-            title="Quantity Revisions — coming soon"
-            className="disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Revise Quantity
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

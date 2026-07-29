@@ -24,25 +24,19 @@ interface DrawerState {
 
 /**
  * The Invoice Management module — Commercial Summary → Activities Billing →
- * Raise Invoice Drawer → Invoice History → Quantity Revisions (placeholder).
- * A production feature: every change here persists onto project.invoiceItems
- * via setProject, unlike the earlier Quantity-Based Invoice Tracking
- * prototype (now fully removed) which only ever simulated in memory.
+ * Raise Invoice Drawer → Invoice History. A production feature: every
+ * change here persists onto project.invoiceItems via setProject, unlike the
+ * earlier Quantity-Based Invoice Tracking prototype (now fully removed)
+ * which only ever simulated in memory.
  */
 export function InvoiceDashboard({ project, setProject, readOnly = false }: Props) {
   const isReadOnly = readOnly || !setProject;
 
   const [drawerState, setDrawerState] = useState<DrawerState | null>(null);
-  const [focusActivityId, setFocusActivityId] = useState<string | null>(null);
 
   const handleRaiseInvoice = (item: InvoiceItem) => {
     if (isReadOnly) return;
     setDrawerState({ item, mode: "create" });
-  };
-
-  const handleViewHistoryForActivity = (item: InvoiceItem) => {
-    setFocusActivityId(item.id);
-    document.getElementById("invoice-history-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const handleViewInvoiceLine = (item: InvoiceItem, line: InvoiceLine) => {
@@ -79,19 +73,14 @@ export function InvoiceDashboard({ project, setProject, readOnly = false }: Prop
         project={project}
         readOnly={isReadOnly}
         onRaiseInvoice={handleRaiseInvoice}
-        onViewHistory={handleViewHistoryForActivity}
       />
 
-      <div id="invoice-history-section">
-        <InvoiceHistory
-          key={focusActivityId ?? "all"}
-          project={project}
-          initialActivityFilter={focusActivityId}
-          onView={handleViewInvoiceLine}
-          onEdit={isReadOnly ? undefined : handleEditInvoiceLine}
-          onDelete={isReadOnly ? undefined : handleDeleteInvoiceLine}
-        />
-      </div>
+      <InvoiceHistory
+        project={project}
+        onView={handleViewInvoiceLine}
+        onEdit={isReadOnly ? undefined : handleEditInvoiceLine}
+        onDelete={isReadOnly ? undefined : handleDeleteInvoiceLine}
+      />
 
       {/* create/edit are only ever triggered when not read-only (handlers guard above); view is safe either way. */}
       {drawerState && (
