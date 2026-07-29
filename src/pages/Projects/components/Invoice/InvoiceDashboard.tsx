@@ -65,6 +65,18 @@ export function InvoiceDashboard({ project, setProject, readOnly = false }: Prop
     setDrawerState(null);
   };
 
+  // The drawer must never operate on the snapshot captured at click time —
+  // re-resolve `item`/`existingLine` against the live `project` prop on
+  // every render so the dialog reflects the same, single source of truth
+  // as the rest of the module (Activities table, Milestone Summary, Invoice
+  // History, KPI cards) rather than a frozen independent copy.
+  const activeItem = drawerState
+    ? project.invoiceItems.find((invoiceItem) => invoiceItem.id === drawerState.item.id) ?? drawerState.item
+    : null;
+  const activeExistingLine = drawerState?.existingLine
+    ? activeItem?.invoices.find((line) => line.id === drawerState.existingLine!.id) ?? drawerState.existingLine
+    : drawerState?.existingLine;
+
   return (
     <div className="space-y-5">
       <CommercialSummary project={project} />
@@ -83,12 +95,12 @@ export function InvoiceDashboard({ project, setProject, readOnly = false }: Prop
       />
 
       {/* create/edit are only ever triggered when not read-only (handlers guard above); view is safe either way. */}
-      {drawerState && (
+      {drawerState && activeItem && (
         <RaiseInvoiceDrawer
           project={project}
-          item={drawerState.item}
+          item={activeItem}
           mode={drawerState.mode}
-          existingLine={drawerState.existingLine}
+          existingLine={activeExistingLine}
           onClose={() => setDrawerState(null)}
           onSave={handleSave}
         />

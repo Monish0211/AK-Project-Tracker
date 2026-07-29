@@ -11,7 +11,11 @@ import {
   getInvoiceStatus,
   type InvoiceStatus,
 } from "../../../../services/invoiceProgressService";
-import { getActivityCompletedQty, getActivityRemainingQty, getBillingTypeLabel } from "./InvoiceCalculations";
+import {
+  getActivityCompletedQty,
+  getActivityRemainingQty,
+  getBillingTypeLabel,
+} from "./InvoiceCalculations";
 import { ActivityDetails } from "./ActivityDetails";
 
 interface Props {
@@ -30,8 +34,8 @@ const STATUS_BADGE: Record<InvoiceStatus, Tone> = {
 };
 
 export function ActivityRow({ project, item, isExpanded, readOnly = false, onToggleExpand, onRaiseInvoice }: Props) {
-  const completedQty = getActivityCompletedQty(item);
-  const remainingQty = getActivityRemainingQty(item);
+  const completedQty = getActivityCompletedQty(item, project);
+  const remainingQty = getActivityRemainingQty(item, project);
   const invoiceRaised = getInvoiceRaisedAmount(item);
   const balance = Math.max(item.totalPrice - invoiceRaised, 0);
   const status = getInvoiceStatus(item);
@@ -61,7 +65,7 @@ export function ActivityRow({ project, item, isExpanded, readOnly = false, onTog
         </td>
         <td className="px-3 py-3">
           <div className="flex items-center justify-center gap-1.5">
-            {!readOnly && remainingQty > 0 && (
+            {!readOnly && balance > 0 && (
               <Button variant="primary" size="sm" icon={<PlusCircle size={12} />} onClick={onRaiseInvoice}>
                 Raise Invoice
               </Button>

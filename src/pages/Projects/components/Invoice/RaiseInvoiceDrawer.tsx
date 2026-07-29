@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileText, PlusCircle, X } from "lucide-react";
+import { FileText, PlusCircle, X, Lock, Activity, CheckCircle2 } from "lucide-react";
 
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
@@ -7,13 +7,22 @@ import { Button } from "../../../../components/ui/Button";
 import { Input } from "../../../../components/ui/Input";
 import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
+import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
+import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 
 import {
   getMilestonesForProject,
   calculateLineAmount,
-  getEditableMaxQuantity,
-  getLinePreview,
+  getPreviousRaisedAmountForMilestone,
+  getCommercialBillingStatus,
+  getMilestoneBillingState,
   suggestNextInvoiceNumber,
+  getAvailableQuantity,
+  getActivityCompletedQty,
+  getActivityRemainingQty,
+  inferBillingQuantityMode,
+  isMilestoneAlreadyInvoiced,
+  type InvoiceWorkflowMode,
 } from "./InvoiceCalculations";
 import { InvoiceLineTable, type InvoiceLineRow } from "./InvoiceLineTable";
 
@@ -30,30 +39,32 @@ interface DraftLine {
   key: string;
   milestoneId?: string;
   milestoneLabel?: string;
+  milestonePercent?: number;
   description: string;
-  quantityInput: string;
+  qtyInput: string;
+  customAmountInput?: string;
   custom: boolean;
 }
 
 const todayISODate = (): string => new Date().toISOString().slice(0, 10);
-const bucketKey = (milestoneId?: string): string => milestoneId ?? "__none__";
 const labelClass = "mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]";
 const disabledFieldClass = "disabled:opacity-60 disabled:cursor-not-allowed";
 
 /**
- * Right-side drawer — the single place invoices get raised, viewed, or
- * edited. Width scales with the viewport (full-screen on mobile, ~90% on
- * tablets, 620–760px from laptop up to a 1920px desktop) while height is
- * always capped to the viewport, with only the content area scrolling and
- * the Cancel/Save footer staying fixed at the bottom.
+ * Universal Intelligent PMO Invoice Engine.
  *
- * In "create" mode it renders one dynamic billable line per configured
- * payment milestone (or a single free-text line when the project has none),
- * so PMO's per-milestone tracking and Accounts' direct-quantity billing are
- * the same table, never two separate flows. "view"/"edit" operate on
- * exactly one already-raised InvoiceLine.
+ * Auto-detects activity workflow:
+ * - Quantity-Driven Workflow (packages, NOS, KM, meters, man-hours)
+ * - Commercial Milestone Workflow (submission, draft, final, FAT/SAT, guarantee)
  */
-export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLine, onClose, onSave }: Props) {
+export function RaiseInvoiceDrawer({
+  project,
+  item,
+  mode = "create",
+  existingLine,
+  onClose,
+  onSave,
+}: Props) {
   const [show, setShow] = useState(false);
 
   const isViewMode = mode === "view";
@@ -62,26 +73,55 @@ export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLin
 
   const milestones = useMemo(() => getMilestonesForProject(project), [project]);
 
+  // Progressive vs Reference quantity consumption — see InvoiceCalculations.ts.
+  // Determined automatically from the activity's description / milestone
+  // structure, never a stored flag or a UI toggle. This is also the SOLE
+  // classifier for which invoice layout/formula applies — a milestone
+  // percentage must never be converted into a billed quantity.
+  const billingQtyMode = useMemo(() => inferBillingQuantityMode(item, milestones), [item, milestones]);
+  const workflowMode: InvoiceWorkflowMode = billingQtyMode === "reference" ? "commercial_milestone" : "quantity_driven";
+  const isCommercialMilestone = workflowMode === "commercial_milestone";
+  const baseAvailableQty = useMemo(() => getAvailableQuantity(item, milestones), [item, milestones]);
+
+  // Eligibility gate qty — kept separate from the PMO Execution Progress
+  // display below, which must show the same canonical completed/remaining
+  // figures as the Activities table and Milestone Summary (see
+  // getActivityCompletedQty/getActivityRemainingQty in InvoiceCalculations.ts)
+  // rather than an independently-tracked value.
+  const completedQty = item.qty;
+
+  // PMO Execution Progress (Read Only) — single source of truth shared with
+  // ActivityRow.tsx / ActivityDetails.tsx: sourced entirely from the
+  // PM/Quantity module (project.quantityItems), never from item.invoices.
+  // Raising, editing, or deleting an invoice never touches this.
+  const executionCompletedQty = useMemo(() => getActivityCompletedQty(item, project), [item, project]);
+  const executionRemainingQty = useMemo(() => getActivityRemainingQty(item, project), [item, project]);
+
   const [invoiceNo, setInvoiceNo] = useState(existingLine?.invoiceNo ?? suggestNextInvoiceNumber(project));
   const [invoiceDate, setInvoiceDate] = useState(existingLine?.invoiceDate ?? todayISODate());
   const [clientReference, setClientReference] = useState(existingLine?.clientReference ?? "");
   const [remarks, setRemarks] = useState(existingLine?.remarks ?? "");
   const [status, setStatus] = useState<InvoiceLineStatus>(existingLine?.status ?? "Pending");
 
-  // Edit/View mode: a single existing line's own quantity.
-  const [editQuantityInput, setEditQuantityInput] = useState(
+  // Edit/View mode states
+  const [editQtyInput, setEditQtyInput] = useState(
     existingLine ? String(existingLine.quantityBilled) : ""
   );
+  const [editAmountInput, setEditAmountInput] = useState(
+    existingLine ? String(existingLine.invoiceAmountINR) : ""
+  );
 
-  // Create mode: one draft row per milestone, or a single free-text row when none are configured.
+  // Create mode: draft rows per milestone
   const [draftLines, setDraftLines] = useState<DraftLine[]>(() => {
     if (milestones.length > 0) {
       return milestones.map((m) => ({
         key: m.id,
         milestoneId: m.id,
         milestoneLabel: m.label,
+        milestonePercent: m.percent,
         description: m.label,
-        quantityInput: "",
+        qtyInput: "",
+        customAmountInput: undefined,
         custom: false,
       }));
     }
@@ -89,9 +129,11 @@ export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLin
       {
         key: "default",
         milestoneId: undefined,
-        milestoneLabel: undefined,
+        milestoneLabel: "Full Completion",
+        milestonePercent: 100,
         description: item.description,
-        quantityInput: "",
+        qtyInput: "",
+        customAmountInput: undefined,
         custom: false,
       },
     ];
@@ -114,8 +156,10 @@ export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLin
         key: crypto.randomUUID(),
         milestoneId: undefined,
         milestoneLabel: undefined,
+        milestonePercent: 100,
         description: "",
-        quantityInput: "",
+        qtyInput: "",
+        customAmountInput: undefined,
         custom: true,
       },
     ]);
@@ -125,81 +169,185 @@ export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLin
     setDraftLines((prev) => prev.filter((line) => line.key !== key));
   };
 
-  const updateLineQty = (key: string, quantity: number) => {
+  const updateLineQty = (key: string, qty: number) => {
     setDraftLines((prev) =>
-      prev.map((line) => (line.key === key ? { ...line, quantityInput: quantity === 0 ? "" : String(quantity) } : line))
+      prev.map((line) => (line.key === key ? { ...line, qtyInput: qty === 0 ? "" : String(qty) } : line))
+    );
+  };
+
+  const updateLineAmount = (key: string, amount: number) => {
+    setDraftLines((prev) =>
+      prev.map((line) => (line.key === key ? { ...line, customAmountInput: amount === 0 ? "" : String(amount) } : line))
     );
   };
 
   const updateLineDescription = (key: string, description: string) => {
-    setDraftLines((prev) => prev.map((line) => (line.key === key ? { ...line, description } : line)));
+    setDraftLines((prev) =>
+      prev.map((line) => (line.key === key ? { ...line, description } : line))
+    );
   };
 
-  // Quantity already committed to history, per milestone bucket — excludes
-  // the line currently being edited (if any) so it never blocks itself.
-  const completedByBucket = useMemo(() => {
-    const map: Record<string, number> = {};
-    (item.invoices ?? []).forEach((line) => {
-      if (line.status === "Cancelled") return;
-      if (isEditMode && existingLine && line.id === existingLine.id) return;
-      const key = bucketKey(line.milestoneId);
-      map[key] = (map[key] ?? 0) + line.quantityBilled;
-    });
-    return map;
-  }, [item.invoices, isEditMode, existingLine]);
-
+  // Create mode rows
   const createRows: InvoiceLineRow[] = draftLines.map((line) => {
-    const key = bucketKey(line.milestoneId);
-    const completed = completedByBucket[key] ?? 0;
-    const otherDraftQtyInBucket = draftLines
-      .filter((other) => other.key !== line.key && bucketKey(other.milestoneId) === key)
-      .reduce((sum, other) => sum + (Number(other.quantityInput) || 0), 0);
-    const maxForThisRow = Math.max(item.qty - completed - otherDraftQtyInBucket, 0);
-    const quantity = Number(line.quantityInput) || 0;
-    const error = quantity > maxForThisRow + 0.0001
-      ? `Cannot exceed the remaining available quantity (${maxForThisRow} ${item.uom}).`
-      : null;
-    const remainingQty = Math.max(maxForThisRow - quantity, 0);
+    const milestonePercent = line.milestonePercent ?? (line.milestoneId ? milestones.find((m) => m.id === line.milestoneId)?.percent ?? 100 : 100);
+    const milestoneValue = Math.round(item.totalPrice * (milestonePercent / 100) * 100) / 100;
+    const previousRaisedAmount = getPreviousRaisedAmountForMilestone(item, line.milestoneId);
+
+    if (isCommercialMilestone) {
+      // Commercial Milestone Workflow — Balance Amount / Status come from
+      // getMilestoneBillingState, the single source of truth shared with
+      // validation below. `alreadyInvoiced` is previously SAVED invoices
+      // only — the amount currently being typed must never be folded in,
+      // or the balance (and status) would read as settled pre-save.
+      const currentInvoiceAmount = Number(line.customAmountInput) || 0;
+      const { balanceAmount, status: billingStatus } = getMilestoneBillingState(milestoneValue, previousRaisedAmount);
+
+      let error: string | null = null;
+      if (currentInvoiceAmount < 0) {
+        error = "Invoice amount cannot be negative.";
+      } else if (currentInvoiceAmount > balanceAmount + 0.01) {
+        error = `Amount exceeds remaining milestone balance (${formatBusinessINR(balanceAmount)}).`;
+      }
+
+      return {
+        key: line.key,
+        description: line.description,
+        milestoneLabel: line.milestoneLabel,
+        milestonePercent,
+        contractQty: item.qty,
+        completedQty,
+        eligibleQty: completedQty,
+        qtyToBill: 0,
+        unitPrice: item.unitPrice,
+        milestoneValue,
+        calculatedAmount: milestoneValue,
+        currentInvoiceAmount,
+        commercialAdjustment: 0,
+        previousRaisedAmount,
+        remainingQty: 0,
+        remainingAmount: balanceAmount,
+        status: billingStatus,
+        error,
+        removable: line.custom,
+      };
+    }
+
+    // Quantity-Driven Workflow — available qty depends on this activity's
+    // Progressive vs Reference billing mode (see InvoiceCalculations.ts).
+    const qtyToBill = Number(line.qtyInput) || 0;
+
+    let eligibleQty: number;
+    let error: string | null = null;
+
+    if (billingQtyMode === "reference") {
+      // Never consumed — every milestone always sees the full quantity.
+      eligibleQty = item.qty;
+      if (isMilestoneAlreadyInvoiced(item, line.milestoneId)) {
+        error = "This milestone has already been invoiced.";
+      }
+    } else {
+      // Progressive — one shared pool across every milestone on this
+      // activity, also accounting for quantity typed into sibling rows in
+      // this same not-yet-saved session so two rows can't over-claim it.
+      const otherDraftQtyInSession = draftLines
+        .filter((other) => other.key !== line.key)
+        .reduce((sum, other) => sum + (Number(other.qtyInput) || 0), 0);
+      eligibleQty = Math.max(Math.round((baseAvailableQty - otherDraftQtyInSession) * 100) / 100, 0);
+    }
+
+    const calculatedAmount = calculateLineAmount(qtyToBill, item.unitPrice);
+    const currentInvoiceAmount = line.customAmountInput !== undefined && line.customAmountInput !== ""
+      ? Number(line.customAmountInput)
+      : calculatedAmount;
+
+    const commercialAdjustment = Math.round((currentInvoiceAmount - calculatedAmount) * 100) / 100;
+    const remainingQty = billingQtyMode === "reference" ? item.qty : Math.max(eligibleQty - qtyToBill, 0);
+    const remainingAmount = Math.max(milestoneValue - (previousRaisedAmount + currentInvoiceAmount), 0);
+
+    if (completedQty <= 0) {
+      error = error ?? "Execution completed qty is 0. Not eligible.";
+    } else if (billingQtyMode !== "reference" && qtyToBill > eligibleQty + 0.001) {
+      error = `Qty to bill cannot exceed available qty (${eligibleQty} ${item.uom}).`;
+    } else if (currentInvoiceAmount < 0) {
+      error = error ?? "Invoice amount cannot be negative.";
+    }
+
+    const billingStatus = getCommercialBillingStatus(completedQty, milestoneValue, previousRaisedAmount + currentInvoiceAmount);
 
     return {
       key: line.key,
       description: line.description,
       milestoneLabel: line.milestoneLabel,
+      milestonePercent,
       contractQty: item.qty,
-      completedQty: completed,
-      currentInvoiceQty: quantity,
+      completedQty,
+      eligibleQty,
+      qtyToBill,
       unitPrice: item.unitPrice,
-      currentInvoiceAmount: calculateLineAmount(quantity, item.unitPrice),
+      milestoneValue,
+      calculatedAmount,
+      currentInvoiceAmount,
+      commercialAdjustment,
+      previousRaisedAmount,
       remainingQty,
-      remainingAmount: calculateLineAmount(remainingQty, item.unitPrice),
+      remainingAmount,
+      status: billingStatus,
       error,
       removable: line.custom,
     };
   });
 
-  // Edit/View: a single row built from the existing line.
-  const editMaxQty = existingLine ? getEditableMaxQuantity(item, existingLine.id) : 0;
-  const editQuantityValue = editQuantityInput.trim() === "" ? 0 : Number(editQuantityInput);
-  const editPreview = existingLine ? getLinePreview(item, editQuantityValue, existingLine.id) : null;
-  const editError =
-    existingLine && editQuantityValue > editMaxQty + 0.0001
-      ? `Cannot exceed the remaining available quantity (${editMaxQty} ${item.uom}).`
-      : null;
+  // Edit/View mode row
+  const editQtyValue = Number(editQtyInput) || 0;
+  const editMilestone = existingLine?.milestoneId ? milestones.find((m) => m.id === existingLine.milestoneId) : undefined;
+  const editMilestonePercent = editMilestone?.percent ?? 100;
+  const editMilestoneValue = Math.round(item.totalPrice * (editMilestonePercent / 100) * 100) / 100;
+  const editPreviousRaisedAmount = getPreviousRaisedAmountForMilestone(item, existingLine?.milestoneId, existingLine?.id);
+
+  const editCalculatedAmount = isCommercialMilestone
+    ? editMilestoneValue
+    : calculateLineAmount(editQtyValue, item.unitPrice);
+
+  const editAmountValue = editAmountInput !== "" ? Number(editAmountInput) : editCalculatedAmount;
+  const editCommercialAdjustment = isCommercialMilestone ? 0 : Math.round((editAmountValue - editCalculatedAmount) * 100) / 100;
+
+  // Same Progressive/Reference rule as create mode — excludes this line's
+  // own prior quantity so editing it back to its current value never trips
+  // the availability check.
+  const editEligibleQty = billingQtyMode === "reference"
+    ? item.qty
+    : getAvailableQuantity(item, milestones, existingLine?.id);
+
+  // Same single source of truth as create mode: Balance Amount / Status
+  // reflect the milestone against OTHER saved invoices only, never the
+  // amount currently being typed into this edit's own Invoice Amount field.
+  const editMilestoneBillingState = getMilestoneBillingState(editMilestoneValue, editPreviousRaisedAmount);
 
   const editRows: InvoiceLineRow[] = existingLine
     ? [
         {
           key: existingLine.id,
           description: existingLine.description ?? item.description,
-          milestoneLabel: existingLine.milestoneName,
+          milestoneLabel: existingLine.milestoneName ?? editMilestone?.label ?? "Full Completion",
+          milestonePercent: editMilestonePercent,
           contractQty: item.qty,
-          completedQty: completedByBucket[bucketKey(existingLine.milestoneId)] ?? 0,
-          currentInvoiceQty: editQuantityValue,
+          completedQty,
+          eligibleQty: editEligibleQty,
+          qtyToBill: editQtyValue,
           unitPrice: item.unitPrice,
-          currentInvoiceAmount: editPreview?.currentInvoiceAmount ?? 0,
-          remainingQty: editPreview?.remainingQty ?? 0,
-          remainingAmount: editPreview?.remainingAmount ?? 0,
-          error: editError,
+          milestoneValue: editMilestoneValue,
+          calculatedAmount: editCalculatedAmount,
+          currentInvoiceAmount: editAmountValue,
+          commercialAdjustment: editCommercialAdjustment,
+          previousRaisedAmount: editPreviousRaisedAmount,
+          remainingQty: billingQtyMode === "reference" ? item.qty : Math.max(editEligibleQty - editQtyValue, 0),
+          remainingAmount: isCommercialMilestone
+            ? editMilestoneBillingState.balanceAmount
+            : Math.max(editMilestoneValue - (editPreviousRaisedAmount + editAmountValue), 0),
+          status: isCommercialMilestone
+            ? editMilestoneBillingState.status
+            : getCommercialBillingStatus(completedQty, editMilestoneValue, editPreviousRaisedAmount + editAmountValue),
+          error: null,
           removable: false,
         },
       ]
@@ -208,19 +356,14 @@ export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLin
   const rows = isCreateMode ? createRows : editRows;
 
   const hasBillableLine = isCreateMode
-    ? createRows.some((row) => row.currentInvoiceQty > 0 && !row.error)
-    : !editError && editQuantityValue > 0;
+    ? createRows.some((row) => (isCommercialMilestone ? row.currentInvoiceAmount > 0 : row.qtyToBill > 0) && !row.error)
+    : (isCommercialMilestone ? editAmountValue > 0 : editQtyValue > 0) && !editRows[0]?.error;
 
   const canSave =
     !isViewMode &&
     invoiceNo.trim() !== "" &&
     invoiceDate.trim() !== "" &&
     hasBillableLine;
-
-  const handleQtyInput = (raw: string) => {
-    if (raw !== "" && !/^\d*\.?\d*$/.test(raw)) return;
-    setEditQuantityInput(raw);
-  };
 
   const handleSave = () => {
     if (!canSave) return;
@@ -229,8 +372,10 @@ export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLin
       const updatedLine: InvoiceLine = {
         ...existingLine,
         invoiceDate,
-        quantityBilled: editQuantityValue,
-        invoiceAmountINR: calculateLineAmount(editQuantityValue, item.unitPrice),
+        quantityBilled: isCommercialMilestone ? 0 : editQtyValue,
+        calculatedAmountINR: editCalculatedAmount,
+        invoiceAmountINR: editAmountValue,
+        commercialAdjustmentINR: editCommercialAdjustment,
         clientReference: clientReference.trim() || undefined,
         remarks: remarks.trim() || undefined,
         status,
@@ -252,7 +397,7 @@ export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLin
     }
 
     const newLines: InvoiceLine[] = createRows
-      .filter((row) => row.currentInvoiceQty > 0 && !row.error)
+      .filter((row) => (isCommercialMilestone ? row.currentInvoiceAmount > 0 : row.qtyToBill > 0) && !row.error)
       .map((row) => ({
         id: crypto.randomUUID(),
         invoiceNo: invoiceNo.trim(),
@@ -260,8 +405,10 @@ export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLin
         milestoneId: draftLines.find((line) => line.key === row.key)?.milestoneId,
         milestoneName: row.milestoneLabel,
         description: row.milestoneLabel ? undefined : row.description.trim() || item.description,
-        quantityBilled: row.currentInvoiceQty,
+        quantityBilled: isCommercialMilestone ? 0 : row.qtyToBill,
+        calculatedAmountINR: row.calculatedAmount,
         invoiceAmountINR: row.currentInvoiceAmount,
+        commercialAdjustmentINR: row.commercialAdjustment,
         clientReference: clientReference.trim() || undefined,
         remarks: remarks.trim() || undefined,
         status: "Pending",
@@ -284,41 +431,107 @@ export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLin
 
   return (
     <>
+      {/* Backdrop */}
       <div
         role="button"
         aria-label="Close invoice drawer"
         tabIndex={-1}
         onClick={handleClose}
-        className={`fixed inset-0 z-40 bg-slate-900/20 transition-opacity duration-200 ${show ? "opacity-100" : "opacity-0"}`}
+        className={`fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-200 ${
+          show ? "opacity-100" : "opacity-0"
+        }`}
       />
 
+      {/* Drawer Panel */}
       <aside
-        className={`fixed right-0 top-0 z-50 flex h-full w-full flex-col bg-[var(--nu-surface)] shadow-2xl transition-transform duration-200 ease-out md:w-[90%] lg:w-[620px] xl:w-[680px] 2xl:w-[760px] ${
+        className={`fixed right-0 top-0 z-50 flex h-full w-full flex-col bg-[var(--nu-surface)] shadow-2xl transition-transform duration-200 ease-out md:w-[90%] lg:w-[720px] xl:w-[840px] 2xl:w-[920px] ${
           show ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-[var(--nu-border)] px-6 py-5">
+        {/* Fixed Header */}
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--nu-border)] px-6 py-5 shrink-0 bg-white dark:bg-slate-900">
           <div className="min-w-0">
-            <h2 className="text-xl font-bold text-[var(--nu-text)]">{title}</h2>
-            <p className="mt-1 text-sm text-[var(--nu-text-muted)] truncate">{subtitle}</p>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-[var(--nu-text)]">{title}</h2>
+              <span className="px-2.5 py-0.5 rounded-full bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-800 text-[10.5px] font-bold uppercase tracking-wider">
+                {isCommercialMilestone ? "Commercial Milestone Billing" : "Quantity-Driven Billing"}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-[var(--nu-text-muted)] truncate">{subtitle}</p>
           </div>
           <button
             onClick={handleClose}
-            className="shrink-0 rounded-lg p-2 text-[var(--nu-text-muted)] transition hover:bg-[var(--nu-surface-alt)] hover:text-[var(--nu-text)]"
+            className="shrink-0 rounded-lg p-2 text-[var(--nu-text-muted)] transition hover:bg-[var(--nu-surface-alt)] hover:text-[var(--nu-text)] cursor-pointer"
           >
             <X size={20} />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-6">
-          {/* Invoice Information */}
-          <div className="rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-4 space-y-4">
-            <div className="flex items-center gap-2">
-              <FileText size={16} className="text-[var(--nu-accent)]" />
-              <h4 className="text-sm font-bold text-[var(--nu-text)]">Invoice Information</h4>
+        {/* Scrollable Body */}
+        <div className="flex-1 min-h-0 space-y-6 overflow-y-auto px-6 py-6 custom-scrollbar">
+
+          {/* ═══ SECTION 1: Execution Progress (PMO Source of Truth - Read Only) ═══ */}
+          <div className="rounded-2xl border border-blue-200/80 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/20 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Activity size={16} className="text-blue-600 dark:text-blue-400" />
+                <h4 className="text-xs font-extrabold uppercase tracking-wider text-blue-900 dark:text-blue-200">
+                  Execution Progress (PMO Data)
+                </h4>
+              </div>
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[10.5px] font-bold">
+                <Lock size={11} /> Read Only for Accounts
+              </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-1">
+              <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-blue-100 dark:border-blue-900/40">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Contract Qty</p>
+                <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
+                  {formatIndianNumber(item.qty)} <span className="text-[10.5px] font-medium text-slate-500">{item.uom}</span>
+                </p>
+              </div>
+
+              <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-emerald-200/60 dark:border-emerald-900/40">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 size={10} /> Completed Qty
+                </p>
+                <p className="text-sm font-extrabold text-emerald-700 dark:text-emerald-300 mt-0.5">
+                  {formatIndianNumber(executionCompletedQty)} <span className="text-[10.5px] font-medium text-slate-500">{item.uom}</span>
+                </p>
+              </div>
+
+              <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Remaining Qty</p>
+                <p className="text-sm font-extrabold text-slate-700 dark:text-slate-300 mt-0.5">
+                  {formatIndianNumber(executionRemainingQty)} <span className="text-[10.5px] font-medium text-slate-500">{item.uom}</span>
+                </p>
+              </div>
+
+              <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Unit Rate</p>
+                <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5" title={formatFullINR(item.unitPrice)}>
+                  {formatBusinessINR(item.unitPrice)}/{item.uom}
+                </p>
+              </div>
+
+              <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800 sm:col-span-1 col-span-2">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Work Order Value</p>
+                <p className="text-sm font-extrabold text-cyan-600 dark:text-cyan-400 mt-0.5" title={formatFullINR(item.totalPrice)}>
+                  {formatBusinessINR(item.totalPrice)}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* ═══ SECTION 2: Invoice Information ═══ */}
+          <div className="rounded-2xl border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-4 space-y-4 shadow-2xs">
+            <div className="flex items-center gap-2">
+              <FileText size={16} className="text-[var(--nu-accent)]" />
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--nu-text)]">Invoice Header Details</h4>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className={labelClass}>Invoice Number</label>
                 <Input
@@ -326,7 +539,7 @@ export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLin
                   value={invoiceNo}
                   disabled={isViewMode}
                   className={disabledFieldClass}
-                  placeholder="e.g. INV-001"
+                  placeholder="e.g. PR-10039-INV-001"
                   onChange={(e) => setInvoiceNo(e.target.value)}
                 />
               </div>
@@ -341,19 +554,19 @@ export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLin
                 />
               </div>
               <div>
-                <label className={labelClass}>Client Reference</label>
+                <label className={labelClass}>Client Reference / PO Ref</label>
                 <Input
                   type="text"
                   value={clientReference}
                   disabled={isViewMode}
                   className={disabledFieldClass}
-                  placeholder="Optional"
+                  placeholder="Optional PO Reference"
                   onChange={(e) => setClientReference(e.target.value)}
                 />
               </div>
               {!isCreateMode && (
                 <div>
-                  <label className={labelClass}>Status</label>
+                  <label className={labelClass}>Invoice Status</label>
                   <Select
                     value={status}
                     disabled={isViewMode}
@@ -369,22 +582,31 @@ export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLin
             </div>
 
             <div>
-              <label className={labelClass}>Remarks</label>
+              <label className={labelClass}>Remarks / Internal Notes</label>
               <Textarea
                 value={remarks}
                 disabled={isViewMode}
                 className={`resize-none ${disabledFieldClass}`}
-                placeholder="Optional notes for this invoice..."
+                placeholder="Optional billing notes..."
                 rows={2}
                 onChange={(e) => setRemarks(e.target.value)}
               />
             </div>
           </div>
 
-          {/* Billable Line Items */}
-          <div className="space-y-2.5">
+          {/* ═══ SECTION 3: Billable Line Items (Auto-Detected Engine) ═══ */}
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-bold text-[var(--nu-text)]">Billable Line Items</h4>
+              <div>
+                <h4 className="text-sm font-extrabold text-[var(--nu-text)]">Billable Line Items Table</h4>
+                <p className="text-[11.5px] text-[var(--nu-text-muted)] mt-0.5">
+                  {isCommercialMilestone ? (
+                    <span>Auto-Detected: <strong className="text-cyan-600 dark:text-cyan-400">Commercial Milestone Billing</strong> (Invoicing against milestone value).</span>
+                  ) : (
+                    <span>Auto-Detected: <strong className="text-blue-600 dark:text-blue-400">Quantity-Driven Billing</strong> (Accounts enters Bill Qty).</span>
+                  )}
+                </p>
+              </div>
               {isCreateMode && (
                 <Button variant="outline" size="sm" icon={<PlusCircle size={13} />} onClick={addCustomLine}>
                   Add Line
@@ -394,33 +616,42 @@ export function RaiseInvoiceDrawer({ project, item, mode = "create", existingLin
 
             {isCreateMode ? (
               <InvoiceLineTable
+                workflowMode={workflowMode}
                 rows={rows}
                 uom={item.uom}
-                onQtyChange={updateLineQty}
+                onQtyToBillChange={updateLineQty}
+                onInvoiceAmountChange={updateLineAmount}
                 onDescriptionChange={updateLineDescription}
                 onRemoveRow={removeLine}
               />
             ) : (
               <InvoiceLineTable
+                workflowMode={workflowMode}
                 rows={rows}
                 uom={item.uom}
                 disabled={isViewMode}
-                onQtyChange={(_key, quantity) => handleQtyInput(quantity === 0 ? "" : String(quantity))}
+                onQtyToBillChange={(_key, qty) => setEditQtyInput(qty === 0 ? "" : String(qty))}
+                onInvoiceAmountChange={(_key, amount) => setEditAmountInput(amount === 0 ? "" : String(amount))}
                 onDescriptionChange={() => {}}
                 onRemoveRow={() => {}}
               />
             )}
 
-            <p className="text-[11px] text-[var(--nu-text-muted)] leading-snug">
-              Milestones shown above are reference information from the Payments tab — you are never required to bill the
-              full milestone percentage. Add a custom line for completed deliverables or manual billing stages instead.
-            </p>
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-[11px] text-[var(--nu-text-muted)] leading-relaxed space-y-1">
+              <p>
+                <strong>Intelligent PMO Engine:</strong> The system automatically selects the invoice layout based on contract type (Quantity vs Milestone).
+              </p>
+              <p>
+                PM Execution Data is read-only. Accounts enters billing details and can edit Invoice Amount when commercial adjustments exist.
+              </p>
+            </div>
           </div>
         </div>
 
-        <div className="flex shrink-0 justify-end gap-3 border-t border-[var(--nu-border)] px-6 py-4">
+        {/* Sticky Footer */}
+        <div className="flex shrink-0 justify-end items-center gap-3 border-t border-[var(--nu-border)] px-6 py-4 bg-white dark:bg-slate-900 sticky bottom-0 z-10">
           {isViewMode ? (
-            <Button variant="secondary" onClick={handleClose} className="w-[140px] py-2.5">
+            <Button variant="secondary" onClick={handleClose} className="w-[130px] py-2.5">
               Close
             </Button>
           ) : (

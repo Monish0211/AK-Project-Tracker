@@ -27,8 +27,14 @@ export interface InvoiceLine {
   /** Quantity completed and billed in this line. */
   quantityBilled: number;
 
-  /** quantityBilled × the activity's unit rate at the time of billing (INR). */
+  /** Calculated amount before commercial adjustment = Qty Billed × Unit Rate × Milestone % */
+  calculatedAmountINR?: number;
+
+  /** Actual invoice amount entered by Accounts after commercial adjustment */
   invoiceAmountINR: number;
+
+  /** Commercial adjustment = invoiceAmountINR - calculatedAmountINR (e.g. -189 or +500) */
+  commercialAdjustmentINR?: number;
 
   clientReference?: string;
   remarks?: string;
