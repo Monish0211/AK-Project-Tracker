@@ -1,4 +1,5 @@
 import type { Project } from "../types/Project";
+import type { InvoiceLine } from "../types/InvoiceItem";
 import { createEmptyProject, inferPrCategory, inferDomesticForeign } from "../utils/createEmptyProject";
 import { calculateQuantity } from "../utils/quantityCalculations";
 import { syncInvoiceItemsWithQuantity } from "./invoiceSyncService";
@@ -91,8 +92,8 @@ export function normalizeProject(project: Project): Project {
     paymentMilestones,
     paymentType: project.paymentType || (paymentMilestones.length > 1 ? "Multiple" : "Single"),
     paymentTerms: project.paymentTerms || "30% / 40% / 30%",
-    milestoneBillings: Array.isArray(project.milestoneBillings)
-      ? project.milestoneBillings
+    quantityRevisions: Array.isArray(project.quantityRevisions)
+      ? project.quantityRevisions
       : [],
     manhourExpenses: Array.isArray(project.manhourExpenses)
       ? project.manhourExpenses
@@ -105,11 +106,23 @@ export function normalizeProject(project: Project): Project {
       Array.isArray(project.invoiceItems) ? project.invoiceItems : []
     ).map((item) => ({
       ...item,
-      invoices: (Array.isArray(item.invoices) ? item.invoices : []).map((invoice) => ({
+      // Defensively normalizes both the current InvoiceLine shape and any
+      // legacy persisted InvoiceEntry (id/invoiceDate/quantityBilled/
+      // invoiceAmountINR only) from localStorage written before the Invoice
+      // Management module existed.
+      invoices: (Array.isArray(item.invoices) ? item.invoices : []).map((invoice: Partial<InvoiceLine> & { id: string }) => ({
         id: invoice.id,
+        invoiceNo: typeof invoice.invoiceNo === "string" && invoice.invoiceNo ? invoice.invoiceNo : `LEGACY-${String(invoice.id).slice(0, 8)}`,
         invoiceDate: invoice.invoiceDate || "",
+        milestoneId: invoice.milestoneId,
+        milestoneName: invoice.milestoneName,
+        description: invoice.description,
         quantityBilled: typeof invoice.quantityBilled === "number" ? invoice.quantityBilled : 0,
         invoiceAmountINR: typeof invoice.invoiceAmountINR === "number" ? invoice.invoiceAmountINR : 0,
+        clientReference: invoice.clientReference,
+        remarks: invoice.remarks,
+        status: invoice.status === "Paid" || invoice.status === "Cancelled" ? invoice.status : "Pending",
+        createdBy: invoice.createdBy || "Administrator",
       })),
     })),
     resources: Array.isArray(project.resources)

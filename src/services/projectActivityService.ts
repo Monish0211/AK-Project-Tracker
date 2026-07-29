@@ -77,13 +77,19 @@ export const getProjectActivityTimeline = (project: Project, limit = 20): Projec
     });
   });
 
-  (project.milestoneBillings || []).forEach((billing) => {
-    events.push({
-      id: `milestone-${billing.id}`,
-      category: "Milestone",
-      title: "Milestone Billed",
-      description: `${billing.milestoneName} billed for ₹ ${billing.amount.toLocaleString("en-IN")}.`,
-      timestamp: billing.invoiceDate,
+  (project.invoiceItems || []).forEach((item) => {
+    (item.invoices || []).forEach((line) => {
+      if (line.status === "Cancelled") return;
+      events.push({
+        id: `invoice-line-${line.id}`,
+        category: "Milestone",
+        title: "Invoice Raised",
+        description: line.milestoneName
+          ? `${item.description} — ${line.milestoneName} billed for ₹ ${line.invoiceAmountINR.toLocaleString("en-IN")}.`
+          : `${item.description} billed for ₹ ${line.invoiceAmountINR.toLocaleString("en-IN")}.`,
+        user: line.createdBy || undefined,
+        timestamp: line.invoiceDate,
+      });
     });
   });
 

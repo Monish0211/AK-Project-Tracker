@@ -1,7 +1,6 @@
 import type { InvoiceItem } from "../types/InvoiceItem";
 import type { Project } from "../types/Project";
 import { getNextPayment } from "../utils/paymentUtils";
-import { getTotalMilestoneBilled } from "./milestoneBillingService";
 
 export type InvoiceStatus = "Pending" | "Partially Invoiced" | "Completed";
 
@@ -12,13 +11,13 @@ export function calculateTotalPrice(
   return unitPrice * qty;
 }
 
+/** Sums a line's billed amount across all non-cancelled invoice lines — a Cancelled line is kept for audit visibility but never counted as raised. */
 export function getInvoiceRaisedAmount(item: InvoiceItem): number {
   const invoices = Array.isArray(item.invoices) ? item.invoices : [];
 
-  return invoices.reduce(
-    (sum, invoice) => sum + invoice.invoiceAmountINR,
-    0
-  );
+  return invoices
+    .filter((invoice) => invoice.status !== "Cancelled")
+    .reduce((sum, invoice) => sum + invoice.invoiceAmountINR, 0);
 }
 
 export function getRowInvoicePercentage(item: InvoiceItem): number {
@@ -66,12 +65,34 @@ export function getTotalInvoiceRaised(items: InvoiceItem[]): number {
   );
 }
 
+/** Sums a line's billed amount across only its Paid lines — the "payment recorded" signal in this ledger (there is no separate payment-entry object; marking a line Paid via Edit Invoice IS recording the payment). */
+export function getPaymentReceivedAmount(item: InvoiceItem): number {
+  const invoices = Array.isArray(item.invoices) ? item.invoices : [];
+
+  return invoices
+    .filter((invoice) => invoice.status === "Paid")
+    .reduce((sum, invoice) => sum + invoice.invoiceAmountINR, 0);
+}
+
+export function getTotalPaymentReceived(items: InvoiceItem[]): number {
+  const safeItems = Array.isArray(items) ? items : [];
+
+  return safeItems.reduce(
+    (sum, item) => sum + getPaymentReceivedAmount(item),
+    0
+  );
+}
+
+/** Count of non-cancelled invoice lines across all activities. */
 export function getInvoiceCount(items: InvoiceItem[]): number {
   const safeItems = Array.isArray(items) ? items : [];
 
   return safeItems.reduce(
     (count, item) =>
-      count + (Array.isArray(item.invoices) ? item.invoices.length : 0),
+      count +
+      (Array.isArray(item.invoices)
+        ? item.invoices.filter((invoice) => invoice.status !== "Cancelled").length
+        : 0),
     0
   );
 }
@@ -118,9 +139,11 @@ export interface ProjectCommercialSummary {
   /** Total work-package value, derived from Invoice History (mirrors Quantity Details). */
   projectValueINR: number;
   totalInvoiceRaised: number;
-  /** Balance not yet invoiced. Never negative. */
+  /** Balance not yet invoiced (Contract Value − Invoice Raised, "Balance to Invoice"). Never negative. */
   pendingDue: number;
-  /** Same basis as pendingDue — Invoice History does not track per-invoice payment collection. */
+  /** Sum of every invoice line marked Paid — recording a payment. */
+  totalPaymentReceived: number;
+  /** Invoice Raised − Payment Received ("Outstanding" — invoiced but not yet collected). Never negative. */
   outstandingCollection: number;
   invoiceCompletionPercent: number;
   invoiceStatus: ProjectInvoiceStatus;
@@ -135,20 +158,24 @@ export interface ProjectCommercialSummary {
 /**
  * The single source of truth for a project's commercial figures (Pending Due,
  * Next Payment, Invoice Completion, Invoice Raised, Outstanding Collection,
- * Invoice Status). Combines BOTH independent billing tracks — Quantity Based
- * Billing (project.invoiceItems) and Payment Milestone Billing
- * (project.milestoneBillings) — into one project-wide total, so every page
- * (Repository, Dashboard, View Project, Edit Project) shows a consistent
- * combined figure. The two tracks are still calculated completely separately
- * (see quantityBillingService.ts / milestoneBillingService.ts) — only their
- * resulting totals are added together here, never their calculation logic.
+ * Invoice Status) — used by Dashboard, Project Repository, View Project, and
+ * Edit Project so every page shows a consistent figure.
  *
- * Deliberately never reads project.workOrderValue(INR), payment-received
- * fields, or the standalone Invoices module — those are a different concept
- * (operational Project Status) or unrelated legacy/parallel data.
+ * Sourced entirely from project.invoiceItems[].invoices — one unified
+ * per-activity billing ledger. A payment milestone is only ever an optional
+ * reference label on a line (see types/InvoiceItem.ts's InvoiceLine.milestoneId)
+ * — never a second, independently-tracked billing total. Payment Received is
+ * likewise derived from this same ledger (every line marked Paid) rather
+ * than the legacy, Excel-import-only project.paymentReceivedINR field, so
+ * it updates the instant a line's status changes — no separate payment
+ * record to keep in sync.
  *
- * The one narrow exception is Next Payment's due date: neither billing track
- * has a per-entry due date, so the nearest Payment Milestone due date is used
+ * Deliberately never reads project.workOrderValue(INR) or the standalone
+ * Invoices module — those are a different concept (operational Project
+ * Status) or unrelated legacy/parallel data.
+ *
+ * The one narrow exception is Next Payment's due date: invoice lines don't
+ * carry their own due date, so the nearest Payment Milestone due date is used
  * — but only while the project isn't fully invoiced yet (see rule below).
  */
 export function getProjectCommercialSummary(
@@ -159,16 +186,8 @@ export function getProjectCommercialSummary(
     : [];
 
   const projectValueINR = getTotalWorkPackageValue(invoiceItems);
-
-  // Quantity Based Billing and Payment Milestone Billing are two independent
-  // ways of measuring progress against the SAME Work Order Value — never
-  // additive. Whichever track has billed further represents the project's
-  // actual commercial progress; the other track's amount must not be summed
-  // on top of it (that would double-count the same work).
-  const quantityBasedTotal = getTotalInvoiceRaised(invoiceItems);
-  const milestoneBasedTotal = getTotalMilestoneBilled(project);
   const totalInvoiceRaised = Math.min(
-    Math.max(quantityBasedTotal, milestoneBasedTotal),
+    getTotalInvoiceRaised(invoiceItems),
     projectValueINR
   );
 
@@ -176,6 +195,11 @@ export function getProjectCommercialSummary(
     getBalanceAmount(projectValueINR, totalInvoiceRaised),
     0
   );
+  const totalPaymentReceived = Math.min(
+    getTotalPaymentReceived(invoiceItems),
+    totalInvoiceRaised
+  );
+  const outstandingCollection = Math.max(totalInvoiceRaised - totalPaymentReceived, 0);
   const invoiceCompletionPercent = Math.min(
     Math.max(
       getInvoiceCompletionPercentage(projectValueINR, totalInvoiceRaised),
@@ -183,8 +207,7 @@ export function getProjectCommercialSummary(
     ),
     100
   );
-  const invoicesRaisedCount =
-    getInvoiceCount(invoiceItems) + (project.milestoneBillings?.length ?? 0);
+  const invoicesRaisedCount = getInvoiceCount(invoiceItems);
 
   let invoiceStatus: ProjectInvoiceStatus;
   if (totalInvoiceRaised <= 0) {
@@ -216,7 +239,8 @@ export function getProjectCommercialSummary(
     projectValueINR,
     totalInvoiceRaised,
     pendingDue,
-    outstandingCollection: pendingDue,
+    totalPaymentReceived,
+    outstandingCollection,
     invoiceCompletionPercent,
     invoiceStatus,
     invoicesRaisedCount,
@@ -225,4 +249,15 @@ export function getProjectCommercialSummary(
     nextPaymentDaysLeft,
     nextPaymentStatus,
   };
+}
+
+/** Is this payment milestone referenced by any non-cancelled invoice line across the project's activities? */
+export function isMilestoneBilled(project: Project, milestoneId: string): boolean {
+  const invoiceItems = Array.isArray(project.invoiceItems) ? project.invoiceItems : [];
+
+  return invoiceItems.some((item) =>
+    (Array.isArray(item.invoices) ? item.invoices : []).some(
+      (line) => line.milestoneId === milestoneId && line.status !== "Cancelled"
+    )
+  );
 }

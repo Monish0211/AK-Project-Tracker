@@ -905,9 +905,13 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
       const invoiceRaisedINR = draft.fields.currency === "INR" ? invoiceRaised : invoiceRaised * draft.fields.exchangeRate;
       invoiceItems[0].invoices.push({
         id: crypto.randomUUID(),
+        invoiceNo: `${draft.fields.prNo || "IMPORT"}-INV-001`,
         invoiceDate: new Date().toISOString().split("T")[0],
+        description: "Imported invoice total (Excel import)",
         quantityBilled: 0,
         invoiceAmountINR: invoiceRaisedINR,
+        status: "Pending",
+        createdBy: "Excel Import",
       });
     }
 

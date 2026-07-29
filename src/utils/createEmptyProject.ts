@@ -162,7 +162,7 @@ export function createEmptyProject(): Project {
     // ==========================
 
     invoiceItems: syncInvoiceItemsWithQuantity(quantityItems, []),
-    milestoneBillings: [],
+    quantityRevisions: [],
 
     paymentReceived: 0,
     paymentReceivedINR: 0,
