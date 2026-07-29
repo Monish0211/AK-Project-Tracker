@@ -21,7 +21,6 @@ interface Props {
   readOnly?: boolean;
   onToggleExpand: () => void;
   onRaiseInvoice: () => void;
-  onViewHistory: () => void;
 }
 
 const STATUS_BADGE: Record<InvoiceStatus, Tone> = {
@@ -30,7 +29,7 @@ const STATUS_BADGE: Record<InvoiceStatus, Tone> = {
   Completed: "success",
 };
 
-export function ActivityRow({ project, item, isExpanded, readOnly = false, onToggleExpand, onRaiseInvoice, onViewHistory }: Props) {
+export function ActivityRow({ project, item, isExpanded, readOnly = false, onToggleExpand, onRaiseInvoice }: Props) {
   const completedQty = getActivityCompletedQty(item);
   const remainingQty = getActivityRemainingQty(item);
   const invoiceRaised = getInvoiceRaisedAmount(item);
@@ -82,13 +81,7 @@ export function ActivityRow({ project, item, isExpanded, readOnly = false, onTog
       {isExpanded && (
         <tr>
           <td colSpan={10} className="bg-[var(--nu-surface-alt)] px-4 py-4 border-b border-[var(--nu-border)]">
-            <ActivityDetails
-              project={project}
-              item={item}
-              readOnly={readOnly}
-              onRaiseInvoice={onRaiseInvoice}
-              onViewHistory={onViewHistory}
-            />
+            <ActivityDetails project={project} item={item} />
           </td>
         </tr>
       )}
