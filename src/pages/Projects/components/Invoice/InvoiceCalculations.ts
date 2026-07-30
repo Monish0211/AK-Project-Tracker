@@ -1,4 +1,4 @@
-import type { InvoiceItem, InvoiceLineStatus } from "../../../../types/InvoiceItem";
+import type { InvoiceItem, InvoiceLineStatus, InvoiceMethod } from "../../../../types/InvoiceItem";
 import type { Project } from "../../../../types/Project";
 import {
   getInvoiceRaisedAmount,
@@ -277,6 +277,78 @@ export type InvoiceWorkflowMode = "quantity_driven" | "commercial_milestone";
 
 export function getInvoiceWorkflowMode(milestones: BillingMilestone[]): InvoiceWorkflowMode {
   return milestones.length > 0 ? "commercial_milestone" : "quantity_driven";
+}
+
+/**
+ * Project-wide Invoice Method — Lump Sum (Payment Milestone % of Contract
+ * Value, no quantity at all) vs Invoice Line Items (today's existing
+ * quantity-driven / commercial-milestone workflow above, untouched). Defaults
+ * to "lump_sum" for projects saved before this field existed.
+ */
+export function getInvoiceMethod(project: Project): InvoiceMethod {
+  return project.invoiceMethod === "invoice_line_items" ? "invoice_line_items" : "lump_sum";
+}
+
+export interface LumpSumMilestoneRow {
+  id: string;
+  label: string;
+  percent: number;
+  /** Contract Value × Milestone % — the amount this milestone bills, automatically, no manual entry. */
+  invoiceAmount: number;
+  /** True once this activity already has a non-cancelled invoice line against this milestone — it cannot be billed again. */
+  alreadyInvoiced: boolean;
+  status: "Completed" | "Pending";
+}
+
+/**
+ * One row per Payment Milestone for this activity's Lump Sum invoice
+ * checkbox list. A milestone already billed for this activity (any
+ * non-cancelled line referencing it) is locked as "Completed" — Accounts
+ * cannot select it again, matching "Completed milestones should not be
+ * invoiced again."
+ */
+export function getLumpSumMilestoneRows(item: InvoiceItem, milestones: BillingMilestone[]): LumpSumMilestoneRow[] {
+  const lines = Array.isArray(item.invoices) ? item.invoices : [];
+
+  return milestones.map((milestone) => {
+    const alreadyInvoiced = lines.some((line) => line.milestoneId === milestone.id && line.status !== "Cancelled");
+    return {
+      id: milestone.id,
+      label: milestone.label,
+      percent: milestone.percent,
+      invoiceAmount: getMilestoneValue(item.totalPrice, milestone.percent),
+      alreadyInvoiced,
+      status: alreadyInvoiced ? "Completed" : "Pending",
+    };
+  });
+}
+
+export interface LumpSumSummary {
+  contractValue: number;
+  /** Sum of every already-saved (non-cancelled) invoice amount for this activity, across all milestones. */
+  alreadyInvoicedAmount: number;
+  /** Sum of the currently-checked, not-yet-saved milestone amounts. */
+  selectedAmount: number;
+  /** alreadyInvoicedAmount + selectedAmount — what Accounts is about to have invoiced once this is saved. */
+  currentTotalInvoiced: number;
+  remainingAmount: number;
+}
+
+/** Live summary for the Lump Sum drawer — recomputes instantly as checkboxes change; nothing here is stored until Save. */
+export function getLumpSumSummary(
+  item: InvoiceItem,
+  rows: LumpSumMilestoneRow[],
+  selectedIds: ReadonlySet<string>
+): LumpSumSummary {
+  const contractValue = item.totalPrice;
+  const alreadyInvoicedAmount = getInvoiceRaisedAmount(item);
+  const selectedAmount = round(
+    rows.filter((row) => !row.alreadyInvoiced && selectedIds.has(row.id)).reduce((sum, row) => sum + row.invoiceAmount, 0)
+  );
+  const currentTotalInvoiced = round(alreadyInvoicedAmount + selectedAmount);
+  const remainingAmount = Math.max(round(contractValue - currentTotalInvoiced), 0);
+
+  return { contractValue, alreadyInvoicedAmount, selectedAmount, currentTotalInvoiced, remainingAmount };
 }
 
 export const INVOICE_LINE_STATUS_LABEL: Record<InvoiceLineStatus, string> = {

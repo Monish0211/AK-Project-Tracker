@@ -147,6 +147,12 @@ export function createEmptyProject(): Project {
 
     paymentType: "Single",
 
+    // ==========================
+    // INVOICE INFORMATION
+    // ==========================
+
+    invoiceMethod: "lump_sum",
+
     paymentMilestones: [
       {
         id: crypto.randomUUID(),

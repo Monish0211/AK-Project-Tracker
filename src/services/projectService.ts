@@ -91,6 +91,7 @@ export function normalizeProject(project: Project): Project {
     ...totals,
     paymentMilestones,
     paymentType: project.paymentType || (paymentMilestones.length > 1 ? "Multiple" : "Single"),
+    invoiceMethod: project.invoiceMethod === "invoice_line_items" ? "invoice_line_items" : "lump_sum",
     paymentTerms: project.paymentTerms || "30% / 40% / 30%",
     quantityRevisions: Array.isArray(project.quantityRevisions)
       ? project.quantityRevisions
@@ -118,7 +119,10 @@ export function normalizeProject(project: Project): Project {
         milestoneName: invoice.milestoneName,
         description: invoice.description,
         quantityBilled: typeof invoice.quantityBilled === "number" ? invoice.quantityBilled : 0,
+        unitPriceINR: typeof invoice.unitPriceINR === "number" ? invoice.unitPriceINR : undefined,
+        calculatedAmountINR: typeof invoice.calculatedAmountINR === "number" ? invoice.calculatedAmountINR : undefined,
         invoiceAmountINR: typeof invoice.invoiceAmountINR === "number" ? invoice.invoiceAmountINR : 0,
+        commercialAdjustmentINR: typeof invoice.commercialAdjustmentINR === "number" ? invoice.commercialAdjustmentINR : undefined,
         clientReference: invoice.clientReference,
         remarks: invoice.remarks,
         status: invoice.status === "Paid" || invoice.status === "Cancelled" ? invoice.status : "Pending",

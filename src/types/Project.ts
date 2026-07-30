@@ -1,7 +1,7 @@
 import type { QuantityItem } from "./QuantityItem";
 import type { ManhourExpense } from "./ManhourExpense";
 import type { NonManhourExpense } from "./NonManhourExpense";
-import type { InvoiceItem } from "./InvoiceItem";
+import type { InvoiceItem, InvoiceMethod } from "./InvoiceItem";
 import type { QuantityRevision } from "./QuantityRevision";
 import type { ProjectNote } from "./ProjectNote";
 import type { TimesheetImportMonth } from "./Timesheet";
@@ -92,6 +92,9 @@ export interface Project {
   // ==========================
   // INVOICE INFORMATION
   // ==========================
+
+  /** Defaults to "lump_sum" when absent — see getInvoiceMethod() in InvoiceCalculations.ts. */
+  invoiceMethod?: InvoiceMethod;
 
   invoiceItems: InvoiceItem[];
 

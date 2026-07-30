@@ -10,6 +10,14 @@
  */
 export type InvoiceLineStatus = "Pending" | "Paid" | "Cancelled";
 
+/**
+ * Project-wide switch for how invoices are raised. "lump_sum" bills purely
+ * off Payment Milestone percentages of an activity's Contract Value — no
+ * quantity is ever entered. "invoice_line_items" is today's existing
+ * quantity-driven / commercial-milestone workflow, unchanged.
+ */
+export type InvoiceMethod = "lump_sum" | "invoice_line_items";
+
 export interface InvoiceLine {
   id: string;
 
