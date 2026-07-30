@@ -29,7 +29,7 @@ const MILESTONE_STATUS_BADGE: Record<MilestoneRowStatus, { label: string; tone: 
  * (see ActivityRow.tsx).
  */
 export function ActivityDetails({ project, item }: Props) {
-  const { completedQty, remainingQty, progressPercent } = calculateExecutionProgress(item);
+  const { completedQty, remainingQty, progressPercent } = calculateExecutionProgress(project, item);
   const { milestones: milestoneRows } = calculateMilestoneFinancials(project, item);
 
   return (
@@ -74,6 +74,7 @@ export function ActivityDetails({ project, item }: Props) {
                 <tr>
                   <th className="nu-table-th px-4 py-2 text-left">Milestone</th>
                   <th className="nu-table-th px-4 py-2 text-center">%</th>
+                  <th className="nu-table-th px-4 py-2 text-right">Qty Invoiced</th>
                   <th className="nu-table-th px-4 py-2 text-right">Milestone Value</th>
                   <th className="nu-table-th px-4 py-2 text-right">Already Invoiced</th>
                   <th className="nu-table-th px-4 py-2 text-right">Balance</th>
@@ -87,6 +88,9 @@ export function ActivityDetails({ project, item }: Props) {
                     <tr key={row.id} className="nu-table-row">
                       <td className="px-4 py-2.5 font-semibold text-[var(--nu-text)] break-words">{row.label}</td>
                       <td className="px-4 py-2.5 text-center tabular-nums text-[var(--nu-text-secondary)]">{row.percent}%</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        {formatIndianNumber(row.qtyInvoiced)} <span className="text-[10px] text-slate-400 uppercase">{item.uom}</span>
+                      </td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-medium text-slate-800 dark:text-slate-200">
                         <MoneyValue value={row.milestoneValue} />
                       </td>

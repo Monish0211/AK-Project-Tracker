@@ -30,6 +30,8 @@ interface HistoryRow {
   description: string;
   qty: number;
   uom: string;
+  unitPrice: number;
+  systemAmount: number;
   amount: number;
   status: InvoiceLineStatus;
   createdBy: string;
@@ -74,6 +76,12 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
           description: line.milestoneName || line.description || "—",
           qty: line.quantityBilled,
           uom: item.uom,
+          // Frozen at billing time (line.unitPriceINR) — never the activity's
+          // current live rate, so a later Unit Rate revision never rewrites
+          // what a historical invoice actually billed at. Falls back to the
+          // live rate only for legacy records saved before this field existed.
+          unitPrice: line.unitPriceINR ?? item.unitPrice,
+          systemAmount: line.calculatedAmountINR ?? 0,
           amount: line.invoiceAmountINR,
           status: line.status,
           createdBy: line.createdBy,
@@ -125,17 +133,19 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
           </CardBody>
         ) : (
           <div className="max-h-[26rem] overflow-auto nu-scrollbar">
-            <table className="w-full min-w-[980px] border-collapse text-[12.5px]">
+            <table className="w-full min-w-[1180px] border-collapse text-[12.5px]">
               <thead className="sticky top-0 z-10">
                 <tr>
                   <th className="nu-table-th px-3 py-2.5 text-left">Invoice No</th>
-                  <th className="nu-table-th px-3 py-2.5 text-left">Date</th>
+                  <th className="nu-table-th px-3 py-2.5 text-left">Invoice Date</th>
                   <th className="nu-table-th px-3 py-2.5 text-left">Activity</th>
                   <th className="nu-table-th px-3 py-2.5 text-left">Milestone</th>
-                  <th className="nu-table-th px-3 py-2.5 text-right">Qty</th>
+                  <th className="nu-table-th px-3 py-2.5 text-right">Qty Invoiced</th>
+                  <th className="nu-table-th px-3 py-2.5 text-right">Unit Rate</th>
+                  <th className="nu-table-th px-3 py-2.5 text-right">System Amount</th>
                   <th className="nu-table-th px-3 py-2.5 text-right">Invoice Amount</th>
-                  <th className="nu-table-th px-3 py-2.5 text-right">Commercial Adj.</th>
-                  <th className="nu-table-th px-3 py-2.5 text-center">Status</th>
+                  <th className="nu-table-th px-3 py-2.5 text-right">Commercial Adjustment</th>
+                  <th className="nu-table-th px-3 py-2.5 text-center">Invoice Status</th>
                   <th className="nu-table-th px-3 py-2.5 text-left">Created By</th>
                   <th className="nu-table-th px-3 py-2.5 text-center">Actions</th>
                 </tr>
@@ -149,6 +159,12 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
                     <td className="px-3 py-2.5 max-w-[180px] truncate font-medium text-[var(--nu-text)]" title={row.description}>{row.description}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
                       {formatIndianNumber(row.qty)} {row.uom}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap text-[var(--nu-text-secondary)]">
+                      <MoneyValue value={row.unitPrice} />
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                      <MoneyValue value={row.systemAmount} />
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
                       <MoneyValue value={row.amount} className="font-semibold text-[var(--nu-accent)]" />

@@ -27,7 +27,10 @@ export interface InvoiceLine {
   /** Quantity completed and billed in this line. */
   quantityBilled: number;
 
-  /** Calculated amount before commercial adjustment = Qty Billed × Unit Rate × Milestone % */
+  /** Unit Rate at the time this line was raised — snapshotted so a later Unit Rate revision in the Quantity module never rewrites what this historical invoice actually billed at. */
+  unitPriceINR?: number;
+
+  /** Calculated amount before commercial adjustment = Qty Billed × Unit Rate */
   calculatedAmountINR?: number;
 
   /** Actual invoice amount entered by Accounts after commercial adjustment */
