@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { MoneyTooltip } from "./MoneyTooltip";
 
 interface Trend {
   direction: "up" | "down";
@@ -17,6 +18,8 @@ interface StatTileProps {
   trend?: Trend;
   /** Visual emphasis only — does not affect the underlying value. */
   emphasis?: "primary" | "secondary";
+  /** Exact rupee amount `value` was rounded from — when provided, hovering the tile shows the exact-amount tooltip instead of the native title="{value}" (rounded-over-rounded) tooltip. */
+  rawValue?: number;
 }
 
 const TINTS: Record<StatTileTint, string> = {
@@ -39,7 +42,7 @@ const ACCENT_BAR: Record<StatTileTint, string> = {
   indigo: "bg-indigo-500",
 };
 
-export const StatTile = ({ label, value, icon, tint = "accent", trend }: StatTileProps) => {
+export const StatTile = ({ label, value, icon, tint = "accent", trend, rawValue }: StatTileProps) => {
   const isPrimary = true; // Make all tiles primary emphasis for equal uniform layout
 
   return (
@@ -66,9 +69,9 @@ export const StatTile = ({ label, value, icon, tint = "accent", trend }: StatTil
         <p className="text-[12px] font-medium text-[var(--nu-text-muted)] uppercase tracking-wide truncate mb-0.5">{label}</p>
         <p
           className={`font-bold text-[var(--nu-text)] leading-none whitespace-nowrap overflow-visible ${isPrimary ? "text-[22px] xl:text-[19px] 2xl:text-[24px]" : "text-[18px]"}`}
-          title={value}
+          title={rawValue === undefined ? value : undefined}
         >
-          {value}
+          {rawValue === undefined ? value : <MoneyTooltip value={rawValue}>{value}</MoneyTooltip>}
         </p>
       </div>
 

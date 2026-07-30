@@ -4,7 +4,7 @@ import type { InvoiceItem } from "../../../../types/InvoiceItem";
 import { Badge, type Tone } from "../../../../components/ui/Badge";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
-import { formatBusinessINR } from "../../../../utils/formatCurrency";
+import { MoneyValue } from "../../../../components/ui/MoneyTooltip";
 import {
   calculateExecutionProgress,
   calculateMilestoneFinancials,
@@ -87,9 +87,15 @@ export function ActivityDetails({ project, item }: Props) {
                     <tr key={row.id} className="nu-table-row">
                       <td className="px-4 py-2.5 font-semibold text-[var(--nu-text)] break-words">{row.label}</td>
                       <td className="px-4 py-2.5 text-center tabular-nums text-[var(--nu-text-secondary)]">{row.percent}%</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-medium text-slate-800 dark:text-slate-200">{formatBusinessINR(row.milestoneValue)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-slate-600 dark:text-slate-400">{formatBusinessINR(row.alreadyInvoiced)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-700 dark:text-slate-300">{formatBusinessINR(row.balance)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-medium text-slate-800 dark:text-slate-200">
+                        <MoneyValue value={row.milestoneValue} />
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-slate-600 dark:text-slate-400">
+                        <MoneyValue value={row.alreadyInvoiced} />
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-700 dark:text-slate-300">
+                        <MoneyValue value={row.balance} />
+                      </td>
                       <td className="px-4 py-2.5 text-center">
                         <Badge tone={badge.tone} dot className="text-[10.5px]">
                           {badge.label}

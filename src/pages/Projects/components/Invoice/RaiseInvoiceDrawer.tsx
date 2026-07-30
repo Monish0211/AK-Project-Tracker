@@ -7,7 +7,8 @@ import { Button } from "../../../../components/ui/Button";
 import { Input } from "../../../../components/ui/Input";
 import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
-import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
+import { MoneyValue } from "../../../../components/ui/MoneyTooltip";
+import { formatBusinessINR } from "../../../../utils/formatCurrency";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 
 import {
@@ -507,15 +508,15 @@ export function RaiseInvoiceDrawer({
 
               <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Unit Rate</p>
-                <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5" title={formatFullINR(item.unitPrice)}>
-                  {formatBusinessINR(item.unitPrice)}/{item.uom}
+                <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
+                  <MoneyValue value={item.unitPrice} />/{item.uom}
                 </p>
               </div>
 
               <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800 sm:col-span-1 col-span-2">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Work Order Value</p>
-                <p className="text-sm font-extrabold text-cyan-600 dark:text-cyan-400 mt-0.5" title={formatFullINR(item.totalPrice)}>
-                  {formatBusinessINR(item.totalPrice)}
+                <p className="text-sm font-extrabold text-cyan-600 dark:text-cyan-400 mt-0.5">
+                  <MoneyValue value={item.totalPrice} />
                 </p>
               </div>
             </div>

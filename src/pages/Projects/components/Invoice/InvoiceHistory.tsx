@@ -7,8 +7,9 @@ import { Badge, type Tone } from "../../../../components/ui/Badge";
 import { Input } from "../../../../components/ui/Input";
 import { Select } from "../../../../components/ui/Select";
 import { EmptyState } from "../../../../components/ui/EmptyState";
-import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
+import { formatBusinessINR } from "../../../../utils/formatCurrency";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
+import { MoneyValue, MoneyTooltip } from "../../../../components/ui/MoneyTooltip";
 
 interface Props {
   project: Project;
@@ -149,17 +150,17 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
                     <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
                       {formatIndianNumber(row.qty)} {row.uom}
                     </td>
-                    <td
-                      className="px-3 py-2.5 text-right tabular-nums font-semibold text-[var(--nu-accent)] whitespace-nowrap"
-                      title={formatFullINR(row.amount)}
-                    >
-                      {formatBusinessINR(row.amount)}
+                    <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                      <MoneyValue value={row.amount} className="font-semibold text-[var(--nu-accent)]" />
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap text-xs font-mono">
                       {row.line.commercialAdjustmentINR && Math.abs(row.line.commercialAdjustmentINR) > 0.01 ? (
-                        <span className={`font-semibold ${row.line.commercialAdjustmentINR < 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                        <MoneyTooltip
+                          value={row.line.commercialAdjustmentINR}
+                          className={`font-semibold ${row.line.commercialAdjustmentINR < 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}
+                        >
                           {row.line.commercialAdjustmentINR < 0 ? "-" : "+"}{formatBusinessINR(Math.abs(row.line.commercialAdjustmentINR))}
-                        </span>
+                        </MoneyTooltip>
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}

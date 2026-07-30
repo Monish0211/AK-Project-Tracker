@@ -4,7 +4,7 @@ import type { Project } from "../../../../types/Project";
 import type { InvoiceItem } from "../../../../types/InvoiceItem";
 import { Badge, type Tone } from "../../../../components/ui/Badge";
 import { Button } from "../../../../components/ui/Button";
-import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
+import { MoneyValue } from "../../../../components/ui/MoneyTooltip";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 import {
   getInvoiceRaisedAmount,
@@ -47,14 +47,14 @@ export function ActivityRow({ project, item, isExpanded, readOnly = false, onTog
         <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{formatIndianNumber(item.qty)} {item.uom}</td>
         <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{formatIndianNumber(completedQty)}</td>
         <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-[var(--nu-text-secondary)]">{formatIndianNumber(remainingQty)}</td>
-        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap" title={formatFullINR(item.totalPrice)}>
-          {formatBusinessINR(item.totalPrice)}
+        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">
+          <MoneyValue value={item.totalPrice} />
         </td>
-        <td className="px-3 py-3 text-right tabular-nums font-semibold text-[var(--nu-accent)] whitespace-nowrap" title={formatFullINR(invoiceRaised)}>
-          {formatBusinessINR(invoiceRaised)}
+        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">
+          <MoneyValue value={invoiceRaised} className="font-semibold text-[var(--nu-accent)]" />
         </td>
-        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap" title={formatFullINR(balance)}>
-          {formatBusinessINR(balance)}
+        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">
+          <MoneyValue value={balance} />
         </td>
         <td className="px-3 py-3 text-center whitespace-nowrap">
           <Badge tone={STATUS_BADGE[status]} dot className="text-[10.5px]">{status}</Badge>

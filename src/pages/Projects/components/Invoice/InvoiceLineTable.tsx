@@ -1,8 +1,9 @@
 import type { ChangeEvent } from "react";
 import { AlertTriangle, Trash2 } from "lucide-react";
 import { Input } from "../../../../components/ui/Input";
-import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
+import { formatBusinessINR } from "../../../../utils/formatCurrency";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
+import { MoneyValue, MoneyTooltip } from "../../../../components/ui/MoneyTooltip";
 import type { CommercialLineBillingStatus, InvoiceWorkflowMode } from "./InvoiceCalculations";
 
 export interface InvoiceLineRow {
@@ -175,20 +176,14 @@ export function InvoiceLineTable({
                       </td>
 
                       {/* Unit Rate */}
-                      <td
-                        className="px-3 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap"
-                        title={formatFullINR(row.unitPrice)}
-                      >
-                        {formatBusinessINR(row.unitPrice)} / {uom}
+                      <td className="px-3 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        <MoneyValue value={row.unitPrice} /> / {uom}
                       </td>
 
                       {/* System Amount */}
-                      <td
-                        className="px-3 py-3 text-right tabular-nums font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap"
-                        title={formatFullINR(row.calculatedAmount)}
-                      >
+                      <td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                         {row.calculatedAmount > 0 ? (
-                          formatBusinessINR(row.calculatedAmount)
+                          <MoneyValue value={row.calculatedAmount} />
                         ) : (
                           <span className="text-slate-400 font-normal">₹0</span>
                         )}
@@ -200,18 +195,18 @@ export function InvoiceLineTable({
                   {isCommercialMilestone && (
                     <>
                       {/* Milestone Value */}
-                      <td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap" title={formatFullINR(row.milestoneValue)}>
-                        {formatBusinessINR(row.milestoneValue)}
+                      <td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                        <MoneyValue value={row.milestoneValue} />
                       </td>
 
                       {/* Already Invoiced */}
-                      <td className="px-3 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap" title={formatFullINR(row.previousRaisedAmount)}>
-                        {formatBusinessINR(row.previousRaisedAmount)}
+                      <td className="px-3 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        <MoneyValue value={row.previousRaisedAmount} />
                       </td>
 
                       {/* Balance Amount */}
-                      <td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap" title={formatFullINR(row.remainingAmount)}>
-                        {formatBusinessINR(row.remainingAmount)}
+                      <td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                        <MoneyValue value={row.remainingAmount} />
                       </td>
                     </>
                   )}
@@ -233,8 +228,11 @@ export function InvoiceLineTable({
                       />
                     </div>
                     {hasCommercialAdjustment && (
-                      <p className="mt-1 text-[10px] font-bold text-right text-amber-600 dark:text-amber-400">
-                        Commercial Adjustment {row.commercialAdjustment < 0 ? "-" : "+"}{formatBusinessINR(Math.abs(row.commercialAdjustment))}
+                      <p className="mt-1 flex items-center justify-end gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                        Commercial Adjustment{" "}
+                        <MoneyTooltip value={row.commercialAdjustment}>
+                          {row.commercialAdjustment < 0 ? "-" : "+"}{formatBusinessINR(Math.abs(row.commercialAdjustment))}
+                        </MoneyTooltip>
                       </p>
                     )}
                     {row.error && (
