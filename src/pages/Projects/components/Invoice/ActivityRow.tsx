@@ -31,7 +31,7 @@ const STATUS_BADGE: Record<InvoiceStatus, Tone> = {
 };
 
 export function ActivityRow({ project, item, isExpanded, readOnly = false, onToggleExpand, onRaiseInvoice }: Props) {
-  const { completedQty, remainingQty } = calculateExecutionProgress(item);
+  const { completedQty, remainingQty } = calculateExecutionProgress(project, item);
   const invoiceRaised = getInvoiceRaisedAmount(item);
   const balance = Math.max(item.totalPrice - invoiceRaised, 0);
   const status = calculateInvoiceStatus(item);

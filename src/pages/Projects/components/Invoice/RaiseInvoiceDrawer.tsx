@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileText, PlusCircle, X, Lock, Activity, CheckCircle2 } from "lucide-react";
+import { FileText, PlusCircle, X, Lock, Activity, CheckCircle2, Receipt } from "lucide-react";
 
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
@@ -8,20 +8,20 @@ import { Input } from "../../../../components/ui/Input";
 import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
 import { MoneyValue } from "../../../../components/ui/MoneyTooltip";
-import { formatBusinessINR } from "../../../../utils/formatCurrency";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 
 import {
   getMilestonesForProject,
-  calculateLineAmount,
   getMilestoneValue,
-  getQuantityConsumed,
+  getMilestoneQuantityState,
+  getSystemAmount,
   getCommercialAdjustment,
   getPreviousRaisedAmountForMilestone,
   getCommercialBillingStatus,
-  getMilestoneBillingState,
   suggestNextInvoiceNumber,
-  getAvailableQuantity,
+  getInvoiceCyclesForProject,
+  getActivityInvoiceCycleTotals,
+  getOtherActivitiesInvoiceCycleTotals,
   calculateExecutionProgress,
   getInvoiceWorkflowMode,
   round,
@@ -82,20 +82,26 @@ export function RaiseInvoiceDrawer({
   // The SOLE classifier for invoice layout/formula: does this project have
   // payment milestones configured at all? See getInvoiceWorkflowMode in
   // InvoiceCalculations.ts — there is no second, per-activity classifier
-  // that could disagree with it.
+  // that could disagree with it. It only decides labeling now (below) — the
+  // qty/amount calculation itself is identical for every row, milestone or
+  // not: see getMilestoneQuantityState.
   const workflowMode: InvoiceWorkflowMode = getInvoiceWorkflowMode(milestones);
   const isCommercialMilestone = workflowMode === "commercial_milestone";
-  const baseAvailableQty = useMemo(() => getAvailableQuantity(item), [item]);
 
   // PMO Execution Progress (Read Only) — single source of truth shared with
   // ActivityRow.tsx / ActivityDetails.tsx via the Invoice Calculation
-  // Service: always SUM(Quantity Consumed) from saved, non-cancelled
-  // invoice records for this activity. Raising, editing, or deleting an
-  // invoice recalculates this immediately — it is never a separate,
-  // independently-tracked value.
-  const executionProgress = useMemo(() => calculateExecutionProgress(item), [item]);
+  // Service: always derived from saved, non-cancelled invoice records for
+  // this activity. Raising, editing, or deleting an invoice recalculates
+  // this immediately — it is never a separate, independently-tracked value.
+  const executionProgress = useMemo(() => calculateExecutionProgress(project, item), [project, item]);
   const executionCompletedQty = executionProgress.completedQty;
   const executionRemainingQty = executionProgress.remainingQty;
+
+  // Invoice Cycle options — every distinct invoiceNo already used on this
+  // project (labeled "Invoice 1"/"Invoice 2"/...) plus a trailing "new cycle"
+  // option. One cycle = one real customer invoice and can span multiple
+  // activities; selecting an existing one lets this activity's lines join it.
+  const invoiceCycles = useMemo(() => getInvoiceCyclesForProject(project), [project]);
 
   const [invoiceNo, setInvoiceNo] = useState(existingLine?.invoiceNo ?? suggestNextInvoiceNumber(project));
   const [invoiceDate, setInvoiceDate] = useState(existingLine?.invoiceDate ?? todayISODate());
@@ -111,7 +117,11 @@ export function RaiseInvoiceDrawer({
     existingLine ? String(existingLine.invoiceAmountINR) : ""
   );
 
-  // Create mode: draft rows per milestone
+  // Create mode: draft rows per milestone. Qty to Invoice always starts
+  // EMPTY — nothing is auto-selected. Accounts must explicitly type how
+  // much they want to invoice (up to the Available Qty shown read-only
+  // alongside it); System Amount and Invoice Amount both stay ₹0 until they
+  // do.
   const [draftLines, setDraftLines] = useState<DraftLine[]>(() => {
     if (milestones.length > 0) {
       return milestones.map((m) => ({
@@ -171,7 +181,19 @@ export function RaiseInvoiceDrawer({
 
   const updateLineQty = (key: string, qty: number) => {
     setDraftLines((prev) =>
-      prev.map((line) => (line.key === key ? { ...line, qtyInput: qty === 0 ? "" : String(qty) } : line))
+      prev.map((line) =>
+        line.key === key
+          ? {
+              ...line,
+              qtyInput: qty === 0 ? "" : String(qty),
+              // Clearing Qty to Invoice back to empty means there's nothing
+              // to bill — any manually-edited Invoice Amount from before
+              // must reset to ₹0 too, not linger from a qty that no longer
+              // applies.
+              customAmountInput: qty === 0 ? undefined : line.customAmountInput,
+            }
+          : line
+      )
     );
   };
 
@@ -187,67 +209,34 @@ export function RaiseInvoiceDrawer({
     );
   };
 
-  // Create mode rows
+  // Create mode rows — ONE formula for every row, milestone-driven or not.
+  // Qty to Invoice always represents ACTUAL completed units — never a
+  // milestone-%-derived fraction (e.g. 0.4 of 1 NOS) — so the qty ceiling is
+  // the same full Contract Qty whichever milestone (or none) this row
+  // references (see getMilestoneQuantityState). Each milestone keeps its own
+  // independent Already-Invoiced-Qty ledger, so Draft/Final/Closure can each
+  // independently invoice the same completed qty without exhausting one
+  // shared pool — but invoicing the SAME milestone twice for the same qty is
+  // rejected once its own ledger is exhausted. System Amount = Qty to
+  // Invoice × Unit Rate × Milestone % (getSystemAmount) — the milestone %
+  // scales the money, never the quantity.
   const createRows: InvoiceLineRow[] = draftLines.map((line) => {
     const milestonePercent = line.milestonePercent ?? (line.milestoneId ? milestones.find((m) => m.id === line.milestoneId)?.percent ?? 100 : 100);
     const milestoneValue = getMilestoneValue(item.totalPrice, milestonePercent);
     const previousRaisedAmount = getPreviousRaisedAmountForMilestone(item, line.milestoneId);
 
-    if (isCommercialMilestone) {
-      // Commercial Milestone Workflow — the same Milestone % that sets the
-      // invoice amount also sets the quantity consumed (single formula,
-      // getQuantityConsumed), persisted on save so Quantity Progress reads
-      // it back directly with no second calculation. Balance Amount /
-      // Status come from getMilestoneBillingState, the single source of
-      // truth shared with validation below. `alreadyInvoiced` is previously
-      // SAVED invoices only — the amount currently being typed must never
-      // be folded in, or the balance (and status) would read as settled
-      // pre-save.
-      const quantityConsumed = getQuantityConsumed(item.qty, milestonePercent);
-      const currentInvoiceAmount = Number(line.customAmountInput) || 0;
-      const { balanceAmount, validationLimit, status: billingStatus } = getMilestoneBillingState(milestoneValue, previousRaisedAmount);
+    const { ceiling: qtyCeiling, alreadyInvoiced: qtyAlreadyInvoiced, available: baseAvailable } = getMilestoneQuantityState(item, line.milestoneId);
 
-      let error: string | null = null;
-      if (currentInvoiceAmount < 0) {
-        error = "Invoice amount cannot be negative.";
-      } else if (currentInvoiceAmount > validationLimit) {
-        error = `Amount exceeds remaining milestone balance (${formatBusinessINR(balanceAmount)}).`;
-      }
-
-      return {
-        key: line.key,
-        description: line.description,
-        milestoneLabel: line.milestoneLabel,
-        milestonePercent,
-        contractQty: item.qty,
-        completedQty: item.qty,
-        eligibleQty: item.qty,
-        qtyToBill: quantityConsumed,
-        unitPrice: item.unitPrice,
-        milestoneValue,
-        calculatedAmount: milestoneValue,
-        currentInvoiceAmount,
-        commercialAdjustment: 0,
-        previousRaisedAmount,
-        remainingQty: 0,
-        remainingAmount: balanceAmount,
-        status: billingStatus,
-        error,
-        removable: line.custom,
-      };
-    }
-
-    // Quantity-Driven Workflow (no milestones configured on this project) —
-    // Accounts enters Bill Qty directly against the shared Available Qty
-    // pool, also accounting for quantity typed into sibling rows in this
-    // same not-yet-saved session so two rows can't over-claim it.
-    const qtyToBill = Number(line.qtyInput) || 0;
+    // Sibling draft rows sharing the SAME scope compete for the same pool.
+    // Milestone rows each have their own dedicated draft row (never shared),
+    // so this only ever matters for plain quantity-driven custom lines.
     const otherDraftQtyInSession = draftLines
-      .filter((other) => other.key !== line.key)
+      .filter((other) => other.key !== line.key && other.milestoneId === line.milestoneId)
       .reduce((sum, other) => sum + (Number(other.qtyInput) || 0), 0);
-    const eligibleQty = Math.max(round(baseAvailableQty - otherDraftQtyInSession), 0);
+    const eligibleQty = Math.max(round(baseAvailable - otherDraftQtyInSession), 0);
 
-    const calculatedAmount = calculateLineAmount(qtyToBill, item.unitPrice);
+    const qtyToBill = Number(line.qtyInput) || 0;
+    const calculatedAmount = getSystemAmount(qtyToBill, item.unitPrice, milestonePercent);
     const currentInvoiceAmount = line.customAmountInput !== undefined && line.customAmountInput !== ""
       ? Number(line.customAmountInput)
       : calculatedAmount;
@@ -259,8 +248,10 @@ export function RaiseInvoiceDrawer({
     let error: string | null = null;
     if (item.qty <= 0) {
       error = "Contract qty is 0. Not eligible.";
+    } else if (qtyToBill < 0) {
+      error = "Qty to invoice cannot be negative.";
     } else if (qtyToBill > eligibleQty + 0.001) {
-      error = `Qty to bill cannot exceed available qty (${eligibleQty} ${item.uom}).`;
+      error = `Qty to invoice cannot exceed available qty (${eligibleQty} ${item.uom}).`;
     } else if (currentInvoiceAmount < 0) {
       error = "Invoice amount cannot be negative.";
     }
@@ -273,7 +264,8 @@ export function RaiseInvoiceDrawer({
       milestoneLabel: line.milestoneLabel,
       milestonePercent,
       contractQty: item.qty,
-      completedQty: item.qty,
+      completedQty: qtyCeiling,
+      previousQtyInvoiced: qtyAlreadyInvoiced,
       eligibleQty,
       qtyToBill,
       unitPrice: item.unitPrice,
@@ -290,36 +282,35 @@ export function RaiseInvoiceDrawer({
     };
   });
 
-  // Edit/View mode row
+  // Edit/View mode row — same single formula as create mode. Qty to Invoice
+  // is editable here too (matching the create-mode popup exactly), validated
+  // against this milestone's/activity's available qty with this line's own
+  // prior quantity excluded so editing it back to its current value never
+  // trips the ceiling.
   const editQtyValue = Number(editQtyInput) || 0;
   const editMilestone = existingLine?.milestoneId ? milestones.find((m) => m.id === existingLine.milestoneId) : undefined;
   const editMilestonePercent = editMilestone?.percent ?? 100;
   const editMilestoneValue = getMilestoneValue(item.totalPrice, editMilestonePercent);
   const editPreviousRaisedAmount = getPreviousRaisedAmountForMilestone(item, existingLine?.milestoneId, existingLine?.id);
 
-  const editCalculatedAmount = isCommercialMilestone
-    ? editMilestoneValue
-    : calculateLineAmount(editQtyValue, item.unitPrice);
+  const { ceiling: editQtyCeiling, alreadyInvoiced: editQtyAlreadyInvoiced, available: editEligibleQty } = getMilestoneQuantityState(
+    item,
+    existingLine?.milestoneId,
+    existingLine?.id
+  );
 
+  const editCalculatedAmount = getSystemAmount(editQtyValue, item.unitPrice, editMilestonePercent);
   const editAmountValue = editAmountInput !== "" ? Number(editAmountInput) : editCalculatedAmount;
-  const editCommercialAdjustment = isCommercialMilestone ? 0 : getCommercialAdjustment(editAmountValue, editCalculatedAmount);
+  const editCommercialAdjustment = getCommercialAdjustment(editAmountValue, editCalculatedAmount);
 
-  // Excludes this line's own prior quantity so editing it back to its
-  // current value never trips the availability check. Only meaningful for
-  // Quantity-Driven billing — milestone-driven lines never expose Bill Qty.
-  const editEligibleQty = isCommercialMilestone
-    ? item.qty
-    : getAvailableQuantity(item, existingLine?.id);
-
-  // Same single source of truth as create mode: Balance Amount / Status
-  // reflect the milestone against OTHER saved invoices only, never the
-  // amount currently being typed into this edit's own Invoice Amount field.
-  const editMilestoneBillingState = getMilestoneBillingState(editMilestoneValue, editPreviousRaisedAmount);
-
-  // Editing a milestone-driven invoice (amount, remarks, status) must never
-  // silently rewrite the Quantity Consumed that was persisted when it was
-  // originally saved — show and keep exactly what's on the record.
-  const editQuantityBilled = isCommercialMilestone ? (existingLine?.quantityBilled ?? 0) : editQtyValue;
+  let editError: string | null = null;
+  if (editQtyValue < 0) {
+    editError = "Qty to invoice cannot be negative.";
+  } else if (editQtyValue > editEligibleQty + 0.001) {
+    editError = `Qty to invoice cannot exceed available qty (${editEligibleQty} ${item.uom}).`;
+  } else if (editAmountValue < 0) {
+    editError = "Invoice amount cannot be negative.";
+  }
 
   const editRows: InvoiceLineRow[] = existingLine
     ? [
@@ -329,23 +320,20 @@ export function RaiseInvoiceDrawer({
           milestoneLabel: existingLine.milestoneName ?? editMilestone?.label ?? "Full Completion",
           milestonePercent: editMilestonePercent,
           contractQty: item.qty,
-          completedQty: item.qty,
+          completedQty: editQtyCeiling,
+          previousQtyInvoiced: editQtyAlreadyInvoiced,
           eligibleQty: editEligibleQty,
-          qtyToBill: editQuantityBilled,
+          qtyToBill: editQtyValue,
           unitPrice: item.unitPrice,
           milestoneValue: editMilestoneValue,
           calculatedAmount: editCalculatedAmount,
           currentInvoiceAmount: editAmountValue,
           commercialAdjustment: editCommercialAdjustment,
           previousRaisedAmount: editPreviousRaisedAmount,
-          remainingQty: isCommercialMilestone ? 0 : Math.max(editEligibleQty - editQtyValue, 0),
-          remainingAmount: isCommercialMilestone
-            ? editMilestoneBillingState.balanceAmount
-            : Math.max(editMilestoneValue - (editPreviousRaisedAmount + editAmountValue), 0),
-          status: isCommercialMilestone
-            ? editMilestoneBillingState.status
-            : getCommercialBillingStatus(item.qty, editMilestoneValue, editPreviousRaisedAmount + editAmountValue),
-          error: null,
+          remainingQty: Math.max(editEligibleQty - editQtyValue, 0),
+          remainingAmount: Math.max(editMilestoneValue - (editPreviousRaisedAmount + editAmountValue), 0),
+          status: getCommercialBillingStatus(item.qty, editMilestoneValue, editPreviousRaisedAmount + editAmountValue),
+          error: editError,
           removable: false,
         },
       ]
@@ -353,9 +341,58 @@ export function RaiseInvoiceDrawer({
 
   const rows = isCreateMode ? createRows : editRows;
 
+  // ═══ Invoice Summary — cross-activity rollup for the selected Invoice
+  // Cycle ═══ Combines every OTHER activity's already-saved contribution to
+  // this cycle with THIS activity's own contribution (its previously saved
+  // lines under this cycle, excluding the one being edited, plus whatever is
+  // currently billable in the draft/edit row right now). Pure derived render
+  // values — recomputes instantly on every keystroke, nothing is stored.
+  const otherActivitiesCycleTotals = useMemo(
+    () => getOtherActivitiesInvoiceCycleTotals(project, invoiceNo, item.id),
+    [project, invoiceNo, item.id]
+  );
+  const thisActivitySavedCycleTotals = useMemo(
+    () => getActivityInvoiceCycleTotals(item, invoiceNo, existingLine?.id),
+    [item, invoiceNo, existingLine?.id]
+  );
+  const thisActivityDraftBillableRows = isCreateMode
+    ? createRows.filter((row) => row.qtyToBill > 0 && !row.error)
+    : editQtyValue > 0 && !editError
+      ? editRows
+      : [];
+  const thisActivityDraftSystemTotal = round(
+    thisActivityDraftBillableRows.reduce((sum, row) => sum + row.calculatedAmount, 0)
+  );
+  const thisActivityDraftFinalAmount = round(
+    thisActivityDraftBillableRows.reduce((sum, row) => sum + row.currentInvoiceAmount, 0)
+  );
+  const thisActivityContributes =
+    thisActivityDraftBillableRows.length > 0 ||
+    thisActivitySavedCycleTotals.systemTotal !== 0 ||
+    thisActivitySavedCycleTotals.finalInvoiceAmount !== 0;
+
+  const invoiceSummarySystemTotal = round(
+    otherActivitiesCycleTotals.systemTotal + thisActivitySavedCycleTotals.systemTotal + thisActivityDraftSystemTotal
+  );
+  const invoiceSummaryFinalAmount = round(
+    otherActivitiesCycleTotals.finalInvoiceAmount + thisActivitySavedCycleTotals.finalInvoiceAmount + thisActivityDraftFinalAmount
+  );
+  const invoiceSummaryCommercialAdjustment = round(invoiceSummaryFinalAmount - invoiceSummarySystemTotal);
+  const invoiceSummaryActivitiesIncluded = otherActivitiesCycleTotals.activitiesIncluded + (thisActivityContributes ? 1 : 0);
+  const invoiceCycleLabel = invoiceCycles.find((cycle) => cycle.invoiceNo === invoiceNo)?.label
+    ?? (invoiceNo.trim() ? invoiceNo : "New Invoice");
+
+  const handleInvoiceCycleChange = (value: string) => {
+    setInvoiceNo(value);
+    const selected = invoiceCycles.find((cycle) => cycle.invoiceNo === value);
+    if (selected && !selected.isNew && selected.invoiceDate) {
+      setInvoiceDate(selected.invoiceDate);
+    }
+  };
+
   const hasBillableLine = isCreateMode
-    ? createRows.some((row) => (isCommercialMilestone ? row.currentInvoiceAmount > 0 : row.qtyToBill > 0) && !row.error)
-    : (isCommercialMilestone ? editAmountValue > 0 : editQtyValue > 0) && !editRows[0]?.error;
+    ? createRows.some((row) => row.qtyToBill > 0 && !row.error)
+    : editQtyValue > 0 && !editRows[0]?.error;
 
   const canSave =
     !isViewMode &&
@@ -369,8 +406,13 @@ export function RaiseInvoiceDrawer({
     if (isEditMode && existingLine) {
       const updatedLine: InvoiceLine = {
         ...existingLine,
+        invoiceNo: invoiceNo.trim(),
         invoiceDate,
-        quantityBilled: editQuantityBilled,
+        quantityBilled: editQtyValue,
+        // Preserve whatever Unit Rate was already frozen on this line — only
+        // backfill it for a legacy record saved before this field existed.
+        // Never overwrite an already-frozen historical rate with today's.
+        unitPriceINR: existingLine.unitPriceINR ?? item.unitPrice,
         calculatedAmountINR: editCalculatedAmount,
         invoiceAmountINR: editAmountValue,
         commercialAdjustmentINR: editCommercialAdjustment,
@@ -395,7 +437,7 @@ export function RaiseInvoiceDrawer({
     }
 
     const newLines: InvoiceLine[] = createRows
-      .filter((row) => (isCommercialMilestone ? row.currentInvoiceAmount > 0 : row.qtyToBill > 0) && !row.error)
+      .filter((row) => row.qtyToBill > 0 && !row.error)
       .map((row) => ({
         id: crypto.randomUUID(),
         invoiceNo: invoiceNo.trim(),
@@ -404,6 +446,7 @@ export function RaiseInvoiceDrawer({
         milestoneName: row.milestoneLabel,
         description: row.milestoneLabel ? undefined : row.description.trim() || item.description,
         quantityBilled: row.qtyToBill,
+        unitPriceINR: item.unitPrice,
         calculatedAmountINR: row.calculatedAmount,
         invoiceAmountINR: row.currentInvoiceAmount,
         commercialAdjustmentINR: row.commercialAdjustment,
@@ -531,15 +574,19 @@ export function RaiseInvoiceDrawer({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label className={labelClass}>Invoice Number</label>
-                <Input
-                  type="text"
+                <label className={labelClass}>Invoice Cycle</label>
+                <Select
                   value={invoiceNo}
                   disabled={isViewMode}
                   className={disabledFieldClass}
-                  placeholder="e.g. PR-10039-INV-001"
-                  onChange={(e) => setInvoiceNo(e.target.value)}
-                />
+                  onChange={(e) => handleInvoiceCycleChange(e.target.value)}
+                >
+                  {invoiceCycles.map((cycle) => (
+                    <option key={cycle.invoiceNo} value={cycle.invoiceNo}>
+                      {cycle.label} {cycle.isNew ? "(New)" : `— ${cycle.invoiceNo}`}
+                    </option>
+                  ))}
+                </Select>
               </div>
               <div>
                 <label className={labelClass}>Invoice Date</label>
@@ -599,7 +646,7 @@ export function RaiseInvoiceDrawer({
                 <h4 className="text-sm font-extrabold text-[var(--nu-text)]">Billable Line Items Table</h4>
                 <p className="text-[11.5px] text-[var(--nu-text-muted)] mt-0.5">
                   {isCommercialMilestone ? (
-                    <span>Auto-Detected: <strong className="text-cyan-600 dark:text-cyan-400">Commercial Milestone Billing</strong> (Invoicing against milestone value).</span>
+                    <span>Auto-Detected: <strong className="text-cyan-600 dark:text-cyan-400">Commercial Milestone Billing</strong> (Accounts enters Qty to Invoice against each milestone's Available Qty).</span>
                   ) : (
                     <span>Auto-Detected: <strong className="text-blue-600 dark:text-blue-400">Quantity-Driven Billing</strong> (Accounts enters Bill Qty).</span>
                   )}
@@ -614,7 +661,6 @@ export function RaiseInvoiceDrawer({
 
             {isCreateMode ? (
               <InvoiceLineTable
-                workflowMode={workflowMode}
                 rows={rows}
                 uom={item.uom}
                 onQtyToBillChange={updateLineQty}
@@ -624,7 +670,6 @@ export function RaiseInvoiceDrawer({
               />
             ) : (
               <InvoiceLineTable
-                workflowMode={workflowMode}
                 rows={rows}
                 uom={item.uom}
                 disabled={isViewMode}
@@ -640,8 +685,46 @@ export function RaiseInvoiceDrawer({
                 <strong>Intelligent PMO Engine:</strong> The system automatically selects the invoice layout based on contract type (Quantity vs Milestone).
               </p>
               <p>
-                PM Execution Data is read-only. Accounts enters billing details and can edit Invoice Amount when commercial adjustments exist.
+                PM Execution Data is read-only. Enter Qty to Invoice to calculate the System Amount — Invoice Amount then pre-fills from it and stays editable for a commercial adjustment.
               </p>
+            </div>
+          </div>
+
+          {/* ═══ SECTION 3B: Invoice Summary (Cross-Activity Rollup for this Invoice Cycle) ═══ */}
+          <div className="rounded-2xl border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-4 space-y-3 shadow-2xs">
+            <div className="flex items-center gap-2">
+              <Receipt size={16} className="text-[var(--nu-accent)]" />
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--nu-text)]">Invoice Summary</h4>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Invoice Cycle</p>
+                <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">{invoiceCycleLabel}</p>
+              </div>
+              <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Activities Included</p>
+                <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">{invoiceSummaryActivitiesIncluded}</p>
+              </div>
+              <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">System Total</p>
+                <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
+                  <MoneyValue value={invoiceSummarySystemTotal} />
+                </p>
+              </div>
+              <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-amber-200/60 dark:border-amber-900/40">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Commercial Adjustment</p>
+                <p className="text-sm font-extrabold text-amber-700 dark:text-amber-300 mt-0.5">
+                  <MoneyValue value={invoiceSummaryCommercialAdjustment} />
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800/50 p-3 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wide text-cyan-700 dark:text-cyan-400">Final Invoice Amount</span>
+              <span className="text-lg font-extrabold text-cyan-700 dark:text-cyan-300">
+                <MoneyValue value={invoiceSummaryFinalAmount} />
+              </span>
             </div>
           </div>
         </div>
