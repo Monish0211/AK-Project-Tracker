@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileText, PlusCircle, X, Lock, Activity, CheckCircle2, Receipt } from "lucide-react";
+import { FileText, PlusCircle, X, Lock, Activity, CheckCircle2, Receipt, ClipboardList } from "lucide-react";
 
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
@@ -7,6 +7,7 @@ import { Button } from "../../../../components/ui/Button";
 import { Input } from "../../../../components/ui/Input";
 import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
+import { EmptyState } from "../../../../components/ui/EmptyState";
 import { MoneyValue } from "../../../../components/ui/MoneyTooltip";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 
@@ -24,10 +25,15 @@ import {
   getOtherActivitiesInvoiceCycleTotals,
   calculateExecutionProgress,
   getInvoiceWorkflowMode,
+  getInvoiceMethod,
+  getLumpSumMilestoneRows,
+  getLumpSumSummary,
   round,
   type InvoiceWorkflowMode,
+  type LumpSumMilestoneRow,
 } from "./InvoiceCalculations";
 import { InvoiceLineTable, type InvoiceLineRow } from "./InvoiceLineTable";
+import { LumpSumMilestoneTable } from "./LumpSumMilestoneTable";
 
 interface Props {
   project: Project;
@@ -87,6 +93,13 @@ export function RaiseInvoiceDrawer({
   // not: see getMilestoneQuantityState.
   const workflowMode: InvoiceWorkflowMode = getInvoiceWorkflowMode(milestones);
   const isCommercialMilestone = workflowMode === "commercial_milestone";
+
+  // Project-wide Invoice Method switch (Invoice Management header). Lump Sum
+  // bills purely off Payment Milestone % of Contract Value — no quantity at
+  // all — and takes over Sections 3/3B below wholesale. Invoice Line Items
+  // is today's existing quantity-driven / commercial-milestone workflow
+  // above, completely untouched.
+  const isLumpSum = getInvoiceMethod(project) === "lump_sum";
 
   // PMO Execution Progress (Read Only) — single source of truth shared with
   // ActivityRow.tsx / ActivityDetails.tsx via the Invoice Calculation
@@ -341,6 +354,49 @@ export function RaiseInvoiceDrawer({
 
   const rows = isCreateMode ? createRows : editRows;
 
+  // ═══ Lump Sum — Payment Milestone checkboxes ═══ Create mode: Accounts
+  // checks which milestones this invoice bills; a milestone already billed
+  // for this activity (any non-cancelled line) is locked "Completed" and
+  // cannot be selected again. Edit/View mode: the milestone/amount a saved
+  // line already billed is frozen — only the generic header fields
+  // (date/reference/remarks/status) stay editable, matching how the
+  // Invoice Line Items edit flow freezes unitPriceINR once saved.
+  const [selectedMilestoneIds, setSelectedMilestoneIds] = useState<Set<string>>(() => new Set());
+
+  const lumpSumRows = useMemo(() => getLumpSumMilestoneRows(item, milestones), [item, milestones]);
+
+  const toggleLumpSumMilestone = (id: string) => {
+    setSelectedMilestoneIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const editLumpSumRows: LumpSumMilestoneRow[] = useMemo(() => {
+    if (!existingLine) return [];
+    const milestone = existingLine.milestoneId ? milestones.find((m) => m.id === existingLine.milestoneId) : undefined;
+    return [
+      {
+        id: existingLine.milestoneId ?? existingLine.id,
+        label: existingLine.milestoneName ?? milestone?.label ?? "—",
+        percent: milestone?.percent ?? 0,
+        invoiceAmount: existingLine.invoiceAmountINR,
+        alreadyInvoiced: true,
+        status: "Completed",
+      },
+    ];
+  }, [existingLine, milestones]);
+
+  const lumpSumDisplayRows = isCreateMode ? lumpSumRows : editLumpSumRows;
+
+  const lumpSumSummary = isCreateMode
+    ? getLumpSumSummary(item, lumpSumRows, selectedMilestoneIds)
+    : getLumpSumSummary(item, [], new Set());
+
+  const hasLumpSumSelection = lumpSumRows.some((row) => !row.alreadyInvoiced && selectedMilestoneIds.has(row.id));
+
   // ═══ Invoice Summary — cross-activity rollup for the selected Invoice
   // Cycle ═══ Combines every OTHER activity's already-saved contribution to
   // this cycle with THIS activity's own contribution (its previously saved
@@ -390,9 +446,11 @@ export function RaiseInvoiceDrawer({
     }
   };
 
-  const hasBillableLine = isCreateMode
-    ? createRows.some((row) => row.qtyToBill > 0 && !row.error)
-    : editQtyValue > 0 && !editRows[0]?.error;
+  const hasBillableLine = isLumpSum
+    ? (isCreateMode ? hasLumpSumSelection : !!existingLine)
+    : isCreateMode
+      ? createRows.some((row) => row.qtyToBill > 0 && !row.error)
+      : editQtyValue > 0 && !editRows[0]?.error;
 
   const canSave =
     !isViewMode &&
@@ -404,22 +462,35 @@ export function RaiseInvoiceDrawer({
     if (!canSave) return;
 
     if (isEditMode && existingLine) {
-      const updatedLine: InvoiceLine = {
-        ...existingLine,
-        invoiceNo: invoiceNo.trim(),
-        invoiceDate,
-        quantityBilled: editQtyValue,
-        // Preserve whatever Unit Rate was already frozen on this line — only
-        // backfill it for a legacy record saved before this field existed.
-        // Never overwrite an already-frozen historical rate with today's.
-        unitPriceINR: existingLine.unitPriceINR ?? item.unitPrice,
-        calculatedAmountINR: editCalculatedAmount,
-        invoiceAmountINR: editAmountValue,
-        commercialAdjustmentINR: editCommercialAdjustment,
-        clientReference: clientReference.trim() || undefined,
-        remarks: remarks.trim() || undefined,
-        status,
-      };
+      const updatedLine: InvoiceLine = isLumpSum
+        ? {
+            // Lump Sum: the milestone and its auto-calculated amount are
+            // frozen once saved — only the generic header fields below are
+            // editable, matching how a frozen unitPriceINR never gets
+            // rewritten in the Invoice Line Items edit flow.
+            ...existingLine,
+            invoiceNo: invoiceNo.trim(),
+            invoiceDate,
+            clientReference: clientReference.trim() || undefined,
+            remarks: remarks.trim() || undefined,
+            status,
+          }
+        : {
+            ...existingLine,
+            invoiceNo: invoiceNo.trim(),
+            invoiceDate,
+            quantityBilled: editQtyValue,
+            // Preserve whatever Unit Rate was already frozen on this line — only
+            // backfill it for a legacy record saved before this field existed.
+            // Never overwrite an already-frozen historical rate with today's.
+            unitPriceINR: existingLine.unitPriceINR ?? item.unitPrice,
+            calculatedAmountINR: editCalculatedAmount,
+            invoiceAmountINR: editAmountValue,
+            commercialAdjustmentINR: editCommercialAdjustment,
+            clientReference: clientReference.trim() || undefined,
+            remarks: remarks.trim() || undefined,
+            status,
+          };
 
       onSave({
         ...project,
@@ -436,25 +507,43 @@ export function RaiseInvoiceDrawer({
       return;
     }
 
-    const newLines: InvoiceLine[] = createRows
-      .filter((row) => row.qtyToBill > 0 && !row.error)
-      .map((row) => ({
-        id: crypto.randomUUID(),
-        invoiceNo: invoiceNo.trim(),
-        invoiceDate,
-        milestoneId: draftLines.find((line) => line.key === row.key)?.milestoneId,
-        milestoneName: row.milestoneLabel,
-        description: row.milestoneLabel ? undefined : row.description.trim() || item.description,
-        quantityBilled: row.qtyToBill,
-        unitPriceINR: item.unitPrice,
-        calculatedAmountINR: row.calculatedAmount,
-        invoiceAmountINR: row.currentInvoiceAmount,
-        commercialAdjustmentINR: row.commercialAdjustment,
-        clientReference: clientReference.trim() || undefined,
-        remarks: remarks.trim() || undefined,
-        status: "Pending",
-        createdBy: "Administrator",
-      }));
+    const newLines: InvoiceLine[] = isLumpSum
+      ? lumpSumRows
+          .filter((row) => !row.alreadyInvoiced && selectedMilestoneIds.has(row.id))
+          .map((row) => ({
+            id: crypto.randomUUID(),
+            invoiceNo: invoiceNo.trim(),
+            invoiceDate,
+            milestoneId: row.id,
+            milestoneName: row.label,
+            quantityBilled: 0,
+            calculatedAmountINR: row.invoiceAmount,
+            invoiceAmountINR: row.invoiceAmount,
+            commercialAdjustmentINR: 0,
+            clientReference: clientReference.trim() || undefined,
+            remarks: remarks.trim() || undefined,
+            status: "Pending",
+            createdBy: "Administrator",
+          }))
+      : createRows
+          .filter((row) => row.qtyToBill > 0 && !row.error)
+          .map((row) => ({
+            id: crypto.randomUUID(),
+            invoiceNo: invoiceNo.trim(),
+            invoiceDate,
+            milestoneId: draftLines.find((line) => line.key === row.key)?.milestoneId,
+            milestoneName: row.milestoneLabel,
+            description: row.milestoneLabel ? undefined : row.description.trim() || item.description,
+            quantityBilled: row.qtyToBill,
+            unitPriceINR: item.unitPrice,
+            calculatedAmountINR: row.calculatedAmount,
+            invoiceAmountINR: row.currentInvoiceAmount,
+            commercialAdjustmentINR: row.commercialAdjustment,
+            clientReference: clientReference.trim() || undefined,
+            remarks: remarks.trim() || undefined,
+            status: "Pending",
+            createdBy: "Administrator",
+          }));
 
     onSave({
       ...project,
@@ -495,7 +584,7 @@ export function RaiseInvoiceDrawer({
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold text-[var(--nu-text)]">{title}</h2>
               <span className="px-2.5 py-0.5 rounded-full bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-800 text-[10.5px] font-bold uppercase tracking-wider">
-                {isCommercialMilestone ? "Commercial Milestone Billing" : "Quantity-Driven Billing"}
+                {isLumpSum ? "Lump Sum Billing" : isCommercialMilestone ? "Commercial Milestone Billing" : "Quantity-Driven Billing"}
               </span>
             </div>
             <p className="mt-1 text-xs text-[var(--nu-text-muted)] truncate">{subtitle}</p>
@@ -639,94 +728,156 @@ export function RaiseInvoiceDrawer({
             </div>
           </div>
 
-          {/* ═══ SECTION 3: Billable Line Items (Auto-Detected Engine) ═══ */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-extrabold text-[var(--nu-text)]">Billable Line Items Table</h4>
-                <p className="text-[11.5px] text-[var(--nu-text-muted)] mt-0.5">
-                  {isCommercialMilestone ? (
-                    <span>Auto-Detected: <strong className="text-cyan-600 dark:text-cyan-400">Commercial Milestone Billing</strong> (Accounts enters Qty to Invoice against each milestone's Available Qty).</span>
-                  ) : (
-                    <span>Auto-Detected: <strong className="text-blue-600 dark:text-blue-400">Quantity-Driven Billing</strong> (Accounts enters Bill Qty).</span>
+          {isLumpSum ? (
+            <>
+              {/* ═══ SECTION 3: Payment Milestones (Lump Sum Billing) ═══ */}
+              <div className="space-y-3">
+                <div>
+                  <h4 className="text-sm font-extrabold text-[var(--nu-text)]">Payment Milestones</h4>
+                  <p className="text-[11.5px] text-[var(--nu-text-muted)] mt-0.5">
+                    <span>Lump Sum Billing — check a milestone to automatically invoice <strong className="text-cyan-600 dark:text-cyan-400">Contract Value × Milestone %</strong>. No quantity entry required.</span>
+                  </p>
+                </div>
+
+                {lumpSumDisplayRows.length === 0 ? (
+                  <div className="rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-white dark:bg-slate-900/60">
+                    <EmptyState
+                      icon={<ClipboardList size={20} />}
+                      title="No Payment Milestones Configured"
+                      description="Define payment milestones for this project in the Payments tab before raising a Lump Sum invoice."
+                    />
+                  </div>
+                ) : (
+                  <LumpSumMilestoneTable
+                    rows={lumpSumDisplayRows}
+                    selectedIds={isCreateMode ? selectedMilestoneIds : new Set(editLumpSumRows.map((row) => row.id))}
+                    onToggle={toggleLumpSumMilestone}
+                    disabled={!isCreateMode}
+                  />
+                )}
+              </div>
+
+              {/* ═══ SECTION 3B: Live Summary (Lump Sum) ═══ */}
+              <div className="rounded-2xl border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-4 space-y-3 shadow-2xs">
+                <div className="flex items-center gap-2">
+                  <Receipt size={16} className="text-[var(--nu-accent)]" />
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--nu-text)]">Live Summary</h4>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Contract Value</p>
+                    <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
+                      <MoneyValue value={lumpSumSummary.contractValue} />
+                    </p>
+                  </div>
+                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Already Invoiced</p>
+                    <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
+                      <MoneyValue value={lumpSumSummary.currentTotalInvoiced} />
+                    </p>
+                  </div>
+                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-emerald-200/60 dark:border-emerald-900/40 sm:col-span-1 col-span-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">Remaining Amount</p>
+                    <p className="text-sm font-extrabold text-emerald-700 dark:text-emerald-300 mt-0.5">
+                      <MoneyValue value={lumpSumSummary.remainingAmount} />
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* ═══ SECTION 3: Billable Line Items (Auto-Detected Engine) ═══ */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-extrabold text-[var(--nu-text)]">Billable Line Items Table</h4>
+                    <p className="text-[11.5px] text-[var(--nu-text-muted)] mt-0.5">
+                      {isCommercialMilestone ? (
+                        <span>Auto-Detected: <strong className="text-cyan-600 dark:text-cyan-400">Commercial Milestone Billing</strong> (Accounts enters Qty to Invoice against each milestone's Available Qty).</span>
+                      ) : (
+                        <span>Auto-Detected: <strong className="text-blue-600 dark:text-blue-400">Quantity-Driven Billing</strong> (Accounts enters Bill Qty).</span>
+                      )}
+                    </p>
+                  </div>
+                  {isCreateMode && (
+                    <Button variant="outline" size="sm" icon={<PlusCircle size={13} />} onClick={addCustomLine}>
+                      Add Line
+                    </Button>
                   )}
-                </p>
-              </div>
-              {isCreateMode && (
-                <Button variant="outline" size="sm" icon={<PlusCircle size={13} />} onClick={addCustomLine}>
-                  Add Line
-                </Button>
-              )}
-            </div>
+                </div>
 
-            {isCreateMode ? (
-              <InvoiceLineTable
-                rows={rows}
-                uom={item.uom}
-                onQtyToBillChange={updateLineQty}
-                onInvoiceAmountChange={updateLineAmount}
-                onDescriptionChange={updateLineDescription}
-                onRemoveRow={removeLine}
-              />
-            ) : (
-              <InvoiceLineTable
-                rows={rows}
-                uom={item.uom}
-                disabled={isViewMode}
-                onQtyToBillChange={(_key, qty) => setEditQtyInput(qty === 0 ? "" : String(qty))}
-                onInvoiceAmountChange={(_key, amount) => setEditAmountInput(amount === 0 ? "" : String(amount))}
-                onDescriptionChange={() => {}}
-                onRemoveRow={() => {}}
-              />
-            )}
+                {isCreateMode ? (
+                  <InvoiceLineTable
+                    rows={rows}
+                    uom={item.uom}
+                    onQtyToBillChange={updateLineQty}
+                    onInvoiceAmountChange={updateLineAmount}
+                    onDescriptionChange={updateLineDescription}
+                    onRemoveRow={removeLine}
+                  />
+                ) : (
+                  <InvoiceLineTable
+                    rows={rows}
+                    uom={item.uom}
+                    disabled={isViewMode}
+                    onQtyToBillChange={(_key, qty) => setEditQtyInput(qty === 0 ? "" : String(qty))}
+                    onInvoiceAmountChange={(_key, amount) => setEditAmountInput(amount === 0 ? "" : String(amount))}
+                    onDescriptionChange={() => {}}
+                    onRemoveRow={() => {}}
+                  />
+                )}
 
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-[11px] text-[var(--nu-text-muted)] leading-relaxed space-y-1">
-              <p>
-                <strong>Intelligent PMO Engine:</strong> The system automatically selects the invoice layout based on contract type (Quantity vs Milestone).
-              </p>
-              <p>
-                PM Execution Data is read-only. Enter Qty to Invoice to calculate the System Amount — Invoice Amount then pre-fills from it and stays editable for a commercial adjustment.
-              </p>
-            </div>
-          </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-[11px] text-[var(--nu-text-muted)] leading-relaxed space-y-1">
+                  <p>
+                    <strong>Intelligent PMO Engine:</strong> The system automatically selects the invoice layout based on contract type (Quantity vs Milestone).
+                  </p>
+                  <p>
+                    PM Execution Data is read-only. Enter Qty to Invoice to calculate the System Amount — Invoice Amount then pre-fills from it and stays editable for a commercial adjustment.
+                  </p>
+                </div>
+              </div>
 
-          {/* ═══ SECTION 3B: Invoice Summary (Cross-Activity Rollup for this Invoice Cycle) ═══ */}
-          <div className="rounded-2xl border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-4 space-y-3 shadow-2xs">
-            <div className="flex items-center gap-2">
-              <Receipt size={16} className="text-[var(--nu-accent)]" />
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--nu-text)]">Invoice Summary</h4>
-            </div>
+              {/* ═══ SECTION 3B: Invoice Summary (Cross-Activity Rollup for this Invoice Cycle) ═══ */}
+              <div className="rounded-2xl border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-4 space-y-3 shadow-2xs">
+                <div className="flex items-center gap-2">
+                  <Receipt size={16} className="text-[var(--nu-accent)]" />
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--nu-text)]">Invoice Summary</h4>
+                </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Invoice Cycle</p>
-                <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">{invoiceCycleLabel}</p>
-              </div>
-              <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Activities Included</p>
-                <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">{invoiceSummaryActivitiesIncluded}</p>
-              </div>
-              <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">System Total</p>
-                <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
-                  <MoneyValue value={invoiceSummarySystemTotal} />
-                </p>
-              </div>
-              <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-amber-200/60 dark:border-amber-900/40">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Commercial Adjustment</p>
-                <p className="text-sm font-extrabold text-amber-700 dark:text-amber-300 mt-0.5">
-                  <MoneyValue value={invoiceSummaryCommercialAdjustment} />
-                </p>
-              </div>
-            </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Invoice Cycle</p>
+                    <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">{invoiceCycleLabel}</p>
+                  </div>
+                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Activities Included</p>
+                    <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">{invoiceSummaryActivitiesIncluded}</p>
+                  </div>
+                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">System Total</p>
+                    <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
+                      <MoneyValue value={invoiceSummarySystemTotal} />
+                    </p>
+                  </div>
+                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-amber-200/60 dark:border-amber-900/40">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Commercial Adjustment</p>
+                    <p className="text-sm font-extrabold text-amber-700 dark:text-amber-300 mt-0.5">
+                      <MoneyValue value={invoiceSummaryCommercialAdjustment} />
+                    </p>
+                  </div>
+                </div>
 
-            <div className="rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800/50 p-3 flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wide text-cyan-700 dark:text-cyan-400">Final Invoice Amount</span>
-              <span className="text-lg font-extrabold text-cyan-700 dark:text-cyan-300">
-                <MoneyValue value={invoiceSummaryFinalAmount} />
-              </span>
-            </div>
-          </div>
+                <div className="rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800/50 p-3 flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wide text-cyan-700 dark:text-cyan-400">Final Invoice Amount</span>
+                  <span className="text-lg font-extrabold text-cyan-700 dark:text-cyan-300">
+                    <MoneyValue value={invoiceSummaryFinalAmount} />
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Sticky Footer */}
