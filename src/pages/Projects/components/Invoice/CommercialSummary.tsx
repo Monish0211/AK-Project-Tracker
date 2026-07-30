@@ -1,6 +1,6 @@
 import { Banknote, Receipt, AlertCircle, Wallet, PieChart, ListChecks } from "lucide-react";
 import type { Project } from "../../../../types/Project";
-import { getProjectCommercialSummary } from "../../../../services/invoiceProgressService";
+import { calculateProjectKPIs } from "./InvoiceCalculations";
 import { formatBusinessINR } from "../../../../utils/formatCurrency";
 import { SummaryCards } from "./SummaryCards";
 
@@ -10,8 +10,9 @@ interface Props {
 
 /**
  * Section 1 — top-level KPI row for the whole Invoice tab. Every currency
- * figure comes from getProjectCommercialSummary(project), the single shared
- * source of truth also used by Dashboard/Reports/View Project — Payment
+ * figure comes from calculateProjectKPIs(project) — the Invoice Calculation
+ * Service's alias for getProjectCommercialSummary, the single shared source
+ * of truth also used by Dashboard/Reports/View Project — Payment
  * Received and Outstanding are derived live from invoice line statuses, so
  * marking a line Paid (or editing/deleting it) recalculates every KPI here
  * immediately, with no separate payment record to fall out of sync. Total
@@ -19,7 +20,7 @@ interface Props {
  * simple count rather than a commercial figure.
  */
 export function CommercialSummary({ project }: Props) {
-  const summary = getProjectCommercialSummary(project);
+  const summary = calculateProjectKPIs(project);
   const totalActivities = project.invoiceItems?.length ?? 0;
 
   const tiles = [

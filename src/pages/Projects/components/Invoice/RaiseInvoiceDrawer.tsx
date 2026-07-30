@@ -13,15 +13,17 @@ import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 import {
   getMilestonesForProject,
   calculateLineAmount,
+  getMilestoneValue,
+  getQuantityConsumed,
+  getCommercialAdjustment,
   getPreviousRaisedAmountForMilestone,
   getCommercialBillingStatus,
   getMilestoneBillingState,
   suggestNextInvoiceNumber,
   getAvailableQuantity,
-  getActivityCompletedQty,
-  getActivityRemainingQty,
-  inferBillingQuantityMode,
-  isMilestoneAlreadyInvoiced,
+  calculateExecutionProgress,
+  getInvoiceWorkflowMode,
+  round,
   type InvoiceWorkflowMode,
 } from "./InvoiceCalculations";
 import { InvoiceLineTable, type InvoiceLineRow } from "./InvoiceLineTable";
@@ -53,9 +55,12 @@ const disabledFieldClass = "disabled:opacity-60 disabled:cursor-not-allowed";
 /**
  * Universal Intelligent PMO Invoice Engine.
  *
- * Auto-detects activity workflow:
- * - Quantity-Driven Workflow (packages, NOS, KM, meters, man-hours)
- * - Commercial Milestone Workflow (submission, draft, final, FAT/SAT, guarantee)
+ * One classifier decides the workflow for every activity on a project —
+ * does this project have payment milestones configured at all?
+ * - Milestones configured: Commercial Milestone Workflow. Milestone % sets
+ *   both the invoice amount and quantity consumed; no manual qty entry.
+ * - No milestones configured: Quantity-Driven Workflow. Accounts enters
+ *   Bill Qty directly against the Available Qty pool.
  */
 export function RaiseInvoiceDrawer({
   project,
@@ -73,29 +78,23 @@ export function RaiseInvoiceDrawer({
 
   const milestones = useMemo(() => getMilestonesForProject(project), [project]);
 
-  // Progressive vs Reference quantity consumption — see InvoiceCalculations.ts.
-  // Determined automatically from the activity's description / milestone
-  // structure, never a stored flag or a UI toggle. This is also the SOLE
-  // classifier for which invoice layout/formula applies — a milestone
-  // percentage must never be converted into a billed quantity.
-  const billingQtyMode = useMemo(() => inferBillingQuantityMode(item, milestones), [item, milestones]);
-  const workflowMode: InvoiceWorkflowMode = billingQtyMode === "reference" ? "commercial_milestone" : "quantity_driven";
+  // The SOLE classifier for invoice layout/formula: does this project have
+  // payment milestones configured at all? See getInvoiceWorkflowMode in
+  // InvoiceCalculations.ts — there is no second, per-activity classifier
+  // that could disagree with it.
+  const workflowMode: InvoiceWorkflowMode = getInvoiceWorkflowMode(milestones);
   const isCommercialMilestone = workflowMode === "commercial_milestone";
-  const baseAvailableQty = useMemo(() => getAvailableQuantity(item, milestones), [item, milestones]);
-
-  // Eligibility gate qty — kept separate from the PMO Execution Progress
-  // display below, which must show the same canonical completed/remaining
-  // figures as the Activities table and Milestone Summary (see
-  // getActivityCompletedQty/getActivityRemainingQty in InvoiceCalculations.ts)
-  // rather than an independently-tracked value.
-  const completedQty = item.qty;
+  const baseAvailableQty = useMemo(() => getAvailableQuantity(item), [item]);
 
   // PMO Execution Progress (Read Only) — single source of truth shared with
-  // ActivityRow.tsx / ActivityDetails.tsx: sourced entirely from the
-  // PM/Quantity module (project.quantityItems), never from item.invoices.
-  // Raising, editing, or deleting an invoice never touches this.
-  const executionCompletedQty = useMemo(() => getActivityCompletedQty(item, project), [item, project]);
-  const executionRemainingQty = useMemo(() => getActivityRemainingQty(item, project), [item, project]);
+  // ActivityRow.tsx / ActivityDetails.tsx via the Invoice Calculation
+  // Service: always SUM(Quantity Consumed) from saved, non-cancelled
+  // invoice records for this activity. Raising, editing, or deleting an
+  // invoice recalculates this immediately — it is never a separate,
+  // independently-tracked value.
+  const executionProgress = useMemo(() => calculateExecutionProgress(item), [item]);
+  const executionCompletedQty = executionProgress.completedQty;
+  const executionRemainingQty = executionProgress.remainingQty;
 
   const [invoiceNo, setInvoiceNo] = useState(existingLine?.invoiceNo ?? suggestNextInvoiceNumber(project));
   const [invoiceDate, setInvoiceDate] = useState(existingLine?.invoiceDate ?? todayISODate());
@@ -190,22 +189,27 @@ export function RaiseInvoiceDrawer({
   // Create mode rows
   const createRows: InvoiceLineRow[] = draftLines.map((line) => {
     const milestonePercent = line.milestonePercent ?? (line.milestoneId ? milestones.find((m) => m.id === line.milestoneId)?.percent ?? 100 : 100);
-    const milestoneValue = Math.round(item.totalPrice * (milestonePercent / 100) * 100) / 100;
+    const milestoneValue = getMilestoneValue(item.totalPrice, milestonePercent);
     const previousRaisedAmount = getPreviousRaisedAmountForMilestone(item, line.milestoneId);
 
     if (isCommercialMilestone) {
-      // Commercial Milestone Workflow — Balance Amount / Status come from
-      // getMilestoneBillingState, the single source of truth shared with
-      // validation below. `alreadyInvoiced` is previously SAVED invoices
-      // only — the amount currently being typed must never be folded in,
-      // or the balance (and status) would read as settled pre-save.
+      // Commercial Milestone Workflow — the same Milestone % that sets the
+      // invoice amount also sets the quantity consumed (single formula,
+      // getQuantityConsumed), persisted on save so Quantity Progress reads
+      // it back directly with no second calculation. Balance Amount /
+      // Status come from getMilestoneBillingState, the single source of
+      // truth shared with validation below. `alreadyInvoiced` is previously
+      // SAVED invoices only — the amount currently being typed must never
+      // be folded in, or the balance (and status) would read as settled
+      // pre-save.
+      const quantityConsumed = getQuantityConsumed(item.qty, milestonePercent);
       const currentInvoiceAmount = Number(line.customAmountInput) || 0;
-      const { balanceAmount, status: billingStatus } = getMilestoneBillingState(milestoneValue, previousRaisedAmount);
+      const { balanceAmount, validationLimit, status: billingStatus } = getMilestoneBillingState(milestoneValue, previousRaisedAmount);
 
       let error: string | null = null;
       if (currentInvoiceAmount < 0) {
         error = "Invoice amount cannot be negative.";
-      } else if (currentInvoiceAmount > balanceAmount + 0.01) {
+      } else if (currentInvoiceAmount > validationLimit) {
         error = `Amount exceeds remaining milestone balance (${formatBusinessINR(balanceAmount)}).`;
       }
 
@@ -215,9 +219,9 @@ export function RaiseInvoiceDrawer({
         milestoneLabel: line.milestoneLabel,
         milestonePercent,
         contractQty: item.qty,
-        completedQty,
-        eligibleQty: completedQty,
-        qtyToBill: 0,
+        completedQty: item.qty,
+        eligibleQty: item.qty,
+        qtyToBill: quantityConsumed,
         unitPrice: item.unitPrice,
         milestoneValue,
         calculatedAmount: milestoneValue,
@@ -232,47 +236,35 @@ export function RaiseInvoiceDrawer({
       };
     }
 
-    // Quantity-Driven Workflow — available qty depends on this activity's
-    // Progressive vs Reference billing mode (see InvoiceCalculations.ts).
+    // Quantity-Driven Workflow (no milestones configured on this project) —
+    // Accounts enters Bill Qty directly against the shared Available Qty
+    // pool, also accounting for quantity typed into sibling rows in this
+    // same not-yet-saved session so two rows can't over-claim it.
     const qtyToBill = Number(line.qtyInput) || 0;
-
-    let eligibleQty: number;
-    let error: string | null = null;
-
-    if (billingQtyMode === "reference") {
-      // Never consumed — every milestone always sees the full quantity.
-      eligibleQty = item.qty;
-      if (isMilestoneAlreadyInvoiced(item, line.milestoneId)) {
-        error = "This milestone has already been invoiced.";
-      }
-    } else {
-      // Progressive — one shared pool across every milestone on this
-      // activity, also accounting for quantity typed into sibling rows in
-      // this same not-yet-saved session so two rows can't over-claim it.
-      const otherDraftQtyInSession = draftLines
-        .filter((other) => other.key !== line.key)
-        .reduce((sum, other) => sum + (Number(other.qtyInput) || 0), 0);
-      eligibleQty = Math.max(Math.round((baseAvailableQty - otherDraftQtyInSession) * 100) / 100, 0);
-    }
+    const otherDraftQtyInSession = draftLines
+      .filter((other) => other.key !== line.key)
+      .reduce((sum, other) => sum + (Number(other.qtyInput) || 0), 0);
+    const eligibleQty = Math.max(round(baseAvailableQty - otherDraftQtyInSession), 0);
 
     const calculatedAmount = calculateLineAmount(qtyToBill, item.unitPrice);
     const currentInvoiceAmount = line.customAmountInput !== undefined && line.customAmountInput !== ""
       ? Number(line.customAmountInput)
       : calculatedAmount;
 
-    const commercialAdjustment = Math.round((currentInvoiceAmount - calculatedAmount) * 100) / 100;
-    const remainingQty = billingQtyMode === "reference" ? item.qty : Math.max(eligibleQty - qtyToBill, 0);
+    const commercialAdjustment = getCommercialAdjustment(currentInvoiceAmount, calculatedAmount);
+    const remainingQty = Math.max(eligibleQty - qtyToBill, 0);
     const remainingAmount = Math.max(milestoneValue - (previousRaisedAmount + currentInvoiceAmount), 0);
 
-    if (completedQty <= 0) {
-      error = error ?? "Execution completed qty is 0. Not eligible.";
-    } else if (billingQtyMode !== "reference" && qtyToBill > eligibleQty + 0.001) {
+    let error: string | null = null;
+    if (item.qty <= 0) {
+      error = "Contract qty is 0. Not eligible.";
+    } else if (qtyToBill > eligibleQty + 0.001) {
       error = `Qty to bill cannot exceed available qty (${eligibleQty} ${item.uom}).`;
     } else if (currentInvoiceAmount < 0) {
-      error = error ?? "Invoice amount cannot be negative.";
+      error = "Invoice amount cannot be negative.";
     }
 
-    const billingStatus = getCommercialBillingStatus(completedQty, milestoneValue, previousRaisedAmount + currentInvoiceAmount);
+    const billingStatus = getCommercialBillingStatus(item.qty, milestoneValue, previousRaisedAmount + currentInvoiceAmount);
 
     return {
       key: line.key,
@@ -280,7 +272,7 @@ export function RaiseInvoiceDrawer({
       milestoneLabel: line.milestoneLabel,
       milestonePercent,
       contractQty: item.qty,
-      completedQty,
+      completedQty: item.qty,
       eligibleQty,
       qtyToBill,
       unitPrice: item.unitPrice,
@@ -301,7 +293,7 @@ export function RaiseInvoiceDrawer({
   const editQtyValue = Number(editQtyInput) || 0;
   const editMilestone = existingLine?.milestoneId ? milestones.find((m) => m.id === existingLine.milestoneId) : undefined;
   const editMilestonePercent = editMilestone?.percent ?? 100;
-  const editMilestoneValue = Math.round(item.totalPrice * (editMilestonePercent / 100) * 100) / 100;
+  const editMilestoneValue = getMilestoneValue(item.totalPrice, editMilestonePercent);
   const editPreviousRaisedAmount = getPreviousRaisedAmountForMilestone(item, existingLine?.milestoneId, existingLine?.id);
 
   const editCalculatedAmount = isCommercialMilestone
@@ -309,19 +301,24 @@ export function RaiseInvoiceDrawer({
     : calculateLineAmount(editQtyValue, item.unitPrice);
 
   const editAmountValue = editAmountInput !== "" ? Number(editAmountInput) : editCalculatedAmount;
-  const editCommercialAdjustment = isCommercialMilestone ? 0 : Math.round((editAmountValue - editCalculatedAmount) * 100) / 100;
+  const editCommercialAdjustment = isCommercialMilestone ? 0 : getCommercialAdjustment(editAmountValue, editCalculatedAmount);
 
-  // Same Progressive/Reference rule as create mode — excludes this line's
-  // own prior quantity so editing it back to its current value never trips
-  // the availability check.
-  const editEligibleQty = billingQtyMode === "reference"
+  // Excludes this line's own prior quantity so editing it back to its
+  // current value never trips the availability check. Only meaningful for
+  // Quantity-Driven billing — milestone-driven lines never expose Bill Qty.
+  const editEligibleQty = isCommercialMilestone
     ? item.qty
-    : getAvailableQuantity(item, milestones, existingLine?.id);
+    : getAvailableQuantity(item, existingLine?.id);
 
   // Same single source of truth as create mode: Balance Amount / Status
   // reflect the milestone against OTHER saved invoices only, never the
   // amount currently being typed into this edit's own Invoice Amount field.
   const editMilestoneBillingState = getMilestoneBillingState(editMilestoneValue, editPreviousRaisedAmount);
+
+  // Editing a milestone-driven invoice (amount, remarks, status) must never
+  // silently rewrite the Quantity Consumed that was persisted when it was
+  // originally saved — show and keep exactly what's on the record.
+  const editQuantityBilled = isCommercialMilestone ? (existingLine?.quantityBilled ?? 0) : editQtyValue;
 
   const editRows: InvoiceLineRow[] = existingLine
     ? [
@@ -331,22 +328,22 @@ export function RaiseInvoiceDrawer({
           milestoneLabel: existingLine.milestoneName ?? editMilestone?.label ?? "Full Completion",
           milestonePercent: editMilestonePercent,
           contractQty: item.qty,
-          completedQty,
+          completedQty: item.qty,
           eligibleQty: editEligibleQty,
-          qtyToBill: editQtyValue,
+          qtyToBill: editQuantityBilled,
           unitPrice: item.unitPrice,
           milestoneValue: editMilestoneValue,
           calculatedAmount: editCalculatedAmount,
           currentInvoiceAmount: editAmountValue,
           commercialAdjustment: editCommercialAdjustment,
           previousRaisedAmount: editPreviousRaisedAmount,
-          remainingQty: billingQtyMode === "reference" ? item.qty : Math.max(editEligibleQty - editQtyValue, 0),
+          remainingQty: isCommercialMilestone ? 0 : Math.max(editEligibleQty - editQtyValue, 0),
           remainingAmount: isCommercialMilestone
             ? editMilestoneBillingState.balanceAmount
             : Math.max(editMilestoneValue - (editPreviousRaisedAmount + editAmountValue), 0),
           status: isCommercialMilestone
             ? editMilestoneBillingState.status
-            : getCommercialBillingStatus(completedQty, editMilestoneValue, editPreviousRaisedAmount + editAmountValue),
+            : getCommercialBillingStatus(item.qty, editMilestoneValue, editPreviousRaisedAmount + editAmountValue),
           error: null,
           removable: false,
         },
@@ -372,7 +369,7 @@ export function RaiseInvoiceDrawer({
       const updatedLine: InvoiceLine = {
         ...existingLine,
         invoiceDate,
-        quantityBilled: isCommercialMilestone ? 0 : editQtyValue,
+        quantityBilled: editQuantityBilled,
         calculatedAmountINR: editCalculatedAmount,
         invoiceAmountINR: editAmountValue,
         commercialAdjustmentINR: editCommercialAdjustment,
@@ -405,7 +402,7 @@ export function RaiseInvoiceDrawer({
         milestoneId: draftLines.find((line) => line.key === row.key)?.milestoneId,
         milestoneName: row.milestoneLabel,
         description: row.milestoneLabel ? undefined : row.description.trim() || item.description,
-        quantityBilled: isCommercialMilestone ? 0 : row.qtyToBill,
+        quantityBilled: row.qtyToBill,
         calculatedAmountINR: row.calculatedAmount,
         invoiceAmountINR: row.currentInvoiceAmount,
         commercialAdjustmentINR: row.commercialAdjustment,

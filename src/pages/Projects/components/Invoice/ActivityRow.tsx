@@ -8,13 +8,10 @@ import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurren
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 import {
   getInvoiceRaisedAmount,
-  getInvoiceStatus,
-  type InvoiceStatus,
-} from "../../../../services/invoiceProgressService";
-import {
-  getActivityCompletedQty,
-  getActivityRemainingQty,
+  calculateInvoiceStatus,
+  calculateExecutionProgress,
   getBillingTypeLabel,
+  type InvoiceStatus,
 } from "./InvoiceCalculations";
 import { ActivityDetails } from "./ActivityDetails";
 
@@ -34,11 +31,10 @@ const STATUS_BADGE: Record<InvoiceStatus, Tone> = {
 };
 
 export function ActivityRow({ project, item, isExpanded, readOnly = false, onToggleExpand, onRaiseInvoice }: Props) {
-  const completedQty = getActivityCompletedQty(item, project);
-  const remainingQty = getActivityRemainingQty(item, project);
+  const { completedQty, remainingQty } = calculateExecutionProgress(item);
   const invoiceRaised = getInvoiceRaisedAmount(item);
   const balance = Math.max(item.totalPrice - invoiceRaised, 0);
-  const status = getInvoiceStatus(item);
+  const status = calculateInvoiceStatus(item);
   const billingType = getBillingTypeLabel(project);
 
   return (

@@ -1,8 +1,24 @@
 import type { InvoiceItem, InvoiceLineStatus } from "../../../../types/InvoiceItem";
 import type { Project } from "../../../../types/Project";
-import { getInvoiceRaisedAmount } from "../../../../services/invoiceProgressService";
+import {
+  getInvoiceRaisedAmount,
+  getInvoiceStatus,
+  getProjectCommercialSummary,
+  type InvoiceStatus,
+} from "../../../../services/invoiceProgressService";
 
-const round = (value: number): number => Math.round(value * 100) / 100;
+export type { InvoiceStatus };
+
+/**
+ * This file is the Invoice Calculation Service — the ONLY place invoice,
+ * milestone, and billing figures are computed. Components must call one of
+ * the functions here (or the public API grouped at the bottom of this file)
+ * rather than re-deriving a formula inline. `round` is exported so any
+ * caller that still needs to combine a raw number (e.g. a form input) rounds
+ * the exact same way as every other figure in the app — no second rounding
+ * idiom anywhere else.
+ */
+export const round = (value: number): number => Math.round(value * 100) / 100;
 
 export interface BillingMilestone {
   id: string;
@@ -26,126 +42,41 @@ export function findMilestone(milestones: BillingMilestone[], milestoneId: strin
   return milestones.find((m) => m.id === milestoneId);
 }
 
-// ---------------------------------------------------------------------------
-// Quantity Consumption — Progressive vs Reference
-// ---------------------------------------------------------------------------
-
 /**
- * Two ways an activity's contract quantity behaves when milestones bill
- * against it:
- *  - "progressive": the deliverable is physically consumed in parts (e.g.
- *    Packages, Drawings, Pipe Joints, Survey Points, KM, Cable Length).
- *    Every milestone draws from ONE shared remaining pool.
- *  - "reference": the quantity represents one fixed effort/deliverable that
- *    every milestone (Draft, Final, Submission, Approval, Commissioning,
- *    Acceptance...) is simply a payment stage FOR (e.g. a Study, a
- *    Consultancy engagement, a Visit, N Man-Days, N Sets). Billing one
- *    milestone never reduces what another milestone can reference.
- *
- * Never stored, never a UI toggle — determined automatically from the
- * activity's own description and UOM (never UOM alone) and, when that's
- * ambiguous, from whether the project's payment milestones read as named
- * stages of one deliverable rather than plain, unlabeled percentage splits.
+ * Single Source of Truth for Quantity Progress: Completed Qty is ALWAYS the
+ * sum of Quantity Consumed recorded on saved, non-cancelled invoice lines
+ * for this activity — never a separate PM/Quantity-module field, never
+ * re-derived from Milestone Summary, never temporary UI state. This applies
+ * uniformly to every activity, whether its contract quantity is billed
+ * progressively (Packages, Drawings, KM — Accounts enters Bill Qty
+ * directly) or via milestones (Qty + Milestone — Quantity Consumed is
+ * auto-calculated and persisted at save time, see getQuantityConsumed).
+ * There is only one Quantity Progress engine.
  */
-export type BillingQuantityMode = "progressive" | "reference";
-
-const REFERENCE_ACTIVITY_KEYWORDS = [
-  "hazop", "hazid", "sil study", "pulsation study", "pulsation", "consultancy",
-  "consulting", "report submission", "visit", "visits", "engineering",
-  "man-day", "man-days", "man day", "man days", "manday", "mandays",
-  "man-hour", "man-hours", "man hour", "man hours", "manhour", "manhours",
-  "study", "studies", "assessment", "audit", "set", "sets", "day", "days",
-];
-
-const PROGRESSIVE_ACTIVITY_KEYWORDS = [
-  "package", "packages", "drawing", "drawings", "pipe joint", "pipe joints",
-  "joint", "joints", "survey point", "survey points", "cable length", "cable",
-  "cables", "kilometer", "kilometre", "kilometers", "kilometres", "km",
-  "meter", "meters", "metre", "metres", "weld", "welds",
-];
-
-/** Named stages of a single deliverable — their presence signals Reference mode when the activity's own description/UOM is ambiguous. */
-const REFERENCE_MILESTONE_STAGE_KEYWORDS = [
-  "draft", "final", "submission", "approval", "commissioning", "acceptance",
-  "completion", "handover", "close-out", "closeout", "mobilization", "mobilisation",
-  "demobilization", "demobilisation", "kick-off", "kickoff", "kom", "fat", "sat",
-  "guarantee", "retention", "provisional",
-];
-
-/** Whole-word match only, so short tokens like "day"/"set"/"km" never false-positive inside unrelated words (e.g. "Sunday", "offset", "kilometer" already listed separately). */
-function matchesKeyword(text: string, keywords: string[]): boolean {
-  const lower = text.toLowerCase();
-  return keywords.some((kw) => {
-    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return new RegExp(`\\b${escaped}\\b`).test(lower);
-  });
-}
-
-/**
- * Determines Progressive vs Reference for one activity. Checks the
- * activity's own description and UOM together first (the primary, most
- * reliable signal — never UOM in isolation); only falls back to inspecting
- * the milestone structure when neither clearly indicates either behaviour.
- */
-export function inferBillingQuantityMode(item: InvoiceItem, milestones: BillingMilestone[]): BillingQuantityMode {
-  const descriptionAndUom = `${item.description ?? ""} ${item.uom ?? ""}`;
-
-  if (matchesKeyword(descriptionAndUom, REFERENCE_ACTIVITY_KEYWORDS)) return "reference";
-  if (matchesKeyword(descriptionAndUom, PROGRESSIVE_ACTIVITY_KEYWORDS)) return "progressive";
-
-  if (milestones.length > 1) {
-    const stageNamedCount = milestones.filter((m) => matchesKeyword(m.label, REFERENCE_MILESTONE_STAGE_KEYWORDS)).length;
-    if (stageNamedCount >= Math.ceil(milestones.length / 2)) return "reference";
-  }
-
-  return "progressive";
-}
-
-/**
- * Quantity Progress (Completed/Remaining) is project-execution data owned
- * entirely by the PM/Quantity module (QuantityItem.invoiceQty, matched by
- * activity id) — never billing data. The Invoice module is financial only:
- * creating, editing, or deleting an invoice must never change this number,
- * and it must never be inferred from `item.invoices`. It only changes when
- * the PM edits execution data on the Quantity tab; until that happens for a
- * given activity, this simply reports whatever is saved there today (0 by
- * default for a not-yet-started activity).
- */
-export function getActivityCompletedQty(item: InvoiceItem, project: Project): number {
-  const quantityItems = Array.isArray(project.quantityItems) ? project.quantityItems : [];
-  const match = quantityItems.find((q) => q.id === item.id);
-  return match?.invoiceQty ?? 0;
+export function getActivityCompletedQty(item: InvoiceItem): number {
+  const lines = Array.isArray(item.invoices) ? item.invoices : [];
+  return round(
+    lines
+      .filter((line) => line.status !== "Cancelled")
+      .reduce((sum, line) => sum + line.quantityBilled, 0)
+  );
 }
 
 /** Always the complement of Completed Qty — Remaining = Contract Qty − Completed Qty — so the two never drift apart or contradict each other. */
-export function getActivityRemainingQty(item: InvoiceItem, project: Project): number {
-  return Math.max(round(item.qty - getActivityCompletedQty(item, project)), 0);
+export function getActivityRemainingQty(item: InvoiceItem): number {
+  return Math.max(round(item.qty - getActivityCompletedQty(item)), 0);
 }
 
 /**
- * THE single centralized source of truth for how much of an activity's
- * quantity is still available to bill — every call site (Activities table,
- * expanded row, Raise Invoice drawer) must route through this rather than
- * re-deriving the subtraction locally.
- *
- *   Progressive: Available = Contract Qty − Already Invoiced Qty (one pool
- *   shared across every milestone on this activity).
- *   Reference:   Available = Contract Qty, always — never reduced by any
- *   milestone's invoicing.
- *
+ * The Bill Qty availability pool for Quantity-Driven billing (activities
+ * with NO configured payment milestones, where Accounts manually enters how
+ * much to bill each time): Available = Contract Qty − Already Invoiced Qty,
+ * one pool shared across every invoice raised against this activity.
  * `excludeLineId` lets an edit-in-progress leave its own prior quantity out
  * of "already invoiced" so editing a line back to its own current value is
  * never blocked.
  */
-export function getAvailableQuantity(
-  item: InvoiceItem,
-  milestones: BillingMilestone[],
-  excludeLineId?: string
-): number {
-  if (inferBillingQuantityMode(item, milestones) === "reference") {
-    return item.qty;
-  }
-
+export function getAvailableQuantity(item: InvoiceItem, excludeLineId?: string): number {
   const lines = Array.isArray(item.invoices) ? item.invoices : [];
   const alreadyInvoiced = round(
     lines
@@ -154,14 +85,6 @@ export function getAvailableQuantity(
   );
 
   return Math.max(round(item.qty - alreadyInvoiced), 0);
-}
-
-/** Reference mode only: has this exact milestone (or the no-milestone bucket, when milestoneId is undefined) already been invoiced by a non-cancelled line? */
-export function isMilestoneAlreadyInvoiced(item: InvoiceItem, milestoneId: string | undefined, excludeLineId?: string): boolean {
-  const lines = Array.isArray(item.invoices) ? item.invoices : [];
-  return lines.some(
-    (line) => line.status !== "Cancelled" && line.id !== excludeLineId && line.milestoneId === milestoneId
-  );
 }
 
 export function getBillingTypeLabel(project: Project): string {
@@ -180,6 +103,29 @@ export interface MilestoneSummaryRow {
   status: MilestoneRowStatus;
 }
 
+/** Milestone Value = Work Order Value × Milestone % — the ONE formula for this, shared by Milestone Summary, Raise Invoice, and Invoice History. Never re-derive this inline. */
+export function getMilestoneValue(totalPrice: number, milestonePercent: number): number {
+  return round(totalPrice * (milestonePercent / 100));
+}
+
+/**
+ * Quantity Consumed = Contract Qty × Milestone % — the same milestone % that
+ * determines the invoice amount also determines the quantity consumed, for
+ * every activity billed under a Qty + Milestone schedule. Computed once when
+ * a milestone invoice is saved and persisted onto that invoice line
+ * (InvoiceLine.quantityBilled) — never recalculated live from the milestone
+ * definition afterwards, so a later change to the milestone % or contract
+ * qty never rewrites the history of what was actually billed.
+ */
+export function getQuantityConsumed(contractQty: number, milestonePercent: number): number {
+  return round(contractQty * (milestonePercent / 100));
+}
+
+/** Commercial Adjustment = Invoice Amount (as entered/edited) − System-Calculated Amount. The ONE formula for this, shared by create and edit flows. */
+export function getCommercialAdjustment(invoiceAmount: number, calculatedAmount: number): number {
+  return round(invoiceAmount - calculatedAmount);
+}
+
 /**
  * One row per configured milestone for an activity.
  * Calculates Milestone Value = Contract Value × Milestone %
@@ -193,7 +139,7 @@ export function getMilestoneSummaryForActivity(
   const lines = Array.isArray(item.invoices) ? item.invoices : [];
 
   return milestones.map((milestone) => {
-    const milestoneValue = round(item.totalPrice * (milestone.percent / 100));
+    const milestoneValue = getMilestoneValue(item.totalPrice, milestone.percent);
     const alreadyInvoiced = round(
       lines
         .filter((line) => line.status !== "Cancelled" && line.milestoneId === milestone.id)
@@ -222,33 +168,6 @@ export function getMilestoneSummaryForActivity(
 
 export function calculateLineAmount(quantity: number, unitPrice: number): number {
   return round(quantity * (unitPrice || 0));
-}
-
-export function calculateEligibleAmount(
-  completedQty: number,
-  unitPrice: number,
-  milestonePercent: number = 100
-): number {
-  if (completedQty <= 0 || unitPrice <= 0 || milestonePercent <= 0) return 0;
-  return round(completedQty * unitPrice * (milestonePercent / 100));
-}
-
-export function getPreviousBilledQtyForMilestone(
-  item: InvoiceItem,
-  milestoneId?: string,
-  excludeLineId?: string
-): number {
-  const lines = Array.isArray(item.invoices) ? item.invoices : [];
-  return round(
-    lines
-      .filter(
-        (line) =>
-          line.status !== "Cancelled" &&
-          line.id !== excludeLineId &&
-          (milestoneId ? line.milestoneId === milestoneId : !line.milestoneId)
-      )
-      .reduce((sum, line) => sum + (line.quantityBilled || 0), 0)
-  );
 }
 
 export function getPreviousRaisedAmountForMilestone(
@@ -286,64 +205,71 @@ export function getCommercialBillingStatus(
   return "Eligible";
 }
 
+/**
+ * Accounts reads Milestone Value/Balance off the Lakh/Crore display
+ * (`formatBusinessINR`, 2 decimal places) — never the exact rupee figure.
+ * At that precision, "₹2.22 L" represents anything from ₹2,21,500 to
+ * ₹2,22,500; typing the "obvious" rupee equivalent of what's on screen can
+ * legitimately land up to half of that display's rounding step above the
+ * exact balance. That is not an over-billing attempt, so it must not be
+ * rejected — this returns exactly that step, matching `formatBusinessINR`'s
+ * own bucket boundaries so the tolerance is never wider than the ambiguity
+ * the display itself introduced.
+ */
+export function getBalanceValidationTolerance(balanceAmount: number): number {
+  const abs = Math.abs(balanceAmount);
+  if (abs >= 1_00_00_000) return 50_000; // 2-decimal Crore display
+  if (abs >= 1_00_000) return 500; // 2-decimal Lakh display
+  if (abs >= 1_000) return 5; // 2-decimal Thousand display
+  return 0.01;
+}
+
 export interface MilestoneBillingState {
   milestoneValue: number;
   alreadyInvoiced: number;
   balanceAmount: number;
+  /** Invoice Amount must be rejected only when it exceeds THIS, not balanceAmount directly — see getBalanceValidationTolerance. */
+  validationLimit: number;
   status: CommercialLineBillingStatus;
 }
 
 /**
  * Single source of truth for Commercial Milestone Billing: the displayed
  * Balance Amount, the Invoice Amount validation ceiling, and the Status
- * badge must all read from this one calculation. `alreadyInvoiced` is the
- * amount from SAVED invoices only — never include the amount currently
- * being typed into the draft Invoice Amount field, or the balance (and
- * status) would flip to "paid" before the invoice is actually saved.
+ * badge must all read from this one calculation — the UI and the
+ * validation must both consume this, never re-derive their own ceiling.
+ * `alreadyInvoiced` is the amount from SAVED invoices only — never include
+ * the amount currently being typed into the draft Invoice Amount field, or
+ * the balance (and status) would flip to "paid" before the invoice is
+ * actually saved.
  */
 export function getMilestoneBillingState(milestoneValue: number, alreadyInvoiced: number): MilestoneBillingState {
   const balanceAmount = Math.max(round(milestoneValue - alreadyInvoiced), 0);
+  const validationLimit = round(balanceAmount + getBalanceValidationTolerance(balanceAmount));
   const status: CommercialLineBillingStatus =
     milestoneValue <= 0 ? "Not Eligible" : getCommercialBillingStatus(0, milestoneValue, alreadyInvoiced);
-  return { milestoneValue, alreadyInvoiced, balanceAmount, status };
-}
-
-export function getEditableMaxQuantity(item: InvoiceItem, excludeLineId?: string): number {
-  const lines = Array.isArray(item.invoices) ? item.invoices : [];
-  const othersCompleted = lines
-    .filter((line) => line.status !== "Cancelled" && line.id !== excludeLineId)
-    .reduce((sum, line) => sum + line.quantityBilled, 0);
-
-  return Math.max(round(item.qty - othersCompleted), 0);
-}
-
-export interface LinePreview {
-  currentInvoiceAmount: number;
-  remainingQty: number;
-  remainingAmount: number;
-}
-
-export function getLinePreview(item: InvoiceItem, currentInvoiceQty: number, excludeLineId?: string): LinePreview {
-  const maxQty = getEditableMaxQuantity(item, excludeLineId);
-  const safeQty = Math.max(currentInvoiceQty, 0);
-  const currentInvoiceAmount = calculateLineAmount(safeQty, item.unitPrice);
-  const remainingQty = Math.max(round(maxQty - safeQty), 0);
-  const remainingAmount = calculateLineAmount(remainingQty, item.unitPrice);
-
-  return { currentInvoiceAmount, remainingQty, remainingAmount };
+  return { milestoneValue, alreadyInvoiced, balanceAmount, validationLimit, status };
 }
 
 /**
- * The Raise Invoice drawer's two display layouts. Derived directly from
- * `inferBillingQuantityMode` — "reference" activities render as
- * "commercial_milestone" (Milestone Value / Already Invoiced / Balance,
- * no Bill Qty input), "progressive" activities render as "quantity_driven"
- * (Available Qty / Bill Qty / System Amount). There is deliberately no
- * separate UOM-keyword classifier for this anymore — a second classifier
- * disagreeing with `inferBillingQuantityMode` is exactly what caused
- * milestone percentages to get multiplied into invoice quantities before.
+ * The Raise Invoice drawer's two display layouts. Determined by ONE fact,
+ * never a keyword guess about the activity's description/UOM: does this
+ * project have payment milestones configured at all?
+ *  - Milestones configured (Billing Type = "Qty + Milestone"): every
+ *    activity on the project bills the same way — Milestone Value / Already
+ *    Invoiced / Balance, no manual quantity entry. The milestone % that sets
+ *    the invoice amount also sets the quantity consumed (getQuantityConsumed).
+ *  - No milestones configured (Billing Type = "Quantity"): Accounts enters
+ *    Bill Qty directly against the Available Qty pool — unrelated to any
+ *    milestone %, since there isn't one.
+ * This is the ONLY classifier for invoice layout/formula — there is no
+ * second, activity-level classifier that could disagree with it.
  */
 export type InvoiceWorkflowMode = "quantity_driven" | "commercial_milestone";
+
+export function getInvoiceWorkflowMode(milestones: BillingMilestone[]): InvoiceWorkflowMode {
+  return milestones.length > 0 ? "commercial_milestone" : "quantity_driven";
+}
 
 export const INVOICE_LINE_STATUS_LABEL: Record<InvoiceLineStatus, string> = {
   Pending: "Pending",
@@ -361,3 +287,73 @@ export function suggestNextInvoiceNumber(project: Project): string {
 }
 
 export { getInvoiceRaisedAmount };
+
+// =============================================================================
+// Invoice Calculation Service — Public API
+// =============================================================================
+// Every screen in the Invoice module (Activities Billing, Raise Invoice,
+// Milestone Summary, Invoice History, KPI Cards) must read its figures from
+// one of the functions below rather than composing the primitives above
+// itself. This is the single entry point the architecture is built around:
+//   - Quantity Progress (Contract/Completed/Remaining Qty) → always the sum
+//     of persisted invoice records (getActivityCompletedQty) — never a
+//     separate progress engine, never derived from Milestone Summary or
+//     temporary UI state → calculateExecutionProgress.
+//   - Payments Module data (milestone description/%/sequence) × Invoice
+//     History → calculateMilestoneFinancials.
+//   - Project-level KPIs (Invoice Raised, Balance, Outstanding, Payment
+//     Received) → calculateProjectKPIs.
+//   - Per-activity invoice status → calculateInvoiceStatus.
+// No React component in this module should perform financial calculations
+// directly — it should only render what these return.
+
+export interface ExecutionProgress {
+  contractQty: number;
+  completedQty: number;
+  remainingQty: number;
+  uom: string;
+  progressPercent: number;
+}
+
+/**
+ * Quantity Progress — Contract/Completed/Remaining Qty and UOM. Completed
+ * Qty is always SUM(Quantity Consumed) from saved, non-cancelled invoice
+ * lines for this activity (getActivityCompletedQty) — the single Quantity
+ * Progress engine, whether billing is progressive (Bill Qty entered
+ * directly) or milestone-driven (Quantity Consumed auto-calculated from
+ * Milestone % and persisted at save time).
+ */
+export function calculateExecutionProgress(item: InvoiceItem): ExecutionProgress {
+  const completedQty = getActivityCompletedQty(item);
+  const remainingQty = getActivityRemainingQty(item);
+  const progressPercent = item.qty > 0 ? Math.min(round((completedQty / item.qty) * 100), 100) : 0;
+  return { contractQty: item.qty, completedQty, remainingQty, uom: item.uom, progressPercent };
+}
+
+export interface MilestoneFinancials {
+  workflowMode: InvoiceWorkflowMode;
+  milestones: MilestoneSummaryRow[];
+}
+
+/**
+ * Payments Module milestone definitions (description/%/sequence) combined
+ * with Invoice History → the full per-milestone financial picture and the
+ * billing-mode classification that decides the Raise Invoice layout. Single
+ * source of truth for Milestone Summary, the Raise Invoice dialog, and
+ * Invoice History's milestone display.
+ */
+export function calculateMilestoneFinancials(project: Project, item: InvoiceItem): MilestoneFinancials {
+  const milestones = getMilestonesForProject(project);
+  return { workflowMode: getInvoiceWorkflowMode(milestones), milestones: getMilestoneSummaryForActivity(item, milestones) };
+}
+
+/**
+ * Project-level KPIs (Invoice Raised, Balance to Invoice, Outstanding,
+ * Payment Received, Invoice Completion %, Invoice Status). Thin alias of
+ * `getProjectCommercialSummary` — the underlying calculation is shared
+ * app-wide (Dashboard, Reports, View Project), not reimplemented here.
+ */
+export const calculateProjectKPIs = getProjectCommercialSummary;
+
+/** Per-activity invoice status (Pending/Partially Invoiced/Completed). Thin alias of `getInvoiceStatus` — same reasoning as calculateProjectKPIs. */
+export const calculateInvoiceStatus = getInvoiceStatus;
