@@ -6,10 +6,8 @@ import { EmptyState } from "../../../../components/ui/EmptyState";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 import { formatBusinessINR } from "../../../../utils/formatCurrency";
 import {
-  getActivityCompletedQty,
-  getActivityRemainingQty,
-  getMilestonesForProject,
-  getMilestoneSummaryForActivity,
+  calculateExecutionProgress,
+  calculateMilestoneFinancials,
   type MilestoneRowStatus,
 } from "./InvoiceCalculations";
 
@@ -31,12 +29,8 @@ const MILESTONE_STATUS_BADGE: Record<MilestoneRowStatus, { label: string; tone: 
  * (see ActivityRow.tsx).
  */
 export function ActivityDetails({ project, item }: Props) {
-  const milestones = getMilestonesForProject(project);
-  const completedQty = getActivityCompletedQty(item, project);
-  const remainingQty = getActivityRemainingQty(item, project);
-  const progressPercent = item.qty > 0 ? Math.min((completedQty / item.qty) * 100, 100) : 0;
-
-  const milestoneRows = getMilestoneSummaryForActivity(item, milestones);
+  const { completedQty, remainingQty, progressPercent } = calculateExecutionProgress(item);
+  const { milestones: milestoneRows } = calculateMilestoneFinancials(project, item);
 
   return (
     <div className="space-y-4">
