@@ -6,6 +6,7 @@ import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine } from "../../../../types/InvoiceItem";
 
 import { CommercialSummary } from "./CommercialSummary";
+import { InvoiceSummaryPanel } from "./InvoiceSummaryPanel";
 import { ActivitiesTable } from "./ActivitiesTable";
 import { RaiseInvoiceDrawer } from "./RaiseInvoiceDrawer";
 import { InvoiceHistory } from "./InvoiceHistory";
@@ -27,11 +28,15 @@ interface DrawerState {
 }
 
 /**
- * The Invoice Management module — Commercial Summary → Activities Billing →
- * Raise Invoice Drawer → Invoice History. A production feature: every
- * change here persists onto project.invoiceItems via setProject, unlike the
- * earlier Quantity-Based Invoice Tracking prototype (now fully removed)
- * which only ever simulated in memory.
+ * The Invoice Management module — Commercial Summary (KPI cards) →
+ * Invoice Summary → Activities Billing → Raise Invoice Drawer → Invoice
+ * History. Invoice Summary always reflects the whole project, never just
+ * whichever invoice the drawer has open — the drawer itself is an editor
+ * only (Header Details, Billable Line Items, Save/Cancel) and never renders
+ * a summary. A production feature: every change here persists onto
+ * project.invoiceItems via setProject, unlike the earlier Quantity-Based
+ * Invoice Tracking prototype (now fully removed) which only ever simulated
+ * in memory.
  */
 export function InvoiceDashboard({ project, setProject, readOnly = false }: Props) {
   const isReadOnly = readOnly || !setProject;
@@ -109,12 +114,20 @@ export function InvoiceDashboard({ project, setProject, readOnly = false }: Prop
         onRaiseInvoice={handleRaiseInvoice}
       />
 
-      <InvoiceHistory
-        project={project}
-        onView={handleViewInvoiceLine}
-        onEdit={isReadOnly ? undefined : handleEditInvoiceLine}
-        onDelete={isReadOnly ? undefined : handleDeleteInvoiceLine}
-      />
+      {/* Side-by-Side: Compact Invoice Summary (35%) + Invoice History (65%) with matching heights */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+        <div className="lg:col-span-4 xl:col-span-4 flex flex-col">
+          <InvoiceSummaryPanel project={project} />
+        </div>
+        <div className="lg:col-span-8 xl:col-span-8 flex flex-col overflow-hidden min-w-0">
+          <InvoiceHistory
+            project={project}
+            onView={handleViewInvoiceLine}
+            onEdit={isReadOnly ? undefined : handleEditInvoiceLine}
+            onDelete={isReadOnly ? undefined : handleDeleteInvoiceLine}
+          />
+        </div>
+      </div>
 
       {/* create/edit are only ever triggered when not read-only (handlers guard above); view is safe either way. */}
       {drawerState && activeItem && (

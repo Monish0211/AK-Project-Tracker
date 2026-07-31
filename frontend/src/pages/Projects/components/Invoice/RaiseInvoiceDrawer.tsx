@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileText, PlusCircle, X, Lock, Activity, CheckCircle2, Receipt, ClipboardList } from "lucide-react";
+import { FileText, PlusCircle, X, Lock, Activity, CheckCircle2, ClipboardList } from "lucide-react";
 
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
@@ -21,8 +21,6 @@ import {
   getCommercialBillingStatus,
   suggestNextInvoiceNumber,
   getInvoiceCyclesForProject,
-  getActivityInvoiceCycleTotals,
-  getOtherActivitiesInvoiceCycleTotals,
   calculateExecutionProgress,
   getInvoiceWorkflowMode,
   getInvoiceMethod,
@@ -462,47 +460,6 @@ export function RaiseInvoiceDrawer({
 
   const hasLumpSumSelection = lumpSumRows.some((row) => !row.alreadyInvoiced && selectedMilestoneIds.has(row.id));
 
-  // ═══ Invoice Summary — cross-activity rollup for the selected Invoice
-  // Cycle ═══ Combines every OTHER activity's already-saved contribution to
-  // this cycle with THIS activity's own contribution (its previously saved
-  // lines under this cycle, excluding the one being edited, plus whatever is
-  // currently billable in the draft/edit row right now). Pure derived render
-  // values — recomputes instantly on every keystroke, nothing is stored.
-  const otherActivitiesCycleTotals = useMemo(
-    () => getOtherActivitiesInvoiceCycleTotals(project, invoiceNo, item.id),
-    [project, invoiceNo, item.id]
-  );
-  const thisActivitySavedCycleTotals = useMemo(
-    () => getActivityInvoiceCycleTotals(item, invoiceNo, existingLine?.id),
-    [item, invoiceNo, existingLine?.id]
-  );
-  const thisActivityDraftBillableRows = isCreateMode
-    ? createRows.filter((row) => row.qtyToBill > 0 && !row.error)
-    : editQtyValue > 0 && !editError
-      ? editRows
-      : [];
-  const thisActivityDraftSystemTotal = round(
-    thisActivityDraftBillableRows.reduce((sum, row) => sum + row.calculatedAmount, 0)
-  );
-  const thisActivityDraftFinalAmount = round(
-    thisActivityDraftBillableRows.reduce((sum, row) => sum + row.currentInvoiceAmount, 0)
-  );
-  const thisActivityContributes =
-    thisActivityDraftBillableRows.length > 0 ||
-    thisActivitySavedCycleTotals.systemTotal !== 0 ||
-    thisActivitySavedCycleTotals.finalInvoiceAmount !== 0;
-
-  const invoiceSummarySystemTotal = round(
-    otherActivitiesCycleTotals.systemTotal + thisActivitySavedCycleTotals.systemTotal + thisActivityDraftSystemTotal
-  );
-  const invoiceSummaryFinalAmount = round(
-    otherActivitiesCycleTotals.finalInvoiceAmount + thisActivitySavedCycleTotals.finalInvoiceAmount + thisActivityDraftFinalAmount
-  );
-  const invoiceSummaryCommercialAdjustment = round(invoiceSummaryFinalAmount - invoiceSummarySystemTotal);
-  const invoiceSummaryActivitiesIncluded = otherActivitiesCycleTotals.activitiesIncluded + (thisActivityContributes ? 1 : 0);
-  const invoiceCycleLabel = invoiceCycles.find((cycle) => cycle.invoiceNo === invoiceNo)?.label
-    ?? (invoiceNo.trim() ? invoiceNo : "New Invoice");
-
   const handleInvoiceCycleChange = (value: string) => {
     setInvoiceNo(value);
     const selected = invoiceCycles.find((cycle) => cycle.invoiceNo === value);
@@ -922,44 +879,13 @@ export function RaiseInvoiceDrawer({
                   </p>
                 </div>
               </div>
-
-              {/* ═══ SECTION 3B: Invoice Summary (Cross-Activity Rollup for this Invoice Cycle) ═══ */}
-              <div className="rounded-2xl border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-4 space-y-3 shadow-2xs">
-                <div className="flex items-center gap-2">
-                  <Receipt size={16} className="text-[var(--nu-accent)]" />
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--nu-text)]">Invoice Summary</h4>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Invoice Cycle</p>
-                    <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">{invoiceCycleLabel}</p>
-                  </div>
-                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Activities Included</p>
-                    <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">{invoiceSummaryActivitiesIncluded}</p>
-                  </div>
-                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">System Total</p>
-                    <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
-                      <MoneyValue value={invoiceSummarySystemTotal} />
-                    </p>
-                  </div>
-                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-amber-200/60 dark:border-amber-900/40">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Commercial Adjustment</p>
-                    <p className="text-sm font-extrabold text-amber-700 dark:text-amber-300 mt-0.5">
-                      <MoneyValue value={invoiceSummaryCommercialAdjustment} />
-                    </p>
-                  </div>
-                </div>
-
-                <div className="rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800/50 p-3 flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wide text-cyan-700 dark:text-cyan-400">Final Invoice Amount</span>
-                  <span className="text-lg font-extrabold text-cyan-700 dark:text-cyan-300">
-                    <MoneyValue value={invoiceSummaryFinalAmount} />
-                  </span>
-                </div>
-              </div>
+              {/* Invoice Summary intentionally lives on the main Invoice
+                  Management dashboard (InvoiceSummaryPanel, between the KPI
+                  cards and Activities Billing) — not inside this popup. The
+                  drawer is an editor only: Invoice Header Details, Billable
+                  Line Items, Save/Cancel. Saving here updates `project` via
+                  onSave, which the dashboard's summary re-renders from
+                  automatically. */}
             </>
           )}
         </div>
