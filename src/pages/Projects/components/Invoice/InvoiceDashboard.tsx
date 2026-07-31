@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import { ListChecks } from "lucide-react";
 
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine } from "../../../../types/InvoiceItem";
@@ -8,6 +9,9 @@ import { CommercialSummary } from "./CommercialSummary";
 import { ActivitiesTable } from "./ActivitiesTable";
 import { RaiseInvoiceDrawer } from "./RaiseInvoiceDrawer";
 import { InvoiceHistory } from "./InvoiceHistory";
+import { getInvoiceMethod } from "./InvoiceCalculations";
+import { EmptyState } from "../../../../components/ui/EmptyState";
+import { Card, CardBody } from "../../../../components/ui/Card";
 
 interface Props {
   project: Project;
@@ -33,6 +37,24 @@ export function InvoiceDashboard({ project, setProject, readOnly = false }: Prop
   const isReadOnly = readOnly || !setProject;
 
   const [drawerState, setDrawerState] = useState<DrawerState | null>(null);
+
+  // No Invoice Method chosen yet (Invoice Management header dropdown) — no
+  // billing workflow, summary, or history is shown until Accounts explicitly
+  // picks Lump Sum or Invoice Line Items. See getInvoiceMethod().
+  const invoiceMethod = getInvoiceMethod(project);
+  if (!invoiceMethod) {
+    return (
+      <Card padded={false}>
+        <CardBody>
+          <EmptyState
+            icon={<ListChecks size={22} />}
+            title="Select an Invoice Method"
+            description="Choose Lump Sum or Invoice Line Items above to start raising invoices for this project."
+          />
+        </CardBody>
+      </Card>
+    );
+  }
 
   const handleRaiseInvoice = (item: InvoiceItem) => {
     if (isReadOnly) return;

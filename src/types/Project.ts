@@ -93,7 +93,7 @@ export interface Project {
   // INVOICE INFORMATION
   // ==========================
 
-  /** Defaults to "lump_sum" when absent — see getInvoiceMethod() in InvoiceCalculations.ts. */
+  /** Undefined until Accounts explicitly picks one in the Invoice Management header — no default. See getInvoiceMethod() in InvoiceCalculations.ts. */
   invoiceMethod?: InvoiceMethod;
 
   invoiceItems: InvoiceItem[];

@@ -151,7 +151,10 @@ export function createEmptyProject(): Project {
     // INVOICE INFORMATION
     // ==========================
 
-    invoiceMethod: "lump_sum",
+    // Left unset — Accounts must explicitly choose Lump Sum or Invoice Line
+    // Items in the Invoice Management header before any billing workflow is
+    // shown. See getInvoiceMethod() in InvoiceCalculations.ts.
+    invoiceMethod: undefined,
 
     paymentMilestones: [
       {

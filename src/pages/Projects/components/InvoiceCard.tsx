@@ -15,8 +15,11 @@ interface Props {
 const InvoiceCard = ({ project, setProject }: Props) => {
   const invoiceMethod = getInvoiceMethod(project);
 
-  const handleInvoiceMethodChange = (value: InvoiceMethod) => {
-    setProject((prev) => ({ ...prev, invoiceMethod: value }));
+  const handleInvoiceMethodChange = (value: string) => {
+    setProject((prev) => ({
+      ...prev,
+      invoiceMethod: value === "invoice_line_items" || value === "lump_sum" ? (value as InvoiceMethod) : undefined,
+    }));
   };
 
   return (
@@ -44,10 +47,11 @@ const InvoiceCard = ({ project, setProject }: Props) => {
           </label>
           <Select
             id="invoice-method"
-            value={invoiceMethod}
-            onChange={(e) => handleInvoiceMethodChange(e.target.value as InvoiceMethod)}
+            value={invoiceMethod ?? ""}
+            onChange={(e) => handleInvoiceMethodChange(e.target.value)}
             className="w-[190px]"
           >
+            <option value="">Select Invoice Method</option>
             <option value="lump_sum">Lump Sum</option>
             <option value="invoice_line_items">Invoice Line Items</option>
           </Select>

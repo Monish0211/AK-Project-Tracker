@@ -91,7 +91,12 @@ export function normalizeProject(project: Project): Project {
     ...totals,
     paymentMilestones,
     paymentType: project.paymentType || (paymentMilestones.length > 1 ? "Multiple" : "Single"),
-    invoiceMethod: project.invoiceMethod === "invoice_line_items" ? "invoice_line_items" : "lump_sum",
+    // Preserve an explicit choice either way; never force a default here —
+    // absence means Accounts hasn't picked a method yet (see getInvoiceMethod()).
+    invoiceMethod:
+      project.invoiceMethod === "invoice_line_items" || project.invoiceMethod === "lump_sum"
+        ? project.invoiceMethod
+        : undefined,
     paymentTerms: project.paymentTerms || "30% / 40% / 30%",
     quantityRevisions: Array.isArray(project.quantityRevisions)
       ? project.quantityRevisions
