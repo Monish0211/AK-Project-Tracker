@@ -101,11 +101,11 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
   });
 
   return (
-    <div className="space-y-3.5">
-      <Card padded={false}>
+    <div className="h-full">
+      <Card padded={false} className="h-full flex flex-col">
         <CardHeader icon={<History size={16} />} title="Invoice History" subtitle="Every invoice line raised across all activities" />
 
-        <div className="px-3.5 py-3 border-b border-[var(--nu-border)] grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="px-3.5 py-3 border-b border-[var(--nu-border)] grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
           <Select value={activityFilter} onChange={(e) => setActivityFilter(e.target.value)}>
             <option value="all">All Activities</option>
             {items.map((item) => (
@@ -124,7 +124,7 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
         </div>
 
         {filteredRows.length === 0 ? (
-          <CardBody>
+          <CardBody className="flex-1 flex items-center justify-center">
             <EmptyState
               icon={<Receipt size={22} />}
               title="No Invoices Raised"
@@ -132,7 +132,7 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
             />
           </CardBody>
         ) : (
-          <div className="max-h-[26rem] overflow-auto nu-scrollbar">
+          <div className="flex-1 max-h-[380px] lg:max-h-[420px] overflow-auto nu-scrollbar">
             <table className="w-full min-w-[1180px] border-collapse text-[12.5px]">
               <thead className="sticky top-0 z-10">
                 <tr>
