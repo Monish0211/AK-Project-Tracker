@@ -27,10 +27,11 @@ import {
   getInvoiceWorkflowMode,
   getInvoiceMethod,
   getLumpSumMilestoneRows,
-  getLumpSumSummary,
+  getActivityInvoiceCycles,
   round,
   type InvoiceWorkflowMode,
   type LumpSumMilestoneRow,
+  type ActivityInvoiceCycle,
 } from "./InvoiceCalculations";
 import { InvoiceLineTable, type InvoiceLineRow } from "./InvoiceLineTable";
 import { LumpSumMilestoneTable } from "./LumpSumMilestoneTable";
@@ -58,6 +59,9 @@ interface DraftLine {
 const todayISODate = (): string => new Date().toISOString().slice(0, 10);
 const labelClass = "mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]";
 const disabledFieldClass = "disabled:opacity-60 disabled:cursor-not-allowed";
+
+/** Sentinel for "composing a brand-new, not-yet-saved invoice cycle" in the Lump Sum navigator — never a real invoiceNo. */
+const NEW_LUMP_SUM_CYCLE = "__new_lump_sum_cycle__";
 
 /**
  * Universal Intelligent PMO Invoice Engine.
@@ -389,11 +393,72 @@ export function RaiseInvoiceDrawer({
     ];
   }, [existingLine, milestones]);
 
-  const lumpSumDisplayRows = isCreateMode ? lumpSumRows : editLumpSumRows;
+  // ═══ Lump Sum "Raise Invoice" — Invoice Cycle navigator (create mode
+  // only) ═══ Rather than always composing a brand-new invoice, the popup
+  // now behaves like an editor: the Invoice Cycle dropdown lists every
+  // invoice already raised for THIS activity (Invoice 1, Invoice 2, ...);
+  // selecting one loads its own milestone(s)/date/reference/remarks
+  // read-only. "+ Create Invoice" — shown only while at least one milestone
+  // remains unbilled — switches to composing a genuinely new cycle, which is
+  // the only state Save can act on.
+  const activityCycles: ActivityInvoiceCycle[] = useMemo(
+    () => (isLumpSum ? getActivityInvoiceCycles(item) : []),
+    [isLumpSum, item]
+  );
+  const lumpSumHasPendingMilestone = lumpSumRows.some((row) => !row.alreadyInvoiced);
 
-  const lumpSumSummary = isCreateMode
-    ? getLumpSumSummary(item, lumpSumRows, selectedMilestoneIds)
-    : getLumpSumSummary(item, [], new Set());
+  const [selectedLumpSumCycle, setSelectedLumpSumCycle] = useState<string>(() =>
+    activityCycles.length > 0 ? activityCycles[0].invoiceNo : NEW_LUMP_SUM_CYCLE
+  );
+
+  const isBrowsingSavedLumpSumCycle =
+    isLumpSum && isCreateMode && selectedLumpSumCycle !== NEW_LUMP_SUM_CYCLE;
+  const browsedLumpSumCycle = isBrowsingSavedLumpSumCycle
+    ? activityCycles.find((cycle) => cycle.invoiceNo === selectedLumpSumCycle)
+    : undefined;
+  const browsedLumpSumLine = browsedLumpSumCycle?.lines[0];
+
+  const canCreateNewLumpSumCycle =
+    isLumpSum && isCreateMode && selectedLumpSumCycle !== NEW_LUMP_SUM_CYCLE && lumpSumHasPendingMilestone;
+
+  // The dropdown only ever lists real, already-saved cycles — plus this one
+  // transient "(New)" entry while actively composing, so the option the user
+  // is currently looking at is always represented even before it's saved.
+  const lumpSumCycleOptions = useMemo(() => {
+    if (selectedLumpSumCycle === NEW_LUMP_SUM_CYCLE) {
+      return [...activityCycles, { invoiceNo: NEW_LUMP_SUM_CYCLE, label: `Invoice ${activityCycles.length + 1} (New)`, lines: [] }];
+    }
+    return activityCycles;
+  }, [activityCycles, selectedLumpSumCycle]);
+
+  const handleSelectLumpSumCycle = (value: string) => {
+    setSelectedLumpSumCycle(value);
+    // Navigating to a saved cycle is read-only browsing — drop any
+    // not-yet-saved milestone selection from a "+ Create Invoice" draft the
+    // user is stepping away from, so it can never leak into a later Save.
+    if (value !== NEW_LUMP_SUM_CYCLE) {
+      setSelectedMilestoneIds(new Set());
+    }
+  };
+
+  const handleCreateNewLumpSumCycle = () => {
+    setSelectedLumpSumCycle(NEW_LUMP_SUM_CYCLE);
+    setSelectedMilestoneIds(new Set());
+  };
+
+  // While browsing a saved cycle, only that cycle's own milestone(s) are
+  // shown (each already locked "Completed") — never the full activity
+  // milestone list, so each invoice's history stays visually isolated from
+  // every other invoice's.
+  const browsedLumpSumMilestoneIds = isBrowsingSavedLumpSumCycle && browsedLumpSumCycle
+    ? new Set(browsedLumpSumCycle.lines.map((line) => line.milestoneId).filter((id): id is string => !!id))
+    : null;
+
+  const lumpSumDisplayRows = isCreateMode
+    ? isLumpSum && browsedLumpSumMilestoneIds
+      ? lumpSumRows.filter((row) => browsedLumpSumMilestoneIds.has(row.id))
+      : lumpSumRows
+    : editLumpSumRows;
 
   const hasLumpSumSelection = lumpSumRows.some((row) => !row.alreadyInvoiced && selectedMilestoneIds.has(row.id));
 
@@ -447,7 +512,7 @@ export function RaiseInvoiceDrawer({
   };
 
   const hasBillableLine = isLumpSum
-    ? (isCreateMode ? hasLumpSumSelection : !!existingLine)
+    ? (isCreateMode ? !isBrowsingSavedLumpSumCycle && hasLumpSumSelection : !!existingLine)
     : isCreateMode
       ? createRows.some((row) => row.qtyToBill > 0 && !row.error)
       : editQtyValue > 0 && !editRows[0]?.error;
@@ -556,6 +621,14 @@ export function RaiseInvoiceDrawer({
     handleClose();
   };
 
+  // While browsing a saved Lump Sum cycle, the header fields mirror that
+  // cycle's own saved line rather than the draft state below (editing them
+  // is a no-op anyway since hasLumpSumSelection — and therefore canSave —
+  // stays false until a new milestone is actually checked).
+  const displayInvoiceDate = isBrowsingSavedLumpSumCycle ? browsedLumpSumLine?.invoiceDate ?? invoiceDate : invoiceDate;
+  const displayClientReference = isBrowsingSavedLumpSumCycle ? browsedLumpSumLine?.clientReference ?? "" : clientReference;
+  const displayRemarks = isBrowsingSavedLumpSumCycle ? browsedLumpSumLine?.remarks ?? "" : remarks;
+
   const title = isViewMode ? "View Invoice" : isEditMode ? "Edit Invoice" : "Raise Invoice";
   const subtitle = item.description;
 
@@ -601,6 +674,11 @@ export function RaiseInvoiceDrawer({
         <div className="flex-1 min-h-0 space-y-6 overflow-y-auto px-6 py-6 custom-scrollbar">
 
           {/* ═══ SECTION 1: Execution Progress (PMO Source of Truth - Read Only) ═══ */}
+          {/* Lump Sum bills off Payment Milestone % of Contract Value — quantity
+              never enters the formula — so this quantity-progress panel is
+              Invoice Line Items-only; the Lump Sum popup shows only Invoice
+              Header Details, Payment Milestones, and Save Invoice. */}
+          {!isLumpSum && (
           <div className="rounded-2xl border border-blue-200/80 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/20 p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -653,6 +731,7 @@ export function RaiseInvoiceDrawer({
               </div>
             </div>
           </div>
+          )}
 
           {/* ═══ SECTION 2: Invoice Information ═══ */}
           <div className="rounded-2xl border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-4 space-y-4 shadow-2xs">
@@ -664,25 +743,53 @@ export function RaiseInvoiceDrawer({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className={labelClass}>Invoice Cycle</label>
-                <Select
-                  value={invoiceNo}
-                  disabled={isViewMode}
-                  className={disabledFieldClass}
-                  onChange={(e) => handleInvoiceCycleChange(e.target.value)}
-                >
-                  {invoiceCycles.map((cycle) => (
-                    <option key={cycle.invoiceNo} value={cycle.invoiceNo}>
-                      {cycle.label} {cycle.isNew ? "(New)" : `— ${cycle.invoiceNo}`}
-                    </option>
-                  ))}
-                </Select>
+                {isLumpSum && isCreateMode ? (
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={selectedLumpSumCycle}
+                      onChange={(e) => handleSelectLumpSumCycle(e.target.value)}
+                      className="flex-1 min-w-0"
+                    >
+                      {lumpSumCycleOptions.map((cycle) => (
+                        <option key={cycle.invoiceNo} value={cycle.invoiceNo}>
+                          {cycle.label}
+                        </option>
+                      ))}
+                    </Select>
+                    {canCreateNewLumpSumCycle && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        icon={<PlusCircle size={13} />}
+                        onClick={handleCreateNewLumpSumCycle}
+                        className="shrink-0"
+                      >
+                        Create Invoice
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <Select
+                    value={invoiceNo}
+                    disabled={isViewMode}
+                    className={disabledFieldClass}
+                    onChange={(e) => handleInvoiceCycleChange(e.target.value)}
+                  >
+                    {invoiceCycles.map((cycle) => (
+                      <option key={cycle.invoiceNo} value={cycle.invoiceNo}>
+                        {cycle.label} {cycle.isNew ? "(New)" : `— ${cycle.invoiceNo}`}
+                      </option>
+                    ))}
+                  </Select>
+                )}
               </div>
               <div>
                 <label className={labelClass}>Invoice Date</label>
                 <Input
                   type="date"
-                  value={invoiceDate}
-                  disabled={isViewMode}
+                  value={displayInvoiceDate}
+                  disabled={isViewMode || isBrowsingSavedLumpSumCycle}
                   className={disabledFieldClass}
                   onChange={(e) => setInvoiceDate(e.target.value)}
                 />
@@ -691,8 +798,8 @@ export function RaiseInvoiceDrawer({
                 <label className={labelClass}>Client Reference / PO Ref</label>
                 <Input
                   type="text"
-                  value={clientReference}
-                  disabled={isViewMode}
+                  value={displayClientReference}
+                  disabled={isViewMode || isBrowsingSavedLumpSumCycle}
                   className={disabledFieldClass}
                   placeholder="Optional PO Reference"
                   onChange={(e) => setClientReference(e.target.value)}
@@ -718,8 +825,8 @@ export function RaiseInvoiceDrawer({
             <div>
               <label className={labelClass}>Remarks / Internal Notes</label>
               <Textarea
-                value={remarks}
-                disabled={isViewMode}
+                value={displayRemarks}
+                disabled={isViewMode || isBrowsingSavedLumpSumCycle}
                 className={`resize-none ${disabledFieldClass}`}
                 placeholder="Optional billing notes..."
                 rows={2}
@@ -756,35 +863,12 @@ export function RaiseInvoiceDrawer({
                   />
                 )}
               </div>
-
-              {/* ═══ SECTION 3B: Live Summary (Lump Sum) ═══ */}
-              <div className="rounded-2xl border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-4 space-y-3 shadow-2xs">
-                <div className="flex items-center gap-2">
-                  <Receipt size={16} className="text-[var(--nu-accent)]" />
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--nu-text)]">Live Summary</h4>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Contract Value</p>
-                    <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
-                      <MoneyValue value={lumpSumSummary.contractValue} />
-                    </p>
-                  </div>
-                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-slate-200 dark:border-slate-800">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Already Invoiced</p>
-                    <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
-                      <MoneyValue value={lumpSumSummary.currentTotalInvoiced} />
-                    </p>
-                  </div>
-                  <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-2.5 border border-emerald-200/60 dark:border-emerald-900/40 sm:col-span-1 col-span-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">Remaining Amount</p>
-                    <p className="text-sm font-extrabold text-emerald-700 dark:text-emerald-300 mt-0.5">
-                      <MoneyValue value={lumpSumSummary.remainingAmount} />
-                    </p>
-                  </div>
-                </div>
-              </div>
+              {/* Invoice Summary intentionally lives on the main Invoice
+                  Management dashboard (CommercialSummary's KPI cards) — not
+                  inside this popup. The Lump Sum "Raise Invoice" drawer shows
+                  only Invoice Header Details, Payment Milestones, and Save
+                  Invoice; saving here updates `project` via onSave, which
+                  the dashboard's KPI cards re-render from automatically. */}
             </>
           ) : (
             <>
