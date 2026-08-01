@@ -18,18 +18,10 @@ import EditProject from "../pages/Projects/EditProject";
 /* Customer Master */
 import CustomerMaster from "../pages/CustomerMaster/CustomerMaster";
 
-/* Invoices */
-import Invoices from "../pages/Invoices/Invoices";
-import AddInvoice from "../pages/Invoices/AddInvoice";
-import ViewInvoice from "../pages/Invoices/ViewInvoice";
-import EditInvoice from "../pages/Invoices/EditInvoice";
-
 /* Other Modules */
 import Manpower from "../pages/Manpower/Manpower";
 import Timesheets from "../pages/Timesheets/Timesheets";
-import Expenses from "../pages/Expenses/Expenses";
 import Reports from "../pages/Reports/Reports";
-import Resources from "../pages/Resources/Resources";
 import Settings from "../pages/Settings/Settings";
 
 const MainLayout = () => {
@@ -125,30 +117,6 @@ const MainLayout = () => {
               />
 
               {/* ===========================
-                  INVOICES
-              ============================ */}
-
-              <Route
-                path="/invoices"
-                element={<Invoices />}
-              />
-
-              <Route
-                path="/invoices/add"
-                element={<AddInvoice />}
-              />
-
-              <Route
-                path="/invoices/view/:id"
-                element={<ViewInvoice />}
-              />
-
-              <Route
-                path="/invoices/edit/:id"
-                element={<EditInvoice />}
-              />
-
-              {/* ===========================
                   OTHER MODULES
               ============================ */}
 
@@ -163,18 +131,8 @@ const MainLayout = () => {
               />
 
               <Route
-                path="/expenses"
-                element={<Expenses />}
-              />
-
-              <Route
                 path="/reports"
                 element={<Reports />}
-              />
-
-              <Route
-                path="/resources"
-                element={<Resources />}
               />
 
               <Route

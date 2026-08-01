@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Edit2, Eye, History, Printer, Receipt, Trash2 } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
@@ -20,6 +20,8 @@ interface Props {
   onDelete?: (item: InvoiceItem, line: InvoiceLine) => void;
   /** Pre-selects the Activity filter — e.g. when opened via an activity's own "View History" action. */
   initialActivityFilter?: string | null;
+  /** Scrolls to and highlights this invoice line's row on mount — e.g. when opened via a notification's deep link to a specific invoice. */
+  highlightLineId?: string | null;
 }
 
 interface HistoryRow {
@@ -57,10 +59,18 @@ const formatDate = (value: string): string => {
  * table (no per-activity duplicate history views). Section 5 sits below it
  * as a future-ready placeholder only — see types/QuantityRevision.ts.
  */
-export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActivityFilter }: Props) {
+export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActivityFilter, highlightLineId }: Props) {
   const [activityFilter, setActivityFilter] = useState(initialActivityFilter ?? "all");
   const [statusFilter, setStatusFilter] = useState<InvoiceLineStatus | "all">("all");
   const [search, setSearch] = useState("");
+
+  // Deep-linked from a notification — scroll the highlighted invoice line
+  // into view once its row exists in the DOM.
+  useEffect(() => {
+    if (!highlightLineId) return;
+    const row = document.getElementById(`invoice-history-row-${highlightLineId}`);
+    row?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightLineId]);
 
   const items = useMemo(() => project.invoiceItems ?? [], [project.invoiceItems]);
 
@@ -152,7 +162,15 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
               </thead>
               <tbody>
                 {filteredRows.map((row) => (
-                  <tr key={row.key} className="nu-table-row">
+                  <tr
+                    key={row.key}
+                    id={`invoice-history-row-${row.key}`}
+                    className={`nu-table-row ${
+                      row.key === highlightLineId
+                        ? "bg-[var(--nu-accent-soft)] ring-2 -ring-inset ring-[var(--nu-accent)]"
+                        : ""
+                    }`}
+                  >
                     <td className="px-3 py-2.5 font-semibold text-[var(--nu-text)] whitespace-nowrap">{row.invoiceNo}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-[var(--nu-text-secondary)]">{formatDate(row.invoiceDate)}</td>
                     <td className="px-3 py-2.5 max-w-[180px] truncate" title={row.activity}>{row.activity}</td>

@@ -6,7 +6,6 @@ import { EmptyState } from "../../../../components/ui/EmptyState";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 import { MoneyValue } from "../../../../components/ui/MoneyTooltip";
 import {
-  calculateExecutionProgress,
   calculateMilestoneFinancials,
   type MilestoneRowStatus,
 } from "./InvoiceCalculations";
@@ -23,39 +22,13 @@ const MILESTONE_STATUS_BADGE: Record<MilestoneRowStatus, { label: string; tone: 
 };
 
 /**
- * Expanded row content — Quantity Progress + Milestone Summary. The
- * Billing Summary cards and Raise Invoice quick action were dropped since
- * they duplicated figures/actions already on the collapsed row itself
- * (see ActivityRow.tsx).
+ * Expanded row content — Milestone Summary.
  */
 export function ActivityDetails({ project, item }: Props) {
-  const { completedQty, remainingQty, progressPercent } = calculateExecutionProgress(project, item);
   const { milestones: milestoneRows } = calculateMilestoneFinancials(project, item);
 
   return (
     <div className="space-y-4">
-      {/* Quantity Progress */}
-      <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] p-4">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--nu-text-muted)] mb-2.5">Quantity Progress</p>
-        <div className="h-2 w-full rounded-full bg-[var(--nu-surface-alt)] overflow-hidden mb-2.5">
-          <div className="h-full rounded-full bg-[var(--nu-accent)] transition-all duration-500" style={{ width: `${progressPercent}%` }} />
-        </div>
-        <div className="grid grid-cols-3 gap-3.5">
-          <div>
-            <p className="text-[9.5px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]">Contract Qty</p>
-            <p className="text-[14px] font-bold text-[var(--nu-text)] tabular-nums">{formatIndianNumber(item.qty)} {item.uom}</p>
-          </div>
-          <div>
-            <p className="text-[9.5px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]">Completed Qty</p>
-            <p className="text-[14px] font-bold text-[var(--nu-success)] tabular-nums">{formatIndianNumber(completedQty)} {item.uom}</p>
-          </div>
-          <div>
-            <p className="text-[9.5px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]">Remaining Qty</p>
-            <p className="text-[14px] font-bold text-[var(--nu-warning)] tabular-nums">{formatIndianNumber(remainingQty)} {item.uom}</p>
-          </div>
-        </div>
-      </div>
-
       {/* Milestone Summary */}
       <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] overflow-hidden">
         <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--nu-text-muted)] px-4 pt-4 pb-2.5">Milestone Summary</p>

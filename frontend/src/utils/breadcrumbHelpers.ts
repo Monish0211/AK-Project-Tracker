@@ -1,7 +1,7 @@
 import { matchPath } from "react-router-dom";
-import { 
-  LayoutDashboard, FolderKanban, FolderPlus, PencilLine, Eye, 
-  Building2, Users, Clock3, Wallet, BarChart3, FolderTree, Settings,
+import {
+  LayoutDashboard, FolderKanban, FolderPlus, PencilLine, Eye,
+  Building2, Users, Clock3, Wallet, BarChart3, Settings,
   CreditCard, FileText, Briefcase
 } from "lucide-react";
 import type { BreadcrumbItem } from "../types/BreadcrumbItem";
@@ -83,17 +83,9 @@ export const getBreadcrumbs = (pathname: string): BreadcrumbItem[] => {
       { label: "Dashboard", icon: LayoutDashboard, href: "/", clickable: true },
       { label: "Timesheets", icon: Clock3, clickable: false }
     ]},
-    { path: "/expenses", items: [
-      { label: "Dashboard", icon: LayoutDashboard, href: "/", clickable: true },
-      { label: "Expenses", icon: Wallet, clickable: false }
-    ]},
     { path: "/reports", items: [
       { label: "Dashboard", icon: LayoutDashboard, href: "/", clickable: true },
       { label: "Reports", icon: BarChart3, clickable: false }
-    ]},
-    { path: "/resources", items: [
-      { label: "Dashboard", icon: LayoutDashboard, href: "/", clickable: true },
-      { label: "Resources", icon: FolderTree, clickable: false }
     ]},
     { path: "/settings", items: [
       { label: "Dashboard", icon: LayoutDashboard, href: "/", clickable: true },

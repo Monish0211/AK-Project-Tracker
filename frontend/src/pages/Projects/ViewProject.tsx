@@ -4,7 +4,6 @@ import { ArrowLeft, ArrowRight, Briefcase, CreditCard, History, LayoutGrid, Pack
 
 import "./project-workspace-theme.css";
 import { getProjectById } from "../../services/projectService";
-import { getInvoices } from "../../services/invoiceService";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import {
   getGrossProfit,
@@ -104,9 +103,7 @@ const ViewProject = () => {
 
   const commercialSummary = getProjectCommercialSummary(project);
 
-  const paymentReceived = getInvoices()
-    .filter((invoice) => invoice.prNo === project.prNo && invoice.status !== "Cancelled")
-    .reduce((sum, invoice) => sum + (invoice.receivedAmount || 0), 0);
+  const paymentReceived = commercialSummary.totalPaymentReceived;
 
   const budget = (project.manhourBudgetAmount || 0) + (project.nonManhourBudgetAmount || 0);
   const milestoneCount = project.paymentMilestones?.length || 0;

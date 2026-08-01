@@ -19,6 +19,10 @@ interface Props {
   /** Omit to mount this in a read-only context — e.g. View Project's Invoices tab. */
   setProject?: Dispatch<SetStateAction<Project>>;
   readOnly?: boolean;
+  /** Deep-linked from a notification (e.g. "Outstanding Payment") — auto-expands this activity in Activities Billing and pre-filters Invoice History to it. */
+  initialActivityId?: string | null;
+  /** Deep-linked from a notification — scrolls to and highlights this invoice line in Invoice History. */
+  initialInvoiceLineId?: string | null;
 }
 
 interface DrawerState {
@@ -38,7 +42,7 @@ interface DrawerState {
  * Invoice Tracking prototype (now fully removed) which only ever simulated
  * in memory.
  */
-export function InvoiceDashboard({ project, setProject, readOnly = false }: Props) {
+export function InvoiceDashboard({ project, setProject, readOnly = false, initialActivityId, initialInvoiceLineId }: Props) {
   const isReadOnly = readOnly || !setProject;
 
   const [drawerState, setDrawerState] = useState<DrawerState | null>(null);
@@ -112,6 +116,7 @@ export function InvoiceDashboard({ project, setProject, readOnly = false }: Prop
         project={project}
         readOnly={isReadOnly}
         onRaiseInvoice={handleRaiseInvoice}
+        initialExpandedItemId={initialActivityId}
       />
 
       {/* Side-by-Side: Compact Invoice Summary (35%) + Invoice History (65%) with matching heights */}
@@ -125,6 +130,8 @@ export function InvoiceDashboard({ project, setProject, readOnly = false }: Prop
             onView={handleViewInvoiceLine}
             onEdit={isReadOnly ? undefined : handleEditInvoiceLine}
             onDelete={isReadOnly ? undefined : handleDeleteInvoiceLine}
+            initialActivityFilter={initialActivityId}
+            highlightLineId={initialInvoiceLineId}
           />
         </div>
       </div>

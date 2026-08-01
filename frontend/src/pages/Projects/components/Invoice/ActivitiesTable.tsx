@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ClipboardList, ListChecks } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem } from "../../../../types/InvoiceItem";
@@ -10,12 +10,21 @@ interface Props {
   project: Project;
   readOnly?: boolean;
   onRaiseInvoice: (item: InvoiceItem) => void;
+  /** Auto-expands this activity on mount — e.g. when opened via a notification's deep link to a specific invoice/activity. */
+  initialExpandedItemId?: string | null;
 }
 
 /** Section 2 — one row per Quantity Details activity, always mirrored automatically (see services/invoiceSyncService.ts). */
-export function ActivitiesTable({ project, readOnly = false, onRaiseInvoice }: Props) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+export function ActivitiesTable({ project, readOnly = false, onRaiseInvoice, initialExpandedItemId }: Props) {
+  const [expandedId, setExpandedId] = useState<string | null>(initialExpandedItemId ?? null);
   const items = project.invoiceItems ?? [];
+
+  useEffect(() => {
+    if (!initialExpandedItemId) return;
+    document.getElementById(`activity-row-${initialExpandedItemId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Only ever run for the deep-linked activity, once, on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <Card padded={false}>

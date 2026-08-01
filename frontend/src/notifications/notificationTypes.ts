@@ -7,7 +7,6 @@ export type NotificationSource =
   | "Payments"
   | "Expense Budget"
   | "Dashboard"
-  | "Resources"
   | "Documents"
   | "System"
   | "Reminders";
@@ -22,6 +21,19 @@ export type TargetAudience =
   | "HR";
 
 export type DeliveryChannel = "InApp" | "Toast" | "Email" | "Push" | "Teams" | "Slack";
+
+/**
+ * Extra react-router navigation `state` carried alongside actionRoute — lets
+ * an action deep-link into a specific tab/record instead of just the bare
+ * route. Used to open Edit Project straight onto its Invoices step (Step 7 —
+ * Invoice Management) and, when known, expand the activity/highlight the
+ * invoice line the notification is about.
+ */
+export interface NotificationActionState {
+  tab?: string;
+  activityId?: string;
+  invoiceLineId?: string;
+}
 
 export interface PMONotification {
   id: string; // Deterministic ID for rules (e.g., HRS_OVERRUN_PR1001), random UUID for events
@@ -44,5 +56,6 @@ export interface PMONotification {
   autoResolve: boolean; // True for Rules, False for Events
   actionLabel?: string;
   actionRoute?: string;
+  actionState?: NotificationActionState;
   metadata?: Record<string, any>;
 }
