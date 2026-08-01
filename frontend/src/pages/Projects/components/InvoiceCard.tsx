@@ -10,9 +10,13 @@ import { InvoiceDashboard } from "./Invoice/InvoiceDashboard";
 interface Props {
   project: Project;
   setProject: Dispatch<SetStateAction<Project>>;
+  /** Deep-linked from a notification — auto-expands this activity and pre-filters Invoice History to it. */
+  initialActivityId?: string | null;
+  /** Deep-linked from a notification — scrolls to and highlights this invoice line in Invoice History. */
+  initialInvoiceLineId?: string | null;
 }
 
-const InvoiceCard = ({ project, setProject }: Props) => {
+const InvoiceCard = ({ project, setProject, initialActivityId, initialInvoiceLineId }: Props) => {
   const invoiceMethod = getInvoiceMethod(project);
 
   const handleInvoiceMethodChange = (value: string) => {
@@ -59,7 +63,12 @@ const InvoiceCard = ({ project, setProject }: Props) => {
       </div>
 
       <div className="p-6">
-        <InvoiceDashboard project={project} setProject={setProject} />
+        <InvoiceDashboard
+          project={project}
+          setProject={setProject}
+          initialActivityId={initialActivityId}
+          initialInvoiceLineId={initialInvoiceLineId}
+        />
       </div>
     </div>
   );

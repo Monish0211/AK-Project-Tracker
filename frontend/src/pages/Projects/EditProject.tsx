@@ -12,7 +12,10 @@ const EditProject = () => {
   const { id } = useParams();
   const location = useLocation();
 
-  const initialTab = (location.state as { tab?: TabKey } | null)?.tab;
+  const navState = location.state as { tab?: TabKey; activityId?: string; invoiceLineId?: string } | null;
+  const initialTab = navState?.tab;
+  const initialActivityId = navState?.activityId;
+  const initialInvoiceLineId = navState?.invoiceLineId;
 
   const existingProject = id ? getProjectById(id) : undefined;
 
@@ -46,6 +49,8 @@ const EditProject = () => {
       setProject={setProject}
       mode="edit"
       initialTab={initialTab}
+      initialActivityId={initialActivityId}
+      initialInvoiceLineId={initialInvoiceLineId}
     />
   );
 };

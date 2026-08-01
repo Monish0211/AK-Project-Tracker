@@ -1,7 +1,5 @@
 import type { Project } from "../types/Project";
-import { getInvoices } from "./invoiceService";
 import { reminderService } from "./reminders/ReminderService";
-import { isSameProjectCode } from "../utils/projectMatching";
 
 export type ProjectActivityCategory = "Project" | "Invoice" | "Payment" | "Notes" | "Team" | "Milestone" | "Reminders";
 
@@ -17,8 +15,7 @@ export interface ProjectActivityEvent {
 /**
  * Derives a chronological activity timeline for a single project from its own
  * already-timestamped records (audit fields, notes, milestone billings,
- * resource start dates) plus the standalone invoice records that reference
- * this project's PR No. No synthetic/mock events — an event only appears if
+ * resource start dates). No synthetic/mock events — an event only appears if
  * a real timestamp already exists for it.
  */
 export const getProjectActivityTimeline = (project: Project, limit = 20): ProjectActivityEvent[] => {
@@ -104,28 +101,6 @@ export const getProjectActivityTimeline = (project: Project, limit = 20): Projec
       timestamp: resource.startDate,
     });
   });
-
-  getInvoices()
-    .filter((invoice) => isSameProjectCode(invoice.prNo, project.prNo))
-    .forEach((invoice) => {
-      events.push({
-        id: `invoice-${invoice.id}`,
-        category: "Invoice",
-        title: "Invoice Raised",
-        description: `${invoice.invoiceRef} raised for ₹ ${invoice.invoiceAmount.toLocaleString("en-IN")}.`,
-        timestamp: invoice.createdAt,
-      });
-
-      if (invoice.receivedAmount > 0) {
-        events.push({
-          id: `payment-${invoice.id}`,
-          category: "Payment",
-          title: "Payment Received",
-          description: `₹ ${invoice.receivedAmount.toLocaleString("en-IN")} received against ${invoice.invoiceRef}.`,
-          timestamp: invoice.updatedAt || invoice.createdAt,
-        });
-      }
-    });
 
   return events
     .filter((event) => !!event.timestamp && !Number.isNaN(new Date(event.timestamp).getTime()))

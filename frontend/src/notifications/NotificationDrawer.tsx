@@ -81,9 +81,9 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
     };
   }, [isOpen, onClose]);
 
-  const handleAction = (route?: string) => {
-    if (route) {
-      navigate(route);
+  const handleAction = (notification: PMONotification) => {
+    if (notification.actionRoute) {
+      navigate(notification.actionRoute, { state: notification.actionState });
       onClose();
     }
   };
@@ -123,8 +123,8 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
                   {/* Actions Row */}
                   <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/50">
                     {n.actionLabel && n.actionRoute && (
-                      <button 
-                        onClick={() => handleAction(n.actionRoute)}
+                      <button
+                        onClick={() => handleAction(n)}
                         className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
                       >
                         {n.actionLabel}

@@ -37,7 +37,6 @@ import { GlassReflectionOverlay } from "../../components/ui/GlassReflectionOverl
 
 import { getProjects } from "../../services/projectService";
 import { getEmployees } from "../../services/employeeService";
-import { getInvoices } from "../../services/invoiceService";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import { getTotalProjectCost, getGrossProfit } from "../../services/expenseService";
 import { getAllTimesheetImports } from "../../services/timesheetService";
@@ -48,14 +47,51 @@ import { normalizeProjectCode } from "../../utils/projectMatching";
 const Reports = () => {
   // Live State
   const [projects, setProjects] = useState(getProjects());
-  const [invoices, setInvoices] = useState(getInvoices());
   const [employees, setEmployees] = useState(getEmployees());
+
+  // Flat, project-wide list of every non-cancelled invoice line across every
+  // activity — the Invoice Analytics tab's data source. Replaces the old
+  // standalone Invoices module's records now that Invoice Management lives
+  // entirely inside each project's own invoiceItems.
+  const invoices = useMemo(() => {
+    const rows: {
+      id: string;
+      invoiceRef: string;
+      invoiceDate: string;
+      prNo: string;
+      client: string;
+      invoiceAmount: number;
+      receivedAmount: number;
+      outstandingAmount: number;
+      status: string;
+    }[] = [];
+
+    projects.forEach((project) => {
+      (project.invoiceItems || []).forEach((item) => {
+        (item.invoices || []).forEach((line) => {
+          if (line.status === "Cancelled") return;
+          rows.push({
+            id: line.id,
+            invoiceRef: line.invoiceNo,
+            invoiceDate: line.invoiceDate,
+            prNo: project.prNo,
+            client: project.client,
+            invoiceAmount: line.invoiceAmountINR,
+            receivedAmount: line.status === "Paid" ? line.invoiceAmountINR : 0,
+            outstandingAmount: line.status === "Paid" ? 0 : line.invoiceAmountINR,
+            status: line.status,
+          });
+        });
+      });
+    });
+
+    return rows;
+  }, [projects]);
 
   // Listen for data updates across tabs
   useEffect(() => {
     const handleSync = () => {
       setProjects(getProjects());
-      setInvoices(getInvoices());
       setEmployees(getEmployees());
     };
     window.addEventListener("pmo:data-changed", handleSync);

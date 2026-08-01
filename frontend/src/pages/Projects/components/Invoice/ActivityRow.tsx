@@ -39,7 +39,7 @@ export function ActivityRow({ project, item, isExpanded, readOnly = false, onTog
 
   return (
     <Fragment>
-      <tr className="nu-table-row">
+      <tr id={`activity-row-${item.id}`} className="nu-table-row">
         <td className="px-3 py-3 font-semibold text-[var(--nu-text)] max-w-[220px] break-words">{item.description}</td>
         <td className="px-3 py-3 text-center whitespace-nowrap">
           <Badge tone="info" className="text-[10.5px]">{billingType}</Badge>

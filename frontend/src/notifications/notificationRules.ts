@@ -237,7 +237,11 @@ export const evaluateProjectRules = (
       persistent: false,
       autoResolve: true,
       actionLabel: "View Invoices",
-      actionRoute: NotificationRoutes.INVOICES,
+      // Invoice Management now lives inside Edit Project's Invoices step
+      // (Step 7) — the standalone Invoices module is gone. actionState.tab
+      // tells EditProject/ProjectForm to open straight onto that step.
+      actionRoute: NotificationRoutes.PROJECT_EDIT(project.id),
+      actionState: { tab: "invoices" },
     });
   }
 

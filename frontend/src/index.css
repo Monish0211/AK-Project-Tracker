@@ -620,7 +620,19 @@ html.dark .custom-scrollbar-timeline:hover::-webkit-scrollbar-thumb {
   }
   100% {
     opacity: 1;
-    transform: translateY(0);
+    /* Must be the literal keyword `none`, not translateY(0) — any non-`none`
+       transform value stays applied for the life of the element under
+       `animation-fill-mode: forwards` (see .animate-pmo-fade-up below), and
+       a transformed ancestor establishes a new containing block for every
+       `position: fixed` descendant in the entire app (CSS Transforms spec).
+       With translateY(0) here, this root-level wrapper permanently broke
+       fixed positioning for every fixed-position overlay on every page —
+       e.g. the Raise/Edit/View Invoice workspace rendered "fixed" but was
+       actually anchored to this div's full document-height box, so it
+       appeared to open at whatever the page's current scroll position was
+       instead of the viewport. `none` gives the identical visual result
+       (translateY(0) has no visible effect) without that side effect. */
+    transform: none;
     filter: blur(0);
   }
 }

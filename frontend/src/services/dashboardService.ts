@@ -1,7 +1,6 @@
 import { getProjects } from "./projectService";
 import { getGrossProfit, getTotalProjectCost } from "./expenseService";
 import { getProjectCommercialSummary } from "./invoiceProgressService";
-import { getInvoices } from "./invoiceService";
 import { getAllTimesheetImports } from "./timesheetService";
 import { getProjectActualHours } from "./timesheetSyncService";
 import { getEmployees } from "./employeeService";
@@ -33,18 +32,14 @@ export const getDashboardMetrics = (): DashboardMetrics => {
 
   let totalInvoiceRaised = 0;
   let totalOutstanding = 0;
+  let totalPaymentReceived = 0;
 
   projects.forEach((project) => {
     const summary = getProjectCommercialSummary(project);
     totalInvoiceRaised += summary.totalInvoiceRaised;
     totalOutstanding += summary.outstandingCollection;
+    totalPaymentReceived += summary.totalPaymentReceived;
   });
-
-  // Payment Received is tracked separately in the standalone Invoices module
-  // (project.invoiceItems / Invoice History has no payment-collection data).
-  const totalPaymentReceived = getInvoices()
-    .filter((invoice) => invoice.status !== "Cancelled")
-    .reduce((sum, invoice) => sum + (invoice.receivedAmount || 0), 0);
 
   const totalExpenses = projects.reduce(
     (sum, project) =>
@@ -274,7 +269,7 @@ export const getProjectHealthSummary = (): ProjectHealthSummary => {
 /* ===================================================
    RECENT ACTIVITY
    Derived from real, already-timestamped records (project audit fields,
-   project notes, standalone invoice records) — no synthetic/mock events.
+   project notes, per-activity invoice lines) — no synthetic/mock events.
 =================================================== */
 
 export interface ActivityEvent {
@@ -288,7 +283,6 @@ export interface ActivityEvent {
 
 export const getRecentActivity = (limit = 8): ActivityEvent[] => {
   const projects = getProjects();
-  const invoices = getInvoices();
   const events: ActivityEvent[] = [];
 
   projects.forEach((project) => {
@@ -324,28 +318,31 @@ export const getRecentActivity = (limit = 8): ActivityEvent[] => {
         timestamp: note.createdAt,
       });
     });
-  });
 
-  invoices.forEach((invoice) => {
-    events.push({
-      id: `invoice-${invoice.id}`,
-      category: "Invoice",
-      title: "Invoice Raised",
-      description: `${invoice.invoiceRef} raised for ${invoice.client}.`,
-      projectRef: invoice.prNo,
-      timestamp: invoice.createdAt,
-    });
+    (project.invoiceItems || []).forEach((item) => {
+      (item.invoices || []).forEach((line) => {
+        if (line.status === "Cancelled") return;
+        events.push({
+          id: `invoice-${line.id}`,
+          category: "Invoice",
+          title: "Invoice Raised",
+          description: `${line.invoiceNo} raised for ${project.client || project.prNo}.`,
+          projectRef: project.prNo,
+          timestamp: line.invoiceDate,
+        });
 
-    if (invoice.receivedAmount > 0) {
-      events.push({
-        id: `payment-${invoice.id}`,
-        category: "Payment",
-        title: "Payment Received",
-        description: `${invoice.client} paid ₹ ${invoice.receivedAmount.toLocaleString("en-IN")} against ${invoice.invoiceRef}.`,
-        projectRef: invoice.prNo,
-        timestamp: invoice.updatedAt || invoice.createdAt,
+        if (line.status === "Paid") {
+          events.push({
+            id: `payment-${line.id}`,
+            category: "Payment",
+            title: "Payment Received",
+            description: `${project.client || project.prNo} paid ₹ ${line.invoiceAmountINR.toLocaleString("en-IN")} against ${line.invoiceNo}.`,
+            projectRef: project.prNo,
+            timestamp: line.invoiceDate,
+          });
+        }
       });
-    }
+    });
   });
 
   return events

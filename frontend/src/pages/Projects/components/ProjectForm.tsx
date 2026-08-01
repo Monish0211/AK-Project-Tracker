@@ -77,11 +77,15 @@ interface Props {
   project: Project;
   setProject: Dispatch<SetStateAction<Project>>;
   mode: "add" | "edit";
-  /** Tab to open on initial render — used to restore the tab the user was viewing before switching to Edit. */
+  /** Tab to open on initial render — used to restore the tab the user was viewing before switching to Edit, or to deep-link a notification straight onto Invoices (Step 7). */
   initialTab?: TabKey;
+  /** Deep-linked from a notification — forwarded to InvoiceCard to auto-expand the right activity in Invoice Management. */
+  initialActivityId?: string | null;
+  /** Deep-linked from a notification — forwarded to InvoiceCard to highlight the right invoice line in Invoice History. */
+  initialInvoiceLineId?: string | null;
 }
 
-const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
+const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId, initialInvoiceLineId }: Props) => {
   const [isNotesOpen, setIsNotesOpen] = useState(false);
   const TABS = mode === "add" ? TABS_ADD : TABS_EDIT;
   const [activeTab, setActiveTab] = useState<TabKey>(
@@ -330,7 +334,12 @@ const ProjectForm = ({ project, setProject, mode, initialTab }: Props) => {
           )}
 
           {activeTab === "invoices" && (
-            <InvoiceCard project={project} setProject={setProject} />
+            <InvoiceCard
+              project={project}
+              setProject={setProject}
+              initialActivityId={initialActivityId}
+              initialInvoiceLineId={initialInvoiceLineId}
+            />
           )}
         </div>
       </div>

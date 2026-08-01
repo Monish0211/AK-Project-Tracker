@@ -12,7 +12,10 @@ const TINTS: Record<string, string> = {
 const ACTIONS = [
   { title: "Add Project", icon: Plus, tint: "accent", to: "/projects/add" },
   { title: "Import Excel", icon: Upload, tint: "info", to: "/manpower" },
-  { title: "Create Invoice", icon: FileText, tint: "success", to: "/invoices/add" },
+  // Invoice Management lives inside a project's own Edit Project > Invoices
+  // step now (no standalone invoice module) — send Accounts to pick the
+  // project first, same as every other invoice entry point in the app.
+  { title: "Create Invoice", icon: FileText, tint: "success", to: "/projects" },
   { title: "Add Customer", icon: Building2, tint: "accent", to: "/customers" },
   { title: "Generate Report", icon: BarChart3, tint: "warning", to: "/reports" },
   { title: "Manage Team", icon: Users, tint: "info", to: "/manpower" },
