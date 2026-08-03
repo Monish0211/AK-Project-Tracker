@@ -99,6 +99,15 @@ export function createEmptyProject(): Project {
     projectEndDate: "",
     projectStatus: "",
 
+    workOrderNumber: "",
+    workOrderDate: "",
+    eicName: "",
+    contactNumber: "",
+    emailId: "",
+
+    estimatedDuration: undefined,
+    durationUnit: "Days",
+
     // ==========================
     // QUANTITY INFORMATION
     // ==========================

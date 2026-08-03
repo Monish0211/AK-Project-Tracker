@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Edit2, Eye, History, Printer, Receipt, Trash2 } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
@@ -10,6 +10,7 @@ import { EmptyState } from "../../../../components/ui/EmptyState";
 import { formatBusinessINR } from "../../../../utils/formatCurrency";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 import { MoneyValue, MoneyTooltip } from "../../../../components/ui/MoneyTooltip";
+import { getInvoiceCyclesForProject } from "./InvoiceCalculations";
 
 interface Props {
   project: Project;
@@ -110,6 +111,40 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
     return true;
   });
 
+  // Invoice Cycles are project-level — every activity billed under, say,
+  // "Invoice 1" shares that same invoiceNo. Group History by it (reusing the
+  // exact same labeling Invoice Summary uses) so the table reads as "Invoice
+  // 1 [Draftsman, Lead Engineer, ...]" instead of a flat list where the same
+  // cycle's rows are scattered and unlabeled.
+  const cycleLabels = useMemo(() => {
+    const map = new Map<string, string>();
+    getInvoiceCyclesForProject(project).forEach((cycle) => {
+      if (!cycle.isNew) map.set(cycle.invoiceNo, cycle.label);
+    });
+    return map;
+  }, [project]);
+
+  const groupedRows = useMemo(() => {
+    const order: string[] = [];
+    const byInvoiceNo = new Map<string, HistoryRow[]>();
+    filteredRows.forEach((row) => {
+      if (!byInvoiceNo.has(row.invoiceNo)) {
+        byInvoiceNo.set(row.invoiceNo, []);
+        order.push(row.invoiceNo);
+      }
+      byInvoiceNo.get(row.invoiceNo)!.push(row);
+    });
+    return order.map((invoiceNo) => {
+      const groupRows = byInvoiceNo.get(invoiceNo)!;
+      return {
+        invoiceNo,
+        label: cycleLabels.get(invoiceNo) ?? "Invoice",
+        rows: groupRows,
+        activityCount: new Set(groupRows.map((row) => row.item.id)).size,
+      };
+    });
+  }, [filteredRows, cycleLabels]);
+
   return (
     <div className="h-full">
       <Card padded={false} className="h-full flex flex-col">
@@ -161,7 +196,17 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map((row) => (
+                {groupedRows.map((group) => (
+                  <Fragment key={group.invoiceNo}>
+                    <tr>
+                      <td colSpan={12} className="px-3 py-2 bg-[var(--nu-surface-alt)] border-y border-[var(--nu-border)] font-bold text-[12px] text-[var(--nu-text)]">
+                        {group.label} <span className="font-mono font-semibold text-[var(--nu-text-secondary)]">({group.invoiceNo})</span>{" "}
+                        <span className="font-medium text-[var(--nu-text-muted)]">
+                          — {group.activityCount} {group.activityCount === 1 ? "activity" : "activities"}
+                        </span>
+                      </td>
+                    </tr>
+                    {group.rows.map((row) => (
                   <tr
                     key={row.key}
                     id={`invoice-history-row-${row.key}`}
@@ -250,6 +295,8 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, initialActiv
                       </div>
                     </td>
                   </tr>
+                    ))}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

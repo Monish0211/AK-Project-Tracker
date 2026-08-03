@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
-import { Receipt } from "lucide-react";
+import { useMemo } from "react";
+import { Receipt, Plus } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
 import { Card, CardHeader, CardBody } from "../../../../components/ui/Card";
 import { Select } from "../../../../components/ui/Select";
+import { Button } from "../../../../components/ui/Button";
 import { Badge, type Tone } from "../../../../components/ui/Badge";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { MoneyValue, MoneyTooltip } from "../../../../components/ui/MoneyTooltip";
@@ -12,6 +13,20 @@ import { getInvoiceCyclesForProject } from "./InvoiceCalculations";
 
 interface Props {
   project: Project;
+  /** Lump Sum only — governs whether "+ Create New Invoice Cycle" is shown. */
+  isLumpSum: boolean;
+  /**
+   * The PROJECT-level Invoice Cycle to summarize — lifted up to
+   * InvoiceDashboard so the same selection also drives Lump Sum's Raise
+   * Invoice (`projectInvoiceCycle`). For Lump Sum this may be a cycle that
+   * doesn't have any invoice lines yet (just created via "+ Create New
+   * Invoice Cycle") — the summary below simply shows zeros until an
+   * activity is billed against it.
+   */
+  selectedCycle: string;
+  onSelectCycle: (value: string) => void;
+  /** Lump Sum only — advances `selectedCycle` to the next unused project-wide cycle number. */
+  onCreateNewCycle: () => void;
 }
 
 const STATUS_BADGE: Record<InvoiceLineStatus, Tone> = {
@@ -31,29 +46,35 @@ const formatDate = (value: string): string => {
  * Compact rectangular Invoice Summary Card — lives side by side with Invoice History.
  * Summarizes ONLY the selected invoice cycle with tight spacing and clean alignment.
  */
-export function InvoiceSummaryPanel({ project }: Props) {
+export function InvoiceSummaryPanel({ project, isLumpSum, selectedCycle, onSelectCycle, onCreateNewCycle }: Props) {
   const cycleOptions = useMemo(() => {
     return getInvoiceCyclesForProject(project).filter((opt) => !opt.isNew);
   }, [project]);
 
-  const [selectedInvoiceNo, setSelectedInvoiceNo] = useState<string>("");
-
-  const activeInvoiceNo = useMemo(() => {
-    if (cycleOptions.length === 0) return "";
-    if (selectedInvoiceNo && cycleOptions.some((opt) => opt.invoiceNo === selectedInvoiceNo)) {
-      return selectedInvoiceNo;
-    }
-    return cycleOptions[0].invoiceNo;
-  }, [cycleOptions, selectedInvoiceNo]);
-
-  const selectedOptionIndex = useMemo(() => {
-    return cycleOptions.findIndex((opt) => opt.invoiceNo === activeInvoiceNo);
-  }, [cycleOptions, activeInvoiceNo]);
+  // The selection itself lives in InvoiceDashboard (shared with Lump Sum's
+  // Raise Invoice) — this panel only reads it. For Lump Sum, `selectedCycle`
+  // may be a brand-new cycle number with no invoice lines yet (just created
+  // via the button below); keep it as the active cycle regardless so the
+  // summary reflects it (with zeroed totals) rather than silently falling
+  // back to some other cycle.
+  const activeInvoiceNo = selectedCycle;
 
   const selectedCycleOption = useMemo(() => {
-    if (selectedOptionIndex >= 0) return cycleOptions[selectedOptionIndex];
-    return null;
-  }, [cycleOptions, selectedOptionIndex]);
+    return cycleOptions.find((opt) => opt.invoiceNo === activeInvoiceNo) ?? null;
+  }, [cycleOptions, activeInvoiceNo]);
+
+  // Lump Sum's dropdown must still show the currently selected cycle even
+  // when it's a not-yet-real "new" one so the <Select> never points at a
+  // missing value. Commercial Milestone Billing never has this case (it has
+  // no "+ Create New Invoice Cycle" button here — its own Raise Invoice
+  // dialog is where new cycles get created).
+  const dropdownOptions = useMemo(() => {
+    if (isLumpSum && activeInvoiceNo && !selectedCycleOption) {
+      const realCount = cycleOptions.length;
+      return [...cycleOptions, { invoiceNo: activeInvoiceNo, label: `Invoice ${realCount + 1}`, isNew: true }];
+    }
+    return cycleOptions;
+  }, [cycleOptions, isLumpSum, activeInvoiceNo, selectedCycleOption]);
 
   const activeLines = useMemo(() => {
     if (!activeInvoiceNo) return [];
@@ -105,7 +126,12 @@ export function InvoiceSummaryPanel({ project }: Props) {
     return activeLines.reduce((sum, l) => sum + l.line.invoiceAmountINR, 0);
   }, [activeLines]);
 
-  if (cycleOptions.length === 0 || !activeInvoiceNo) {
+  // Lump Sum shows the summary for whatever cycle is selected even before its
+  // first invoice is raised (e.g. right after "+ Create New Invoice Cycle") —
+  // activeLines is simply empty and the totals below are zero. Commercial
+  // Milestone Billing keeps its original gate: nothing to summarize until the
+  // project has at least one real cycle.
+  if (!activeInvoiceNo || (!isLumpSum && cycleOptions.length === 0)) {
     return (
       <Card padded={false} className="h-full">
         <CardHeader
@@ -139,17 +165,31 @@ export function InvoiceSummaryPanel({ project }: Props) {
             <label className="block text-[10px] font-extrabold uppercase tracking-wider text-[var(--nu-text-muted)] mb-1">
               Invoice Cycle
             </label>
-            <Select
-              value={activeInvoiceNo}
-              onChange={(e) => setSelectedInvoiceNo(e.target.value)}
-              className="w-full text-xs font-semibold py-1.5"
-            >
-              {cycleOptions.map((opt, idx) => (
-                <option key={opt.invoiceNo} value={opt.invoiceNo}>
-                  {opt.label || `Invoice ${idx + 1}`} ({opt.invoiceNo})
-                </option>
-              ))}
-            </Select>
+            <div className="flex items-center gap-1.5">
+              <Select
+                value={activeInvoiceNo}
+                onChange={(e) => onSelectCycle(e.target.value)}
+                className="w-full text-xs font-semibold py-1.5"
+              >
+                {dropdownOptions.map((opt, idx) => (
+                  <option key={opt.invoiceNo} value={opt.invoiceNo}>
+                    {opt.label || `Invoice ${idx + 1}`} {opt.isNew ? "(New)" : `(${opt.invoiceNo})`}
+                  </option>
+                ))}
+              </Select>
+              {isLumpSum && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  title="Create New Invoice Cycle"
+                  onClick={onCreateNewCycle}
+                  className="shrink-0"
+                >
+                  <Plus size={14} />
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Key-Value Pair Metadata Table */}

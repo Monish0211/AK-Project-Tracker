@@ -67,6 +67,10 @@ const MainLayout = () => {
                 path="/"
                 element={<Dashboard />}
               />
+              <Route
+                path="/dashboard"
+                element={<Dashboard />}
+              />
 
               {/* ===========================
                   PROJECTS
@@ -140,6 +144,11 @@ const MainLayout = () => {
                 element={<Settings />}
               />
 
+              {/* Wildcard Fallback */}
+              <Route
+                path="*"
+                element={<Dashboard />}
+              />
             </Routes>
           </div>
         </main>

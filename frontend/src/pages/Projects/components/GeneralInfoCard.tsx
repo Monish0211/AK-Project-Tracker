@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Building2, CalendarRange, FileText, Hash, LayoutGrid } from "lucide-react";
+import { Building2, CalendarCheck, CalendarRange, Clock, FileSignature, FileText, Hash, LayoutGrid, Timer } from "lucide-react";
 import type { Project } from "../../../types/Project";
 import { getCustomers } from "../../../services/customerService";
 import { getPmoCoordinators } from "../../../services/pmoCoordinatorService";
+import { getApproxWorkingDays, getPlannedCompletionDate } from "../../../utils/projectScheduling";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { Input } from "../../../components/ui/Input";
 import { Select } from "../../../components/ui/Select";
@@ -25,6 +26,13 @@ const departmentOptions = [
   "Risk Management",
   "Training",
 ];
+
+const formatDisplayDate = (value: string): string => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+};
 
 const applyPrNoPrefix = (rawValue: string, prefix: string) => {
   if (!prefix) {
@@ -246,6 +254,15 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
+
+  // Planned Completion Date and Working Days (Approx.) are always derived
+  // from Project Start Date + Estimated Duration/Duration Unit — never their
+  // own stored field — so they can never drift out of sync with a later
+  // Project Start Date edit elsewhere on this same tab. Shared with the
+  // read-only View Project screen (GeneralView.tsx) via projectScheduling.ts
+  // so both always agree on the same numbers.
+  const plannedCompletionDate = getPlannedCompletionDate(project);
+  const approxWorkingDays = getApproxWorkingDays(project);
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-3.5">
@@ -547,6 +564,153 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
               }
             />
           </Field>
+        </CardBody>
+      </Card>
+
+      {/* Project Scheduling */}
+      <Card padded={false} elevated>
+        <CardHeader
+          icon={<Timer size={15} />}
+          title="Project Scheduling"
+          subtitle="Estimated duration and completion"
+          iconTint="info"
+        />
+        <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Estimated Duration">
+            <Input
+              type="number"
+              min={0}
+              value={project.estimatedDuration ?? ""}
+              onChange={(e) => {
+                const raw = e.target.value;
+                setProject({
+                  ...project,
+                  estimatedDuration: raw === "" ? undefined : Number(raw),
+                });
+              }}
+              placeholder="Enter Duration"
+            />
+          </Field>
+
+          <Field label="Duration Unit">
+            <Select
+              value={project.durationUnit || "Days"}
+              onChange={(e) =>
+                setProject({
+                  ...project,
+                  durationUnit: e.target.value as "Days" | "Weeks" | "Months",
+                })
+              }
+            >
+              <option value="Days">Days</option>
+              <option value="Weeks">Weeks</option>
+              <option value="Months">Months</option>
+            </Select>
+          </Field>
+
+          <Field label="Planned Completion Date">
+            <div className="h-10 flex items-center gap-2 px-3 rounded-[var(--nu-radius-md)] bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] text-[13px] text-[var(--nu-text-secondary)]">
+              <CalendarCheck size={13} className="text-[var(--nu-text-muted)]" />
+              {plannedCompletionDate ? formatDisplayDate(plannedCompletionDate) : "—"}
+            </div>
+          </Field>
+
+          <Field label="Working Days (Approx.)">
+            <div className="h-10 flex items-center gap-2 px-3 rounded-[var(--nu-radius-md)] bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] text-[13px] text-[var(--nu-text-secondary)]">
+              <Clock size={13} className="text-[var(--nu-text-muted)]" />
+              {approxWorkingDays > 0 ? `${approxWorkingDays} Days` : "—"}
+            </div>
+          </Field>
+        </CardBody>
+      </Card>
+
+      {/* Work Order Details */}
+      <Card padded={false} elevated>
+        <CardHeader
+          icon={<FileSignature size={15} />}
+          title="Work Order Details"
+          subtitle="Project work order information"
+          iconTint="neutral"
+        />
+        <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Work Order Number" required={true} error={errors["workOrderNumber"]}>
+            <Input
+              type="text"
+              data-field="workOrderNumber"
+              value={project.workOrderNumber || ""}
+              onChange={(e) => {
+                setProject({
+                  ...project,
+                  workOrderNumber: e.target.value,
+                });
+                clearError?.("workOrderNumber");
+              }}
+              invalid={!!errors["workOrderNumber"]}
+              placeholder="Enter Work Order Number"
+            />
+          </Field>
+
+          <Field label="Work Order Date" required={true} error={errors["workOrderDate"]}>
+            <Input
+              type="date"
+              data-field="workOrderDate"
+              value={project.workOrderDate || ""}
+              onChange={(e) => {
+                setProject({
+                  ...project,
+                  workOrderDate: e.target.value,
+                });
+                clearError?.("workOrderDate");
+              }}
+              invalid={!!errors["workOrderDate"]}
+            />
+          </Field>
+
+          <Field label="EIC Name" required={true} error={errors["eicName"]}>
+            <Input
+              type="text"
+              data-field="eicName"
+              value={project.eicName || ""}
+              onChange={(e) => {
+                setProject({
+                  ...project,
+                  eicName: e.target.value,
+                });
+                clearError?.("eicName");
+              }}
+              invalid={!!errors["eicName"]}
+              placeholder="Enter EIC Name"
+            />
+          </Field>
+
+          <Field label="Contact Number">
+            <Input
+              type="tel"
+              value={project.contactNumber || ""}
+              onChange={(e) =>
+                setProject({
+                  ...project,
+                  contactNumber: e.target.value,
+                })
+              }
+              placeholder="Enter Contact Number"
+            />
+          </Field>
+
+          <div className="sm:col-span-2">
+            <FormLabel>Email ID</FormLabel>
+            <Input
+              type="email"
+              value={project.emailId || ""}
+              onChange={(e) =>
+                setProject({
+                  ...project,
+                  emailId: e.target.value,
+                })
+              }
+              placeholder="Enter Email Address"
+            />
+          </div>
         </CardBody>
       </Card>
 
