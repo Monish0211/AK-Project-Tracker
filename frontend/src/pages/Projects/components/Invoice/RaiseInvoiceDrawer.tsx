@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText, PlusCircle, X, Lock, Activity, CheckCircle2, ClipboardList,
-  ArrowLeft, Receipt, GripVertical, Maximize2, Minimize2
+  ArrowLeft, Receipt, GripVertical, Maximize2, Minimize2, AlertTriangle
 } from "lucide-react";
 
 import type { Project } from "../../../../types/Project";
@@ -29,11 +29,9 @@ import {
   getInvoiceWorkflowMode,
   getInvoiceMethod,
   getLumpSumMilestoneRows,
-  getActivityInvoiceCycles,
   round,
   type InvoiceWorkflowMode,
   type LumpSumMilestoneRow,
-  type ActivityInvoiceCycle,
 } from "./InvoiceCalculations";
 import { InvoiceLineTable, type InvoiceLineRow } from "./InvoiceLineTable";
 import { LumpSumMilestoneTable } from "./LumpSumMilestoneTable";
@@ -43,6 +41,18 @@ interface Props {
   item: InvoiceItem;
   mode?: "create" | "view" | "edit";
   existingLine?: InvoiceLine;
+  /**
+   * Lump Sum only — the PROJECT-level Invoice Cycle currently selected on
+   * the main Invoice Management page (InvoiceDashboard/InvoiceSummaryPanel).
+   * Raise Invoice never computes or offers its own cycle for Lump Sum: every
+   * activity billed while this cycle is selected participates in the SAME
+   * cycle, exactly like Commercial Milestone Billing's "one invoice can
+   * cover multiple activities" — Lump Sum previously (incorrectly) gave each
+   * activity its own independent cycle sequence, which is what this prop
+   * replaces. Ignored for Commercial Milestone Billing and for Edit/View,
+   * which keep using the existing project-wide Invoice Cycle dropdown below.
+   */
+  projectInvoiceCycle?: string;
   onClose: () => void;
   onSave: (updatedProject: Project) => void;
 }
@@ -62,9 +72,6 @@ const todayISODate = (): string => new Date().toISOString().slice(0, 10);
 const labelClass = "mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]";
 const disabledFieldClass = "disabled:opacity-60 disabled:cursor-not-allowed";
 
-/** Sentinel for "composing a brand-new, not-yet-saved invoice cycle" in the Lump Sum navigator — never a real invoiceNo. */
-const NEW_LUMP_SUM_CYCLE = "__new_lump_sum_cycle__";
-
 /**
  * Universal Intelligent PMO Full Invoice Workspace.
  *
@@ -77,6 +84,7 @@ export function RaiseInvoiceDrawer({
   item,
   mode = "create",
   existingLine,
+  projectInvoiceCycle,
   onClose,
   onSave,
 }: Props) {
@@ -138,6 +146,49 @@ export function RaiseInvoiceDrawer({
     ];
   });
 
+  // One-time "Confirm Invoice Cycle" safeguard — Invoice Line Items /
+  // Commercial Milestone Billing only, Raise Invoice (create mode) only. The
+  // first attempt to enter a Qty to Invoice in this session is intercepted
+  // rather than applied immediately: the pending change is stashed and a
+  // confirmation dialog names the exact cycle it would be saved under.
+  // "Continue Billing" applies the stashed change and unlocks the rest of
+  // the session; "Change Invoice Cycle" discards it and focuses the cycle
+  // dropdown, leaving cycleConfirmed false so the very next attempt asks
+  // again. Changing the Invoice Cycle dropdown resets cycleConfirmed, since
+  // the billing context just changed — see handleInvoiceCycleChange below.
+  //
+  // Lump Sum never goes through this gate: its Invoice Cycle is already
+  // chosen up front on the Invoice Summary card (read-only inside this
+  // drawer, sourced from `projectInvoiceCycle`), so by the time "Raise
+  // Invoice" is clicked there is no ambiguity left to confirm — repeating it
+  // here would just be a redundant, confusing popup.
+  const [cycleConfirmed, setCycleConfirmed] = useState(false);
+  const [showCycleConfirmDialog, setShowCycleConfirmDialog] = useState(false);
+  const pendingQtyActionRef = useRef<(() => void) | null>(null);
+
+  const guardedQtyEntry = (apply: () => void) => {
+    if (!isCreateMode || isLumpSum || cycleConfirmed) {
+      apply();
+      return;
+    }
+    pendingQtyActionRef.current = apply;
+    setShowCycleConfirmDialog(true);
+  };
+
+  const handleContinueBilling = () => {
+    setShowCycleConfirmDialog(false);
+    setCycleConfirmed(true);
+    const pending = pendingQtyActionRef.current;
+    pendingQtyActionRef.current = null;
+    pending?.();
+  };
+
+  const handleChangeInvoiceCycleFromDialog = () => {
+    setShowCycleConfirmDialog(false);
+    pendingQtyActionRef.current = null;
+    document.getElementById("raise-invoice-cycle-select")?.focus();
+  };
+
   const savedScrollYRef = useRef<number>(0);
 
   useEffect(() => {
@@ -177,17 +228,19 @@ export function RaiseInvoiceDrawer({
   };
 
   const updateLineQty = (key: string, qty: number) => {
-    setDraftLines((prev) =>
-      prev.map((line) =>
-        line.key === key
-          ? {
-              ...line,
-              qtyInput: qty === 0 ? "" : String(qty),
-              customAmountInput: qty === 0 ? undefined : line.customAmountInput,
-            }
-          : line
-      )
-    );
+    guardedQtyEntry(() => {
+      setDraftLines((prev) =>
+        prev.map((line) =>
+          line.key === key
+            ? {
+                ...line,
+                qtyInput: qty === 0 ? "" : String(qty),
+                customAmountInput: qty === 0 ? undefined : line.customAmountInput,
+              }
+            : line
+        )
+      );
+    });
   };
 
   const updateLineAmount = (key: string, amount: number) => {
@@ -313,17 +366,17 @@ export function RaiseInvoiceDrawer({
       ]
     : [];
 
-  const rows = isCreateMode ? createRows : editRows;
-
   const [selectedMilestoneIds, setSelectedMilestoneIds] = useState<Set<string>>(() => new Set());
   const lumpSumRows = useMemo(() => getLumpSumMilestoneRows(item, milestones), [item, milestones]);
 
   const toggleLumpSumMilestone = (id: string) => {
-    setSelectedMilestoneIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+    guardedQtyEntry(() => {
+      setSelectedMilestoneIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
     });
   };
 
@@ -342,56 +395,54 @@ export function RaiseInvoiceDrawer({
     ];
   }, [existingLine, milestones]);
 
-  const activityCycles: ActivityInvoiceCycle[] = useMemo(
-    () => (isLumpSum ? getActivityInvoiceCycles(item) : []),
-    [isLumpSum, item]
-  );
-  const lumpSumHasPendingMilestone = lumpSumRows.some((row) => !row.alreadyInvoiced);
-
-  const [selectedLumpSumCycle, setSelectedLumpSumCycle] = useState<string>(() =>
-    activityCycles.length > 0 ? activityCycles[0].invoiceNo : NEW_LUMP_SUM_CYCLE
-  );
-
-  const isBrowsingSavedLumpSumCycle =
-    isLumpSum && isCreateMode && selectedLumpSumCycle !== NEW_LUMP_SUM_CYCLE;
-  const browsedLumpSumCycle = isBrowsingSavedLumpSumCycle
-    ? activityCycles.find((cycle) => cycle.invoiceNo === selectedLumpSumCycle)
-    : undefined;
-  const browsedLumpSumLine = browsedLumpSumCycle?.lines[0];
-
-  const canCreateNewLumpSumCycle =
-    isLumpSum && isCreateMode && selectedLumpSumCycle !== NEW_LUMP_SUM_CYCLE && lumpSumHasPendingMilestone;
-
-  const lumpSumCycleOptions = useMemo(() => {
-    if (selectedLumpSumCycle === NEW_LUMP_SUM_CYCLE) {
-      return [...activityCycles, { invoiceNo: NEW_LUMP_SUM_CYCLE, label: `Invoice ${activityCycles.length + 1} (New)`, lines: [] }];
-    }
-    return activityCycles;
-  }, [activityCycles, selectedLumpSumCycle]);
-
-  const handleSelectLumpSumCycle = (value: string) => {
-    setSelectedLumpSumCycle(value);
-    if (value !== NEW_LUMP_SUM_CYCLE) {
-      setSelectedMilestoneIds(new Set());
-    }
-  };
-
-  const handleCreateNewLumpSumCycle = () => {
-    setSelectedLumpSumCycle(NEW_LUMP_SUM_CYCLE);
-    setSelectedMilestoneIds(new Set());
-  };
-
-  const browsedLumpSumMilestoneIds = isBrowsingSavedLumpSumCycle && browsedLumpSumCycle
-    ? new Set(browsedLumpSumCycle.lines.map((line) => line.milestoneId).filter((id): id is string => !!id))
-    : null;
-
-  const lumpSumDisplayRows = isCreateMode
-    ? isLumpSum && browsedLumpSumMilestoneIds
-      ? lumpSumRows.filter((row) => browsedLumpSumMilestoneIds.has(row.id))
-      : lumpSumRows
-    : editLumpSumRows;
+  const lumpSumDisplayRows = isCreateMode ? lumpSumRows : editLumpSumRows;
 
   const hasLumpSumSelection = lumpSumRows.some((row) => !row.alreadyInvoiced && selectedMilestoneIds.has(row.id));
+
+  // Invoice Line Items / Commercial Milestone Billing — unchanged, original
+  // behavior: the Billable Line Items Table is always the live editable
+  // draft in create mode (Accounts can join any existing project-wide cycle
+  // or start a new one via the dropdown below; the table itself never
+  // becomes a read-only per-cycle snapshot).
+  const rows = isCreateMode ? createRows : editRows;
+
+  // Lump Sum's own Invoice Cycle is PROJECT-level, not computed here at all —
+  // it's whatever cycle is currently selected on the main Invoice Management
+  // page (InvoiceDashboard → InvoiceSummaryPanel), passed in as
+  // `projectInvoiceCycle`. Every activity billed while that cycle is
+  // selected shares the SAME invoiceNo, exactly like Commercial Milestone
+  // Billing's project-wide cycles always have. Falls back to the next fresh
+  // number only if the parent didn't pass one (defensive; InvoiceDashboard
+  // always does for Lump Sum projects).
+  const effectiveInvoiceNo = isLumpSum && isCreateMode
+    ? (projectInvoiceCycle ?? suggestNextInvoiceNumber(project))
+    : invoiceNo;
+
+  // Human-readable label for that project cycle (e.g. "Invoice 2
+  // (PR-11040_3-INV-002)"), reusing the exact same project-wide sequence
+  // Invoice Summary and Invoice History label cycles with — one shared
+  // source of truth, never a separately-computed label.
+  const projectInvoiceCycleLabel = useMemo(() => {
+    if (!(isLumpSum && isCreateMode)) return "";
+    const match = invoiceCycles.find((cycle) => cycle.invoiceNo === effectiveInvoiceNo && !cycle.isNew);
+    if (match) return `${match.label} (${match.invoiceNo})`;
+    const realCycleCount = invoiceCycles.filter((cycle) => !cycle.isNew).length;
+    return `Invoice ${realCycleCount + 1} (New)`;
+  }, [isLumpSum, isCreateMode, invoiceCycles, effectiveInvoiceNo]);
+
+  // Same labeling logic as projectInvoiceCycleLabel above, generalized to
+  // whichever cycle is actually active in create mode (the project-level one
+  // for Lump Sum, or the dropdown's own selection for Invoice Line Items /
+  // Commercial Milestone Billing) — this is what the "Confirm Invoice Cycle"
+  // dialog names, so it always matches what the Invoice Cycle field shows.
+  const activeCreateCycleNo = isLumpSum ? effectiveInvoiceNo : invoiceNo;
+  const cycleConfirmationLabel = useMemo(() => {
+    if (!isCreateMode) return "";
+    const match = invoiceCycles.find((cycle) => cycle.invoiceNo === activeCreateCycleNo && !cycle.isNew);
+    if (match) return `${match.label} (${match.invoiceNo})`;
+    const realCycleCount = invoiceCycles.filter((cycle) => !cycle.isNew).length;
+    return `Invoice ${realCycleCount + 1} (New)`;
+  }, [isCreateMode, invoiceCycles, activeCreateCycleNo]);
 
   const handleInvoiceCycleChange = (value: string) => {
     setInvoiceNo(value);
@@ -399,17 +450,20 @@ export function RaiseInvoiceDrawer({
     if (selected && !selected.isNew && selected.invoiceDate) {
       setInvoiceDate(selected.invoiceDate);
     }
+    // The billing context just changed — re-ask before the next Qty entry,
+    // even if the user had already confirmed the previous cycle this session.
+    setCycleConfirmed(false);
   };
 
   const hasBillableLine = isLumpSum
-    ? (isCreateMode ? !isBrowsingSavedLumpSumCycle && hasLumpSumSelection : !!existingLine)
+    ? (isCreateMode ? hasLumpSumSelection : !!existingLine)
     : isCreateMode
       ? createRows.some((row) => row.qtyToBill > 0 && !row.error)
       : editQtyValue > 0 && !editRows[0]?.error;
 
   const canSave =
     !isViewMode &&
-    invoiceNo.trim() !== "" &&
+    effectiveInvoiceNo.trim() !== "" &&
     invoiceDate.trim() !== "" &&
     hasBillableLine;
 
@@ -460,7 +514,7 @@ export function RaiseInvoiceDrawer({
           .filter((row) => !row.alreadyInvoiced && selectedMilestoneIds.has(row.id))
           .map((row) => ({
             id: crypto.randomUUID(),
-            invoiceNo: invoiceNo.trim(),
+            invoiceNo: effectiveInvoiceNo.trim(),
             invoiceDate,
             milestoneId: row.id,
             milestoneName: row.label,
@@ -477,7 +531,7 @@ export function RaiseInvoiceDrawer({
           .filter((row) => row.qtyToBill > 0 && !row.error)
           .map((row) => ({
             id: crypto.randomUUID(),
-            invoiceNo: invoiceNo.trim(),
+            invoiceNo: effectiveInvoiceNo.trim(),
             invoiceDate,
             milestoneId: draftLines.find((line) => line.key === row.key)?.milestoneId,
             milestoneName: row.milestoneLabel,
@@ -503,10 +557,6 @@ export function RaiseInvoiceDrawer({
     });
     handleClose();
   };
-
-  const displayInvoiceDate = isBrowsingSavedLumpSumCycle ? browsedLumpSumLine?.invoiceDate ?? invoiceDate : invoiceDate;
-  const displayClientReference = isBrowsingSavedLumpSumCycle ? browsedLumpSumLine?.clientReference ?? "" : clientReference;
-  const displayRemarks = isBrowsingSavedLumpSumCycle ? browsedLumpSumLine?.remarks ?? "" : remarks;
 
   const title = isViewMode ? "View Invoice" : isEditMode ? "Edit Invoice" : "Raise Invoice";
   const subtitle = item.description;
@@ -613,20 +663,21 @@ export function RaiseInvoiceDrawer({
   };
 
   return (
-    // Rendered directly into document.body — a true application modal must
-    // never be a descendant of the Project page's own layout. Mounting it
-    // inline (like every other page section) puts it under ancestors this
-    // component doesn't control, and any one of them gaining a `transform`/
-    // `filter`/`perspective`/`will-change: transform` (as MainLayout's own
-    // page-entry animation did — see the pmoFadeUp fix in index.css) creates
-    // a new containing block for every `position: fixed` descendant, so the
-    // "fixed" backdrop below silently starts behaving like `position:
-    // absolute` relative to that ancestor's full scrollable height instead
-    // of the viewport — which is exactly what made this workspace open at
-    // wherever the Project page happened to be scrolled. The portal makes
-    // that entire class of bug structurally impossible: this subtree has no
-    // ancestor but <body>, so it is always fixed to the real viewport,
-    // regardless of parent scroll position or accordion state.
+    <>
+    {/* Rendered directly into document.body — a true application modal must
+    never be a descendant of the Project page's own layout. Mounting it
+    inline (like every other page section) puts it under ancestors this
+    component doesn't control, and any one of them gaining a `transform`/
+    `filter`/`perspective`/`will-change: transform` (as MainLayout's own
+    page-entry animation did — see the pmoFadeUp fix in index.css) creates
+    a new containing block for every `position: fixed` descendant, so the
+    "fixed" backdrop below silently starts behaving like `position:
+    absolute` relative to that ancestor's full scrollable height instead
+    of the viewport — which is exactly what made this workspace open at
+    wherever the Project page happened to be scrolled. The portal makes
+    that entire class of bug structurally impossible: this subtree has no
+    ancestor but <body>, so it is always fixed to the real viewport,
+    regardless of parent scroll position or accordion state. */}
     <Portal>
       {/* Dimmed Overlay Backdrop */}
       <div
@@ -778,32 +829,26 @@ export function RaiseInvoiceDrawer({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className={labelClass}>Invoice Cycle</label>
-                  {isLumpSum && isCreateMode ? (
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={selectedLumpSumCycle}
-                        onChange={(e) => handleSelectLumpSumCycle(e.target.value)}
-                        className="flex-1 min-w-0"
-                      >
-                        {lumpSumCycleOptions.map((cycle) => (
-                          <option key={cycle.invoiceNo} value={cycle.invoiceNo}>
-                            {cycle.label}
-                          </option>
-                        ))}
-                      </Select>
-                      {canCreateNewLumpSumCycle && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          icon={<PlusCircle size={13} />}
-                          onClick={handleCreateNewLumpSumCycle}
-                          className="shrink-0"
-                        >
-                          Create Invoice
-                        </Button>
-                      )}
-                    </div>
+                  {isCreateMode && isLumpSum ? (
+                    // Lump Sum: PROJECT-level cycle, chosen on the main
+                    // Invoice Management page — not editable from inside
+                    // this per-activity dialog. Every activity billed while
+                    // that cycle is selected shares this exact invoiceNo.
+                    <Select id="raise-invoice-cycle-select" value={effectiveInvoiceNo} disabled className={disabledFieldClass}>
+                      <option value={effectiveInvoiceNo}>{projectInvoiceCycleLabel}</option>
+                    </Select>
+                  ) : isCreateMode ? (
+                    <Select
+                      id="raise-invoice-cycle-select"
+                      value={invoiceNo}
+                      onChange={(e) => handleInvoiceCycleChange(e.target.value)}
+                    >
+                      {invoiceCycles.map((cycle) => (
+                        <option key={cycle.invoiceNo} value={cycle.invoiceNo}>
+                          {cycle.label} {cycle.isNew ? "(New)" : `— ${cycle.invoiceNo}`}
+                        </option>
+                      ))}
+                    </Select>
                   ) : (
                     <Select
                       value={invoiceNo}
@@ -824,8 +869,8 @@ export function RaiseInvoiceDrawer({
                   <label className={labelClass}>Invoice Date</label>
                   <Input
                     type="date"
-                    value={displayInvoiceDate}
-                    disabled={isViewMode || isBrowsingSavedLumpSumCycle}
+                    value={invoiceDate}
+                    disabled={isViewMode}
                     className={disabledFieldClass}
                     onChange={(e) => setInvoiceDate(e.target.value)}
                   />
@@ -835,8 +880,8 @@ export function RaiseInvoiceDrawer({
                   <label className={labelClass}>Client Reference / PO Ref</label>
                   <Input
                     type="text"
-                    value={displayClientReference}
-                    disabled={isViewMode || isBrowsingSavedLumpSumCycle}
+                    value={clientReference}
+                    disabled={isViewMode}
                     className={disabledFieldClass}
                     placeholder="Optional PO Reference"
                     onChange={(e) => setClientReference(e.target.value)}
@@ -863,8 +908,8 @@ export function RaiseInvoiceDrawer({
               <div>
                 <label className={labelClass}>Remarks / Internal Notes</label>
                 <Textarea
-                  value={displayRemarks}
-                  disabled={isViewMode || isBrowsingSavedLumpSumCycle}
+                  value={remarks}
+                  disabled={isViewMode}
                   className={`resize-none ${disabledFieldClass}`}
                   placeholder="Optional billing notes..."
                   rows={2}
@@ -1023,5 +1068,52 @@ export function RaiseInvoiceDrawer({
         </aside>
       </div>
     </Portal>
+
+    {/* One-time "Confirm Invoice Cycle" safeguard — see guardedQtyEntry
+    above. A second, higher-stacked Portal instance so it always paints on
+    top of the workspace's own backdrop regardless of maximize state. */}
+    {showCycleConfirmDialog && (
+      <Portal>
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+
+          <div className="relative w-full max-w-md bg-white dark:bg-[#1E293B] border border-gray-250 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden p-6">
+            <div className="flex items-center gap-2 pb-4 border-b border-gray-200 dark:border-slate-700">
+              <AlertTriangle className="text-amber-500" size={20} />
+              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Confirm Invoice Cycle</h3>
+            </div>
+
+            <div className="py-5 space-y-3">
+              <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                You are about to bill against:
+              </p>
+
+              <div className="rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/60 dark:bg-blue-950/20 px-4 py-2.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-blue-600 dark:text-cyan-400">Invoice Cycle</p>
+                <p className="text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">{cycleConfirmationLabel}</p>
+              </div>
+
+              <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                All quantities entered in this session will be saved under this Invoice Cycle.
+              </p>
+
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 leading-relaxed">
+                Please confirm that you want to continue. If you intended to bill another invoice, change the Invoice Cycle before proceeding.
+              </p>
+            </div>
+
+            <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-slate-700 gap-3">
+              <Button variant="secondary" onClick={handleChangeInvoiceCycleFromDialog}>
+                Change Invoice Cycle
+              </Button>
+              <Button variant="primary" onClick={handleContinueBilling}>
+                Continue Billing
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Portal>
+    )}
+    </>
   );
 }

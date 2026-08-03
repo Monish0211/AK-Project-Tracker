@@ -28,6 +28,23 @@ export interface Project {
   projectEndDate: string;
   projectStatus: string;
 
+  // Work Order Details — the actual WO document reference and its
+  // Engineer-in-Charge contact, separate from the workOrderStatus/
+  // workOrderValue fields above.
+  workOrderNumber?: string;
+  workOrderDate?: string;
+  eicName?: string;
+  contactNumber?: string;
+  emailId?: string;
+
+  // Project Scheduling — only estimatedDuration/durationUnit are stored;
+  // Planned Completion Date and Working Days (Approx.) are always derived
+  // from projectStartDate + these two at render time (see
+  // GeneralInfoCard.tsx), never persisted, so they can't drift out of sync
+  // with a later Project Start Date edit.
+  estimatedDuration?: number;
+  durationUnit?: "Days" | "Weeks" | "Months";
+
   // ==========================
   // QUANTITY INFORMATION
   // ==========================

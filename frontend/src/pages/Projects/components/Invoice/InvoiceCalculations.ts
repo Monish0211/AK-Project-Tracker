@@ -1,4 +1,4 @@
-import type { InvoiceItem, InvoiceLine, InvoiceLineStatus, InvoiceMethod } from "../../../../types/InvoiceItem";
+import type { InvoiceItem, InvoiceLineStatus, InvoiceMethod } from "../../../../types/InvoiceItem";
 import type { Project } from "../../../../types/Project";
 import {
   getInvoiceRaisedAmount,
@@ -399,10 +399,15 @@ export interface InvoiceCycleOption {
 /**
  * Every Invoice Cycle already used in the project (across every activity),
  * in creation order, labeled "Invoice 1"/"Invoice 2"/... — plus one trailing
- * "new cycle" option. This is what the Raise Invoice drawer's Invoice Cycle
- * dropdown lists: Accounts either appends this activity's lines to an
- * EXISTING cycle (so one invoice can cover multiple activities) or starts a
- * new one.
+ * "new cycle" option. Invoice Cycles are always PROJECT-level, never
+ * activity-level: one cycle (e.g. "Invoice 1") is shared by every activity
+ * billed under it — Draftsman, Lead Engineer, Project Manager, etc. all
+ * participate in the same cycle rather than each having its own independent
+ * "Invoice 1". This is the single source of truth for the Invoice Cycle
+ * dropdown everywhere it appears — Commercial Milestone Billing's Raise
+ * Invoice dialog (join an existing cycle or start a new one), Lump Sum's
+ * project-level cycle selector (InvoiceSummaryPanel / InvoiceDashboard), and
+ * Invoice History's grouping.
  */
 export function getInvoiceCyclesForProject(project: Project): InvoiceCycleOption[] {
   const items = Array.isArray(project.invoiceItems) ? project.invoiceItems : [];
@@ -436,46 +441,6 @@ export function getInvoiceCyclesForProject(project: Project): InvoiceCycleOption
   });
 
   return options;
-}
-
-export interface ActivityInvoiceCycle {
-  invoiceNo: string;
-  /** "Invoice 1", "Invoice 2", ... — this activity's OWN cycle sequence, independent of other activities on the project (each activity's Lump Sum billing history is numbered from its own first invoice). */
-  label: string;
-  /** This activity's own non-cancelled lines under this invoiceNo — every milestone this specific cycle billed for this activity. */
-  lines: InvoiceLine[];
-}
-
-/**
- * Every Invoice Cycle this ONE activity has already been billed under (Lump
- * Sum "Raise Invoice" navigator) — in the order this activity first appears
- * in each cycle, labeled "Invoice 1"/"Invoice 2"/... from this activity's own
- * point of view. Unlike getInvoiceCyclesForProject, this never includes a
- * trailing "new cycle" placeholder — the drawer decides when to offer
- * "+ Create Invoice" based on whether any milestone is still unbilled.
- */
-export function getActivityInvoiceCycles(item: InvoiceItem): ActivityInvoiceCycle[] {
-  const lines = (Array.isArray(item.invoices) ? item.invoices : []).filter((line) => line.status !== "Cancelled");
-
-  const byInvoiceNo = new Map<string, InvoiceLine[]>();
-  lines.forEach((line) => {
-    const existing = byInvoiceNo.get(line.invoiceNo);
-    if (existing) existing.push(line);
-    else byInvoiceNo.set(line.invoiceNo, [line]);
-  });
-
-  const entries = Array.from(byInvoiceNo.entries());
-  entries.sort((a, b) => {
-    const earliestA = a[1].reduce((min, l) => (l.invoiceDate < min ? l.invoiceDate : min), a[1][0].invoiceDate);
-    const earliestB = b[1].reduce((min, l) => (l.invoiceDate < min ? l.invoiceDate : min), b[1][0].invoiceDate);
-    return earliestA.localeCompare(earliestB) || a[0].localeCompare(b[0]);
-  });
-
-  return entries.map(([invoiceNo, cycleLines], index) => ({
-    invoiceNo,
-    label: `Invoice ${index + 1}`,
-    lines: cycleLines,
-  }));
 }
 
 export interface InvoiceCycleTotals {

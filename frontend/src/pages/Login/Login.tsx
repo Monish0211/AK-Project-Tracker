@@ -11,9 +11,16 @@ import SplashScreen from "../../components/Splash/SplashScreen";
 import { Logo } from "../../components/ui/Logo";
 
 export default function Login() {
-  const { login } = useAuth();
+  const { user, login } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+
+  // If already authenticated, redirect immediately to Dashboard
+  useEffect(() => {
+    if (user && user.isAuthenticated) {
+      navigate("/", { replace: true });
+    }
+  }, [user, navigate]);
 
   // Input Refs
   const employeeIdRef = useRef<HTMLInputElement>(null);

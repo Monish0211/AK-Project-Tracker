@@ -15,6 +15,9 @@ export const validateGeneralTab = (project: Project): Record<string, string> => 
   if (!project.projectStartDate?.trim()) errors["projectStartDate"] = "Project Start Date is required.";
   if (!project.contractType?.trim()) errors["contractType"] = "Contract Type is required.";
   if (!project.pmoCoordinator?.trim()) errors["pmoCoordinator"] = "PMO Coordinator is required.";
+  if (!project.workOrderNumber?.trim()) errors["workOrderNumber"] = "Work Order Number is required.";
+  if (!project.workOrderDate?.trim()) errors["workOrderDate"] = "Work Order Date is required.";
+  if (!project.eicName?.trim()) errors["eicName"] = "EIC Name is required.";
 
   return errors;
 };

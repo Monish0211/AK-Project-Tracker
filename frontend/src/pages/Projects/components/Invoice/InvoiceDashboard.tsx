@@ -4,13 +4,14 @@ import { ListChecks } from "lucide-react";
 
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine } from "../../../../types/InvoiceItem";
+import { updateProject } from "../../../../services/projectService";
 
 import { CommercialSummary } from "./CommercialSummary";
 import { InvoiceSummaryPanel } from "./InvoiceSummaryPanel";
 import { ActivitiesTable } from "./ActivitiesTable";
 import { RaiseInvoiceDrawer } from "./RaiseInvoiceDrawer";
 import { InvoiceHistory } from "./InvoiceHistory";
-import { getInvoiceMethod } from "./InvoiceCalculations";
+import { getInvoiceMethod, getInvoiceCyclesForProject, suggestNextInvoiceNumber } from "./InvoiceCalculations";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { Card, CardBody } from "../../../../components/ui/Card";
 
@@ -41,11 +42,36 @@ interface DrawerState {
  * project.invoiceItems via setProject, unlike the earlier Quantity-Based
  * Invoice Tracking prototype (now fully removed) which only ever simulated
  * in memory.
+ *
+ * Invoice Cycles are always PROJECT-level, never activity-level — one cycle
+ * (e.g. "Invoice 1") is shared by every activity billed under it. This page
+ * owns the single `selectedProjectCycle` selection (below) that Invoice
+ * Summary displays/refreshes against, that Raise Invoice writes new Lump Sum
+ * lines into, and that Invoice History groups by. Commercial Milestone
+ * Billing already worked this way natively (its own dropdown inside the
+ * drawer lets Accounts join any existing cycle or start a new one); Lump Sum
+ * previously (incorrectly) generated an independent cycle sequence per
+ * activity, which this shared selection replaces.
  */
 export function InvoiceDashboard({ project, setProject, readOnly = false, initialActivityId, initialInvoiceLineId }: Props) {
   const isReadOnly = readOnly || !setProject;
 
   const [drawerState, setDrawerState] = useState<DrawerState | null>(null);
+
+  // The PROJECT-level Invoice Cycle currently selected on this page — the
+  // single source of truth Lump Sum's Raise Invoice, Invoice Summary, and
+  // (via the project-wide invoiceNo it resolves to) Invoice History all
+  // share. Every activity billed while a given cycle is selected here
+  // participates in that SAME cycle; Lump Sum no longer computes its own
+  // per-activity cycle sequence. Defaults to the most recently used real
+  // cycle, or the next fresh number if this project has never raised a
+  // Lump Sum invoice yet. Declared unconditionally (before the Invoice
+  // Method early-return below) because it's a hook — its value is simply
+  // unused for Invoice Line Items / Commercial Milestone Billing projects.
+  const [selectedProjectCycle, setSelectedProjectCycle] = useState<string>(() => {
+    const cycles = getInvoiceCyclesForProject(project).filter((cycle) => !cycle.isNew);
+    return cycles.length > 0 ? cycles[cycles.length - 1].invoiceNo : suggestNextInvoiceNumber(project);
+  });
 
   // No Invoice Method chosen yet (Invoice Management header dropdown) — no
   // billing workflow, summary, or history is shown until Accounts explicitly
@@ -65,6 +91,15 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
     );
   }
 
+  const isLumpSum = invoiceMethod === "lump_sum";
+
+  // "+ Create New Invoice Cycle" — Lump Sum only. Advances the shared
+  // selection to the next never-used project-wide number; it only becomes a
+  // real, persisted cycle once an invoice is actually saved against it.
+  const handleCreateNewProjectCycle = () => {
+    setSelectedProjectCycle(suggestNextInvoiceNumber(project));
+  };
+
   const handleRaiseInvoice = (item: InvoiceItem) => {
     if (isReadOnly) return;
     setDrawerState({ item, mode: "create" });
@@ -79,9 +114,26 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
     setDrawerState({ item, mode: "edit", existingLine: line });
   };
 
+  // Invoice actions (Raise/Edit/Delete) must never depend on the user
+  // separately remembering to click "Update Project" at the bottom of the
+  // whole Edit Project form afterwards — that button only exists for the
+  // General/Quantity/Payments/etc. tabs. setProject alone only updates this
+  // page's in-memory React state; without also persisting here, a raised
+  // invoice looks saved (Invoice History shows it, KPIs update) but is
+  // silently lost the moment the page remounts (navigate away and back,
+  // refresh) — reopening Raise Invoice for that activity would then
+  // correctly, but confusingly, show no invoices at all. updateProject
+  // writes straight to the same localStorage record FormButtons' "Update
+  // Project" writes to, so an invoice raised/edited/deleted here is durable
+  // immediately, exactly like clicking Save Invoice implies.
+  const persistProjectChange = (updatedProject: Project) => {
+    setProject?.(updatedProject);
+    updateProject({ ...updatedProject, updatedAt: new Date().toISOString() });
+  };
+
   const handleDeleteInvoiceLine = (item: InvoiceItem, line: InvoiceLine) => {
     if (isReadOnly || !setProject) return;
-    setProject({
+    persistProjectChange({
       ...project,
       invoiceItems: project.invoiceItems.map((invoiceItem) =>
         invoiceItem.id !== item.id
@@ -92,7 +144,7 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
   };
 
   const handleSave = (updatedProject: Project) => {
-    setProject?.(updatedProject);
+    persistProjectChange(updatedProject);
     setDrawerState(null);
   };
 
@@ -122,7 +174,13 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
       {/* Side-by-Side: Compact Invoice Summary (35%) + Invoice History (65%) with matching heights */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
         <div className="lg:col-span-4 xl:col-span-4 flex flex-col">
-          <InvoiceSummaryPanel project={project} />
+          <InvoiceSummaryPanel
+            project={project}
+            isLumpSum={isLumpSum}
+            selectedCycle={selectedProjectCycle}
+            onSelectCycle={setSelectedProjectCycle}
+            onCreateNewCycle={handleCreateNewProjectCycle}
+          />
         </div>
         <div className="lg:col-span-8 xl:col-span-8 flex flex-col overflow-hidden min-w-0">
           <InvoiceHistory
@@ -139,10 +197,23 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
       {/* create/edit are only ever triggered when not read-only (handlers guard above); view is safe either way. */}
       {drawerState && activeItem && (
         <RaiseInvoiceDrawer
+          // Forces a full unmount/remount — never a prop update on a reused
+          // instance — whenever the target activity, mode, or invoice line
+          // changes. Without this, React's reconciler is free to treat two
+          // consecutive opens (e.g. Raise Invoice for Activity A, then
+          // Activity B) as the SAME component instance just receiving new
+          // props, which would let useState's lazy initializers keep
+          // whatever they first initialized to instead of recomputing for
+          // the new activity. Keying on identity makes "every open starts
+          // from a completely fresh, correctly-scoped dialog" a structural
+          // guarantee rather than something every piece of internal state
+          // has to get right on its own.
+          key={`${activeItem.id}:${drawerState.mode}:${activeExistingLine?.id ?? "new"}`}
           project={project}
           item={activeItem}
           mode={drawerState.mode}
           existingLine={activeExistingLine}
+          projectInvoiceCycle={selectedProjectCycle}
           onClose={() => setDrawerState(null)}
           onSave={handleSave}
         />
