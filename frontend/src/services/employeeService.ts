@@ -31,6 +31,7 @@ export function getEmployees(): Employee[] {
 
 export function saveEmployees(employees: Employee[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(employees));
+  window.dispatchEvent(new Event("pmo:data-changed"));
 }
 
 export function addEmployee(

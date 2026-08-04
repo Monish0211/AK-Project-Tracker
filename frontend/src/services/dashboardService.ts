@@ -203,6 +203,170 @@ export const getRecentProjects = () => {
 };
 
 /* ===================================================
+   INVOICE COLLECTION DUE
+   Outstanding (Pending) invoice lines across every project, aged into the
+   same 4 collection windows Accounts already thinks in. Invoice lines don't
+   carry their own due date (see invoiceProgressService.ts's Next Payment
+   note), so a standard 30-day credit period from invoiceDate is used as the
+   due-date proxy — a documented assumption, not a stored field. Reading
+   straight from project.invoiceItems[].invoices means this always reflects
+   the live ledger: raising/editing/marking an invoice Paid updates these
+   buckets the next time the dashboard's shared pmo:data-changed refresh
+   fires (see useLiveRefresh.ts) — no separate cache to invalidate.
+=================================================== */
+
+export type CollectionBucketKey = "due_0_7" | "due_8_15" | "due_16_30" | "overdue";
+export type CollectionBucketStatus = "Due Soon" | "On Track" | "Overdue";
+
+export interface InvoiceCollectionBucket {
+  key: CollectionBucketKey;
+  label: string;
+  totalAmountINR: number;
+  invoiceCount: number;
+  status: CollectionBucketStatus;
+}
+
+const STANDARD_CREDIT_DAYS = 30;
+
+export const getInvoiceCollectionDue = (): InvoiceCollectionBucket[] => {
+  const buckets: Record<CollectionBucketKey, { totalAmountINR: number; invoiceCount: number }> = {
+    due_0_7: { totalAmountINR: 0, invoiceCount: 0 },
+    due_8_15: { totalAmountINR: 0, invoiceCount: 0 },
+    due_16_30: { totalAmountINR: 0, invoiceCount: 0 },
+    overdue: { totalAmountINR: 0, invoiceCount: 0 },
+  };
+
+  const today = new Date();
+
+  getProjects().forEach((project) => {
+    (project.invoiceItems || []).forEach((item) => {
+      (item.invoices || []).forEach((invoice) => {
+        // Outstanding = raised but not yet collected — excludes Paid (already
+        // collected) and Cancelled (never billed) lines, same definition
+        // getOutstandingCollection() uses project-wide.
+        if (invoice.status !== "Pending") return;
+        if (!invoice.invoiceDate) return;
+
+        const invoiceDate = new Date(invoice.invoiceDate);
+        if (Number.isNaN(invoiceDate.getTime())) return;
+
+        const dueDate = new Date(invoiceDate);
+        dueDate.setDate(dueDate.getDate() + STANDARD_CREDIT_DAYS);
+
+        const daysUntilDue = Math.floor((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+        let bucketKey: CollectionBucketKey | null = null;
+        if (daysUntilDue < 0) bucketKey = "overdue";
+        else if (daysUntilDue <= 7) bucketKey = "due_0_7";
+        else if (daysUntilDue <= 15) bucketKey = "due_8_15";
+        else if (daysUntilDue <= 30) bucketKey = "due_16_30";
+        // Beyond the 30-day horizon isn't "due" yet in any of the four windows.
+
+        if (!bucketKey) return;
+
+        buckets[bucketKey].totalAmountINR += invoice.invoiceAmountINR;
+        buckets[bucketKey].invoiceCount += 1;
+      });
+    });
+  });
+
+  return [
+    { key: "due_0_7", label: "Due in 0–7 Days", status: "Due Soon", ...buckets.due_0_7 },
+    { key: "due_8_15", label: "Due in 8–15 Days", status: "Due Soon", ...buckets.due_8_15 },
+    { key: "due_16_30", label: "Due in 16–30 Days", status: "On Track", ...buckets.due_16_30 },
+    { key: "overdue", label: "Overdue Collections", status: "Overdue", ...buckets.overdue },
+  ];
+};
+
+/* ===================================================
+   INVOICE RECEIVABLES (PROJECT-CENTRIC)
+   One row per project with outstanding (Pending) invoices — the
+   Invoice Collection Due widget's PMO-facing view. Unlike
+   getInvoiceCollectionDue() above (grouped by collection window, no project
+   context), this answers "which PR/client owes what" directly: each
+   project's Pending lines are summed into a single outstanding amount, and
+   the row's urgency (status/daysLabel) is driven by whichever of that
+   project's Pending invoices is due soonest — the one PMO needs to chase
+   first. Same 30-day standard-credit-period due-date proxy as above (see
+   that block's note — invoice lines don't carry their own due date).
+=================================================== */
+
+export type ReceivableStatus = "Due Soon" | "On Track" | "Overdue";
+
+export interface InvoiceReceivable {
+  projectId: string;
+  prNo: string;
+  client: string;
+  totalOutstandingINR: number;
+  pendingInvoiceCount: number;
+  /** Negative once past due. Driven by this project's soonest-due Pending invoice. */
+  daysUntilDue: number;
+  status: ReceivableStatus;
+  /** "Due in 3 Days" / "Overdue by 5 Days" — ready to render as-is. */
+  daysLabel: string;
+  /** Most recent invoiceDate among this project's Pending lines — sort key only, not rendered. */
+  latestInvoiceDate: string;
+}
+
+export const getInvoiceReceivables = (): InvoiceReceivable[] => {
+  const today = new Date();
+  const rows: InvoiceReceivable[] = [];
+
+  getProjects().forEach((project) => {
+    let totalOutstandingINR = 0;
+    let pendingInvoiceCount = 0;
+    let nearestDaysUntilDue: number | null = null;
+    let latestInvoiceDate = "";
+
+    (project.invoiceItems || []).forEach((item) => {
+      (item.invoices || []).forEach((invoice) => {
+        if (invoice.status !== "Pending") return;
+        if (!invoice.invoiceDate) return;
+
+        const invoiceDate = new Date(invoice.invoiceDate);
+        if (Number.isNaN(invoiceDate.getTime())) return;
+
+        totalOutstandingINR += invoice.invoiceAmountINR;
+        pendingInvoiceCount += 1;
+        if (invoice.invoiceDate > latestInvoiceDate) latestInvoiceDate = invoice.invoiceDate;
+
+        const dueDate = new Date(invoiceDate);
+        dueDate.setDate(dueDate.getDate() + STANDARD_CREDIT_DAYS);
+        const daysUntilDue = Math.floor((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (nearestDaysUntilDue === null || daysUntilDue < nearestDaysUntilDue) {
+          nearestDaysUntilDue = daysUntilDue;
+        }
+      });
+    });
+
+    if (pendingInvoiceCount === 0 || nearestDaysUntilDue === null) return;
+
+    const days: number = nearestDaysUntilDue;
+    const status: ReceivableStatus = days < 0 ? "Overdue" : days <= 15 ? "Due Soon" : "On Track";
+    const daysLabel =
+      days < 0
+        ? `Overdue by ${Math.abs(days)} Day${Math.abs(days) === 1 ? "" : "s"}`
+        : `Due in ${days} Day${days === 1 ? "" : "s"}`;
+
+    rows.push({
+      projectId: project.id,
+      prNo: project.prNo,
+      client: project.client,
+      totalOutstandingINR,
+      pendingInvoiceCount,
+      daysUntilDue: days,
+      status,
+      daysLabel,
+      latestInvoiceDate,
+    });
+  });
+
+  // "Latest" = most recently raised outstanding invoice first.
+  return rows.sort((a, b) => b.latestInvoiceDate.localeCompare(a.latestInvoiceDate));
+};
+
+/* ===================================================
    PROJECT HEALTH SUMMARY
    Schedule-health lens derived from General Information dates and pending
    quantity/invoice progress — independent of (and additional to) the

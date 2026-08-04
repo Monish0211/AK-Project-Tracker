@@ -6,14 +6,13 @@ import ProjectsInLossHoursWidget from "./components/ProjectsInLossHoursWidget";
 import ProjectsInLossTimeWidget from "./components/ProjectsInLossTimeWidget";
 import KPISection from "./components/KPISection";
 import TeamLeadsWorkloadWidget from "./components/TeamLeadsWorkloadWidget";
-import ProjectStatusChart from "./components/ProjectStatusChart";
-import RevenueChart from "./components/RevenueChart";
+import ProjectTimesheetPendingWidget from "./components/ProjectTimesheetPendingWidget";
+import PMOAlertsWidget from "./components/PMOAlertsWidget";
 import ProjectHealthSummary from "./components/ProjectHealthSummary";
 import ActivityFeed from "./components/ActivityFeed";
 import DepartmentSummary from "./components/DepartmentSummary";
 import TopClients from "./components/TopClients";
 import RecentProjects from "./components/RecentProjects";
-import QuickActions from "./components/QuickActions";
 import { useLiveRefresh } from "../../hooks/useLiveRefresh";
 
 // Toggle for the dashboard's ambient background (see DashboardAtmosphere.tsx).
@@ -39,35 +38,35 @@ const Dashboard = () => {
         <div key={refreshKey} className="p-4 space-y-3.5 nu-fade-in">
           <HeroBar lastUpdated={lastUpdated} />
 
+          {/* KPI Cards — unchanged */}
           <KPISection />
 
-          {/* Executive Risk Section Grid */}
+          {/* Executive Risk Section Grid — unchanged */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
             <ProjectsInLossHoursWidget />
             <ProjectsInLossTimeWidget />
           </div>
 
-          {/* Team Leads Workload & Performance Grid */}
+          {/* Team Leads Workload (kept) + Project Timesheet Pending
+          (replaces Invoice Collection Due) + PMO Alerts */}
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-3.5">
             <TeamLeadsWorkloadWidget />
-            <ProjectStatusChart />
-            <RevenueChart />
+            <ProjectTimesheetPendingWidget />
+            <PMOAlertsWidget />
           </div>
 
-          {/* Timeline & Portfolio Summaries Row */}
+          {/* Timeline & Portfolio Summaries Row — unchanged */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
             <ActivityFeed />
             <TopClients />
             <ProjectHealthSummary />
           </div>
 
-          {/* Supporting Operational Summaries */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-            <DepartmentSummary />
-            <RecentProjects />
-          </div>
+          {/* Department Summary — full width */}
+          <DepartmentSummary />
 
-          <QuickActions />
+          {/* Recent Projects — compact card replacing Quick Actions */}
+          <RecentProjects />
         </div>
       </div>
     </div>

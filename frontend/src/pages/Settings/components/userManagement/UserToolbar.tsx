@@ -1,4 +1,5 @@
 import { Search, Plus, RotateCcw } from "lucide-react";
+import { SYSTEM_ROLES } from "../../../../types/UserModel";
 import { Button } from "../../../../components/ui/Button";
 
 interface UserToolbarProps {
@@ -58,8 +59,11 @@ export const UserToolbar = ({
           title="Filter by Role"
         >
           <option value="All">All Roles</option>
-          <option value="Manager">Manager</option>
-          <option value="Employee">Employee</option>
+          {SYSTEM_ROLES.map((role) => (
+            <option key={role} value={role}>
+              {role}
+            </option>
+          ))}
         </select>
 
         {/* Status Filter */}

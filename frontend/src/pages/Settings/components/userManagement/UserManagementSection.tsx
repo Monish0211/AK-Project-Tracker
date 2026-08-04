@@ -1,20 +1,19 @@
 import { useState, useMemo, useEffect } from "react";
 import type { User, AccountStatus } from "../../../../types/UserModel";
-import {
-  getUsers,
-  updateUserStatus,
-  resetUserPassword as triggerResetPassword,
-} from "../../../../services/userManagementService";
+import { getUsers, setUserStatus, deleteUser } from "../../../../services/userManagementService";
 import { Card, CardHeader } from "../../../../components/ui/Card";
 import { UserManagementHero } from "./UserManagementHero";
 import { UserToolbar } from "./UserToolbar";
 import { UserTable } from "./UserTable";
 import { UserDrawer } from "./UserDrawer";
+import { UserViewDrawer } from "./UserViewDrawer";
+import { ResetPasswordDialog } from "./ResetPasswordDialog";
+import { DeleteUserDialog } from "./DeleteUserDialog";
 import { Users } from "lucide-react";
 
-interface DrawerState {
+interface FormDrawerState {
   isOpen: boolean;
-  mode: "add" | "edit" | "view";
+  mode: "add" | "edit";
   user?: User;
 }
 
@@ -25,22 +24,17 @@ export const UserManagementSection = () => {
   const [statusFilter, setStatusFilter] = useState("All");
   const [departmentFilter, setDepartmentFilter] = useState("All");
 
-  const [drawerState, setDrawerState] = useState<DrawerState>({
-    isOpen: false,
-    mode: "add",
-  });
+  const [formDrawer, setFormDrawer] = useState<FormDrawerState>({ isOpen: false, mode: "add" });
+  const [viewUser, setViewUser] = useState<User | undefined>(undefined);
+  const [resetPasswordUser, setResetPasswordUser] = useState<User | undefined>(undefined);
+  const [deleteTargetUser, setDeleteTargetUser] = useState<User | undefined>(undefined);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Sync users when localStorage / pmo:data-changed triggers
   useEffect(() => {
-    const handleDataChange = () => {
-      setUsers(getUsers());
-    };
+    const handleDataChange = () => setUsers(getUsers());
     window.addEventListener("pmo:data-changed", handleDataChange);
-    return () => {
-      window.removeEventListener("pmo:data-changed", handleDataChange);
-    };
+    return () => window.removeEventListener("pmo:data-changed", handleDataChange);
   }, []);
 
   const showToast = (msg: string) => {
@@ -48,31 +42,21 @@ export const UserManagementSection = () => {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // KPI Calculations
   const stats = useMemo(() => {
     return {
       total: users.length,
-      managers: users.filter((u) => u.role === "Manager").length,
-      employees: users.filter((u) => u.role === "Employee").length,
+      administrators: users.filter((u) => u.role === "Administrator").length,
+      projectManagers: users.filter((u) => u.role === "Project Manager").length,
       active: users.filter((u) => u.status === "Active").length,
       inactive: users.filter((u) => u.status === "Inactive").length,
     };
   }, [users]);
 
-  // Unique departments for filter
   const departments = useMemo(() => {
     const set = new Set(users.map((u) => u.department).filter(Boolean));
     return Array.from(set).sort();
   }, [users]);
 
-  // Managers list for Reporting Manager select
-  const managersList = useMemo(() => {
-    const mgrs = users.filter((u) => u.role === "Manager").map((u) => u.employeeName);
-    if (mgrs.length === 0) return ["Rajesh Sharma"];
-    return mgrs;
-  }, [users]);
-
-  // Filtered Users
   const filteredUsers = useMemo(() => {
     const q = search.trim().toLowerCase();
     return users.filter((u) => {
@@ -100,39 +84,38 @@ export const UserManagementSection = () => {
 
   const handleToggleStatus = (targetUser: User) => {
     const nextStatus: AccountStatus = targetUser.status === "Active" ? "Inactive" : "Active";
-    updateUserStatus(targetUser.id, nextStatus);
-    showToast(`User ${targetUser.employeeName} status updated to ${nextStatus}.`);
+    setUserStatus(targetUser.id, nextStatus);
+    showToast(`${targetUser.employeeName} is now ${nextStatus}.`);
   };
 
-  const handleResetPassword = (targetUser: User) => {
-    triggerResetPassword(targetUser.id);
-    showToast(`Password reset triggered for ${targetUser.employeeName}. Force change enabled.`);
+  const handleConfirmDelete = () => {
+    if (!deleteTargetUser) return;
+    deleteUser(deleteTargetUser.id);
+    showToast(`${deleteTargetUser.employeeName} has been removed.`);
+    setDeleteTargetUser(undefined);
   };
 
   return (
     <div className="space-y-4 nu-fade-in">
-      {/* Toast Feedback */}
       {toastMessage && (
-        <div className="fixed top-16 right-6 z-50 px-4 py-2.5 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent)] text-white font-medium text-[12.5px] shadow-[var(--nu-shadow-lg)] transition-all animate-bounce">
+        <div className="fixed top-16 right-6 z-50 px-4 py-2.5 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent)] text-white font-medium text-[12.5px] shadow-[var(--nu-shadow-lg)] transition-all">
           {toastMessage}
         </div>
       )}
 
-      {/* Summary KPI Cards */}
       <UserManagementHero
         total={stats.total}
-        managers={stats.managers}
-        employees={stats.employees}
+        administrators={stats.administrators}
+        projectManagers={stats.projectManagers}
         active={stats.active}
         inactive={stats.inactive}
       />
 
-      {/* Main Users Card */}
       <Card padded={false} elevated>
         <CardHeader
           icon={<Users size={15} />}
           title="User Directory & Permissions"
-          subtitle="Manage accounts, module permissions, project assignments and approval rights."
+          subtitle="Manage accounts, system roles, module permissions, project region access and approval rights."
         />
 
         <UserToolbar
@@ -146,26 +129,60 @@ export const UserManagementSection = () => {
           onDepartmentFilterChange={setDepartmentFilter}
           departments={departments}
           onReset={handleResetFilters}
-          onAddUser={() => setDrawerState({ isOpen: true, mode: "add" })}
+          onAddUser={() => setFormDrawer({ isOpen: true, mode: "add" })}
         />
 
         <UserTable
           users={filteredUsers}
-          onView={(user) => setDrawerState({ isOpen: true, mode: "view", user })}
-          onEdit={(user) => setDrawerState({ isOpen: true, mode: "edit", user })}
-          onResetPassword={handleResetPassword}
+          onView={(user) => setViewUser(user)}
+          onEdit={(user) => setFormDrawer({ isOpen: true, mode: "edit", user })}
+          onResetPassword={(user) => setResetPasswordUser(user)}
           onToggleStatus={handleToggleStatus}
+          onDelete={(user) => setDeleteTargetUser(user)}
         />
       </Card>
 
-      {/* Slide-over User Form Drawer */}
       <UserDrawer
-        isOpen={drawerState.isOpen}
-        mode={drawerState.mode}
-        user={drawerState.user}
-        onClose={() => setDrawerState({ isOpen: false, mode: "add" })}
-        managersList={managersList}
+        isOpen={formDrawer.isOpen}
+        mode={formDrawer.mode}
+        user={formDrawer.user}
+        onClose={() => setFormDrawer({ isOpen: false, mode: "add" })}
+        onSaved={(saved) => showToast(`${saved.employeeName} has been ${formDrawer.mode === "add" ? "added" : "updated"}.`)}
+        onRequestResetPassword={(user) => {
+          setFormDrawer({ isOpen: false, mode: "add" });
+          setResetPasswordUser(user);
+        }}
+        existingUsers={users}
       />
+
+      <UserViewDrawer
+        isOpen={!!viewUser}
+        user={viewUser}
+        onClose={() => setViewUser(undefined)}
+        onEdit={(user) => {
+          setViewUser(undefined);
+          setFormDrawer({ isOpen: true, mode: "edit", user });
+        }}
+      />
+
+      {resetPasswordUser && (
+        <ResetPasswordDialog
+          user={resetPasswordUser}
+          onCancel={() => setResetPasswordUser(undefined)}
+          onDone={() => {
+            showToast(`Password reset for ${resetPasswordUser.employeeName}.`);
+            setResetPasswordUser(undefined);
+          }}
+        />
+      )}
+
+      {deleteTargetUser && (
+        <DeleteUserDialog
+          user={deleteTargetUser}
+          onCancel={() => setDeleteTargetUser(undefined)}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
     </div>
   );
 };

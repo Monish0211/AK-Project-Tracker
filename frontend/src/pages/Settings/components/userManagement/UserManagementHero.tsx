@@ -4,16 +4,16 @@ import { GlassReflectionOverlay } from "../../../../components/ui/GlassReflectio
 
 interface UserManagementHeroProps {
   total: number;
-  managers: number;
-  employees: number;
+  administrators: number;
+  projectManagers: number;
   active: number;
   inactive: number;
 }
 
 export const UserManagementHero = ({
   total,
-  managers,
-  employees,
+  administrators,
+  projectManagers,
   active,
   inactive,
 }: UserManagementHeroProps) => {
@@ -49,15 +49,15 @@ export const UserManagementHero = ({
         />
         <StatTile
           emphasis="secondary"
-          label="Managers"
-          value={managers.toString()}
+          label="Administrators"
+          value={administrators.toString()}
           icon={<ShieldCheck size={14} />}
           tint="info"
         />
         <StatTile
           emphasis="secondary"
-          label="Employees"
-          value={employees.toString()}
+          label="Project Managers"
+          value={projectManagers.toString()}
           icon={<UserCog size={14} />}
           tint="warning"
         />

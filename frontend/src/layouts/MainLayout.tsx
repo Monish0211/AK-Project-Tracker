@@ -11,6 +11,7 @@ import Projects from "../pages/Projects/Projects";
 import CompletedProjects from "../pages/Projects/CompletedProjects";
 import FinancialLossProjects from "../pages/Projects/FinancialLossProjects";
 import TimelineAlertProjects from "../pages/Projects/TimelineAlertProjects";
+import TimesheetPendingProjects from "../pages/Projects/TimesheetPendingProjects";
 import AddProject from "../pages/Projects/AddProject";
 import ViewProject from "../pages/Projects/ViewProject";
 import EditProject from "../pages/Projects/EditProject";
@@ -94,6 +95,11 @@ const MainLayout = () => {
               <Route
                 path="/projects/timeline-alerts"
                 element={<TimelineAlertProjects />}
+              />
+
+              <Route
+                path="/projects/timesheet-pending"
+                element={<TimesheetPendingProjects />}
               />
 
               <Route
