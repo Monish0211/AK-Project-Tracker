@@ -7,6 +7,7 @@ import {
   getEmployees,
   saveEmployees,
 } from "../../../services/employeeService";
+import { DEFAULT_DEPARTMENTS } from "../../../data/departmentMasterData";
 
 interface Props {
   employee?: Employee | null;
@@ -17,16 +18,7 @@ interface Props {
   onClose: () => void;
 }
 
-const DEPARTMENT_OPTIONS = [
-  "Process",
-  "Mechanical",
-  "Civil",
-  "Instrumentation",
-  "Electrical",
-  "Training",
-  "Design Engineering Services",
-  "Others",
-];
+const DEPARTMENT_OPTIONS = [...DEFAULT_DEPARTMENTS, "Others"];
 
 const EmployeeModal = ({
   employee,

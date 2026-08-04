@@ -1,12 +1,31 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Users, Sliders, Bell, Shield } from "lucide-react";
 import { UserManagementSection } from "./components/userManagement/UserManagementSection";
+import { SecurityAuditSection } from "./components/audit/SecurityAuditSection";
 import "./settings-theme.css";
 
 type SettingsTab = "users" | "system" | "notifications" | "audit";
 
 const Settings = () => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>("users");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab") as SettingsTab | null;
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    tabParam && ["users", "system", "notifications", "audit"].includes(tabParam)
+      ? tabParam
+      : "users"
+  );
+
+  useEffect(() => {
+    if (tabParam && ["users", "system", "notifications", "audit"].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
+
+  const handleTabChange = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  };
 
   return (
     <div className="settings-shell -m-6 p-4 space-y-3.5 nu-fade-in">
@@ -14,7 +33,7 @@ const Settings = () => {
       <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] p-1.5 shadow-[var(--nu-shadow-sm)] flex items-center gap-1.5 overflow-x-auto nu-scrollbar">
         <button
           type="button"
-          onClick={() => setActiveTab("users")}
+          onClick={() => handleTabChange("users")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
             activeTab === "users"
               ? "bg-[var(--nu-accent)] text-white shadow-[var(--nu-shadow-sm)]"
@@ -27,7 +46,7 @@ const Settings = () => {
 
         <button
           type="button"
-          onClick={() => setActiveTab("system")}
+          onClick={() => handleTabChange("system")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
             activeTab === "system"
               ? "bg-[var(--nu-accent)] text-white shadow-[var(--nu-shadow-sm)]"
@@ -40,7 +59,7 @@ const Settings = () => {
 
         <button
           type="button"
-          onClick={() => setActiveTab("notifications")}
+          onClick={() => handleTabChange("notifications")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
             activeTab === "notifications"
               ? "bg-[var(--nu-accent)] text-white shadow-[var(--nu-shadow-sm)]"
@@ -53,7 +72,7 @@ const Settings = () => {
 
         <button
           type="button"
-          onClick={() => setActiveTab("audit")}
+          onClick={() => handleTabChange("audit")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
             activeTab === "audit"
               ? "bg-[var(--nu-accent)] text-white shadow-[var(--nu-shadow-sm)]"
@@ -88,15 +107,7 @@ const Settings = () => {
         </div>
       )}
 
-      {activeTab === "audit" && (
-        <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] p-8 text-center space-y-2">
-          <Shield size={32} className="mx-auto text-[var(--nu-text-muted)]" />
-          <h3 className="text-base font-bold text-[var(--nu-text)]">Security & Audit Logs</h3>
-          <p className="text-[12.5px] text-[var(--nu-text-muted)] max-w-md mx-auto">
-            View system login history, data modification audit trails, permission change records, and security compliance logs.
-          </p>
-        </div>
-      )}
+      {activeTab === "audit" && <SecurityAuditSection />}
     </div>
   );
 };
