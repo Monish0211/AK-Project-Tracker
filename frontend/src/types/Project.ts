@@ -29,20 +29,20 @@ export interface Project {
   projectEndDate: string;
   projectStatus: string;
 
-  // Work Order Details — the actual WO document reference and its
-  // Engineer-in-Charge contact, separate from the workOrderStatus/
-  // workOrderValue fields above.
+  // Formal Project Completion Fields
+  actualCompletionDate?: string;
+  completionRemarks?: string;
+  completedBy?: string;
+  completedTimestamp?: string;
+
+  // Work Order Details
   workOrderNumber?: string;
   workOrderDate?: string;
   eicName?: string;
   contactNumber?: string;
   emailId?: string;
 
-  // Project Scheduling — only estimatedDuration/durationUnit are stored;
-  // Planned Completion Date and Working Days (Approx.) are always derived
-  // from projectStartDate + these two at render time (see
-  // GeneralInfoCard.tsx), never persisted, so they can't drift out of sync
-  // with a later Project Start Date edit.
+  // Project Scheduling
   estimatedDuration?: number;
   durationUnit?: "Days" | "Weeks" | "Months";
 
@@ -96,14 +96,9 @@ export interface Project {
 
   paymentMilestones: {
     id: string;
-
-    /** e.g. "Submission Draft", "Submission Final". Optional for backward compatibility with existing projects. */
     milestoneName?: string;
-
     paymentPercentage: number;
-
     dueDate: string;
-
     amount: number;
   }[];
 
@@ -111,19 +106,12 @@ export interface Project {
   // INVOICE INFORMATION
   // ==========================
 
-  /** Undefined until Accounts explicitly picks one in the Invoice Management header — no default. See getInvoiceMethod() in InvoiceCalculations.ts. */
   invoiceMethod?: InvoiceMethod;
 
   invoiceItems: InvoiceItem[];
 
-  // Future-ready placeholder — see types/QuantityRevision.ts. No mutation
-  // logic exists yet; only backs the Invoice History "Quantity Revisions"
-  // section layout.
   quantityRevisions?: QuantityRevision[];
 
-  // Collection received against raised invoices.
-  // Not yet editable from the UI — kept ready for backend/payment
-  // gateway integration so Outstanding Collection can be computed today.
   paymentReceived: number;
   paymentReceivedINR: number;
 
@@ -131,9 +119,9 @@ export interface Project {
   // EXPENSE INFORMATION
   // ==========================
 
-manhourExpenses: ManhourExpense[];
+  manhourExpenses: ManhourExpense[];
 
-nonManhourExpenses: NonManhourExpense[];
+  nonManhourExpenses: NonManhourExpense[];
 
   // ==========================
   // DOCUMENT INFORMATION
@@ -156,10 +144,8 @@ nonManhourExpenses: NonManhourExpense[];
 
   resources: ProjectResource[];
 
-  // Timesheet synchronization: Historical monthly imports
-  // Automatically populated from Timesheets module imports
   timesheetMonths?: TimesheetImportMonth[];
-  latestTimesheetMonth?: string; // YYYY-MM format
+  latestTimesheetMonth?: string;
 
   totalHoursBudget?: number;
   totalProjectBudget?: number;

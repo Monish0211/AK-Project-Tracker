@@ -57,12 +57,22 @@ const GeneralView = ({ project }: Props) => {
 
       {/* Project Schedule */}
       <Card padded={false} elevated>
-        <CardHeader icon={<CalendarRange size={15} />} title="Project Schedule" subtitle="Start, end and work order status" iconTint="info" />
+        <CardHeader icon={<CalendarRange size={15} />} title="Project Schedule" subtitle="Start, end, completion and status" iconTint="info" />
         <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <InfoField label="Work Order Status" value={project.workOrderStatus} />
           <InfoField label="Project Status" value={project.projectStatus} />
           <InfoField label="Project Start Date" value={project.projectStartDate ? formatDisplayDate(project.projectStartDate) : ""} />
-          <InfoField label="Project End Date" value={project.projectEndDate ? formatDisplayDate(project.projectEndDate) : ""} />
+          <InfoField label="Estimated End Date" value={project.projectEndDate ? formatDisplayDate(project.projectEndDate) : ""} />
+          <InfoField
+            label="Actual Completion Date"
+            value={project.actualCompletionDate ? formatDisplayDate(project.actualCompletionDate) : "—"}
+          />
+          <InfoField label="Completed By" value={project.completedBy || "—"} />
+          {project.completionRemarks && (
+            <div className="sm:col-span-2">
+              <InfoField label="Completion Remarks" value={project.completionRemarks} />
+            </div>
+          )}
         </CardBody>
       </Card>
 

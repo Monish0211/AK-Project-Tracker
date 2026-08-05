@@ -8,6 +8,7 @@ import { Button } from "../../../components/ui/Button";
 import {
   addProject,
   updateProject,
+  completeProject,
   getProjectById,
 } from "../../../services/projectService";
 
@@ -42,7 +43,18 @@ const FormButtons = ({
     const timestamp = new Date().toISOString();
     const existing = getProjectById(project.id);
 
-    if (existing) {
+    if (project.projectStatus === "Completed" && project.actualCompletionDate) {
+      completeProject(project.id, {
+        actualCompletionDate: project.actualCompletionDate,
+        completionRemarks: project.completionRemarks || "Project completed successfully.",
+        completedBy: project.completedBy || "Administrator",
+      });
+      updateProject({
+        ...project,
+        createdAt: existing?.createdAt || timestamp,
+        updatedAt: timestamp,
+      });
+    } else if (existing) {
       updateProject({
         ...project,
         createdAt: existing.createdAt,

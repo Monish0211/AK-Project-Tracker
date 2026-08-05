@@ -21,13 +21,22 @@ export interface ProjectActivityEvent {
 export const getProjectActivityTimeline = (project: Project, limit = 20): ProjectActivityEvent[] => {
   const events: ProjectActivityEvent[] = [];
 
-  // Project Created and Project Updated are intentionally filtered out
-  // to reduce timeline clutter and only show meaningful business activities.
-
-  // Major Project Status
-  if (project.updatedAt && project.projectStatus && project.projectStatus !== "Active" && project.projectStatus !== "In Progress") {
+  // Formal Project Completion Event
+  if (project.projectStatus === "Completed" || project.actualCompletionDate) {
     events.push({
-      id: `${project.id}-status-${project.projectStatus.toLowerCase().replace(/\s+/g, '-')}`,
+      id: `${project.id}-completion-event`,
+      category: "Project",
+      title: "PROJECT COMPLETED",
+      description: `Completion Date: ${project.actualCompletionDate || project.projectEndDate || "—"}${
+        project.completionRemarks ? `\nRemarks: ${project.completionRemarks}` : ""
+      }`,
+      user: project.completedBy || "Administrator",
+      timestamp: project.completedTimestamp || project.updatedAt || new Date().toISOString(),
+    });
+  } else if (project.updatedAt && project.projectStatus && project.projectStatus !== "Active" && project.projectStatus !== "In Progress") {
+    // Major Project Status
+    events.push({
+      id: `${project.id}-status-${project.projectStatus.toLowerCase().replace(/\s+/g, "-")}`,
       category: "Project",
       title: `Project ${project.projectStatus}`,
       description: `${project.projectTitle || project.prNo} was marked as ${project.projectStatus}.`,
@@ -38,7 +47,6 @@ export const getProjectActivityTimeline = (project: Project, limit = 20): Projec
 
   // Reminders
   reminderService.getRemindersByProject(project.id).forEach((reminder) => {
-    // 1. Reminder Created
     events.push({
       id: `reminder-created-${reminder.id}`,
       category: "Reminders",
@@ -48,7 +56,6 @@ export const getProjectActivityTimeline = (project: Project, limit = 20): Projec
       timestamp: reminder.createdDate,
     });
 
-    // 2. Reminder Completed
     if (reminder.isCompleted && reminder.completedDate) {
       events.push({
         id: `reminder-completed-${reminder.id}`,
@@ -59,15 +66,13 @@ export const getProjectActivityTimeline = (project: Project, limit = 20): Projec
         timestamp: reminder.completedDate,
       });
     }
-    
-    // Additional reminder events (like Snoozed/Updated) could be added here if the model tracks those timestamps in the future.
   });
 
   (project.notes || []).forEach((note) => {
     events.push({
       id: `note-${note.id}`,
       category: "Notes",
-      title: "Project Note Added",
+      title: note.message.includes("PROJECT COMPLETED") ? "PROJECT COMPLETED" : "Project Note Added",
       description: note.message,
       user: note.createdBy || undefined,
       timestamp: note.createdAt,
@@ -102,8 +107,8 @@ export const getProjectActivityTimeline = (project: Project, limit = 20): Projec
     });
   });
 
+  // Sort descending by timestamp
   return events
-    .filter((event) => !!event.timestamp && !Number.isNaN(new Date(event.timestamp).getTime()))
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, limit);
 };

@@ -1,14 +1,15 @@
 import type { Project } from "../types/Project";
+import type { ProjectNote } from "../types/ProjectNote";
 import type { InvoiceLine, InvoiceLineStatus } from "../types/InvoiceItem";
 import { createEmptyProject, inferPrCategory, inferDomesticForeign } from "../utils/createEmptyProject";
 import { calculateQuantity } from "../utils/quantityCalculations";
 import { syncInvoiceItemsWithQuantity } from "./invoiceSyncService";
+import { notificationService } from "../notifications/notificationService";
 
 const STORAGE_KEY = "projects";
 
 const VALID_INVOICE_LINE_STATUSES: InvoiceLineStatus[] = ["Draft", "Raised", "PartiallyPaid", "Paid", "Cancelled"];
 
-/** Legacy persisted data (pre-5-status model) used "Pending" to mean "raised, awaiting payment" — the closest equivalent under the current model is "Raised". Anything else unrecognized also falls back to "Raised" rather than silently producing an invalid enum value. */
 function normalizeInvoiceLineStatus(value: unknown): InvoiceLineStatus {
   if (typeof value === "string" && (VALID_INVOICE_LINE_STATUSES as string[]).includes(value)) {
     return value as InvoiceLineStatus;
@@ -89,6 +90,10 @@ export function normalizeProject(project: Project): Project {
     domesticForeign: normalizedDomesticForeign,
     workOrderStatus: normalizedWorkOrderStatus,
     projectStatus: normalizedProjectStatus,
+    actualCompletionDate: project.actualCompletionDate || "",
+    completionRemarks: project.completionRemarks || "",
+    completedBy: project.completedBy || "",
+    completedTimestamp: project.completedTimestamp || "",
     contractType: normalizedContractType,
     department: normalizedDepartment,
     pmoCoordinator: normalizedPmoCoordinator,
@@ -98,87 +103,42 @@ export function normalizeProject(project: Project): Project {
     contractExchangeRate: normalizedContractExchangeRate,
     quantityItems: normalizedQuantityItems,
     gstApplicable: normalizedGstApplicable,
-    ...totals,
+    gstRate: totals.gstRate,
+    gstAmount: totals.gstAmount,
+    grandTotal: totals.grandTotal,
+    totalWOQty: totals.totalWOQty,
+    totalInvoiceQty: totals.totalInvoiceQty,
+    totalPendingQty: totals.totalPendingQty,
+    workOrderValue: totals.workOrderValue,
+    workOrderValueINR: totals.workOrderValueINR,
+    pendingAmount: totals.pendingAmount,
+    pendingInvoicePercentage: totals.pendingInvoicePercentage,
     paymentMilestones,
-    paymentType: project.paymentType || (paymentMilestones.length > 1 ? "Multiple" : "Single"),
-    // Preserve an explicit choice either way; never force a default here —
-    // absence means Accounts hasn't picked a method yet (see getInvoiceMethod()).
-    invoiceMethod:
-      project.invoiceMethod === "invoice_line_items" || project.invoiceMethod === "lump_sum"
-        ? project.invoiceMethod
-        : undefined,
-    paymentTerms: project.paymentTerms || "30% / 40% / 30%",
-    quantityRevisions: Array.isArray(project.quantityRevisions)
-      ? project.quantityRevisions
-      : [],
-    manhourExpenses: Array.isArray(project.manhourExpenses)
-      ? project.manhourExpenses
-      : [],
-    nonManhourExpenses: Array.isArray(project.nonManhourExpenses)
-      ? project.nonManhourExpenses
-      : [],
     invoiceItems: syncInvoiceItemsWithQuantity(
       normalizedQuantityItems,
-      Array.isArray(project.invoiceItems) ? project.invoiceItems : []
+      project.invoiceItems
     ).map((item) => ({
       ...item,
-      // Defensively normalizes both the current InvoiceLine shape and any
-      // legacy persisted InvoiceEntry (id/invoiceDate/quantityBilled/
-      // invoiceAmountINR only) from localStorage written before the Invoice
-      // Management module existed.
-      invoices: (Array.isArray(item.invoices) ? item.invoices : []).map((invoice: Partial<InvoiceLine> & { id: string }) => ({
-        id: invoice.id,
-        invoiceNo: typeof invoice.invoiceNo === "string" && invoice.invoiceNo ? invoice.invoiceNo : `LEGACY-${String(invoice.id).slice(0, 8)}`,
-        invoiceDate: invoice.invoiceDate || "",
-        milestoneId: invoice.milestoneId,
-        milestoneName: invoice.milestoneName,
-        description: invoice.description,
-        quantityBilled: typeof invoice.quantityBilled === "number" ? invoice.quantityBilled : 0,
-        unitPriceINR: typeof invoice.unitPriceINR === "number" ? invoice.unitPriceINR : undefined,
-        calculatedAmountINR: typeof invoice.calculatedAmountINR === "number" ? invoice.calculatedAmountINR : undefined,
-        invoiceAmountINR: typeof invoice.invoiceAmountINR === "number" ? invoice.invoiceAmountINR : 0,
-        commercialAdjustmentINR: typeof invoice.commercialAdjustmentINR === "number" ? invoice.commercialAdjustmentINR : undefined,
-        clientReference: invoice.clientReference,
-        remarks: invoice.remarks,
-        status: normalizeInvoiceLineStatus(invoice.status),
-        createdBy: invoice.createdBy || "Administrator",
-      })),
+      invoices: Array.isArray(item.invoices)
+        ? item.invoices.map((line: InvoiceLine) => ({
+            ...line,
+            status: normalizeInvoiceLineStatus(line.status),
+          }))
+        : [],
     })),
-    resources: Array.isArray(project.resources)
-      ? project.resources.map((res: any) => ({
-          ...res,
-          workingDays: typeof res.workingDays === "number" ? res.workingDays : Number(res.workingDays) || 0,
-          totalHours: typeof res.totalHours === "number" ? res.totalHours : Number(res.totalHours) || 0,
-          status: res.status || "Active",
-        }))
-      : [],
-    primaryProjectManager: project.primaryProjectManager || (project as any).projectManager || "",
-    secondaryProjectManager: project.secondaryProjectManager || "",
-    clientCoordinator: project.clientCoordinator || "",
-    lastImportedDate: project.lastImportedDate || "",
-    lastImportedBy: project.lastImportedBy || "",
-    lastImportedRowsCount: typeof project.lastImportedRowsCount === "number" ? project.lastImportedRowsCount : Number(project.lastImportedRowsCount) || 0,
-    totalHoursBudget: typeof project.totalHoursBudget === "number" ? project.totalHoursBudget : Number(project.totalHoursBudget) || 0,
-    totalProjectBudget: totals.workOrderValueINR,
-
-    manhourBudgetAmount: typeof project.manhourBudgetAmount === "number" ? project.manhourBudgetAmount : Number(project.manhourBudgetAmount) || 0,
-    manhourBudgetHours: typeof project.manhourBudgetHours === "number" ? project.manhourBudgetHours : Number(project.manhourBudgetHours) || 0,
-    manhourBudgetRemarks: project.manhourBudgetRemarks || "",
-    nonManhourBudgetAmount: typeof project.nonManhourBudgetAmount === "number" ? project.nonManhourBudgetAmount : Number(project.nonManhourBudgetAmount) || 0,
-    nonManhourBudgetRemarks: project.nonManhourBudgetRemarks || "",
+    manhourExpenses: Array.isArray(project.manhourExpenses) ? project.manhourExpenses : [],
+    nonManhourExpenses: Array.isArray(project.nonManhourExpenses) ? project.nonManhourExpenses : [],
+    resources: Array.isArray(project.resources) ? project.resources : [],
+    paymentReceived: typeof project.paymentReceived === "number" ? project.paymentReceived : 0,
+    paymentReceivedINR: typeof project.paymentReceivedINR === "number" ? project.paymentReceivedINR : 0,
   };
 }
 
 export const getProjects = (): Project[] => {
   const data = localStorage.getItem(STORAGE_KEY);
-
-  if (!data) {
-    return [];
-  }
-
+  if (!data) return [];
   try {
     const parsed: Project[] = JSON.parse(data);
-
     return parsed.map(normalizeProject);
   } catch {
     return [];
@@ -191,49 +151,110 @@ export const saveProjects = (projects: Project[]): void => {
     JSON.stringify(projects.map(normalizeProject))
   );
 
-  // Lets the Dashboard (and any other live view) know project data changed,
-  // without introducing a new store or altering any calculation.
   window.dispatchEvent(new Event("pmo:data-changed"));
 };
 
 export const addProject = (project: Project): void => {
   const projects = getProjects();
-
   projects.push(project);
-
   saveProjects(projects);
 };
 
-export const updateProject = (
-  updatedProject: Project
+export const updateProject = (updatedProject: Project): void => {
+  const projects = getProjects();
+  const updated = projects.map((project) =>
+    project.id === updatedProject.id ? updatedProject : project
+  );
+  saveProjects(updated);
+};
+
+/** Formal Project Completion Workflow function with portal-wide event synchronization */
+export const completeProject = (
+  id: string,
+  completionData: {
+    actualCompletionDate: string;
+    completionRemarks: string;
+    completedBy?: string;
+  }
 ): void => {
   const projects = getProjects();
+  const index = projects.findIndex((p) => p.id === id);
+  if (index === -1) return;
 
-  const updated = projects.map((project) =>
-    project.id === updatedProject.id
-      ? updatedProject
-      : project
+  const p = projects[index];
+  const completedBy = completionData.completedBy || "Administrator";
+  const timestamp = new Date().toISOString();
+
+  // 1. Create Project Note / Activity Timeline Entry matching ProjectNote interface
+  const completionNote: ProjectNote = {
+    id: `note-${Date.now()}`,
+    projectId: id,
+    message: `PROJECT COMPLETED\nCompletion Date: ${completionData.actualCompletionDate}\nCompleted By: ${completedBy}\nRemarks: ${completionData.completionRemarks}`,
+    createdBy: completedBy,
+    createdAt: timestamp,
+  };
+
+  const updatedNotes = Array.isArray(p.notes) ? [completionNote, ...p.notes] : [completionNote];
+
+  projects[index] = {
+    ...p,
+    projectStatus: "Completed",
+    actualCompletionDate: completionData.actualCompletionDate,
+    completionRemarks: completionData.completionRemarks,
+    completedBy,
+    completedTimestamp: timestamp,
+    notes: updatedNotes,
+  };
+
+  saveProjects(projects);
+
+  // 2. Dispatch persistent Event Notification for Dashboard & Notification Drawer
+  try {
+    notificationService.dispatchEvent({
+      ruleId: "PROJECT_COMPLETED",
+      version: 1,
+      title: `✅ Project Completed: ${p.prNo}`,
+      message: `PR ${p.prNo} (${p.projectTitle || "Project"}) marked as Completed on ${completionData.actualCompletionDate} by ${completedBy}.\nRemarks: ${completionData.completionRemarks}`,
+      category: "Success",
+      severity: "Info",
+      source: "Projects",
+      targetAudience: "Everyone",
+      deliveryChannels: ["InApp"],
+      projectId: p.id,
+      projectCode: p.prNo,
+      actionLabel: "View Project",
+      actionRoute: `/projects/view/${p.id}`,
+      timestamp: timestamp,
+    });
+  } catch (err) {
+    console.error("Failed to dispatch completion notification:", err);
+  }
+
+  // 3. Dispatch system events for reactive state update across all open views
+  window.dispatchEvent(
+    new CustomEvent("pmo:project-completed", {
+      detail: {
+        projectId: id,
+        prNo: p.prNo,
+        projectTitle: p.projectTitle,
+        actualCompletionDate: completionData.actualCompletionDate,
+        completionRemarks: completionData.completionRemarks,
+        completedBy,
+      },
+    })
   );
-
-  saveProjects(updated);
+  window.dispatchEvent(new Event("pmo:notifications-changed"));
+  window.dispatchEvent(new Event("pmo:data-changed"));
 };
 
 export const deleteProject = (id: string): void => {
   const projects = getProjects();
-
-  const filtered = projects.filter(
-    (project) => project.id !== id
-  );
-
+  const filtered = projects.filter((project) => project.id !== id);
   saveProjects(filtered);
 };
 
-export const getProjectById = (
-  id: string
-): Project | undefined => {
-  return getProjects().find(
-    (project) => project.id === id
-  );
+export const getProjectById = (id: string): Project | undefined => {
+  return getProjects().find((project) => project.id === id);
 };
 
 export const clearProjects = (): void => {

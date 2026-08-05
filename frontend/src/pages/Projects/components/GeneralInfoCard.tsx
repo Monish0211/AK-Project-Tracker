@@ -8,8 +8,10 @@ import { getApproxWorkingDays, getPlannedCompletionDate } from "../../../utils/p
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { Input } from "../../../components/ui/Input";
 import { Select } from "../../../components/ui/Select";
+import { ProjectCompletionModal } from "../../../components/Projects/ProjectCompletionModal";
 
 import { FieldError } from "../../../components/ui/FieldError";
+import { completeProject, getProjectById } from "../../../services/projectService";
 
 interface Props {
   project: Project;
@@ -216,6 +218,7 @@ const PmoCoordinatorAutocomplete = ({
 };
 
 const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props) => {
+  const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false);
   const clientDropdownRef = useRef<HTMLDivElement>(null);
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
   const [isOtherDepartment, setIsOtherDepartment] = useState(
@@ -518,11 +521,16 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
               data-field="projectStatus"
               value={project.projectStatus}
               onChange={(e) => {
-                setProject({
-                  ...project,
-                  projectStatus: e.target.value,
-                });
-                clearError?.("projectStatus");
+                const val = e.target.value;
+                if (val === "Completed" && project.projectStatus !== "Completed") {
+                  setIsCompletionModalOpen(true);
+                } else {
+                  setProject({
+                    ...project,
+                    projectStatus: val,
+                  });
+                  clearError?.("projectStatus");
+                }
               }}
               invalid={!!errors["projectStatus"]}
             >
@@ -564,6 +572,39 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
               }
             />
           </Field>
+
+          {project.projectStatus === "Completed" && (
+            <>
+              <Field label="Actual Completion Date">
+                <Input
+                  type="date"
+                  value={project.actualCompletionDate || ""}
+                  onChange={(e) =>
+                    setProject((prev) => ({
+                      ...prev,
+                      actualCompletionDate: e.target.value,
+                    }))
+                  }
+                />
+              </Field>
+
+              <div className="sm:col-span-2">
+                <FormLabel>Completion Remarks</FormLabel>
+                <textarea
+                  rows={2}
+                  value={project.completionRemarks || ""}
+                  onChange={(e) =>
+                    setProject((prev) => ({
+                      ...prev,
+                      completionRemarks: e.target.value,
+                    }))
+                  }
+                  placeholder="Formal completion notes..."
+                  className="w-full p-2.5 bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-xl text-xs text-[var(--nu-text)]"
+                />
+              </div>
+            </>
+          )}
         </CardBody>
       </Card>
 
@@ -762,6 +803,35 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
           </Field>
         </CardBody>
       </Card>
+
+      <ProjectCompletionModal
+        isOpen={isCompletionModalOpen}
+        projectTitle={project.projectTitle || "Untitled Project"}
+        prNo={project.prNo || "—"}
+        onConfirm={(data) => {
+          completeProject(project.id, {
+            actualCompletionDate: data.actualCompletionDate,
+            completionRemarks: data.completionRemarks,
+            completedBy: data.completedBy,
+          });
+          const updated = getProjectById(project.id);
+          if (updated) {
+            setProject(updated);
+          } else {
+            setProject((prev) => ({
+              ...prev,
+              projectStatus: "Completed",
+              actualCompletionDate: data.actualCompletionDate,
+              completionRemarks: data.completionRemarks,
+              completedBy: data.completedBy,
+              completedTimestamp: new Date().toISOString(),
+            }));
+          }
+          clearError?.("projectStatus");
+          setIsCompletionModalOpen(false);
+        }}
+        onCancel={() => setIsCompletionModalOpen(false)}
+      />
     </div>
   );
 };
