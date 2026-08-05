@@ -5,7 +5,7 @@ import type { ProjectNote } from "../../types/ProjectNote";
 import type { ProjectReminder } from "../../types/ProjectReminder";
 import { ProjectNoteCard } from "../Cards/ProjectNoteCard";
 import { groupNotesByDate } from "../../services/ProjectNotesService";
-import { updateProject } from "../../services/projectService";
+import { updateProject, getProjectById } from "../../services/projectService";
 import { reminderService } from "../../services/reminders/ReminderService";
 import { ReminderCard } from "../Cards/ReminderCard";
 import { ReminderForm } from "../../pages/Projects/components/workspace/ReminderForm";
@@ -48,16 +48,22 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
   }, [isOpen, project.id]);
 
   useEffect(() => {
-    const handleRemindersChange = () => {
+    const handleDataChange = () => {
       loadReminders();
+      const latest = getProjectById(project.id);
+      if (latest) {
+        setProject(latest);
+      }
     };
-    window.addEventListener("pmo:reminders-changed", handleRemindersChange);
-    window.addEventListener("pmo:data-changed", handleRemindersChange);
+    window.addEventListener("pmo:reminders-changed", handleDataChange);
+    window.addEventListener("pmo:data-changed", handleDataChange);
+    window.addEventListener("pmo:project-completed", handleDataChange);
     return () => {
-      window.removeEventListener("pmo:reminders-changed", handleRemindersChange);
-      window.removeEventListener("pmo:data-changed", handleRemindersChange);
+      window.removeEventListener("pmo:reminders-changed", handleDataChange);
+      window.removeEventListener("pmo:data-changed", handleDataChange);
+      window.removeEventListener("pmo:project-completed", handleDataChange);
     };
-  }, [project.id]);
+  }, [project.id, setProject]);
 
   const loadReminders = () => {
     setReminders(reminderService.getRemindersByProject(project.id));

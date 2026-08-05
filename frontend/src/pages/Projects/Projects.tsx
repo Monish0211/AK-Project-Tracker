@@ -710,6 +710,16 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                 <th onClick={() => toggleSort("projectStatus")} className="p-3 font-extrabold uppercase select-none text-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Project Status <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
+                {mode === "completed" && (
+                  <>
+                    <th onClick={() => toggleSort("actualCompletionDate")} className="p-3 font-extrabold uppercase select-none text-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
+                      Actual Completion Date <span className="sic"><ArrowUpDown size={8} /></span>
+                    </th>
+                    <th onClick={() => toggleSort("completedBy")} className="p-3 font-extrabold uppercase select-none text-left sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
+                      Completed By <span className="sic"><ArrowUpDown size={8} /></span>
+                    </th>
+                  </>
+                )}
                 <th onClick={() => toggleSort("invoiceStatus")} className="p-3 font-extrabold uppercase select-none text-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Invoice Status <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
@@ -765,6 +775,16 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                       <td className="p-3 text-center">
                         {renderProjectStatusBadge(p.projectStatus)}
                       </td>
+                      {mode === "completed" && (
+                        <>
+                          <td className="p-3 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400" title={p.completionRemarks}>
+                            {p.actualCompletionDate ? p.actualCompletionDate : p.projectEndDate || "—"}
+                          </td>
+                          <td className="p-3 font-semibold text-slate-700 dark:text-slate-300">
+                            {p.completedBy || "Administrator"}
+                          </td>
+                        </>
+                      )}
                       <td className="p-3 text-center">
                         {renderInvoiceStatusBadge(comm.invoiceStatus)}
                       </td>

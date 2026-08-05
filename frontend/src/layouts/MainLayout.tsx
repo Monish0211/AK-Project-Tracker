@@ -22,7 +22,7 @@ import CustomerMaster from "../pages/CustomerMaster/CustomerMaster";
 /* Other Modules */
 import Manpower from "../pages/Manpower/Manpower";
 import Timesheets from "../pages/Timesheets/Timesheets";
-import Reports from "../pages/Reports/Reports";
+import ReportsPage from "../pages/ReportsPage";
 import Settings from "../pages/Settings/Settings";
 
 const MainLayout = () => {
@@ -142,7 +142,7 @@ const MainLayout = () => {
 
               <Route
                 path="/reports"
-                element={<Reports />}
+                element={<ReportsPage />}
               />
 
               <Route

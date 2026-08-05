@@ -60,7 +60,10 @@ const PROJECTS_COLUMNS: ColumnDef[] = [
   { header: "Payment Received", key: "paymentReceived", width: 16, validationType: "number", align: "right" },
   { header: "Outstanding", key: "outstanding", width: 16, align: "right" },
   { header: "Start Date", key: "startDate", width: 14, validationType: "date", numFmt: "dd-mmm-yyyy" },
-  { header: "End Date", key: "endDate", width: 14, validationType: "date", numFmt: "dd-mmm-yyyy" },
+  { header: "Estimated End Date", key: "endDate", width: 14, validationType: "date", numFmt: "dd-mmm-yyyy" },
+  { header: "Actual Completion Date", key: "actualCompletionDate", width: 18, validationType: "date", numFmt: "dd-mmm-yyyy" },
+  { header: "Completed By", key: "completedBy", width: 18 },
+  { header: "Completion Remarks", key: "completionRemarks", width: 34 },
   { header: "Remarks", key: "remarks", width: 30 },
 ];
 
@@ -359,6 +362,9 @@ function projectToRow(p: Project) {
     outstanding: comm.pendingDue || 0,
     startDate: p.projectStartDate ? new Date(p.projectStartDate) : undefined,
     endDate: p.projectEndDate ? new Date(p.projectEndDate) : undefined,
+    actualCompletionDate: p.actualCompletionDate ? new Date(p.actualCompletionDate) : undefined,
+    completedBy: p.completedBy || "",
+    completionRemarks: p.completionRemarks || "",
     remarks: p.remarks || "",
   };
 }

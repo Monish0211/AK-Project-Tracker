@@ -9,8 +9,13 @@ const repository = new ClientNotificationRepository();
 const store = new NotificationStore(repository);
 const engine = new NotificationEngine(store);
 
-// Start the continuous rule evaluation engine
-engine.mount();
+// Start the continuous rule evaluation engine. Deferred to a microtask:
+// projectService.ts imports this module, and notificationEngine.ts imports
+// getProjects back from projectService.ts, so calling mount() synchronously
+// here would invoke getProjects() while projectService.ts is still mid-
+// evaluation (its own `var`-hoisted export not yet assigned), throwing
+// "getProjects is not a function" before React ever mounts.
+queueMicrotask(() => engine.mount());
 
 /**
  * Public facade for the Notification System.
