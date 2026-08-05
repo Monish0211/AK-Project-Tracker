@@ -29,6 +29,8 @@ import {
   getInvoiceWorkflowMode,
   getInvoiceMethod,
   getLumpSumMilestoneRows,
+  EDIT_INVOICE_STATUS_OPTIONS,
+  INVOICE_LINE_STATUS_LABEL,
   round,
   type InvoiceWorkflowMode,
   type LumpSumMilestoneRow,
@@ -109,7 +111,7 @@ export function RaiseInvoiceDrawer({
   const [invoiceDate, setInvoiceDate] = useState(existingLine?.invoiceDate ?? todayISODate());
   const [clientReference, setClientReference] = useState(existingLine?.clientReference ?? "");
   const [remarks, setRemarks] = useState(existingLine?.remarks ?? "");
-  const [status, setStatus] = useState<InvoiceLineStatus>(existingLine?.status ?? "Pending");
+  const [status, setStatus] = useState<InvoiceLineStatus>(existingLine?.status ?? "Raised");
 
   // Edit/View mode states
   const [editQtyInput, setEditQtyInput] = useState(
@@ -524,7 +526,7 @@ export function RaiseInvoiceDrawer({
             commercialAdjustmentINR: 0,
             clientReference: clientReference.trim() || undefined,
             remarks: remarks.trim() || undefined,
-            status: "Pending",
+            status: "Raised",
             createdBy: "Administrator",
           }))
       : createRows
@@ -543,7 +545,7 @@ export function RaiseInvoiceDrawer({
             commercialAdjustmentINR: row.commercialAdjustment,
             clientReference: clientReference.trim() || undefined,
             remarks: remarks.trim() || undefined,
-            status: "Pending",
+            status: "Raised",
             createdBy: "Administrator",
           }));
 
@@ -897,9 +899,11 @@ export function RaiseInvoiceDrawer({
                       className={disabledFieldClass}
                       onChange={(e) => setStatus(e.target.value as InvoiceLineStatus)}
                     >
-                      <option value="Pending">Pending</option>
-                      <option value="Paid">Paid</option>
-                      <option value="Cancelled">Cancelled</option>
+                      {EDIT_INVOICE_STATUS_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {INVOICE_LINE_STATUS_LABEL[option]}
+                        </option>
+                      ))}
                     </Select>
                   </div>
                 )}

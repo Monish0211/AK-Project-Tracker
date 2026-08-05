@@ -3,14 +3,18 @@ import type { Dispatch, SetStateAction } from "react";
 import { ListChecks } from "lucide-react";
 
 import type { Project } from "../../../../types/Project";
-import type { InvoiceItem, InvoiceLine } from "../../../../types/InvoiceItem";
+import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
 import { updateProject } from "../../../../services/projectService";
 
 import { CommercialSummary } from "./CommercialSummary";
 import { InvoiceSummaryPanel } from "./InvoiceSummaryPanel";
 import { ActivitiesTable } from "./ActivitiesTable";
 import { RaiseInvoiceDrawer } from "./RaiseInvoiceDrawer";
+import { RaiseInvoiceCycleModal } from "./RaiseInvoiceCycleModal";
+import { InvoiceWorkspaceModal } from "./InvoiceWorkspaceModal";
+import { LumpSumInvoiceWorkspaceModal } from "./LumpSumInvoiceWorkspaceModal";
 import { InvoiceHistory } from "./InvoiceHistory";
+import { PrintInvoiceModal } from "./PrintInvoiceModal";
 import { getInvoiceMethod, getInvoiceCyclesForProject, suggestNextInvoiceNumber } from "./InvoiceCalculations";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { Card, CardBody } from "../../../../components/ui/Card";
@@ -58,6 +62,17 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
 
   const [drawerState, setDrawerState] = useState<DrawerState | null>(null);
 
+  // The unified, project-wide "Raise Invoice" flow: ONE common button (in
+  // ActivitiesTable's header) opens the Invoice Cycle picker; choosing a
+  // cycle there opens the Invoice Workspace, which lists every activity in
+  // one Excel-style table. This replaces the old per-activity trigger —
+  // RaiseInvoiceDrawer below is now used only for viewing/editing a single
+  // already-saved invoice line from Invoice History.
+  const [isCycleModalOpen, setIsCycleModalOpen] = useState(false);
+  const [workspaceInvoiceNo, setWorkspaceInvoiceNo] = useState<string | null>(null);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [printInvoiceNo, setPrintInvoiceNo] = useState<string | null>(null);
+
   // The PROJECT-level Invoice Cycle currently selected on this page — the
   // single source of truth Lump Sum's Raise Invoice, Invoice Summary, and
   // (via the project-wide invoiceNo it resolves to) Invoice History all
@@ -100,9 +115,19 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
     setSelectedProjectCycle(suggestNextInvoiceNumber(project));
   };
 
-  const handleRaiseInvoice = (item: InvoiceItem) => {
+  const handleRaiseInvoice = () => {
     if (isReadOnly) return;
-    setDrawerState({ item, mode: "create" });
+    setIsCycleModalOpen(true);
+  };
+
+  const handleCycleContinue = (invoiceNo: string) => {
+    setIsCycleModalOpen(false);
+    setWorkspaceInvoiceNo(invoiceNo);
+  };
+
+  const handleWorkspaceSave = (updatedProject: Project) => {
+    persistProjectChange(updatedProject);
+    setWorkspaceInvoiceNo(null);
   };
 
   const handleViewInvoiceLine = (item: InvoiceItem, line: InvoiceLine) => {
@@ -143,16 +168,44 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
     });
   };
 
+  const handleUpdateInvoiceCycleStatus = (invoiceNo: string, newStatus: InvoiceLineStatus) => {
+    if (isReadOnly || !setProject) return;
+
+    const updatedItems = (project.invoiceItems ?? []).map((item) => {
+      const updatedLines = (item.invoices ?? []).map((line) => {
+        if (line.invoiceNo === invoiceNo) {
+          return { ...line, status: newStatus };
+        }
+        return line;
+      });
+      return { ...item, invoices: updatedLines };
+    });
+
+    persistProjectChange({
+      ...project,
+      invoiceItems: updatedItems,
+    });
+  };
+
   const handleSave = (updatedProject: Project) => {
     persistProjectChange(updatedProject);
     setDrawerState(null);
   };
 
+  // Shared by InvoiceSummaryPanel's "Print Invoice Document" button and
+  // InvoiceHistory's per-row Print action — the ONE way to open the
+  // isolated-iframe print pipeline (PrintInvoiceModal / printComponentElement).
+  // Never call window.print() directly from anywhere in this module.
+  const handlePrintInvoice = (invoiceNo: string) => {
+    setPrintInvoiceNo(invoiceNo);
+    setIsPrintModalOpen(true);
+  };
+
   // The drawer must never operate on the snapshot captured at click time —
   // re-resolve `item`/`existingLine` against the live `project` prop on
   // every render so the dialog reflects the same, single source of truth
-  // as the rest of the module (Activities table, Milestone Summary, Invoice
-  // History, KPI cards) rather than a frozen independent copy.
+  // as the rest of the module (Activities table, Invoice History, KPI
+  // cards) rather than a frozen independent copy.
   const activeItem = drawerState
     ? project.invoiceItems.find((invoiceItem) => invoiceItem.id === drawerState.item.id) ?? drawerState.item
     : null;
@@ -168,8 +221,40 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
         project={project}
         readOnly={isReadOnly}
         onRaiseInvoice={handleRaiseInvoice}
-        initialExpandedItemId={initialActivityId}
+        highlightItemId={initialActivityId}
       />
+
+      {isCycleModalOpen && (
+        <RaiseInvoiceCycleModal
+          project={project}
+          onClose={() => setIsCycleModalOpen(false)}
+          onContinue={handleCycleContinue}
+        />
+      )}
+
+      {/* Lump Sum bills against Payment Milestones (checklist, no quantity at
+          all); Invoice Line Items keeps its existing quantity/activity table
+          completely unchanged. Which modal renders is decided purely by
+          Invoice Method — never a UI redesign of the qty-based workspace. */}
+      {workspaceInvoiceNo && isLumpSum && (
+        <LumpSumInvoiceWorkspaceModal
+          key={workspaceInvoiceNo}
+          project={project}
+          invoiceNo={workspaceInvoiceNo}
+          onClose={() => setWorkspaceInvoiceNo(null)}
+          onSave={handleWorkspaceSave}
+        />
+      )}
+
+      {workspaceInvoiceNo && !isLumpSum && (
+        <InvoiceWorkspaceModal
+          key={workspaceInvoiceNo}
+          project={project}
+          invoiceNo={workspaceInvoiceNo}
+          onClose={() => setWorkspaceInvoiceNo(null)}
+          onSave={handleWorkspaceSave}
+        />
+      )}
 
       {/* Side-by-Side: Compact Invoice Summary (35%) + Invoice History (65%) with matching heights */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
@@ -180,6 +265,7 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
             selectedCycle={selectedProjectCycle}
             onSelectCycle={setSelectedProjectCycle}
             onCreateNewCycle={handleCreateNewProjectCycle}
+            onPrintInvoice={handlePrintInvoice}
           />
         </div>
         <div className="lg:col-span-8 xl:col-span-8 flex flex-col overflow-hidden min-w-0">
@@ -188,11 +274,23 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
             onView={handleViewInvoiceLine}
             onEdit={isReadOnly ? undefined : handleEditInvoiceLine}
             onDelete={isReadOnly ? undefined : handleDeleteInvoiceLine}
+            onUpdateInvoiceStatus={isReadOnly ? undefined : handleUpdateInvoiceCycleStatus}
+            onPrintInvoice={handlePrintInvoice}
             initialActivityFilter={initialActivityId}
             highlightLineId={initialInvoiceLineId}
           />
         </div>
       </div>
+
+      {/* Print Invoice Document Modal */}
+      {isPrintModalOpen && (
+        <PrintInvoiceModal
+          project={project}
+          setProject={setProject}
+          initialInvoiceNo={printInvoiceNo}
+          onClose={() => setIsPrintModalOpen(false)}
+        />
+      )}
 
       {/* create/edit are only ever triggered when not read-only (handlers guard above); view is safe either way. */}
       {drawerState && activeItem && (

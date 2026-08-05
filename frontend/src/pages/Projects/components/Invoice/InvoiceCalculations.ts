@@ -1,5 +1,6 @@
-import type { InvoiceItem, InvoiceLineStatus, InvoiceMethod } from "../../../../types/InvoiceItem";
+import type { InvoiceItem, InvoiceLine, InvoiceLineStatus, InvoiceMethod } from "../../../../types/InvoiceItem";
 import type { Project } from "../../../../types/Project";
+import type { Tone } from "../../../../components/ui/Badge";
 import {
   getInvoiceRaisedAmount,
   getInvoiceStatus,
@@ -75,29 +76,7 @@ export function getActivityRemainingQty(item: InvoiceItem, milestones: BillingMi
   return Math.max(round(item.qty - getActivityCompletedQty(item, milestones)), 0);
 }
 
-export function getBillingTypeLabel(project: Project): string {
-  return getMilestonesForProject(project).length > 0 ? "Qty + Milestone" : "Quantity";
-}
-
-export type MilestoneRowStatus = "completed" | "partial" | "pending";
-
-export interface MilestoneSummaryRow {
-  id: string;
-  label: string;
-  percent: number;
-  /** Qty ceiling for this milestone — always the full Contract Qty, since Qty Invoiced represents actual completed units, not a milestone-%-derived fraction. */
-  milestoneQty: number;
-  /** Sum of Quantity Consumed already invoiced against THIS milestone. */
-  qtyInvoiced: number;
-  /** milestoneQty − qtyInvoiced, floored at 0 — how much of this milestone's qty is still available to invoice. */
-  qtyAvailable: number;
-  milestoneValue: number;
-  alreadyInvoiced: number;
-  balance: number;
-  status: MilestoneRowStatus;
-}
-
-/** Milestone Value = Work Order Value × Milestone % — the ONE formula for this, shared by Milestone Summary, Raise Invoice, and Invoice History. Never re-derive this inline. */
+/** Milestone Value = Work Order Value × Milestone % — the ONE formula for this, shared by Raise Invoice and Invoice History. Never re-derive this inline. */
 export function getMilestoneValue(totalPrice: number, milestonePercent: number): number {
   return round(totalPrice * (milestonePercent / 100));
 }
@@ -173,54 +152,6 @@ export function getMilestoneQuantityState(
   const alreadyInvoiced = getPreviousBilledQtyForMilestone(item, milestoneId, excludeLineId);
   const available = Math.max(round(ceiling - alreadyInvoiced), 0);
   return { ceiling, alreadyInvoiced, available };
-}
-
-/**
- * One row per configured milestone for an activity.
- * Calculates Milestone Value = Contract Value × Milestone %
- * Calculates Already Invoiced = Sum of Invoice Amount INR for this milestone
- * Calculates Balance = Milestone Value - Already Invoiced
- * Calculates Qty Invoiced = Sum of Quantity Consumed for this milestone
- */
-export function getMilestoneSummaryForActivity(
-  item: InvoiceItem,
-  milestones: BillingMilestone[]
-): MilestoneSummaryRow[] {
-  const lines = Array.isArray(item.invoices) ? item.invoices : [];
-
-  return milestones.map((milestone) => {
-    const milestoneValue = getMilestoneValue(item.totalPrice, milestone.percent);
-    const alreadyInvoiced = round(
-      lines
-        .filter((line) => line.status !== "Cancelled" && line.milestoneId === milestone.id)
-        .reduce((sum, line) => sum + (line.invoiceAmountINR || 0), 0)
-    );
-    const balance = Math.max(round(milestoneValue - alreadyInvoiced), 0);
-    const { ceiling: milestoneQty, alreadyInvoiced: qtyInvoiced, available: qtyAvailable } = getMilestoneQuantityState(
-      item,
-      milestone.id
-    );
-
-    let status: MilestoneRowStatus = "pending";
-    if (alreadyInvoiced >= milestoneValue - 0.01 && milestoneValue > 0) {
-      status = "completed";
-    } else if (alreadyInvoiced > 0) {
-      status = "partial";
-    }
-
-    return {
-      id: milestone.id,
-      label: milestone.label,
-      percent: milestone.percent,
-      milestoneQty,
-      qtyInvoiced,
-      qtyAvailable,
-      milestoneValue,
-      alreadyInvoiced,
-      balance,
-      status,
-    };
-  });
 }
 
 export function getPreviousRaisedAmountForMilestone(
@@ -355,11 +286,136 @@ export function getLumpSumSummary(
   return { contractValue, alreadyInvoicedAmount, selectedAmount, currentTotalInvoiced, remainingAmount };
 }
 
+export interface ProjectLumpSumMilestoneRow {
+  id: string;
+  label: string;
+  percent: number;
+  /** Milestone % × the project's TOTAL Work Order Value (sum of every activity's totalPrice) — a project-wide amount, never a single activity's own totalPrice. */
+  invoiceAmount: number;
+  alreadyInvoiced: boolean;
+  /** The invoiceNo this milestone was already billed under, if any — undefined when not yet invoiced anywhere in the project. */
+  invoicedUnderInvoiceNo?: string;
+  /** "Invoice 1" / "Invoice 2" ... — the human label for invoicedUnderInvoiceNo. */
+  invoicedUnderCycleLabel?: string;
+}
+
+/**
+ * One row per Payment Milestone for the project-wide Lump Sum "Raise
+ * Invoice" checklist — the Lump Sum equivalent of the unified qty-based
+ * workspace's per-activity rows, but scoped to the whole project rather
+ * than one activity. A milestone can be billed EXACTLY ONCE across the
+ * project's entire lifetime, never per-cycle (unlike quantity billing):
+ * once ANY activity has a non-cancelled line referencing a milestone, it
+ * is locked everywhere except the very cycle it was billed under — the
+ * caller compares `invoicedUnderInvoiceNo` against whichever cycle is
+ * currently being composed to decide locked-vs-editable, exactly like
+ * reopening an existing cycle should let you review/undo what you already
+ * selected, not block you from your own invoice.
+ */
+export function getProjectLumpSumMilestoneRows(project: Project): ProjectLumpSumMilestoneRow[] {
+  const milestones = getMilestonesForProject(project);
+  const items = Array.isArray(project.invoiceItems) ? project.invoiceItems : [];
+  const totalWorkOrderValue = round(items.reduce((sum, item) => sum + (item.totalPrice || 0), 0));
+  const cycles = getInvoiceCyclesForProject(project);
+
+  return milestones.map((milestone) => {
+    let invoicedUnderInvoiceNo: string | undefined;
+    for (const item of items) {
+      const line = (Array.isArray(item.invoices) ? item.invoices : []).find(
+        (l) => l.milestoneId === milestone.id && l.status !== "Cancelled"
+      );
+      if (line) {
+        invoicedUnderInvoiceNo = line.invoiceNo;
+        break;
+      }
+    }
+    const invoicedCycle = invoicedUnderInvoiceNo ? cycles.find((c) => c.invoiceNo === invoicedUnderInvoiceNo) : undefined;
+
+    return {
+      id: milestone.id,
+      label: milestone.label,
+      percent: milestone.percent,
+      invoiceAmount: getMilestoneValue(totalWorkOrderValue, milestone.percent),
+      alreadyInvoiced: !!invoicedUnderInvoiceNo,
+      invoicedUnderInvoiceNo,
+      invoicedUnderCycleLabel: invoicedCycle?.label,
+    };
+  });
+}
+
+export interface GstBreakdown {
+  isApplicable: boolean;
+  ratePercent: number;
+  gstAmount: number;
+  grandTotal: number;
+}
+
+/**
+ * GST for a given base amount, read from the project's own Commercial
+ * Summary settings (`gstApplicable`/`gstRate`) — the same source of truth
+ * the Quantity module's own GST figure already uses (Doc: GST only ever
+ * applies when the project's billing currency is INR). Never a
+ * separately-configured toggle for the Lump Sum workspace.
+ */
+export function getGstBreakdown(project: Project, baseAmount: number): GstBreakdown {
+  const isApplicable = Boolean(project.gstApplicable) && (project.currency || "INR") === "INR";
+  const ratePercent = isApplicable ? project.gstRate || 18 : 0;
+  const gstAmount = isApplicable ? round(baseAmount * (ratePercent / 100)) : 0;
+  const grandTotal = round(baseAmount + gstAmount);
+  return { isApplicable, ratePercent, gstAmount, grandTotal };
+}
+
 export const INVOICE_LINE_STATUS_LABEL: Record<InvoiceLineStatus, string> = {
-  Pending: "Pending",
+  Draft: "Draft",
+  Raised: "Raised / Submitted",
+  PartiallyPaid: "Partially Paid",
   Paid: "Paid",
   Cancelled: "Cancelled",
 };
+
+/** Badge color per status — the single shared mapping for every screen that displays an Invoice Status (Raise Invoice, Edit Invoice, Invoice Summary, Invoice History, Invoice Cycle selector). */
+export const INVOICE_LINE_STATUS_TONE: Record<InvoiceLineStatus, Tone> = {
+  Draft: "neutral",
+  Raised: "info",
+  PartiallyPaid: "warning",
+  Paid: "success",
+  Cancelled: "danger",
+};
+
+/** Raise Invoice popup — an invoice cannot be (partially) paid the moment it's created. */
+export const RAISE_INVOICE_STATUS_OPTIONS: InvoiceLineStatus[] = ["Draft", "Raised", "Cancelled"];
+
+/** Edit Invoice — the full lifecycle, settable later once payment activity actually occurs. */
+export const EDIT_INVOICE_STATUS_OPTIONS: InvoiceLineStatus[] = ["Draft", "Raised", "PartiallyPaid", "Paid", "Cancelled"];
+
+/**
+ * The Invoice Cycle's own status — a single value representing every line
+ * saved under one invoiceNo (Invoice Summary card, Invoice History's group
+ * header, and the Invoice Cycle picker all show this same aggregate, never
+ * three independently-computed answers to "what state is this cycle in?").
+ * Cascades from most-to-least advanced so a cycle with mixed per-line
+ * statuses (e.g. one line edited to Paid while another is still Raised)
+ * still resolves to one deterministic answer:
+ *   all Cancelled → Cancelled; all (non-cancelled) Paid → Paid; any
+ *   Paid/PartiallyPaid → PartiallyPaid; any Raised → Raised; else Draft.
+ */
+export function getInvoiceCycleStatus(project: Project, invoiceNo: string): InvoiceLineStatus {
+  const statuses: InvoiceLineStatus[] = [];
+  (Array.isArray(project.invoiceItems) ? project.invoiceItems : []).forEach((item) => {
+    (Array.isArray(item.invoices) ? item.invoices : []).forEach((line) => {
+      if (line.invoiceNo === invoiceNo) statuses.push(line.status);
+    });
+  });
+
+  if (statuses.length === 0) return "Draft";
+
+  const active = statuses.filter((status) => status !== "Cancelled");
+  if (active.length === 0) return "Cancelled";
+  if (active.every((status) => status === "Paid")) return "Paid";
+  if (active.some((status) => status === "Paid" || status === "PartiallyPaid")) return "PartiallyPaid";
+  if (active.some((status) => status === "Raised")) return "Raised";
+  return "Draft";
+}
 
 /** Every distinct, non-cancelled invoiceNo used anywhere in the project — one entry per Invoice Cycle, regardless of how many activities or milestone lines share it. */
 function getDistinctInvoiceCycleNumbers(project: Project): string[] {
@@ -443,6 +499,113 @@ export function getInvoiceCyclesForProject(project: Project): InvoiceCycleOption
   return options;
 }
 
+export interface CumulativeProgress {
+  contractQty: number;
+  completedQty: number;
+  remainingQty: number;
+  uom: string;
+  progressPercent: number;
+}
+
+/**
+ * Cumulative Activities Billing progress — Completed Qty is ALWAYS the sum
+ * of quantityBilled across every non-cancelled invoice ever saved against
+ * this activity (Invoice 1 + Invoice 2 + Invoice 3 + ...), regardless of
+ * whether the project also has payment milestones configured elsewhere.
+ *
+ * This is deliberately different from getActivityCompletedQty/
+ * calculateExecutionProgress above, which take the MAX across lines when
+ * milestones exist — correct ONLY for the legacy per-milestone billing
+ * ledger (still used by RaiseInvoiceDrawer's individual View/Edit-line flow,
+ * where Draft/Final/Closure legitimately re-attest the SAME completed work
+ * at each payment stage, so summing them would triple-count it). The
+ * unified, project-wide "+ Raise Invoice" workflow (Activities Billing →
+ * Invoice Cycle picker → Invoice Workspace) never references milestones per
+ * line at all — every saved line there is a distinct chunk of quantity, so
+ * Activities Billing must always read Completed Qty as a plain running
+ * total across every cycle, exactly like an ERP roll-up (Doc: 300 + 300 +
+ * 150 = 750, never overwritten by the latest invoice alone).
+ */
+export function calculateCumulativeProgress(item: InvoiceItem): CumulativeProgress {
+  const lines = Array.isArray(item.invoices) ? item.invoices : [];
+  const completedQty = round(
+    lines.filter((line) => line.status !== "Cancelled").reduce((sum, line) => sum + (line.quantityBilled || 0), 0)
+  );
+  const remainingQty = Math.max(round(item.qty - completedQty), 0);
+  const progressPercent = item.qty > 0 ? Math.min(round((completedQty / item.qty) * 100), 100) : 0;
+  return { contractQty: item.qty, completedQty, remainingQty, uom: item.uom, progressPercent };
+}
+
+/**
+ * Sum of quantityBilled across every non-cancelled line for this activity,
+ * across every OTHER invoice cycle — never the cycle currently being
+ * composed. This is the "Already Raised Qty" figure for the unified,
+ * project-wide Raise Invoice workspace (one common button → one Excel-style
+ * table covering every activity at once). Unlike getActivityCompletedQty
+ * above (which takes the MAX across milestone-billed lines, since the same
+ * completed work is legitimately re-attested at each payment stage), the
+ * unified workspace never references milestones at all — every line it
+ * writes represents a distinct chunk of quantity, so a plain SUM is correct
+ * here regardless of whether this project also has payment milestones
+ * configured elsewhere.
+ */
+export function getActivityRaisedQtyExcludingCycle(item: InvoiceItem, invoiceNo: string): number {
+  const lines = Array.isArray(item.invoices) ? item.invoices : [];
+  return round(
+    lines
+      .filter((line) => line.status !== "Cancelled" && line.invoiceNo !== invoiceNo)
+      .reduce((sum, line) => sum + (line.quantityBilled || 0), 0)
+  );
+}
+
+/**
+ * The single line (if any) this activity already has under the given cycle.
+ * The unified workspace keeps at most one line per (activity, cycle) pair —
+ * reopening a cycle re-populates its existing Current Invoice Qty for
+ * editing rather than ever creating a second, duplicate line for the same
+ * activity in the same cycle.
+ */
+export function getActivityLineForCycle(item: InvoiceItem, invoiceNo: string): InvoiceLine | undefined {
+  const lines = Array.isArray(item.invoices) ? item.invoices : [];
+  return lines.find((line) => line.invoiceNo === invoiceNo && line.status !== "Cancelled");
+}
+
+export interface InvoiceCycleListRow extends InvoiceCycleOption {
+  totalAmount: number;
+  activitiesIncluded: number;
+  status: InvoiceLineStatus;
+}
+
+/**
+ * Every Invoice Cycle in the project (plus the trailing "new cycle" option),
+ * each carrying its total billed amount, activity count, and aggregate
+ * Invoice Status (getInvoiceCycleStatus) — the data source for the common
+ * "Raise Invoice" cycle-picker popup (Select Invoice Cycle → Continue →
+ * Invoice Workspace).
+ */
+export function getInvoiceCycleListForRaise(project: Project): InvoiceCycleListRow[] {
+  const cycles = getInvoiceCyclesForProject(project);
+  const items = Array.isArray(project.invoiceItems) ? project.invoiceItems : [];
+
+  return cycles.map((cycle) => {
+    const activityIds = new Set<string>();
+    let totalAmount = 0;
+    items.forEach((item) => {
+      (Array.isArray(item.invoices) ? item.invoices : []).forEach((line) => {
+        if (line.invoiceNo !== cycle.invoiceNo || line.status === "Cancelled") return;
+        activityIds.add(item.id);
+        totalAmount += line.invoiceAmountINR;
+      });
+    });
+    return {
+      ...cycle,
+      totalAmount: round(totalAmount),
+      activitiesIncluded: activityIds.size,
+      status: getInvoiceCycleStatus(project, cycle.invoiceNo),
+    };
+  });
+}
+
 export interface InvoiceCycleTotals {
   systemTotal: number;
   finalInvoiceAmount: number;
@@ -509,15 +672,17 @@ export { getInvoiceRaisedAmount };
 // Invoice Calculation Service — Public API
 // =============================================================================
 // Every screen in the Invoice module (Activities Billing, Raise Invoice,
-// Milestone Summary, Invoice History, KPI Cards) must read its figures from
-// one of the functions below rather than composing the primitives above
-// itself. This is the single entry point the architecture is built around:
-//   - Quantity Progress (Contract/Completed/Remaining Qty) → always derived
-//     from persisted invoice records (getActivityCompletedQty) — never a
-//     separate progress engine, never derived from Milestone Summary or
-//     temporary UI state → calculateExecutionProgress.
-//   - Payments Module data (milestone description/%/sequence) × Invoice
-//     History → calculateMilestoneFinancials.
+// Invoice History, KPI Cards) must read its figures from one of the
+// functions below rather than composing the primitives above itself. This
+// is the single entry point the architecture is built around:
+//   - Cumulative Activities Billing progress (Order/Completed/Remaining
+//     Qty) → always the sum of every non-cancelled invoice ever raised for
+//     an activity, never overwritten by whichever invoice was saved most
+//     recently → calculateCumulativeProgress (Quantity-Based Billing only —
+//     Activities Billing no longer has a milestone concept at all).
+//   - The legacy per-milestone execution/ledger figures, still used only by
+//     RaiseInvoiceDrawer's individual View/Edit-line flow → getActivityCompletedQty /
+//     calculateExecutionProgress.
 //   - Project-level KPIs (Invoice Raised, Balance, Outstanding, Payment
 //     Received) → calculateProjectKPIs.
 //   - Per-activity invoice status → calculateInvoiceStatus.
@@ -545,23 +710,6 @@ export function calculateExecutionProgress(project: Project, item: InvoiceItem):
   const remainingQty = getActivityRemainingQty(item, milestones);
   const progressPercent = item.qty > 0 ? Math.min(round((completedQty / item.qty) * 100), 100) : 0;
   return { contractQty: item.qty, completedQty, remainingQty, uom: item.uom, progressPercent };
-}
-
-export interface MilestoneFinancials {
-  workflowMode: InvoiceWorkflowMode;
-  milestones: MilestoneSummaryRow[];
-}
-
-/**
- * Payments Module milestone definitions (description/%/sequence) combined
- * with Invoice History → the full per-milestone financial picture and the
- * billing-mode classification that decides the Raise Invoice layout. Single
- * source of truth for Milestone Summary, the Raise Invoice dialog, and
- * Invoice History's milestone display.
- */
-export function calculateMilestoneFinancials(project: Project, item: InvoiceItem): MilestoneFinancials {
-  const milestones = getMilestonesForProject(project);
-  return { workflowMode: getInvoiceWorkflowMode(milestones), milestones: getMilestoneSummaryForActivity(item, milestones) };
 }
 
 /**

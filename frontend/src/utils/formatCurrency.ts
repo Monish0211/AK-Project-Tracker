@@ -11,6 +11,10 @@ export const formatCompactINR = (value: number): string => {
   return `₹${value.toLocaleString("en-IN")}`;
 };
 
+/** Full Indian-grouped rupee amount, always exactly 2 decimal places (e.g. ₹ 14,10,024.55) — for tables that must show the exact billed value rather than a compact Cr/L rounding. */
+export const formatIndianCurrency = (value: number): string =>
+  `₹ ${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 /** Indian business notation (Cr, L, K) with max 2 decimals, removing trailing zeros. */
 export const formatBusinessINR = (value: number): string => {
   const abs = Math.abs(value);

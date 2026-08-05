@@ -910,7 +910,7 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
         description: "Imported invoice total (Excel import)",
         quantityBilled: 0,
         invoiceAmountINR: invoiceRaisedINR,
-        status: "Pending",
+        status: "Raised",
         createdBy: "Excel Import",
       });
     }

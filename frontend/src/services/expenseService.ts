@@ -39,10 +39,13 @@ export function getTotalNonManhourCost(
     return 0;
   }
 
-  return expenses.reduce(
-    (total, expense) => total + expense.totalCost,
-    0
-  );
+  return expenses.reduce((total, expense) => {
+    const rowTotal =
+      typeof expense.totalCost === "number" && !isNaN(expense.totalCost)
+        ? expense.totalCost
+        : (expense.quantity || 0) * (expense.unitCost || 0);
+    return total + rowTotal;
+  }, 0);
 }
 
 export function getTotalProjectCost(

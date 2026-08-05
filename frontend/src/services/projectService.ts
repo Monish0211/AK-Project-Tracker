@@ -1,10 +1,20 @@
 import type { Project } from "../types/Project";
-import type { InvoiceLine } from "../types/InvoiceItem";
+import type { InvoiceLine, InvoiceLineStatus } from "../types/InvoiceItem";
 import { createEmptyProject, inferPrCategory, inferDomesticForeign } from "../utils/createEmptyProject";
 import { calculateQuantity } from "../utils/quantityCalculations";
 import { syncInvoiceItemsWithQuantity } from "./invoiceSyncService";
 
 const STORAGE_KEY = "projects";
+
+const VALID_INVOICE_LINE_STATUSES: InvoiceLineStatus[] = ["Draft", "Raised", "PartiallyPaid", "Paid", "Cancelled"];
+
+/** Legacy persisted data (pre-5-status model) used "Pending" to mean "raised, awaiting payment" — the closest equivalent under the current model is "Raised". Anything else unrecognized also falls back to "Raised" rather than silently producing an invalid enum value. */
+function normalizeInvoiceLineStatus(value: unknown): InvoiceLineStatus {
+  if (typeof value === "string" && (VALID_INVOICE_LINE_STATUSES as string[]).includes(value)) {
+    return value as InvoiceLineStatus;
+  }
+  return "Raised";
+}
 
 export function normalizeProject(project: Project): Project {
   const defaults = createEmptyProject();
@@ -130,7 +140,7 @@ export function normalizeProject(project: Project): Project {
         commercialAdjustmentINR: typeof invoice.commercialAdjustmentINR === "number" ? invoice.commercialAdjustmentINR : undefined,
         clientReference: invoice.clientReference,
         remarks: invoice.remarks,
-        status: invoice.status === "Paid" || invoice.status === "Cancelled" ? invoice.status : "Pending",
+        status: normalizeInvoiceLineStatus(invoice.status),
         createdBy: invoice.createdBy || "Administrator",
       })),
     })),

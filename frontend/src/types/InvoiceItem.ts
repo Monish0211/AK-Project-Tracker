@@ -8,7 +8,24 @@
  * When absent, `description` carries the free-text billing reason instead
  * (a completed deliverable, a manual billing stage, etc).
  */
-export type InvoiceLineStatus = "Pending" | "Paid" | "Cancelled";
+/**
+ * Values are stable, backend-friendly identifiers (no spaces/slashes) meant
+ * to map 1:1 onto a future `invoiceStatus` database column — display labels
+ * (e.g. "Raised" → "Raised / Submitted") live separately in
+ * INVOICE_LINE_STATUS_LABEL (InvoiceCalculations.ts), never inline in the
+ * enum itself.
+ *
+ * Draft — being prepared, not yet submitted to the client.
+ * Raised — submitted/issued to the client, awaiting payment.
+ * PartiallyPaid — some but not all of the invoiced amount has been received.
+ * Paid — fully settled.
+ * Cancelled — voided, excluded from every raised/outstanding total.
+ *
+ * The Raise Invoice popup only ever offers Draft/Raised/Cancelled — an
+ * invoice cannot be (partially) paid the moment it's created. PartiallyPaid
+ * and Paid are only reachable later, via Edit Invoice.
+ */
+export type InvoiceLineStatus = "Draft" | "Raised" | "PartiallyPaid" | "Paid" | "Cancelled";
 
 /**
  * Project-wide switch for how invoices are raised. "lump_sum" bills purely

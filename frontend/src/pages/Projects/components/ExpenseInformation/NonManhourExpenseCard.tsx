@@ -7,6 +7,7 @@ import type { NonManhourExpense } from "../../../../types/NonManhourExpense";
 
 import {
   calculateNonManhourCost,
+  getTotalNonManhourCost,
 } from "../../../../services/expenseService";
 import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
 
@@ -19,15 +20,15 @@ interface Props {
 }
 
 const NonManhourExpenseCard = ({ project, setProject }: Props) => {
-  const expenses = project.nonManhourExpenses;
+  const expenses = project.nonManhourExpenses || [];
 
   const [showModal, setShowModal] = useState(false);
 
   const [editingExpense, setEditingExpense] =
     useState<NonManhourExpense | null>(null);
 
-  // Total Other Expenses = Non Man-Hour Budget Amount (planned budget)
-  const totalOtherExpenses = project.nonManhourBudgetAmount || 0;
+  // Total Other Expenses = SUM(expense.totalCost)
+  const totalOtherExpenses = getTotalNonManhourCost(expenses);
 
   const handleAddClick = () => {
     setEditingExpense(null);
