@@ -5,6 +5,7 @@ import type { InvoiceItem, InvoiceMethod } from "./InvoiceItem";
 import type { QuantityRevision } from "./QuantityRevision";
 import type { ProjectNote } from "./ProjectNote";
 import type { TimesheetImportMonth } from "./Timesheet";
+import type { InvoiceDocumentDetails } from "./InvoiceDocument";
 
 export interface Project {
   id: string;
@@ -187,6 +188,7 @@ nonManhourExpenses: NonManhourExpense[];
   updatedAt?: string;
 
   notes?: ProjectNote[];
+  invoiceDocumentDetailsMap?: Record<string, InvoiceDocumentDetails>;
 }
 
 export interface ProjectResource {

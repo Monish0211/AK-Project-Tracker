@@ -244,7 +244,7 @@ export const getInvoiceCollectionDue = (): InvoiceCollectionBucket[] => {
         // Outstanding = raised but not yet collected — excludes Paid (already
         // collected) and Cancelled (never billed) lines, same definition
         // getOutstandingCollection() uses project-wide.
-        if (invoice.status !== "Pending") return;
+        if (invoice.status !== "Raised" && invoice.status !== "PartiallyPaid") return;
         if (!invoice.invoiceDate) return;
 
         const invoiceDate = new Date(invoice.invoiceDate);
@@ -320,7 +320,7 @@ export const getInvoiceReceivables = (): InvoiceReceivable[] => {
 
     (project.invoiceItems || []).forEach((item) => {
       (item.invoices || []).forEach((invoice) => {
-        if (invoice.status !== "Pending") return;
+        if (invoice.status !== "Raised" && invoice.status !== "PartiallyPaid") return;
         if (!invoice.invoiceDate) return;
 
         const invoiceDate = new Date(invoice.invoiceDate);

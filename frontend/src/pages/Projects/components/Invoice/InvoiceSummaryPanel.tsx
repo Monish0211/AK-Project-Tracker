@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Receipt, Plus } from "lucide-react";
+import { Receipt, Plus, Printer } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
 import { Card, CardHeader, CardBody } from "../../../../components/ui/Card";
@@ -9,7 +9,12 @@ import { Badge, type Tone } from "../../../../components/ui/Badge";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { MoneyValue, MoneyTooltip } from "../../../../components/ui/MoneyTooltip";
 import { formatBusinessINR } from "../../../../utils/formatCurrency";
-import { getInvoiceCyclesForProject } from "./InvoiceCalculations";
+import {
+  getInvoiceCyclesForProject,
+  getInvoiceCycleStatus,
+  INVOICE_LINE_STATUS_LABEL,
+  INVOICE_LINE_STATUS_TONE,
+} from "./InvoiceCalculations";
 
 interface Props {
   project: Project;
@@ -27,13 +32,11 @@ interface Props {
   onSelectCycle: (value: string) => void;
   /** Lump Sum only — advances `selectedCycle` to the next unused project-wide cycle number. */
   onCreateNewCycle: () => void;
+  /** Callback to trigger Print Invoice Document modal. */
+  onPrintInvoice?: (invoiceNo: string) => void;
 }
 
-const STATUS_BADGE: Record<InvoiceLineStatus, Tone> = {
-  Pending: "warning",
-  Paid: "success",
-  Cancelled: "danger",
-};
+const STATUS_BADGE: Record<InvoiceLineStatus, Tone> = INVOICE_LINE_STATUS_TONE;
 
 const formatDate = (value: string): string => {
   if (!value) return "—";
@@ -46,7 +49,7 @@ const formatDate = (value: string): string => {
  * Compact rectangular Invoice Summary Card — lives side by side with Invoice History.
  * Summarizes ONLY the selected invoice cycle with tight spacing and clean alignment.
  */
-export function InvoiceSummaryPanel({ project, isLumpSum, selectedCycle, onSelectCycle, onCreateNewCycle }: Props) {
+export function InvoiceSummaryPanel({ project, isLumpSum, selectedCycle, onSelectCycle, onCreateNewCycle, onPrintInvoice }: Props) {
   const cycleOptions = useMemo(() => {
     return getInvoiceCyclesForProject(project).filter((opt) => !opt.isNew);
   }, [project]);
@@ -101,12 +104,13 @@ export function InvoiceSummaryPanel({ project, isLumpSum, selectedCycle, onSelec
     return selectedCycleOption?.invoiceDate ?? "";
   }, [activeLines, selectedCycleOption]);
 
-  const invoiceStatus = useMemo<InvoiceLineStatus>(() => {
-    if (activeLines.length === 0) return "Pending";
-    const allPaid = activeLines.every((l) => l.line.status === "Paid");
-    if (allPaid) return "Paid";
-    return "Pending";
-  }, [activeLines]);
+  // The cycle's own aggregate status — the exact same figure Invoice
+  // History's group header and the Raise Invoice Cycle picker show, never a
+  // separately-computed answer.
+  const invoiceStatus = useMemo<InvoiceLineStatus>(
+    () => getInvoiceCycleStatus(project, activeInvoiceNo),
+    [project, activeInvoiceNo]
+  );
 
   const invoiceTotal = useMemo(() => {
     return activeLines.reduce((sum, l) => sum + (l.line.calculatedAmountINR ?? l.line.invoiceAmountINR), 0);
@@ -206,8 +210,8 @@ export function InvoiceSummaryPanel({ project, isLumpSum, selectedCycle, onSelec
 
             <div className="flex items-center justify-between border-t border-[var(--nu-border)]/60 pt-1.5">
               <span className="text-[11px] font-bold text-[var(--nu-text-muted)]">Status</span>
-              <Badge tone={STATUS_BADGE[invoiceStatus]} dot className="text-[10.5px]">
-                {invoiceStatus === "Paid" ? "Completed" : invoiceStatus}
+              <Badge tone={STATUS_BADGE[invoiceStatus]} dot className="text-[10.5px] whitespace-nowrap">
+                {INVOICE_LINE_STATUS_LABEL[invoiceStatus]}
               </Badge>
             </div>
 
@@ -258,6 +262,22 @@ export function InvoiceSummaryPanel({ project, isLumpSum, selectedCycle, onSelec
             </span>
           </div>
         </div>
+
+        {/* Print Invoice Action Button */}
+        <button
+          type="button"
+          disabled={invoiceStatus !== "Paid" && invoiceStatus !== "Raised"}
+          onClick={() => onPrintInvoice?.(activeInvoiceNo)}
+          className="w-full flex items-center justify-center gap-2 bg-[var(--nu-accent)] hover:opacity-90 text-white font-bold text-xs py-2.5 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed mt-2"
+          title={
+            invoiceStatus === "Paid" || invoiceStatus === "Raised"
+              ? "Generate official printable tax invoice document"
+              : "Print Invoice is only enabled for Paid or Raised / Submitted invoices"
+          }
+        >
+          <Printer size={15} />
+          <span>Print Invoice Document</span>
+        </button>
       </CardBody>
     </Card>
   );
