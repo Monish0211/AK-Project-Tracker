@@ -59,6 +59,9 @@ export interface InvoiceDocumentLineItem {
   // Lump Sum Billing only — never populated for a Quantity Billing document.
   milestonePercent?: number;
 
+  // MLMP Billing only — "SET 1", "PACKAGE 3", etc — never populated for any other method.
+  setLabel?: string;
+
   amountINR: number;
 }
 

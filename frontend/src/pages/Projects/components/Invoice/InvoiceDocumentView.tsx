@@ -9,11 +9,28 @@ interface Props {
 export function InvoiceDocumentView({ document }: Props) {
   const d = document;
   const isLumpSumDocument = d.billingMethod === "lump_sum";
+  const isMlmpDocument = d.billingMethod === "mlmp";
+  const isAmountBasedDocument = d.billingMethod === "amount_based";
+  // Lump Sum and MLMP both show Milestone % instead of the Quantity table's
+  // HSN/SAC, GST %, Basic Unit Rate, UOM, Quantity columns — there is no
+  // quantity in either milestone-based billing method. MLMP additionally
+  // gets its own SET column. Amount Based has neither a milestone % NOR any
+  // qty/rate concept — just Particulars + Amount.
+  const isMilestoneDocument = isLumpSumDocument || isMlmpDocument;
   // How many leading columns (SI No. + Particulars + whatever comes before
   // Amount) the GST Output/Total rows must colSpan across — Lump Sum's line
-  // table only ever has 3 (SI, Particulars, Milestone %), never the
-  // Quantity table's 5/7, regardless of GST applicability.
-  const leadingColumnCount = isLumpSumDocument ? 3 : d.isGstApplicable ? 7 : 5;
+  // table only ever has 3 (SI, Particulars, Milestone %), MLMP has 4 (+SET),
+  // Amount Based has 2 (SI, Particulars only), never the Quantity table's
+  // 5/7, regardless of GST applicability.
+  const leadingColumnCount = isLumpSumDocument
+    ? 3
+    : isMlmpDocument
+    ? 4
+    : isAmountBasedDocument
+    ? 2
+    : d.isGstApplicable
+    ? 7
+    : 5;
 
   return (
     <div className="invoice-document-root bg-white text-black p-4 sm:p-5 font-sans max-w-4xl mx-auto border border-gray-300 shadow-lg print:shadow-none print:border-none print:p-0 print:m-0 print:max-w-none print:w-full">
@@ -130,16 +147,19 @@ export function InvoiceDocumentView({ document }: Props) {
             <tr className="border-b border-black bg-gray-50 text-center font-bold text-[10px]">
               <th className="border-r border-black p-1 w-7">SI No.</th>
               <th className="border-r border-black p-1 text-left min-w-[180px]">Particulars</th>
-              {isLumpSumDocument ? (
-                <th className="border-r border-black p-1 w-16">Milestone %</th>
-              ) : (
-                <>
-                  {d.isGstApplicable && <th className="border-r border-black p-1 w-14">HSN/SAC</th>}
-                  {d.isGstApplicable && <th className="border-r border-black p-1 w-12">GST %</th>}
-                  <th className="border-r border-black p-1 text-right w-24">Basic Unit Rate in INR</th>
-                  <th className="border-r border-black p-1 w-14">UOM</th>
-                  <th className="border-r border-black p-1 text-center w-16">Quantity</th>
-                </>
+              {isMlmpDocument && <th className="border-r border-black p-1 w-16">SET</th>}
+              {!isAmountBasedDocument && (
+                isMilestoneDocument ? (
+                  <th className="border-r border-black p-1 w-16">Milestone %</th>
+                ) : (
+                  <>
+                    {d.isGstApplicable && <th className="border-r border-black p-1 w-14">HSN/SAC</th>}
+                    {d.isGstApplicable && <th className="border-r border-black p-1 w-12">GST %</th>}
+                    <th className="border-r border-black p-1 text-right w-24">Basic Unit Rate in INR</th>
+                    <th className="border-r border-black p-1 w-14">UOM</th>
+                    <th className="border-r border-black p-1 text-center w-16">Quantity</th>
+                  </>
+                )
               )}
               <th className="p-1 text-right w-24">Amount</th>
             </tr>
@@ -154,16 +174,21 @@ export function InvoiceDocumentView({ document }: Props) {
                     <p className="text-[9.5px] text-gray-600 italic mt-0.5">{item.descriptionNotes}</p>
                   )}
                 </td>
-                {isLumpSumDocument ? (
-                  <td className="border-r border-black p-1.5 text-center font-semibold">{item.milestonePercent}%</td>
-                ) : (
-                  <>
-                    {d.isGstApplicable && <td className="border-r border-black p-1.5 text-center font-mono">{item.hsnSac}</td>}
-                    {d.isGstApplicable && <td className="border-r border-black p-1.5 text-center">{item.gstRatePercent}%</td>}
-                    <td className="border-r border-black p-1.5 text-right font-mono">{formatFullINR(item.basicUnitRateINR ?? 0)}</td>
-                    <td className="border-r border-black p-1.5 text-center">{item.uom}</td>
-                    <td className="border-r border-black p-1.5 text-center font-semibold">{formatIndianNumber(item.quantity ?? 0)}</td>
-                  </>
+                {isMlmpDocument && (
+                  <td className="border-r border-black p-1.5 text-center font-semibold whitespace-nowrap">{item.setLabel}</td>
+                )}
+                {!isAmountBasedDocument && (
+                  isMilestoneDocument ? (
+                    <td className="border-r border-black p-1.5 text-center font-semibold">{item.milestonePercent}%</td>
+                  ) : (
+                    <>
+                      {d.isGstApplicable && <td className="border-r border-black p-1.5 text-center font-mono">{item.hsnSac}</td>}
+                      {d.isGstApplicable && <td className="border-r border-black p-1.5 text-center">{item.gstRatePercent}%</td>}
+                      <td className="border-r border-black p-1.5 text-right font-mono">{formatFullINR(item.basicUnitRateINR ?? 0)}</td>
+                      <td className="border-r border-black p-1.5 text-center">{item.uom}</td>
+                      <td className="border-r border-black p-1.5 text-center font-semibold">{formatIndianNumber(item.quantity ?? 0)}</td>
+                    </>
+                  )
                 )}
                 <td className="p-1.5 text-right font-bold font-mono">{formatFullINR(item.amountINR)}</td>
               </tr>

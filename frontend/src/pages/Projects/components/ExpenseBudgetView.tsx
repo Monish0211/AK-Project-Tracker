@@ -5,6 +5,7 @@ import {
   PiggyBank,
   Calculator,
   TrendingUp,
+  TrendingDown,
   Gauge,
   ArrowUpRight,
   CheckCircle2,
@@ -19,7 +20,7 @@ import {
 import type { Project } from "../../../types/Project";
 import InfoField from "./InfoField";
 import InfoSection from "./InfoSection";
-import { StatTile } from "../../../components/ui/StatTile";
+import { StatTile, type StatTileTint } from "../../../components/ui/StatTile";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
@@ -196,6 +197,16 @@ export default function ExpenseBudgetView({ project }: Props) {
   const totalProjectBudget = analysis.plannedTotalBudget;
   const totalProjectCost   = analysis.approvedBudget;
 
+  // Project Profit = Total Project Budget − Total Project Cost — recomputed on
+  // every render, so it always tracks Man-Hour/Non Man-Hour Budget, Total
+  // Project Cost, and Total Project Budget live, with no manual input.
+  const projectProfit = totalProjectBudget - totalProjectCost;
+  const projectProfitPercent = totalProjectBudget > 0 ? (projectProfit / totalProjectBudget) * 100 : 0;
+  const profitTint: StatTileTint = projectProfit > 0 ? "success" : projectProfit < 0 ? "danger" : "accent";
+  const profitPercentTone: "success" | "danger" | "neutral" = projectProfit > 0 ? "success" : projectProfit < 0 ? "danger" : "neutral";
+  const profitPercentLabel = `${projectProfitPercent >= 0 ? "" : "-"}${Math.abs(projectProfitPercent).toFixed(0)}% ${projectProfit >= 0 ? "Profit" : "Loss"}`;
+  const ProfitIcon = projectProfit < 0 ? TrendingDown : TrendingUp;
+
   /* ── Execution Analysis rows ─────────────────────────────────────
      Each row now carries:
        • label   — bold row title
@@ -296,6 +307,7 @@ export default function ExpenseBudgetView({ project }: Props) {
         .eb-kpi-2 { transition-delay:110ms; }
         .eb-kpi-3 { transition-delay:180ms; }
         .eb-kpi-4 { transition-delay:250ms; }
+        .eb-kpi-5 { transition-delay:320ms; }
 
         .nu-table-row:hover td { background:var(--nu-surface-alt); transition:background 180ms ease; }
       `}} />
@@ -306,11 +318,22 @@ export default function ExpenseBudgetView({ project }: Props) {
         subtitle="Approved budget baseline for this project."
         icon={<PiggyBank size={16} />}
       >
-        <div className="col-span-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="col-span-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
           <div className={`eb-kpi eb-kpi-1${mounted ? " vis" : ""}`}><StatTile label="Total Man-Hour Budget"     value={formatCurrency(analysis.plannedManhourBudget)}    icon={<Wallet    size={15} />} tint="accent"  /></div>
           <div className={`eb-kpi eb-kpi-2${mounted ? " vis" : ""}`}><StatTile label="Total Non Man-Hour Budget" value={formatCurrency(analysis.plannedNonManhourBudget)} icon={<Receipt   size={15} />} tint="info"    /></div>
-          <div className={`eb-kpi eb-kpi-3${mounted ? " vis" : ""}`}><StatTile label="Total Project Budget"      value={formatCurrency(totalProjectBudget)}               icon={<PiggyBank size={15} />} tint="success" /></div>
-          <div className={`eb-kpi eb-kpi-4${mounted ? " vis" : ""}`}><StatTile label="Total Project Cost"        value={formatCurrency(totalProjectCost)}                 icon={<Calculator size={15} />} tint="warning" /></div>
+          <div className={`eb-kpi eb-kpi-3${mounted ? " vis" : ""}`}><StatTile label="Total Project Cost"        value={formatCurrency(totalProjectCost)}                 icon={<Calculator size={15} />} tint="warning" /></div>
+          <div className={`eb-kpi eb-kpi-4${mounted ? " vis" : ""}`}><StatTile label="Total Project Budget"      value={formatCurrency(totalProjectBudget)}               icon={<PiggyBank size={15} />} tint="success" /></div>
+          <div className={`eb-kpi eb-kpi-5${mounted ? " vis" : ""}`}>
+            <StatTile
+              label="Project Profit"
+              value={formatCurrency(projectProfit)}
+              icon={<ProfitIcon size={15} />}
+              tint={profitTint}
+              tintValue
+              percent={{ text: profitPercentLabel, tone: profitPercentTone }}
+              tooltip={"Project Profit = Total Project Budget − Total Project Cost\nProfit % = (Profit ÷ Total Project Budget) × 100"}
+            />
+          </div>
         </div>
         <InfoField label="Man-Hour Budget Hours" value={formatHours(analysis.plannedBudgetHours)} />
       </InfoSection>

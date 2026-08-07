@@ -11,6 +11,7 @@ import {
   getTotalProjectCost,
 } from "../../services/expenseService";
 import { getProjectActivityTimeline } from "../../services/projectActivityService";
+import { calculateProjectCompletionPercentage, getProjectTeamCount } from "../../utils/projectMetrics";
 import { Button } from "../../components/ui/Button";
 
 import GeneralView from "./components/GeneralView";
@@ -99,7 +100,7 @@ const ViewProject = () => {
   const hasRevenue = (project.workOrderValueINR || 0) > 0;
   const hasWoQty = project.totalWOQty > 0;
   const pendingQtyPercentage = hasWoQty ? (project.totalPendingQty / project.totalWOQty) * 100 : 0;
-  const completionPercent = hasWoQty ? 100 - pendingQtyPercentage : 0;
+  const completionPercent = calculateProjectCompletionPercentage(project);
 
   const commercialSummary = getProjectCommercialSummary(project);
 
@@ -107,7 +108,7 @@ const ViewProject = () => {
 
   const budget = (project.manhourBudgetAmount || 0) + (project.nonManhourBudgetAmount || 0);
   const milestoneCount = project.paymentMilestones?.length || 0;
-  const teamCount = project.resources?.filter((r) => r.status === "Active").length || 0;
+  const teamCount = getProjectTeamCount(project);
   const activityEvents = getProjectActivityTimeline(project);
 
   // ── Tab navigation helpers ─────────────────────────────────────────────────

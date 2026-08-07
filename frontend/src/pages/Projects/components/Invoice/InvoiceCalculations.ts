@@ -219,7 +219,10 @@ export function getInvoiceWorkflowMode(milestones: BillingMilestone[]): InvoiceW
  * defaulting to Lump Sum.
  */
 export function getInvoiceMethod(project: Project): InvoiceMethod | undefined {
-  return project.invoiceMethod === "invoice_line_items" || project.invoiceMethod === "lump_sum"
+  return project.invoiceMethod === "invoice_line_items" ||
+    project.invoiceMethod === "lump_sum" ||
+    project.invoiceMethod === "mlmp" ||
+    project.invoiceMethod === "amount_based"
     ? project.invoiceMethod
     : undefined;
 }
@@ -339,6 +342,96 @@ export function getProjectLumpSumMilestoneRows(project: Project): ProjectLumpSum
       alreadyInvoiced: !!invoicedUnderInvoiceNo,
       invoicedUnderInvoiceNo,
       invoicedUnderCycleLabel: invoicedCycle?.label,
+    };
+  });
+}
+
+// =============================================================================
+// MLMP — Multiple Line Items – Multiple Payment Terms
+// =============================================================================
+// A completely independent third Invoice Method for calculation/save
+// purposes — never shares calculation logic with Invoice Line Items (qty ×
+// rate). It DOES deliberately share its milestone SOURCE with Lump Sum: both
+// read the project's existing Payment Milestones (getMilestonesForProject /
+// Project.paymentMilestones) — there is no separate MLMP milestone template
+// to configure. Each activity's own quantity auto-generates that many SETs
+// (Qty 2 SET → SET 1, SET 2 — getMlmpSetCount), each cloned from that SAME
+// Payment Milestones list and tracked completely independently per SET via
+// InvoiceLine.setIndex.
+
+/** Whole-number SET count this activity's quantity generates. Permissive by design: fractional quantities are simply rounded, never blocked or warned about. */
+export function getMlmpSetCount(item: InvoiceItem): number {
+  return Math.max(1, Math.round(item.qty || 1));
+}
+
+/** The activity's own UOM, used as the SET/PACKAGE/MODULE/... label for its generated sub-units. */
+export function getMlmpSetLabel(item: InvoiceItem): string {
+  return (item.uom || "SET").trim().toUpperCase() || "SET";
+}
+
+export interface MlmpSetMilestoneRow extends LumpSumMilestoneRow {
+  setIndex: number;
+  setLabel: string;
+  /** The invoiceNo this (SET, milestone) pair was already billed under, if any. */
+  invoicedUnderInvoiceNo?: string;
+  invoicedUnderCycleLabel?: string;
+}
+
+export interface MlmpSetGroup {
+  setIndex: number;
+  setLabel: string;
+  milestones: MlmpSetMilestoneRow[];
+  /** True once every milestone cloned into this SET has been billed (any non-cancelled line). */
+  isSetComplete: boolean;
+}
+
+/**
+ * One group per SET this activity's quantity generates, each carrying a
+ * clone of the project's EXISTING Payment Milestones (getMilestonesForProject
+ * — the same list Lump Sum reads; there is no separate MLMP template),
+ * scaled against this SET's own share of the activity's Contract Value
+ * (totalPrice ÷ SET count). A milestone row is locked once billed under a
+ * non-cancelled line for its exact (setIndex, milestoneId) pair, everywhere
+ * except the very cycle it was billed under — identical lock semantics to
+ * getProjectLumpSumMilestoneRows, just scoped to one (activity, SET) pair
+ * instead of the whole project.
+ */
+export function getMlmpSetRows(project: Project, item: InvoiceItem): MlmpSetGroup[] {
+  const template = getMilestonesForProject(project);
+  const setCount = getMlmpSetCount(item);
+  const setLabel = getMlmpSetLabel(item);
+  const setBaseValue = round((item.totalPrice || 0) / setCount);
+  const lines = Array.isArray(item.invoices) ? item.invoices : [];
+  const cycles = getInvoiceCyclesForProject(project);
+
+  return Array.from({ length: setCount }, (_, i) => {
+    const setIndex = i + 1;
+
+    const milestones: MlmpSetMilestoneRow[] = template.map((milestone) => {
+      const line = lines.find(
+        (l) => l.setIndex === setIndex && l.milestoneId === milestone.id && l.status !== "Cancelled"
+      );
+      const invoicedCycle = line ? cycles.find((c) => c.invoiceNo === line.invoiceNo) : undefined;
+
+      return {
+        id: milestone.id,
+        label: milestone.label,
+        percent: milestone.percent,
+        invoiceAmount: getMilestoneValue(setBaseValue, milestone.percent),
+        alreadyInvoiced: !!line,
+        status: line ? "Completed" : "Pending",
+        setIndex,
+        setLabel,
+        invoicedUnderInvoiceNo: line?.invoiceNo,
+        invoicedUnderCycleLabel: invoicedCycle?.label,
+      };
+    });
+
+    return {
+      setIndex,
+      setLabel,
+      milestones,
+      isSetComplete: milestones.length > 0 && milestones.every((m) => m.alreadyInvoiced),
     };
   });
 }
@@ -555,6 +648,21 @@ export function getActivityRaisedQtyExcludingCycle(item: InvoiceItem, invoiceNo:
     lines
       .filter((line) => line.status !== "Cancelled" && line.invoiceNo !== invoiceNo)
       .reduce((sum, line) => sum + (line.quantityBilled || 0), 0)
+  );
+}
+
+/**
+ * Amount Based's equivalent of getActivityRaisedQtyExcludingCycle above —
+ * sum of invoiceAmountINR across every non-cancelled line for this activity,
+ * across every OTHER invoice cycle. "Previously Invoiced" in the Amount
+ * Allocation table; Balance Available = Contract Value − this.
+ */
+export function getActivityRaisedAmountExcludingCycle(item: InvoiceItem, invoiceNo: string): number {
+  const lines = Array.isArray(item.invoices) ? item.invoices : [];
+  return round(
+    lines
+      .filter((line) => line.status !== "Cancelled" && line.invoiceNo !== invoiceNo)
+      .reduce((sum, line) => sum + (line.invoiceAmountINR || 0), 0)
   );
 }
 

@@ -13,9 +13,12 @@ import { RaiseInvoiceDrawer } from "./RaiseInvoiceDrawer";
 import { RaiseInvoiceCycleModal } from "./RaiseInvoiceCycleModal";
 import { InvoiceWorkspaceModal } from "./InvoiceWorkspaceModal";
 import { LumpSumInvoiceWorkspaceModal } from "./LumpSumInvoiceWorkspaceModal";
+import { MlmpInvoiceWorkspaceModal } from "./MlmpInvoiceWorkspaceModal";
+import { AmountBasedInvoiceWorkspaceModal } from "./AmountBasedInvoiceWorkspaceModal";
 import { InvoiceHistory } from "./InvoiceHistory";
 import { PrintInvoiceModal } from "./PrintInvoiceModal";
 import { getInvoiceMethod, getInvoiceCyclesForProject, suggestNextInvoiceNumber } from "./InvoiceCalculations";
+import { logInvoiceDeletedAudit, logInvoiceCycleStatusChangedAudit } from "../../../../services/projectAuditService";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { Card, CardBody } from "../../../../components/ui/Card";
 
@@ -107,8 +110,11 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
   }
 
   const isLumpSum = invoiceMethod === "lump_sum";
+  const isMlmp = invoiceMethod === "mlmp";
+  const isAmountBased = invoiceMethod === "amount_based";
 
-  // "+ Create New Invoice Cycle" — Lump Sum only. Advances the shared
+  // "+ Create New Invoice Cycle" — Lump Sum, MLMP, and Amount Based only,
+  // all of which share a single project-level cycle. Advances the shared
   // selection to the next never-used project-wide number; it only becomes a
   // real, persisted cycle once an invoice is actually saved against it.
   const handleCreateNewProjectCycle = () => {
@@ -158,22 +164,32 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
 
   const handleDeleteInvoiceLine = (item: InvoiceItem, line: InvoiceLine) => {
     if (isReadOnly || !setProject) return;
-    persistProjectChange({
-      ...project,
-      invoiceItems: project.invoiceItems.map((invoiceItem) =>
-        invoiceItem.id !== item.id
-          ? invoiceItem
-          : { ...invoiceItem, invoices: invoiceItem.invoices.filter((existing) => existing.id !== line.id) }
-      ),
-    });
+
+    const updatedItems = project.invoiceItems.map((invoiceItem) =>
+      invoiceItem.id !== item.id
+        ? invoiceItem
+        : { ...invoiceItem, invoices: invoiceItem.invoices.filter((existing) => existing.id !== line.id) }
+    );
+    const updatedProject = { ...project, invoiceItems: updatedItems };
+    persistProjectChange(updatedProject);
+
+    // Audit Log "Invoice Deleted"
+    logInvoiceDeletedAudit(
+      project.id,
+      line.invoiceNo,
+      line.invoiceAmountINR,
+      "User deleted invoice line from Invoice History"
+    );
   };
 
   const handleUpdateInvoiceCycleStatus = (invoiceNo: string, newStatus: InvoiceLineStatus) => {
     if (isReadOnly || !setProject) return;
 
+    let oldStatus = "Draft";
     const updatedItems = (project.invoiceItems ?? []).map((item) => {
       const updatedLines = (item.invoices ?? []).map((line) => {
         if (line.invoiceNo === invoiceNo) {
+          oldStatus = line.status;
           return { ...line, status: newStatus };
         }
         return line;
@@ -181,10 +197,11 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
       return { ...item, invoices: updatedLines };
     });
 
-    persistProjectChange({
-      ...project,
-      invoiceItems: updatedItems,
-    });
+    const updatedProject = { ...project, invoiceItems: updatedItems };
+    persistProjectChange(updatedProject);
+
+    // Audit Log "Invoice Status Updated"
+    logInvoiceCycleStatusChangedAudit(project.id, invoiceNo, oldStatus, newStatus);
   };
 
   const handleSave = (updatedProject: Project) => {
@@ -233,9 +250,10 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
       )}
 
       {/* Lump Sum bills against Payment Milestones (checklist, no quantity at
-          all); Invoice Line Items keeps its existing quantity/activity table
-          completely unchanged. Which modal renders is decided purely by
-          Invoice Method — never a UI redesign of the qty-based workspace. */}
+          all); MLMP bills against per-activity SET milestones; Invoice Line
+          Items keeps its existing quantity/activity table completely
+          unchanged. Which modal renders is decided purely by Invoice Method
+          — never a UI redesign of any of the other workspaces. */}
       {workspaceInvoiceNo && isLumpSum && (
         <LumpSumInvoiceWorkspaceModal
           key={workspaceInvoiceNo}
@@ -246,7 +264,27 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
         />
       )}
 
-      {workspaceInvoiceNo && !isLumpSum && (
+      {workspaceInvoiceNo && isMlmp && (
+        <MlmpInvoiceWorkspaceModal
+          key={workspaceInvoiceNo}
+          project={project}
+          invoiceNo={workspaceInvoiceNo}
+          onClose={() => setWorkspaceInvoiceNo(null)}
+          onSave={handleWorkspaceSave}
+        />
+      )}
+
+      {workspaceInvoiceNo && isAmountBased && (
+        <AmountBasedInvoiceWorkspaceModal
+          key={workspaceInvoiceNo}
+          project={project}
+          invoiceNo={workspaceInvoiceNo}
+          onClose={() => setWorkspaceInvoiceNo(null)}
+          onSave={handleWorkspaceSave}
+        />
+      )}
+
+      {workspaceInvoiceNo && !isLumpSum && !isMlmp && !isAmountBased && (
         <InvoiceWorkspaceModal
           key={workspaceInvoiceNo}
           project={project}
@@ -261,7 +299,7 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
         <div className="lg:col-span-4 xl:col-span-4 flex flex-col">
           <InvoiceSummaryPanel
             project={project}
-            isLumpSum={isLumpSum}
+            isProjectLevelCycle={isLumpSum || isMlmp || isAmountBased}
             selectedCycle={selectedProjectCycle}
             onSelectCycle={setSelectedProjectCycle}
             onCreateNewCycle={handleCreateNewProjectCycle}

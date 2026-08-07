@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Printer, Download, Eye, X, FileText, ArrowLeft, Building2, Landmark } from "lucide-react";
+import { Printer, Eye, X, FileText, ArrowLeft, Building2, Landmark } from "lucide-react";
 
 import type { Project } from "../../../../types/Project";
 import type { InvoiceDocumentDetails, BuyerInformation } from "../../../../types/InvoiceDocument";
@@ -17,6 +17,8 @@ import { invoiceDocumentService } from "../../../../services/invoice/invoiceDocu
 import {
   mapProjectToInvoiceDocumentDTO,
   mapProjectToLumpSumInvoiceDocumentDTO,
+  mapProjectToMlmpInvoiceDocumentDTO,
+  mapProjectToAmountBasedInvoiceDocumentDTO,
 } from "../../../../services/invoice/invoiceDocumentMapper";
 import { InvoiceDocumentView } from "./InvoiceDocumentView";
 import { printComponentElement } from "../../../../utils/printComponent";
@@ -120,9 +122,11 @@ export function PrintInvoiceModal({ project, setProject, initialInvoiceNo, onClo
   // previously produced a ₹0 document.
   const documentDTO = useMemo(() => {
     if (!selectedCycleNo) return null;
-    return getInvoiceMethod(project) === "lump_sum"
-      ? mapProjectToLumpSumInvoiceDocumentDTO(project, selectedCycleNo, details)
-      : mapProjectToInvoiceDocumentDTO(project, selectedCycleNo, details);
+    const method = getInvoiceMethod(project);
+    if (method === "lump_sum") return mapProjectToLumpSumInvoiceDocumentDTO(project, selectedCycleNo, details);
+    if (method === "mlmp") return mapProjectToMlmpInvoiceDocumentDTO(project, selectedCycleNo, details);
+    if (method === "amount_based") return mapProjectToAmountBasedInvoiceDocumentDTO(project, selectedCycleNo, details);
+    return mapProjectToInvoiceDocumentDTO(project, selectedCycleNo, details);
   }, [project, selectedCycleNo, details]);
 
   // Save changes onto project
@@ -142,10 +146,6 @@ export function PrintInvoiceModal({ project, setProject, initialInvoiceNo, onClo
       const targetElement = (documentRef.current.querySelector(".invoice-document-root") as HTMLElement) || documentRef.current;
       printComponentElement(targetElement, `${documentDTO?.invoiceNoCustom || "Invoice"}_Tax_Invoice`);
     }
-  };
-
-  const handleDownloadPdf = () => {
-    handlePrint();
   };
 
   return (
@@ -647,15 +647,7 @@ export function PrintInvoiceModal({ project, setProject, initialInvoiceNo, onClo
               </button>
             )}
 
-            <button
-              type="button"
-              disabled={!activeCycle || !activeCycle.isPrintable}
-              onClick={handleDownloadPdf}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer disabled:opacity-40"
-            >
-              <Download size={14} />
-              <span>Download PDF</span>
-            </button>
+            {/* Download PDF option removed per user request */}
 
             <button
               type="button"

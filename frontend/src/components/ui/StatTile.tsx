@@ -20,7 +20,29 @@ interface StatTileProps {
   emphasis?: "primary" | "secondary";
   /** Exact rupee amount `value` was rounded from — when provided, hovering the tile shows the exact-amount tooltip instead of the native title="{value}" (rounded-over-rounded) tooltip. */
   rawValue?: number;
+  /** Inline badge shown next to the value, e.g. "30% Profit" / "-10% Loss". */
+  percent?: { text: string; tone: "success" | "danger" | "neutral" };
+  /** When true, the value text itself follows `tint` (green/red) instead of the default neutral text color — opt-in so existing tiles stay pixel-identical. */
+  tintValue?: boolean;
+  /** Sets a title attribute on the card wrapper (shown on hover anywhere except over the value itself). */
+  tooltip?: string;
 }
+
+const VALUE_TONE: Record<StatTileTint, string> = {
+  accent: "text-[var(--nu-text)]",
+  success: "text-[var(--nu-success)]",
+  warning: "text-[var(--nu-text)]",
+  danger: "text-[var(--nu-danger)]",
+  info: "text-[var(--nu-text)]",
+  purple: "text-[var(--nu-text)]",
+  indigo: "text-[var(--nu-text)]",
+};
+
+const PERCENT_BADGE_TONE: Record<"success" | "danger" | "neutral", string> = {
+  success: "text-[var(--nu-success)] bg-[var(--nu-success-soft)]",
+  danger: "text-[var(--nu-danger)] bg-[var(--nu-danger-soft)]",
+  neutral: "text-[var(--nu-text-muted)] bg-[var(--nu-surface-alt)]",
+};
 
 const TINTS: Record<StatTileTint, string> = {
   accent: "bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400",
@@ -42,11 +64,12 @@ const ACCENT_BAR: Record<StatTileTint, string> = {
   indigo: "bg-indigo-500",
 };
 
-export const StatTile = ({ label, value, icon, tint = "accent", trend, rawValue }: StatTileProps) => {
+export const StatTile = ({ label, value, icon, tint = "accent", trend, rawValue, percent, tintValue, tooltip }: StatTileProps) => {
   const isPrimary = true; // Make all tiles primary emphasis for equal uniform layout
 
   return (
     <div
+      title={tooltip}
       className={`relative bg-[var(--nu-surface)] border rounded-[var(--nu-radius-lg)] transition-shadow duration-150 hover:shadow-[var(--nu-shadow-md)] px-4 pt-4 pb-3.5 flex flex-col justify-between gap-2.5 min-w-0 h-full ${
         isPrimary
           ? "border-[var(--nu-border-strong)] shadow-[var(--nu-shadow-md)] h-[150px]"
@@ -67,12 +90,19 @@ export const StatTile = ({ label, value, icon, tint = "accent", trend, rawValue 
 
       <div className="min-w-0 flex-1 flex flex-col justify-end">
         <p className="text-[12px] font-medium text-[var(--nu-text-muted)] uppercase tracking-wide truncate mb-0.5">{label}</p>
-        <p
-          className={`font-bold text-[var(--nu-text)] leading-none whitespace-nowrap overflow-visible ${isPrimary ? "text-[22px] xl:text-[19px] 2xl:text-[24px]" : "text-[18px]"}`}
-          title={rawValue === undefined ? value : undefined}
-        >
-          {rawValue === undefined ? value : <MoneyTooltip value={rawValue}>{value}</MoneyTooltip>}
-        </p>
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <p
+            className={`font-bold leading-none whitespace-nowrap overflow-visible ${tintValue ? VALUE_TONE[tint] : "text-[var(--nu-text)]"} ${isPrimary ? "text-[22px] xl:text-[19px] 2xl:text-[24px]" : "text-[18px]"}`}
+            title={rawValue === undefined ? value : undefined}
+          >
+            {rawValue === undefined ? value : <MoneyTooltip value={rawValue}>{value}</MoneyTooltip>}
+          </p>
+          {percent && (
+            <span className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${PERCENT_BADGE_TONE[percent.tone]}`}>
+              {percent.text}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="text-[11px] leading-snug shrink-0">

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X, Maximize2, Minimize2, Plus, FileText } from "lucide-react";
 import type { Project } from "../../../../types/Project";
+import type { InvoiceMethod } from "../../../../types/InvoiceItem";
 import { Button } from "../../../../components/ui/Button";
 import { Badge } from "../../../../components/ui/Badge";
 import { Portal } from "../../../../components/ui/Portal";
@@ -18,6 +19,14 @@ interface Props {
   onClose: () => void;
   onContinue: (invoiceNo: string) => void;
 }
+
+/** One label per Invoice Method — shared badge text for this picker's header. */
+const METHOD_LABEL: Record<InvoiceMethod, string> = {
+  invoice_line_items: "Quantity Based Billing",
+  lump_sum: "Lump Sum Billing",
+  mlmp: "MLMP Billing",
+  amount_based: "Amount Based Billing",
+};
 
 const formatDate = (value?: string): string => {
   if (!value) return "—";
@@ -40,7 +49,7 @@ export function RaiseInvoiceCycleModal({ project, onClose, onContinue }: Props) 
   const [selected, setSelected] = useState<string | null>(null);
 
   const invoiceMethod = getInvoiceMethod(project);
-  const methodLabel = invoiceMethod === "lump_sum" ? "Lump Sum Billing" : "Invoice Line Items Billing";
+  const methodLabel = METHOD_LABEL[invoiceMethod ?? "invoice_line_items"];
   const cycles: InvoiceCycleListRow[] = getInvoiceCycleListForRaise(project);
 
   const handleContinue = () => {
