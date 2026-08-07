@@ -22,7 +22,10 @@ const InvoiceCard = ({ project, setProject, initialActivityId, initialInvoiceLin
   const handleInvoiceMethodChange = (value: string) => {
     setProject((prev) => ({
       ...prev,
-      invoiceMethod: value === "invoice_line_items" || value === "lump_sum" ? (value as InvoiceMethod) : undefined,
+      invoiceMethod:
+        value === "invoice_line_items" || value === "lump_sum" || value === "mlmp" || value === "amount_based"
+          ? (value as InvoiceMethod)
+          : undefined,
     }));
   };
 
@@ -40,7 +43,7 @@ const InvoiceCard = ({ project, setProject, initialActivityId, initialInvoiceLin
             </h2>
 
             <p className="text-sm text-[var(--nu-text-muted)]">
-              Raise, track, and review invoices against every activity — quantity and milestone billing, together.
+              Raise, track, and review invoices against every activity — quantity, milestone, and amount billing, together.
             </p>
           </div>
         </div>
@@ -53,11 +56,13 @@ const InvoiceCard = ({ project, setProject, initialActivityId, initialInvoiceLin
             id="invoice-method"
             value={invoiceMethod ?? ""}
             onChange={(e) => handleInvoiceMethodChange(e.target.value)}
-            className="w-[190px]"
+            className="w-[190px] sm:w-[260px]"
           >
             <option value="">Select Invoice Method</option>
+            <option value="invoice_line_items">Quantity Based</option>
             <option value="lump_sum">Lump Sum</option>
-            <option value="invoice_line_items">Invoice Line Items</option>
+            <option value="mlmp">Multiple Line Items – Multiple Payment Terms (MLMP)</option>
+            <option value="amount_based">Amount Based</option>
           </Select>
         </div>
       </div>

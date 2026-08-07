@@ -31,6 +31,16 @@ export function ActivitiesTable({ project, readOnly = false, onRaiseInvoice, hig
   // Completed Qty/Remaining Qty don't apply and must not render at all.
   // Quantity Billing's column set stays exactly as it was.
   const isLumpSum = getInvoiceMethod(project) === "lump_sum";
+  // MLMP bills against per-SET milestones (cloned from the project's
+  // existing Payment Milestones), not activity completion — Completed
+  // Qty/Remaining Qty/Progress don't apply and must not render at all,
+  // exactly like Lump Sum.
+  const isMlmp = getInvoiceMethod(project) === "mlmp";
+  // Amount Based bills a direct amount against an activity's remaining
+  // Contract Value — no quantity at all, so Order Qty/Completed/Remaining/
+  // Progress AND Unit Rate (there's no rate × qty here either) are all
+  // meaningless and must not render.
+  const isAmountBased = getInvoiceMethod(project) === "amount_based";
 
   useEffect(() => {
     if (!highlightItemId) return;
@@ -69,14 +79,14 @@ export function ActivitiesTable({ project, readOnly = false, onRaiseInvoice, hig
               <tr>
                 <th className="nu-table-th px-3 py-2.5 text-center">Sl No.</th>
                 <th className="nu-table-th px-3 py-2.5 text-left">Activity Description</th>
-                <th className="nu-table-th px-3 py-2.5 text-right">Order Qty</th>
-                {!isLumpSum && (
+                {!isAmountBased && <th className="nu-table-th px-3 py-2.5 text-right">Order Qty</th>}
+                {!isLumpSum && !isMlmp && !isAmountBased && (
                   <>
                     <th className="nu-table-th px-3 py-2.5 text-right">Completed Qty</th>
                     <th className="nu-table-th px-3 py-2.5 text-right">Remaining Qty</th>
                   </>
                 )}
-                <th className="nu-table-th px-3 py-2.5 text-right">Unit Rate</th>
+                {!isAmountBased && <th className="nu-table-th px-3 py-2.5 text-right">Unit Rate</th>}
                 <th className="nu-table-th px-3 py-2.5 text-right">Contract Value</th>
                 <th className="nu-table-th px-3 py-2.5 text-right">Invoice Raised</th>
                 <th className="nu-table-th px-3 py-2.5 text-right">Balance Value</th>
@@ -85,7 +95,14 @@ export function ActivitiesTable({ project, readOnly = false, onRaiseInvoice, hig
             </thead>
             <tbody>
               {items.map((item, index) => (
-                <ActivityRow key={item.id} item={item} slNo={index + 1} isLumpSum={isLumpSum} />
+                <ActivityRow
+                  key={item.id}
+                  item={item}
+                  slNo={index + 1}
+                  isLumpSum={isLumpSum}
+                  isMlmp={isMlmp}
+                  isAmountBased={isAmountBased}
+                />
               ))}
             </tbody>
           </table>

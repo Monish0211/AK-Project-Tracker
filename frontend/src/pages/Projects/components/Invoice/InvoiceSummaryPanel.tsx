@@ -18,8 +18,8 @@ import {
 
 interface Props {
   project: Project;
-  /** Lump Sum only — governs whether "+ Create New Invoice Cycle" is shown. */
-  isLumpSum: boolean;
+  /** Lump Sum and MLMP only (both bill against a shared PROJECT-level cycle) — governs whether "+ Create New Invoice Cycle" is shown. */
+  isProjectLevelCycle: boolean;
   /**
    * The PROJECT-level Invoice Cycle to summarize — lifted up to
    * InvoiceDashboard so the same selection also drives Lump Sum's Raise
@@ -49,7 +49,7 @@ const formatDate = (value: string): string => {
  * Compact rectangular Invoice Summary Card — lives side by side with Invoice History.
  * Summarizes ONLY the selected invoice cycle with tight spacing and clean alignment.
  */
-export function InvoiceSummaryPanel({ project, isLumpSum, selectedCycle, onSelectCycle, onCreateNewCycle, onPrintInvoice }: Props) {
+export function InvoiceSummaryPanel({ project, isProjectLevelCycle, selectedCycle, onSelectCycle, onCreateNewCycle, onPrintInvoice }: Props) {
   const cycleOptions = useMemo(() => {
     return getInvoiceCyclesForProject(project).filter((opt) => !opt.isNew);
   }, [project]);
@@ -72,12 +72,12 @@ export function InvoiceSummaryPanel({ project, isLumpSum, selectedCycle, onSelec
   // no "+ Create New Invoice Cycle" button here — its own Raise Invoice
   // dialog is where new cycles get created).
   const dropdownOptions = useMemo(() => {
-    if (isLumpSum && activeInvoiceNo && !selectedCycleOption) {
+    if (isProjectLevelCycle && activeInvoiceNo && !selectedCycleOption) {
       const realCount = cycleOptions.length;
       return [...cycleOptions, { invoiceNo: activeInvoiceNo, label: `Invoice ${realCount + 1}`, isNew: true }];
     }
     return cycleOptions;
-  }, [cycleOptions, isLumpSum, activeInvoiceNo, selectedCycleOption]);
+  }, [cycleOptions, isProjectLevelCycle, activeInvoiceNo, selectedCycleOption]);
 
   const activeLines = useMemo(() => {
     if (!activeInvoiceNo) return [];
@@ -135,7 +135,7 @@ export function InvoiceSummaryPanel({ project, isLumpSum, selectedCycle, onSelec
   // activeLines is simply empty and the totals below are zero. Commercial
   // Milestone Billing keeps its original gate: nothing to summarize until the
   // project has at least one real cycle.
-  if (!activeInvoiceNo || (!isLumpSum && cycleOptions.length === 0)) {
+  if (!activeInvoiceNo || (!isProjectLevelCycle && cycleOptions.length === 0)) {
     return (
       <Card padded={false} className="h-full">
         <CardHeader
@@ -181,7 +181,7 @@ export function InvoiceSummaryPanel({ project, isLumpSum, selectedCycle, onSelec
                   </option>
                 ))}
               </Select>
-              {isLumpSum && (
+              {isProjectLevelCycle && (
                 <Button
                   type="button"
                   variant="outline"

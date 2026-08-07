@@ -16,6 +16,11 @@ import { Portal } from "../../../../components/ui/Portal";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 
 import {
+  diffInvoiceLines,
+  logInvoiceUpdatedAudit,
+  logInvoiceRaisedAudit,
+} from "../../../../services/projectAuditService";
+import {
   getMilestonesForProject,
   getMilestoneValue,
   getMilestoneQuantityState,
@@ -496,6 +501,11 @@ export function RaiseInvoiceDrawer({
             status,
           };
 
+      const changes = diffInvoiceLines(existingLine, updatedLine);
+      if (changes.length > 0) {
+        logInvoiceUpdatedAudit(project.id, updatedLine.invoiceNo, changes, "Administrator");
+      }
+
       onSave({
         ...project,
         invoiceItems: project.invoiceItems.map((invoiceItem) =>
@@ -548,6 +558,18 @@ export function RaiseInvoiceDrawer({
             status: "Raised",
             createdBy: "Administrator",
           }));
+
+    const totalInvoiceAmount = newLines.reduce((sum, line) => sum + line.invoiceAmountINR, 0);
+    if (newLines.length > 0) {
+      logInvoiceRaisedAudit(
+        project.id,
+        effectiveInvoiceNo.trim(),
+        invoiceDate,
+        totalInvoiceAmount,
+        newLines.length,
+        "Administrator"
+      );
+    }
 
     onSave({
       ...project,

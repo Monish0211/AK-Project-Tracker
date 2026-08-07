@@ -15,6 +15,7 @@ import {
   getInvoiceCycleStatus,
   getInvoiceMethod,
   getMilestonesForProject,
+  getMlmpSetLabel,
   INVOICE_LINE_STATUS_LABEL,
   INVOICE_LINE_STATUS_TONE,
   round,
@@ -49,8 +50,10 @@ interface HistoryRow {
   unitPrice: number;
   systemAmount: number;
   amount: number;
-  /** Lump Sum only — the milestone's configured %, looked up from Payment Milestones by line.milestoneId. */
+  /** Lump Sum/MLMP only — the milestone's configured %, looked up from the project's Payment Milestones by line.milestoneId. Shared source for both methods. */
   milestonePercent?: number;
+  /** MLMP only — "SET 1", "PACKAGE 3", etc, from line.setIndex + the activity's own UOM label. */
+  setLabel?: string;
   status: InvoiceLineStatus;
   createdBy: string;
   item: InvoiceItem;
@@ -84,13 +87,23 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, onUpdateInvo
   const [statusFilter, setStatusFilter] = useState<InvoiceLineStatus | "all">("all");
   const [search, setSearch] = useState("");
 
-  // Lump Sum bills against Payment Milestones, not activity quantities — the
-  // Qty Invoiced/Unit Rate/System Amount/Commercial Adjustment columns are
-  // always 0/meaningless for those lines, so this table shows a
-  // milestone-based column set instead whenever the whole project is Lump
-  // Sum. Invoice Method is a project-wide setting, never mixed per-cycle, so
-  // there's no case where both column sets are needed at once.
+  // Lump Sum and MLMP both bill against milestone percentages, not activity
+  // quantities — the Qty Invoiced/Unit Rate/System Amount/Commercial
+  // Adjustment columns are always 0/meaningless for those lines, so this
+  // table shows a milestone-based column set instead whenever the whole
+  // project is Lump Sum or MLMP. Invoice Method is a project-wide setting,
+  // never mixed per-cycle, so there's no case where multiple column sets are
+  // needed at once. Both methods read milestone % from the SAME project-wide
+  // Payment Milestones list (getMilestonesForProject) — MLMP additionally
+  // gets its own SET column, since the same milestone recurs once per SET.
   const isLumpSum = getInvoiceMethod(project) === "lump_sum";
+  const isMlmp = getInvoiceMethod(project) === "mlmp";
+  const isMilestoneBased = isLumpSum || isMlmp;
+  // Amount Based bills a direct amount against Contract Value — no
+  // milestone, no quantity, no rate at all, so it drops the Milestone
+  // column entirely (not just the % sub-column) as well as the Qty/Rate/
+  // System Amount and Commercial Adjustment columns.
+  const isAmountBased = getInvoiceMethod(project) === "amount_based";
   const milestones = useMemo(() => getMilestonesForProject(project), [project]);
 
   // Deep-linked from a notification — scroll the highlighted invoice line
@@ -122,7 +135,11 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, onUpdateInvo
           unitPrice: line.unitPriceINR ?? item.unitPrice,
           systemAmount: line.calculatedAmountINR ?? 0,
           amount: line.invoiceAmountINR,
+          // Shared source for both methods — Lump Sum and MLMP both read
+          // the project's existing Payment Milestones, never a separate
+          // per-activity template.
           milestonePercent: milestones.find((m) => m.id === line.milestoneId)?.percent,
+          setLabel: isMlmp && line.setIndex !== undefined ? `${getMlmpSetLabel(item)} ${line.setIndex}` : undefined,
           status: line.status,
           createdBy: line.createdBy,
           item,
@@ -131,7 +148,7 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, onUpdateInvo
       });
     });
     return all.sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate) || b.invoiceNo.localeCompare(a.invoiceNo));
-  }, [items, milestones]);
+  }, [items, milestones, isMlmp]);
 
   const filteredRows = rows.filter((row) => {
     if (activityFilter !== "all" && row.item.id !== activityFilter) return false;
@@ -233,18 +250,21 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, onUpdateInvo
                   <th className="nu-table-th px-3 py-2.5 text-left">Invoice No</th>
                   <th className="nu-table-th px-3 py-2.5 text-left">Invoice Date</th>
                   <th className="nu-table-th px-3 py-2.5 text-left">Activity</th>
-                  <th className="nu-table-th px-3 py-2.5 text-left">Milestone</th>
-                  {isLumpSum ? (
-                    <th className="nu-table-th px-3 py-2.5 text-right">Milestone %</th>
-                  ) : (
-                    <>
-                      <th className="nu-table-th px-3 py-2.5 text-right">Qty Invoiced</th>
-                      <th className="nu-table-th px-3 py-2.5 text-right">Unit Rate</th>
-                      <th className="nu-table-th px-3 py-2.5 text-right">System Amount</th>
-                    </>
+                  {isMlmp && <th className="nu-table-th px-3 py-2.5 text-left">SET</th>}
+                  {!isAmountBased && <th className="nu-table-th px-3 py-2.5 text-left">Milestone</th>}
+                  {!isAmountBased && (
+                    isMilestoneBased ? (
+                      <th className="nu-table-th px-3 py-2.5 text-right">Milestone %</th>
+                    ) : (
+                      <>
+                        <th className="nu-table-th px-3 py-2.5 text-right">Qty Invoiced</th>
+                        <th className="nu-table-th px-3 py-2.5 text-right">Unit Rate</th>
+                        <th className="nu-table-th px-3 py-2.5 text-right">System Amount</th>
+                      </>
+                    )
                   )}
                   <th className="nu-table-th px-3 py-2.5 text-right">Invoice Amount</th>
-                  {!isLumpSum && <th className="nu-table-th px-3 py-2.5 text-right">Commercial Adjustment</th>}
+                  {!isMilestoneBased && !isAmountBased && <th className="nu-table-th px-3 py-2.5 text-right">Commercial Adjustment</th>}
                   <th className="nu-table-th px-3 py-2.5 text-center">Invoice Status</th>
                   <th className="nu-table-th px-3 py-2.5 text-left">Created By</th>
                   <th className="nu-table-th px-3 py-2.5 text-center">Actions</th>
@@ -252,7 +272,7 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, onUpdateInvo
               </thead>
               <tbody>
                 {groupedRows.map((group) => {
-                  const columnCount = isLumpSum ? 10 : 12;
+                  const columnCount = isLumpSum ? 10 : isMlmp ? 11 : isAmountBased ? 7 : 12;
                   return (
                   <Fragment key={group.invoiceNo}>
                     <tr>
@@ -263,6 +283,10 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, onUpdateInvo
                             <span className="font-medium text-[var(--nu-text-muted)]">
                               {isLumpSum
                                 ? `— ${group.milestoneNames.join(", ") || "no milestones"} · Total ${group.milestoneTotalPercent}% · ${formatIndianCurrency(group.milestoneTotalAmount)}`
+                                : isMlmp
+                                ? `— ${group.activityCount} ${group.activityCount === 1 ? "activity" : "activities"} · ${group.rows.length} SET milestone(s) · ${formatIndianCurrency(group.milestoneTotalAmount)}`
+                                : isAmountBased
+                                ? `— ${group.activityCount} ${group.activityCount === 1 ? "activity" : "activities"} · ${formatIndianCurrency(group.milestoneTotalAmount)}`
                                 : `— ${group.activityCount} ${group.activityCount === 1 ? "activity" : "activities"}`}
                             </span>
                           </span>
@@ -306,28 +330,35 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, onUpdateInvo
                     <td className="px-3 py-2.5 font-semibold text-[var(--nu-text)] whitespace-nowrap">{row.invoiceNo}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-[var(--nu-text-secondary)]">{formatDate(row.invoiceDate)}</td>
                     <td className="px-3 py-2.5 max-w-[180px] truncate" title={row.activity}>{row.activity}</td>
-                    <td className="px-3 py-2.5 max-w-[180px] truncate font-medium text-[var(--nu-text)]" title={row.description}>{row.description}</td>
-                    {isLumpSum ? (
-                      <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
-                        {row.milestonePercent !== undefined ? `${row.milestonePercent}%` : "—"}
-                      </td>
-                    ) : (
-                      <>
+                    {isMlmp && (
+                      <td className="px-3 py-2.5 whitespace-nowrap text-[var(--nu-text-secondary)] font-semibold">{row.setLabel ?? "—"}</td>
+                    )}
+                    {!isAmountBased && (
+                      <td className="px-3 py-2.5 max-w-[180px] truncate font-medium text-[var(--nu-text)]" title={row.description}>{row.description}</td>
+                    )}
+                    {!isAmountBased && (
+                      isMilestoneBased ? (
                         <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
-                          {formatIndianNumber(row.qty)} {row.uom}
+                          {row.milestonePercent !== undefined ? `${row.milestonePercent}%` : "—"}
                         </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap text-[var(--nu-text-secondary)]">
-                          <MoneyValue value={row.unitPrice} />
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
-                          <MoneyValue value={row.systemAmount} />
-                        </td>
-                      </>
+                      ) : (
+                        <>
+                          <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                            {formatIndianNumber(row.qty)} {row.uom}
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap text-[var(--nu-text-secondary)]">
+                            <MoneyValue value={row.unitPrice} />
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                            <MoneyValue value={row.systemAmount} />
+                          </td>
+                        </>
+                      )
                     )}
                     <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
                       <MoneyValue value={row.amount} className="font-semibold text-[var(--nu-accent)]" />
                     </td>
-                    {!isLumpSum && (
+                    {!isMilestoneBased && !isAmountBased && (
                       <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap text-xs font-mono">
                         {row.line.commercialAdjustmentINR && Math.abs(row.line.commercialAdjustmentINR) > 0.01 ? (
                           <MoneyTooltip

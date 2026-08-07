@@ -15,6 +15,10 @@ interface Props {
   slNo: number;
   /** Lump Sum bills against Payment Milestones, not execution quantities — Completed Qty/Remaining Qty are meaningless for it and must not render at all. */
   isLumpSum: boolean;
+  /** MLMP bills against per-SET milestones (cloned from the project's existing Payment Milestones), not activity completion — Completed/Remaining/Progress are meaningless for it and must not render at all, exactly like Lump Sum. */
+  isMlmp?: boolean;
+  /** Amount Based bills a direct amount against remaining Contract Value — no quantity at all, so Order Qty/Completed/Remaining/Progress/Unit Rate are all meaningless and must not render. */
+  isAmountBased?: boolean;
 }
 
 const STATUS_BADGE: Record<InvoiceStatus, Tone> = {
@@ -31,14 +35,15 @@ const STATUS_BADGE: Record<InvoiceStatus, Tone> = {
  * itself happens through the single project-wide "+ Raise Invoice" workflow,
  * never from this table.
  */
-export function ActivityRow({ item, slNo, isLumpSum }: Props) {
+export function ActivityRow({ item, slNo, isLumpSum, isMlmp = false, isAmountBased = false }: Props) {
   const invoiceRaised = getInvoiceRaisedAmount(item);
   const balance = Math.max(item.totalPrice - invoiceRaised, 0);
   const status = calculateInvoiceStatus(item);
 
   // Completed/Remaining Qty only ever needs computing for the Quantity
-  // Billing column set — never call this for a Lump Sum project.
-  const { completedQty, remainingQty } = isLumpSum
+  // Billing column set — never call this for a Lump Sum, MLMP, or Amount
+  // Based project.
+  const { completedQty, remainingQty } = isLumpSum || isMlmp || isAmountBased
     ? { completedQty: 0, remainingQty: 0 }
     : calculateCumulativeProgress(item);
 
@@ -46,14 +51,18 @@ export function ActivityRow({ item, slNo, isLumpSum }: Props) {
     <tr id={`activity-row-${item.id}`} className="nu-table-row">
       <td className="px-3 py-3 text-center text-[var(--nu-text-muted)] whitespace-nowrap">{slNo}</td>
       <td className="px-3 py-3 font-semibold text-[var(--nu-text)] max-w-[220px] break-words">{item.description}</td>
-      <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{formatIndianNumber(item.qty)} {item.uom}</td>
-      {!isLumpSum && (
+      {!isAmountBased && (
+        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{formatIndianNumber(item.qty)} {item.uom}</td>
+      )}
+      {!isLumpSum && !isMlmp && !isAmountBased && (
         <>
           <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{formatIndianNumber(completedQty)}</td>
           <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-[var(--nu-text-secondary)]">{formatIndianNumber(remainingQty)}</td>
         </>
       )}
-      <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{formatIndianCurrency(item.unitPrice)}</td>
+      {!isAmountBased && (
+        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{formatIndianCurrency(item.unitPrice)}</td>
+      )}
       <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">
         <MoneyValue value={item.totalPrice} />
       </td>

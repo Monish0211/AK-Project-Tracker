@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { Search } from "lucide-react";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
+import { calculateProjectCompletionPercentage } from "../../../utils/projectMetrics";
 
 interface Props {
   projects: any[];
@@ -12,16 +13,7 @@ export function ProjectPerformanceTable({ projects }: Props) {
 
   const tableData = useMemo(() => {
     return projects.map((p) => {
-      const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      let totalQty = 0;
-      let billedQty = 0;
-      items.forEach((item: any) => {
-        totalQty += item.totalQuantity || 0;
-        (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
-          if (line.status !== "Cancelled") billedQty += line.quantityBilled || 0;
-        });
-      });
-      const progressPct = totalQty > 0 ? (billedQty / totalQty) * 100 : 0;
+      const progressPct = calculateProjectCompletionPercentage(p);
 
       return {
         id: p.id,
