@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { X, Maximize2, Minimize2, ArrowLeft, Lock, CheckCircle2, Receipt, Search, FileWarning } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
@@ -50,6 +51,88 @@ const formatNoteDate = (value: string): string => {
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 };
+
+interface ActivityListRowProps {
+  itemId: string;
+  description: string;
+  qty: number;
+  uom: string;
+  contractValueLabel: string;
+  raisedLabel: string;
+  balanceLabel: string;
+  status: InvoiceStatus;
+  isActive: boolean;
+  hasSelection: boolean;
+  isLast: boolean;
+  onSelect: (itemId: string) => void;
+}
+
+/**
+ * One activity row in the left panel — React.memo'd so selecting an activity
+ * (or checking a milestone, which changes selectedItemIds) only re-renders
+ * the rows whose OWN isActive/hasSelection actually flipped, never all
+ * 100+/500+ rows. `onSelect` is a stable (useCallback, no deps) reference.
+ * `isLast` replicates the original list's divide-y border (a border above
+ * every row except the first) as a border BELOW every row except the last —
+ * the same visual result, but one that stays correct under virtualization
+ * (divide-y's sibling selector would otherwise key off DOM order, not true
+ * list position, once only a scrolled-in window of rows is mounted).
+ */
+const ActivityListRow = memo(function ActivityListRow({
+  itemId,
+  description,
+  qty,
+  uom,
+  contractValueLabel,
+  raisedLabel,
+  balanceLabel,
+  status,
+  isActive,
+  hasSelection,
+  isLast,
+  onSelect,
+}: ActivityListRowProps) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(itemId)}
+      className={`w-full text-left px-3.5 py-3 transition-colors cursor-pointer ${!isLast ? "border-b border-[var(--nu-border)]" : ""} ${
+        isActive ? "bg-[var(--nu-accent)] text-white" : "hover:bg-[var(--nu-surface-alt)] text-[var(--nu-text)]"
+      }`}
+    >
+      <div className="flex items-start gap-2">
+        <span
+          className={`mt-1 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${
+            isActive ? "border-white" : "border-[var(--nu-border-strong)]"
+          }`}
+        >
+          {isActive && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <p className="font-bold text-[13px] truncate">{description}</p>
+            {hasSelection && (
+              <CheckCircle2 size={12} className={isActive ? "text-white shrink-0" : "text-emerald-600 dark:text-emerald-400 shrink-0"} />
+            )}
+          </div>
+          <p className={`text-[11px] mt-0.5 ${isActive ? "text-white/80" : "text-[var(--nu-text-muted)]"}`}>
+            Qty {formatIndianNumber(qty)} {uom}
+          </p>
+          <div className={`grid grid-cols-2 gap-x-2 gap-y-0.5 mt-1.5 text-[10.5px] ${isActive ? "text-white/90" : "text-[var(--nu-text-secondary)]"}`}>
+            <span>Contract: {contractValueLabel}</span>
+            <span>Raised: {raisedLabel}</span>
+            <span className="col-span-2">Balance: {balanceLabel}</span>
+          </div>
+          <div className="mt-1.5">
+            <Badge tone={isActive ? "neutral" : STATUS_BADGE[status]} dot className={`text-[10px] ${isActive ? "!bg-white/20 !text-white" : ""}`}>
+              {status}
+            </Badge>
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+});
 
 /**
  * MLMP's own "Raise Invoice" workspace — an enterprise ERP-style split
@@ -149,23 +232,46 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
 
   const selectedItem = useMemo(() => items.find((i) => i.id === selectedActivityId) ?? null, [items, selectedActivityId]);
 
+  // Stable (no deps — setSelectedActivityId is itself a stable state setter)
+  // so the memoized ActivityListRow below never re-renders just because
+  // clicking ANOTHER row caused this component to re-render.
+  const handleSelectActivity = useCallback((itemId: string) => {
+    setSelectedActivityId(itemId);
+  }, []);
+
+  // Virtualizes the left activities list — only the rows currently scrolled
+  // into view are ever mounted, so a 500-activity project renders the same
+  // small handful of DOM nodes as a 5-activity one. Every row is the same
+  // fixed height (all text is truncated to one line, never wraps), so a
+  // plain fixed-size virtualizer is exact — no per-row measurement needed.
+  const activityListParentRef = useRef<HTMLDivElement>(null);
+  const activityRowVirtualizer = useVirtualizer({
+    count: filteredSummaries.length,
+    getScrollElement: () => activityListParentRef.current,
+    estimateSize: () => 116,
+    overscan: 8,
+  });
+
   // ═══ RIGHT PANEL — ONLY the selected activity's SETs are ever computed ═══
   const selectedSets: MlmpSetGroup[] = useMemo(
     () => (selectedItem ? getMlmpSetRows(project, selectedItem) : []),
     [project, selectedItem]
   );
 
-  const toggleRow = (itemId: string, set: MlmpSetGroup, milestone: MlmpSetGroup["milestones"][number]) => {
-    const isLockedElsewhere = milestone.alreadyInvoiced && milestone.invoicedUnderInvoiceNo !== invoiceNo;
-    if (isLockedElsewhere) return;
-    const key = rowKey(itemId, set.setIndex, milestone.id);
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
+  const toggleRow = useCallback(
+    (itemId: string, set: MlmpSetGroup, milestone: MlmpSetGroup["milestones"][number]) => {
+      const isLockedElsewhere = milestone.alreadyInvoiced && milestone.invoicedUnderInvoiceNo !== invoiceNo;
+      if (isLockedElsewhere) return;
+      const key = rowKey(itemId, set.setIndex, milestone.id);
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    },
+    [invoiceNo]
+  );
 
   // Current activity's own selected rows — drives the "this activity" fields
   // of the summary card (Selected Sets / Milestones / Total % / Amount).
@@ -435,57 +541,38 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-y-auto nu-scrollbar divide-y divide-[var(--nu-border)]">
+                <div ref={activityListParentRef} className="flex-1 min-h-0 overflow-y-auto nu-scrollbar">
                   {filteredSummaries.length === 0 ? (
                     <p className="p-4 text-[12px] text-[var(--nu-text-muted)] italic text-center">No activities match "{search}".</p>
                   ) : (
-                    filteredSummaries.map((row) => {
-                      const isActive = row.item.id === selectedActivityId;
-                      const hasSelectionHere = selectedItemIds.has(row.item.id);
-                      return (
-                        <button
-                          key={row.item.id}
-                          type="button"
-                          onClick={() => setSelectedActivityId(row.item.id)}
-                          className={`w-full text-left px-3.5 py-3 transition-colors cursor-pointer ${
-                            isActive
-                              ? "bg-[var(--nu-accent)] text-white"
-                              : "hover:bg-[var(--nu-surface-alt)] text-[var(--nu-text)]"
-                          }`}
-                        >
-                          <div className="flex items-start gap-2">
-                            <span
-                              className={`mt-1 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${
-                                isActive ? "border-white" : "border-[var(--nu-border-strong)]"
-                              }`}
-                            >
-                              {isActive && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <p className="font-bold text-[13px] truncate">{row.item.description}</p>
-                                {hasSelectionHere && (
-                                  <CheckCircle2 size={12} className={isActive ? "text-white shrink-0" : "text-emerald-600 dark:text-emerald-400 shrink-0"} />
-                                )}
-                              </div>
-                              <p className={`text-[11px] mt-0.5 ${isActive ? "text-white/80" : "text-[var(--nu-text-muted)]"}`}>
-                                Qty {formatIndianNumber(row.item.qty)} {row.item.uom}
-                              </p>
-                              <div className={`grid grid-cols-2 gap-x-2 gap-y-0.5 mt-1.5 text-[10.5px] ${isActive ? "text-white/90" : "text-[var(--nu-text-secondary)]"}`}>
-                                <span>Contract: {formatIndianCurrency(row.item.totalPrice)}</span>
-                                <span>Raised: {formatIndianCurrency(row.invoiceRaised)}</span>
-                                <span className="col-span-2">Balance: {formatIndianCurrency(row.balanceValue)}</span>
-                              </div>
-                              <div className="mt-1.5">
-                                <Badge tone={isActive ? "neutral" : STATUS_BADGE[row.status]} dot className={`text-[10px] ${isActive ? "!bg-white/20 !text-white" : ""}`}>
-                                  {row.status}
-                                </Badge>
-                              </div>
-                            </div>
+                    <div style={{ height: activityRowVirtualizer.getTotalSize(), position: "relative", width: "100%" }}>
+                      {activityRowVirtualizer.getVirtualItems().map((virtualRow) => {
+                        const row = filteredSummaries[virtualRow.index];
+                        return (
+                          <div
+                            key={row.item.id}
+                            ref={activityRowVirtualizer.measureElement}
+                            data-index={virtualRow.index}
+                            style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${virtualRow.start}px)` }}
+                          >
+                            <ActivityListRow
+                              itemId={row.item.id}
+                              description={row.item.description}
+                              qty={row.item.qty}
+                              uom={row.item.uom}
+                              contractValueLabel={formatIndianCurrency(row.item.totalPrice)}
+                              raisedLabel={formatIndianCurrency(row.invoiceRaised)}
+                              balanceLabel={formatIndianCurrency(row.balanceValue)}
+                              status={row.status}
+                              isActive={row.item.id === selectedActivityId}
+                              hasSelection={selectedItemIds.has(row.item.id)}
+                              isLast={virtualRow.index === filteredSummaries.length - 1}
+                              onSelect={handleSelectActivity}
+                            />
                           </div>
-                        </button>
-                      );
-                    })
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               </div>

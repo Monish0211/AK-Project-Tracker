@@ -1,5 +1,4 @@
-import { useMemo, useState } from "react";
-import type { ChangeEvent } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { X, Maximize2, Minimize2, ArrowLeft, AlertTriangle, Receipt } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
@@ -28,14 +27,29 @@ interface Props {
   onSave: (updatedProject: Project) => void;
 }
 
-interface WorkspaceRow {
+/**
+ * Split into two layers so a keystroke in ONE row's Qty input never
+ * re-triggers the expensive part of every OTHER row's computation:
+ *  - BaseRow — everything that only depends on the activity itself and the
+ *    saved invoice ledger (alreadyRaisedQty scans that activity's own
+ *    invoice history). Memoized against [items, existingLines, invoiceNo]
+ *    only, so it is NOT recomputed on every qtyInputs change.
+ *  - WorkspaceRow — BaseRow plus the cheap, pure-arithmetic fields derived
+ *    from the current qtyInputs value. Recomputed on every keystroke, but
+ *    each row's own derivation is O(1) — no invoice-history scan — so doing
+ *    it for all rows is fast even with hundreds of activities.
+ */
+interface BaseRow {
   item: InvoiceItem;
   existingLine?: InvoiceLine;
   orderQty: number;
   alreadyRaisedQty: number;
+  unitRate: number;
+}
+
+interface WorkspaceRow extends BaseRow {
   currentQty: number;
   remainingQty: number;
-  unitRate: number;
   invoiceValue: number;
   error: string | null;
 }
@@ -96,6 +110,80 @@ function buildInvoiceRaisedNoteMessage(
   return lines.join("\n");
 }
 
+interface WorkspaceTableRowProps {
+  slNo: number;
+  itemId: string;
+  description: string;
+  orderQtyLabel: string;
+  alreadyRaisedQtyLabel: string;
+  uom: string;
+  qtyValue: string;
+  error: string | null;
+  unitRateLabel: string;
+  invoiceValueLabel: string;
+  remainingQtyLabel: string;
+  onQtyChange: (itemId: string, raw: string) => void;
+}
+
+/**
+ * One activity's row — React.memo'd so a keystroke in ONE row's Qty input
+ * only re-renders that row, not all 500. `onQtyChange` is a stable
+ * (useCallback, no deps) reference from the parent, and every other prop is
+ * a plain string/number derived just for this row, so React.memo's default
+ * shallow-equality check correctly skips re-rendering every untouched row.
+ */
+const WorkspaceTableRow = memo(function WorkspaceTableRow({
+  slNo,
+  itemId,
+  description,
+  orderQtyLabel,
+  alreadyRaisedQtyLabel,
+  uom,
+  qtyValue,
+  error,
+  unitRateLabel,
+  invoiceValueLabel,
+  remainingQtyLabel,
+  onQtyChange,
+}: WorkspaceTableRowProps) {
+  return (
+    <tr className="nu-table-row hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+      <td className="px-3 py-3 text-center text-slate-500 dark:text-slate-400">{slNo}</td>
+      <td className="px-3 py-3 font-semibold text-[var(--nu-text)] max-w-[220px] break-words">{description}</td>
+      <td className="px-3 py-3 text-center tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-400">
+        {orderQtyLabel} <span className="text-[10px] text-slate-400 uppercase">{uom}</span>
+      </td>
+      <td className="px-3 py-3 text-center tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-400">
+        {alreadyRaisedQtyLabel} <span className="text-[10px] text-slate-400 uppercase">{uom}</span>
+      </td>
+      <td className="px-3 py-2.5">
+        <Input
+          type="text"
+          inputMode="decimal"
+          value={qtyValue}
+          onChange={(e) => onQtyChange(itemId, e.target.value)}
+          placeholder="0"
+          invalid={!!error}
+          className={`text-center font-extrabold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-900 ${
+            error ? "!border-red-500 !ring-red-500/20" : ""
+          }`}
+        />
+        {error && (
+          <p className="mt-1 flex items-center gap-1 text-[10px] font-medium text-[var(--nu-danger)]">
+            <AlertTriangle size={10} className="shrink-0" />
+            {error}
+          </p>
+        )}
+      </td>
+      <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-slate-700 dark:text-slate-300">{unitRateLabel}</td>
+      <td className="px-3 py-3 text-right tabular-nums font-semibold whitespace-nowrap text-slate-800 dark:text-slate-200">{invoiceValueLabel}</td>
+      <td className="px-3 py-3 text-center tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-400">
+        {remainingQtyLabel} <span className="text-[10px] text-slate-400 uppercase">{uom}</span>
+      </td>
+    </tr>
+  );
+});
+
 /**
  * Step 2 of the unified, project-wide "Raise Invoice" flow — the Invoice
  * Workspace. ONE Excel-style table lists every activity at once (never a
@@ -153,30 +241,52 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
     return initial;
   });
 
-  const handleQtyChange = (itemId: string) => (e: ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
+  // Stable reference (no deps — only uses the setter's functional-update
+  // form) so the memoized WorkspaceTableRow below never sees a "changed"
+  // onQtyChange prop and therefore never re-renders just because ANOTHER
+  // row's keystroke caused this component to re-render.
+  const handleQtyChange = useCallback((itemId: string, raw: string) => {
     if (raw !== "" && !/^\d*\.?\d*$/.test(raw)) return;
     setQtyInputs((prev) => ({ ...prev, [itemId]: raw }));
-  };
+  }, []);
 
-  const rows: WorkspaceRow[] = items.map((item) => {
-    const existingLine = existingLines.get(item.id);
-    const orderQty = item.qty;
-    const alreadyRaisedQty = getActivityRaisedQtyExcludingCycle(item, invoiceNo);
-    const currentQty = Number(qtyInputs[item.id]) || 0;
-    const remainingQty = Math.max(round(orderQty - alreadyRaisedQty - currentQty), 0);
-    const unitRate = item.unitPrice;
-    const invoiceValue = round(currentQty * unitRate);
+  // Expensive per-activity work (scanning that activity's own invoice
+  // history via getActivityRaisedQtyExcludingCycle) — memoized against
+  // [items, existingLines, invoiceNo] only, so typing in a Qty box (which
+  // only changes qtyInputs) never re-triggers it.
+  const baseRows: BaseRow[] = useMemo(
+    () =>
+      items.map((item) => ({
+        item,
+        existingLine: existingLines.get(item.id),
+        orderQty: item.qty,
+        alreadyRaisedQty: getActivityRaisedQtyExcludingCycle(item, invoiceNo),
+        unitRate: item.unitPrice,
+      })),
+    [items, existingLines, invoiceNo]
+  );
 
-    let error: string | null = null;
-    if (currentQty < 0) {
-      error = "Cannot be negative.";
-    } else if (currentQty > round(orderQty - alreadyRaisedQty) + 0.001) {
-      error = `Exceeds remaining qty (${formatIndianNumber(Math.max(orderQty - alreadyRaisedQty, 0))} ${item.uom}).`;
-    }
+  // Cheap, pure-arithmetic derivation from baseRows + qtyInputs — recomputed
+  // on every keystroke, but each row's own work here is O(1), so doing it
+  // for hundreds of activities is still fast.
+  const rows: WorkspaceRow[] = useMemo(
+    () =>
+      baseRows.map((base) => {
+        const currentQty = Number(qtyInputs[base.item.id]) || 0;
+        const remainingQty = Math.max(round(base.orderQty - base.alreadyRaisedQty - currentQty), 0);
+        const invoiceValue = round(currentQty * base.unitRate);
 
-    return { item, existingLine, orderQty, alreadyRaisedQty, currentQty, remainingQty, unitRate, invoiceValue, error };
-  });
+        let error: string | null = null;
+        if (currentQty < 0) {
+          error = "Cannot be negative.";
+        } else if (currentQty > round(base.orderQty - base.alreadyRaisedQty) + 0.001) {
+          error = `Exceeds remaining qty (${formatIndianNumber(Math.max(base.orderQty - base.alreadyRaisedQty, 0))} ${base.item.uom}).`;
+        }
+
+        return { ...base, currentQty, remainingQty, invoiceValue, error };
+      }),
+    [baseRows, qtyInputs]
+  );
 
   const totalInvoiceValue = round(rows.filter((row) => row.currentQty > 0).reduce((sum, row) => sum + row.invoiceValue, 0));
   const hasBillableRow = rows.some((row) => row.currentQty > 0);
@@ -358,44 +468,21 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
                   </thead>
                   <tbody className="divide-y divide-[var(--nu-border)]">
                     {rows.map((row, index) => (
-                      <tr key={row.item.id} className="nu-table-row hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                        <td className="px-3 py-3 text-center text-slate-500 dark:text-slate-400">{index + 1}</td>
-                        <td className="px-3 py-3 font-semibold text-[var(--nu-text)] max-w-[220px] break-words">{row.item.description}</td>
-                        <td className="px-3 py-3 text-center tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-400">
-                          {formatIndianNumber(row.orderQty)} <span className="text-[10px] text-slate-400 uppercase">{row.item.uom}</span>
-                        </td>
-                        <td className="px-3 py-3 text-center tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-400">
-                          {formatIndianNumber(row.alreadyRaisedQty)} <span className="text-[10px] text-slate-400 uppercase">{row.item.uom}</span>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <Input
-                            type="text"
-                            inputMode="decimal"
-                            value={qtyInputs[row.item.id] ?? ""}
-                            onChange={handleQtyChange(row.item.id)}
-                            placeholder="0"
-                            invalid={!!row.error}
-                            className={`text-center font-extrabold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-900 ${
-                              row.error ? "!border-red-500 !ring-red-500/20" : ""
-                            }`}
-                          />
-                          {row.error && (
-                            <p className="mt-1 flex items-center gap-1 text-[10px] font-medium text-[var(--nu-danger)]">
-                              <AlertTriangle size={10} className="shrink-0" />
-                              {row.error}
-                            </p>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-slate-700 dark:text-slate-300">
-                          {formatIndianCurrency(row.unitRate)}
-                        </td>
-                        <td className="px-3 py-3 text-right tabular-nums font-semibold whitespace-nowrap text-slate-800 dark:text-slate-200">
-                          {formatIndianCurrency(row.invoiceValue)}
-                        </td>
-                        <td className="px-3 py-3 text-center tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-400">
-                          {formatIndianNumber(row.remainingQty)} <span className="text-[10px] text-slate-400 uppercase">{row.item.uom}</span>
-                        </td>
-                      </tr>
+                      <WorkspaceTableRow
+                        key={row.item.id}
+                        slNo={index + 1}
+                        itemId={row.item.id}
+                        description={row.item.description}
+                        orderQtyLabel={formatIndianNumber(row.orderQty)}
+                        alreadyRaisedQtyLabel={formatIndianNumber(row.alreadyRaisedQty)}
+                        uom={row.item.uom}
+                        qtyValue={qtyInputs[row.item.id] ?? ""}
+                        error={row.error}
+                        unitRateLabel={formatIndianCurrency(row.unitRate)}
+                        invoiceValueLabel={formatIndianCurrency(row.invoiceValue)}
+                        remainingQtyLabel={formatIndianNumber(row.remainingQty)}
+                        onQtyChange={handleQtyChange}
+                      />
                     ))}
                   </tbody>
                   <tfoot>

@@ -1,5 +1,4 @@
-import { useMemo, useState } from "react";
-import type { ChangeEvent } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { X, Maximize2, Minimize2, ArrowLeft, AlertTriangle, CheckCircle2, Receipt } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
@@ -28,12 +27,22 @@ interface Props {
   onSave: (updatedProject: Project) => void;
 }
 
-interface AllocationRow {
+/**
+ * Split the same way as InvoiceWorkspaceModal's BaseRow/WorkspaceRow: the
+ * expensive part (previouslyInvoiced scans that activity's own invoice
+ * history) is memoized separately from the cheap per-keystroke arithmetic,
+ * so typing an amount for ONE activity never re-scans every OTHER
+ * activity's invoice history.
+ */
+interface BaseAllocationRow {
   item: InvoiceItem;
   existingLine?: InvoiceLine;
   contractValue: number;
   previouslyInvoiced: number;
   balanceAvailable: number;
+}
+
+interface AllocationRow extends BaseAllocationRow {
   invoiceAmount: number;
   error: string | null;
 }
@@ -48,6 +57,62 @@ const formatNoteDate = (value: string): string => {
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 };
+
+interface AllocationTableRowProps {
+  itemId: string;
+  description: string;
+  contractValueLabel: string;
+  previouslyInvoicedLabel: string;
+  balanceAvailableLabel: string;
+  amountValue: string;
+  error: string | null;
+  onAmountChange: (itemId: string, raw: string) => void;
+}
+
+/**
+ * One activity's row — React.memo'd so typing in ONE row's Invoice Amount
+ * field only re-renders that row. `onAmountChange` is a stable (useCallback,
+ * no deps) reference, so React.memo's shallow prop comparison correctly
+ * skips every other, untouched row.
+ */
+const AllocationTableRow = memo(function AllocationTableRow({
+  itemId,
+  description,
+  contractValueLabel,
+  previouslyInvoicedLabel,
+  balanceAvailableLabel,
+  amountValue,
+  error,
+  onAmountChange,
+}: AllocationTableRowProps) {
+  return (
+    <tr className="nu-table-row hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+      <td className="px-3 py-3 font-semibold text-[var(--nu-text)] max-w-[220px] break-words">{description}</td>
+      <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-slate-700 dark:text-slate-300">{contractValueLabel}</td>
+      <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-400">{previouslyInvoicedLabel}</td>
+      <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap font-semibold text-slate-800 dark:text-slate-200">{balanceAvailableLabel}</td>
+      <td className="px-3 py-2.5">
+        <Input
+          type="text"
+          inputMode="decimal"
+          value={amountValue}
+          onChange={(e) => onAmountChange(itemId, e.target.value)}
+          placeholder="0"
+          invalid={!!error}
+          className={`text-center font-extrabold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-900 ${
+            error ? "!border-red-500 !ring-red-500/20" : ""
+          }`}
+        />
+        {error && (
+          <p className="mt-1 flex items-center gap-1 text-[10px] font-medium text-[var(--nu-danger)]">
+            <AlertTriangle size={10} className="shrink-0" />
+            {error}
+          </p>
+        )}
+      </td>
+    </tr>
+  );
+});
 
 /**
  * Amount Based's own "Raise Invoice" workspace — a flat, one-row-per-activity
@@ -95,28 +160,51 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
     return initial;
   });
 
-  const handleAmountChange = (itemId: string) => (e: ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
+  // Stable reference (no deps — functional setState only) so the memoized
+  // AllocationTableRow below never re-renders just because ANOTHER row's
+  // keystroke caused this component to re-render.
+  const handleAmountChange = useCallback((itemId: string, raw: string) => {
     if (raw !== "" && !/^\d*\.?\d*$/.test(raw)) return;
     setAmountInputs((prev) => ({ ...prev, [itemId]: raw }));
-  };
+  }, []);
+
+  // Expensive per-activity work (getActivityRaisedAmountExcludingCycle scans
+  // that activity's own invoice history) — memoized against
+  // [items, existingLines, invoiceNo] only, so typing an amount never
+  // re-triggers it for any row.
+  const baseRows: BaseAllocationRow[] = useMemo(
+    () =>
+      items.map((item) => {
+        const contractValue = item.totalPrice;
+        const previouslyInvoiced = getActivityRaisedAmountExcludingCycle(item, invoiceNo);
+        return {
+          item,
+          existingLine: existingLines.get(item.id),
+          contractValue,
+          previouslyInvoiced,
+          balanceAvailable: Math.max(round(contractValue - previouslyInvoiced), 0),
+        };
+      }),
+    [items, existingLines, invoiceNo]
+  );
 
   // No checkbox — entering an amount > 0 is itself what includes an activity
   // in this invoice; clearing it back to 0 removes it. The Invoice Amount
-  // field is the only interaction.
-  const rows: AllocationRow[] = items.map((item) => {
-    const existingLine = existingLines.get(item.id);
-    const contractValue = item.totalPrice;
-    const previouslyInvoiced = getActivityRaisedAmountExcludingCycle(item, invoiceNo);
-    const balanceAvailable = Math.max(round(contractValue - previouslyInvoiced), 0);
-    const invoiceAmount = Number(amountInputs[item.id]) || 0;
+  // field is the only interaction. Cheap, pure-arithmetic derivation —
+  // recomputed on every keystroke, but each row is just O(1) math.
+  const rows: AllocationRow[] = useMemo(
+    () =>
+      baseRows.map((base) => {
+        const invoiceAmount = Number(amountInputs[base.item.id]) || 0;
 
-    let error: string | null = null;
-    if (invoiceAmount < 0) error = "Cannot be negative.";
-    else if (invoiceAmount > balanceAvailable + 0.001) error = EXCEEDS_BALANCE_ERROR;
+        let error: string | null = null;
+        if (invoiceAmount < 0) error = "Cannot be negative.";
+        else if (invoiceAmount > base.balanceAvailable + 0.001) error = EXCEEDS_BALANCE_ERROR;
 
-    return { item, existingLine, contractValue, previouslyInvoiced, balanceAvailable, invoiceAmount, error };
-  });
+        return { ...base, invoiceAmount, error };
+      }),
+    [baseRows, amountInputs]
+  );
 
   const selectedRows = rows.filter((row) => row.invoiceAmount > 0);
   const totalInvoiceAmount = round(selectedRows.reduce((sum, row) => sum + row.invoiceAmount, 0));
@@ -303,37 +391,17 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
                     </thead>
                     <tbody className="divide-y divide-[var(--nu-border)]">
                       {rows.map((row) => (
-                        <tr key={row.item.id} className="nu-table-row hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                          <td className="px-3 py-3 font-semibold text-[var(--nu-text)] max-w-[220px] break-words">{row.item.description}</td>
-                          <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-slate-700 dark:text-slate-300">
-                            {formatIndianCurrency(row.contractValue)}
-                          </td>
-                          <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-400">
-                            {formatIndianCurrency(row.previouslyInvoiced)}
-                          </td>
-                          <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap font-semibold text-slate-800 dark:text-slate-200">
-                            {formatIndianCurrency(row.balanceAvailable)}
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <Input
-                              type="text"
-                              inputMode="decimal"
-                              value={amountInputs[row.item.id] ?? ""}
-                              onChange={handleAmountChange(row.item.id)}
-                              placeholder="0"
-                              invalid={!!row.error}
-                              className={`text-center font-extrabold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-900 ${
-                                row.error ? "!border-red-500 !ring-red-500/20" : ""
-                              }`}
-                            />
-                            {row.error && (
-                              <p className="mt-1 flex items-center gap-1 text-[10px] font-medium text-[var(--nu-danger)]">
-                                <AlertTriangle size={10} className="shrink-0" />
-                                {row.error}
-                              </p>
-                            )}
-                          </td>
-                        </tr>
+                        <AllocationTableRow
+                          key={row.item.id}
+                          itemId={row.item.id}
+                          description={row.item.description}
+                          contractValueLabel={formatIndianCurrency(row.contractValue)}
+                          previouslyInvoicedLabel={formatIndianCurrency(row.previouslyInvoiced)}
+                          balanceAvailableLabel={formatIndianCurrency(row.balanceAvailable)}
+                          amountValue={amountInputs[row.item.id] ?? ""}
+                          error={row.error}
+                          onAmountChange={handleAmountChange}
+                        />
                       ))}
                     </tbody>
                   </table>
