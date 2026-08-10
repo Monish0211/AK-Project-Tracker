@@ -1,8 +1,4 @@
 export const AUTH_CONFIG = {
-  demoUser: {
-    employeeId: "PMOV1",
-    password: "PMO@123",
-    name: "Administrator",
-  },
-  sessionKey: "pmo_auth_session",
+  /** localStorage key the access token (and only the access token) is persisted under. */
+  tokenStorageKey: "pmo_access_token",
 };

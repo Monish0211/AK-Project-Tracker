@@ -2,10 +2,15 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { authService } from "./authService";
 import type { UserSession } from "./authService";
 
+export interface LoginResult {
+  success: boolean;
+  error?: string;
+}
+
 interface AuthContextType {
   user: UserSession | null;
   loading: boolean;
-  login: (employeeId: string, password: string) => boolean;
+  login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
 }
 
@@ -15,26 +20,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // On mount, a stored token is re-validated against the server (GET
+  // /auth/me) rather than trusted as-is — a token can go stale (expired,
+  // account locked/deactivated) between visits, and the profile it returns
+  // is always the source of truth for the session.
   useEffect(() => {
-    const session = authService.getCurrentSession();
-    setUser(session);
-    setLoading(false);
+    let isMounted = true;
+
+    async function restoreSession() {
+      if (!authService.hasStoredToken()) {
+        if (isMounted) setLoading(false);
+        return;
+      }
+
+      try {
+        const session = await authService.fetchCurrentUser();
+        if (isMounted) setUser(session);
+      } catch {
+        // Invalid/expired token — apiClient's 401 handler already cleared
+        // it; nothing further to do here.
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    restoreSession();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const login = (employeeId: string, password: string): boolean => {
-    const session = authService.login(employeeId, password);
-    if (session) {
+  const login = async (email: string, password: string): Promise<LoginResult> => {
+    try {
+      const session = await authService.login(email, password);
       setUser(session);
-      return true;
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid email or password.";
+      return { success: false, error: message };
     }
-    return false;
   };
 
-  // Synchronous logout – clears storage AND state in one tick.
-  // Never sets any loading flag so ProtectedRoute instantly redirects.
+  // Synchronous from the caller's point of view — state clears immediately
+  // so ProtectedRoute redirects at once, while the POST /auth/logout call
+  // (best-effort refresh-token revocation) happens in the background.
   const logout = useCallback(() => {
-    authService.logout();
     setUser(null);
+    void authService.logout();
   }, []);
 
   return (

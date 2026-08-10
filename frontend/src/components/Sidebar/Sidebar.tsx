@@ -20,6 +20,8 @@ import * as XLSX from "xlsx";
 import { getProjects } from "../../services/projectService";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import type { Project } from "../../types/Project";
+import { useAuth } from "../../auth/authContext";
+import { hasModuleAccess } from "../../auth/permissions";
 
 interface NavChild {
   label: string;
@@ -76,6 +78,13 @@ const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+  const { user } = useAuth();
+
+  // Only render menu entries the logged-in user actually has module access
+  // to — item.label doubles as the exact Module name (e.g. "Projects",
+  // "Customer Master") granted via Settings > User Management, so no
+  // separate label-to-module mapping table is needed.
+  const visibleNavItems = NAV_ITEMS.filter((item) => hasModuleAccess(user, item.label));
 
   // Live project state
   const [projects, setProjects] = useState<Project[]>(getProjects());
@@ -410,7 +419,7 @@ const Sidebar = () => {
           the space it was allocated. */}
       <nav className="flex-1 min-h-0 overflow-y-auto px-2 min-[1440px]:px-4 py-5">
         <ul className="space-y-2">
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             if (item.children) {
               const ParentIcon = item.icon;
               return (

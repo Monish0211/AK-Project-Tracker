@@ -3,6 +3,7 @@ import { Routes, Route } from "react-router-dom";
 import Sidebar from "../components/Sidebar/Sidebar";
 import Navbar from "../components/Navbar/Navbar";
 import { GlobalReminderProvider } from "../notifications/GlobalReminderProvider";
+import { ModuleRoute } from "../auth/ModuleRoute";
 
 import Dashboard from "../pages/Dashboard/Dashboard";
 
@@ -66,11 +67,11 @@ const MainLayout = () => {
               {/* Dashboard */}
               <Route
                 path="/"
-                element={<Dashboard />}
+                element={<ModuleRoute module="Dashboard"><Dashboard /></ModuleRoute>}
               />
               <Route
                 path="/dashboard"
-                element={<Dashboard />}
+                element={<ModuleRoute module="Dashboard"><Dashboard /></ModuleRoute>}
               />
 
               {/* ===========================
@@ -79,42 +80,42 @@ const MainLayout = () => {
 
               <Route
                 path="/projects"
-                element={<Projects />}
+                element={<ModuleRoute module="Projects"><Projects /></ModuleRoute>}
               />
 
               <Route
                 path="/projects/completed"
-                element={<CompletedProjects />}
+                element={<ModuleRoute module="Projects"><CompletedProjects /></ModuleRoute>}
               />
 
               <Route
                 path="/projects/financial-loss"
-                element={<FinancialLossProjects />}
+                element={<ModuleRoute module="Projects"><FinancialLossProjects /></ModuleRoute>}
               />
 
               <Route
                 path="/projects/timeline-alerts"
-                element={<TimelineAlertProjects />}
+                element={<ModuleRoute module="Projects"><TimelineAlertProjects /></ModuleRoute>}
               />
 
               <Route
                 path="/projects/timesheet-pending"
-                element={<TimesheetPendingProjects />}
+                element={<ModuleRoute module="Projects"><TimesheetPendingProjects /></ModuleRoute>}
               />
 
               <Route
                 path="/projects/add"
-                element={<AddProject />}
+                element={<ModuleRoute module="Projects"><AddProject /></ModuleRoute>}
               />
 
               <Route
                 path="/projects/view/:id"
-                element={<ViewProject />}
+                element={<ModuleRoute module="Projects"><ViewProject /></ModuleRoute>}
               />
 
               <Route
                 path="/projects/edit/:id"
-                element={<EditProject />}
+                element={<ModuleRoute module="Projects"><EditProject /></ModuleRoute>}
               />
 
               {/* ===========================
@@ -123,7 +124,7 @@ const MainLayout = () => {
 
               <Route
                 path="/customers"
-                element={<CustomerMaster />}
+                element={<ModuleRoute module="Customer Master"><CustomerMaster /></ModuleRoute>}
               />
 
               {/* ===========================
@@ -132,28 +133,28 @@ const MainLayout = () => {
 
               <Route
                 path="/manpower"
-                element={<Manpower />}
+                element={<ModuleRoute module="Manpower"><Manpower /></ModuleRoute>}
               />
 
               <Route
                 path="/timesheets"
-                element={<Timesheets />}
+                element={<ModuleRoute module="Timesheets"><Timesheets /></ModuleRoute>}
               />
 
               <Route
                 path="/reports"
-                element={<ReportsPage />}
+                element={<ModuleRoute module="Reports"><ReportsPage /></ModuleRoute>}
               />
 
               <Route
                 path="/settings"
-                element={<Settings />}
+                element={<ModuleRoute module="Settings"><Settings /></ModuleRoute>}
               />
 
               {/* Wildcard Fallback */}
               <Route
                 path="*"
-                element={<Dashboard />}
+                element={<ModuleRoute module="Dashboard"><Dashboard /></ModuleRoute>}
               />
             </Routes>
           </div>

@@ -23,11 +23,11 @@ export default function Login() {
   }, [user, navigate]);
 
   // Input Refs
-  const employeeIdRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
   // Form States
-  const [employeeId, setEmployeeId] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -37,7 +37,7 @@ export default function Login() {
   const [isPassFocused, setIsPassFocused] = useState(false);
 
   // Validation / Error States
-  const [errors, setErrors] = useState<{ employeeId?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [authError, setAuthError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [authStatusText, setAuthStatusText] = useState("Sign In to Portal");
@@ -80,15 +80,15 @@ export default function Login() {
 
   const validate = () => {
     const newErrors: typeof errors = {};
-    const hasEmpId = !!employeeId.trim();
+    const hasEmail = !!email.trim();
     const hasPass = !!password;
 
-    if (!hasEmpId && !hasPass) {
-      newErrors.employeeId = "Please enter your Employee ID and Password.";
-      newErrors.password = "Please enter your Employee ID and Password.";
+    if (!hasEmail && !hasPass) {
+      newErrors.email = "Please enter your Company Email and Password.";
+      newErrors.password = "Please enter your Company Email and Password.";
     } else {
-      if (!hasEmpId) {
-        newErrors.employeeId = "Employee ID is required.";
+      if (!hasEmail) {
+        newErrors.email = "Company Email is required.";
       }
       if (!hasPass) {
         newErrors.password = "Password is required.";
@@ -127,9 +127,9 @@ export default function Login() {
     setIsSubmitting(true);
     setAuthStatusText("Authenticating...");
 
-    setTimeout(() => {
-      const success = login(employeeId, password);
-      if (success) {
+    (async () => {
+      const result = await login(email, password);
+      if (result.success) {
         setIsSuccess(true);
         setAuthStatusText("Success!");
         setFailedAttempts(0);
@@ -145,7 +145,7 @@ export default function Login() {
         setAuthStatusText("Sign In to Portal");
         setPassword("");
         setFailedAttempts((prev) => prev + 1);
-        setAuthError("❌ Invalid Employee ID or Password\nPlease verify your credentials and try again.");
+        setAuthError(`❌ ${result.error ?? "Invalid Company Email or Password"}\nPlease verify your credentials and try again.`);
 
         setShakeCard(true);
         setTimeout(() => setShakeCard(false), 350);
@@ -158,7 +158,7 @@ export default function Login() {
           setAuthError("");
         }, 4000);
       }
-    }, 1200);
+    })();
   };
 
   if (showSplash) {
@@ -584,7 +584,7 @@ export default function Login() {
               <ShieldAlert size={16} className="shrink-0 mt-0.5" />
               <span className="leading-snug">
                 ⚠ Multiple unsuccessful login attempts detected.<br />
-                Please verify your Employee ID and Password.
+                Please verify your Company Email and Password.
               </span>
             </div>
           )}
@@ -609,10 +609,10 @@ export default function Login() {
           {/* Form */}
           <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="space-y-4.5">
 
-            {/* Employee ID */}
+            {/* Company Email */}
             <div>
               <label className="block text-[11px] font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                Employee ID
+                Company Email
               </label>
               <div className="relative">
                 <span className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-200 ${
@@ -621,26 +621,26 @@ export default function Login() {
                   <User size={16} />
                 </span>
                 <input
-                  ref={employeeIdRef}
-                  type="text"
-                  value={employeeId}
+                  ref={emailRef}
+                  type="email"
+                  value={email}
                   onFocus={() => setIsIdFocused(true)}
                   onBlur={() => setIsIdFocused(false)}
                   onChange={(e) => {
-                    setEmployeeId(e.target.value);
-                    if (errors.employeeId) setErrors((prev) => ({ ...prev, employeeId: undefined }));
+                    setEmail(e.target.value);
+                    if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
                   }}
-                  placeholder="e.g. PMOV1"
+                  placeholder="e.g. name@ifluids.com"
                   className={`w-full h-11 pl-10 pr-4 rounded-xl border text-xs font-medium outline-none bg-white dark:bg-slate-900 text-slate-900 dark:text-white transition-all duration-200 focus:ring-2 focus:ring-blue-500/20 placeholder:text-slate-400 dark:placeholder:text-slate-500 ${
-                    errors.employeeId
+                    errors.email
                       ? "border-red-500 focus:border-red-500"
                       : "border-slate-200 dark:border-slate-700 focus:border-blue-600 dark:focus:border-cyan-400"
                   }`}
                 />
               </div>
-              {errors.employeeId && (
+              {errors.email && (
                 <p className="text-[11px] text-red-600 dark:text-red-400 font-bold mt-1">
-                  {errors.employeeId}
+                  {errors.email}
                 </p>
               )}
             </div>

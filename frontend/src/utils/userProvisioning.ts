@@ -40,17 +40,6 @@ export function generateCompanyEmail(fullName: string, existingUsers: User[]): s
   return candidate;
 }
 
-/** Sequential EMP-##### id, one higher than the current highest — falls back to EMP-10001 if none exist. */
-export function generateEmployeeId(existingUsers: User[]): string {
-  const highest = existingUsers.reduce((max, user) => {
-    const match = user.employeeId.match(/(\d+)$/);
-    if (!match) return max;
-    return Math.max(max, Number(match[1]));
-  }, 10000);
-
-  return `EMP-${highest + 1}`;
-}
-
 /**
  * Standard temporary password issued to every newly created or reset
  * account — a fixed, friendly template (matching the PMO's own onboarding

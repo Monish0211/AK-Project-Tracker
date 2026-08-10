@@ -1,6 +1,13 @@
 import { useState, useMemo, useEffect } from "react";
 import type { User, AccountStatus } from "../../../../types/UserModel";
-import { getUsers, setUserStatus, deleteUser } from "../../../../services/userManagementService";
+import {
+  getUsers,
+  setUserStatus,
+  deleteUser,
+  addUserToLocalList,
+  getUserLookups,
+} from "../../../../services/userManagementService";
+import type { UserLookups } from "../../../../services/userManagementService";
 import { Card, CardHeader } from "../../../../components/ui/Card";
 import { UserManagementHero } from "./UserManagementHero";
 import { UserToolbar } from "./UserToolbar";
@@ -31,10 +38,20 @@ export const UserManagementSection = () => {
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Real role/module/region/approval ids the Add User form needs to submit
+  // a valid POST /users payload — fetched once, on mount.
+  const [lookups, setLookups] = useState<UserLookups | null>(null);
+
   useEffect(() => {
     const handleDataChange = () => setUsers(getUsers());
     window.addEventListener("pmo:data-changed", handleDataChange);
     return () => window.removeEventListener("pmo:data-changed", handleDataChange);
+  }, []);
+
+  useEffect(() => {
+    getUserLookups()
+      .then(setLookups)
+      .catch((error) => console.error("Failed to load user lookups:", error));
   }, []);
 
   const showToast = (msg: string) => {
@@ -146,8 +163,19 @@ export const UserManagementSection = () => {
         isOpen={formDrawer.isOpen}
         mode={formDrawer.mode}
         user={formDrawer.user}
+        lookups={lookups}
         onClose={() => setFormDrawer({ isOpen: false, mode: "add" })}
-        onSaved={(saved) => showToast(`${saved.employeeName} has been ${formDrawer.mode === "add" ? "added" : "updated"}.`)}
+        onSaved={(saved) => {
+          // A real, backend-created user isn't in the mock store yet (there's
+          // no GET /users listing endpoint in this phase) — inserting it here
+          // is what makes it show up in the table immediately. Edit-mode saves
+          // already went through the mock store directly, so nothing extra is
+          // needed there.
+          if (formDrawer.mode === "add") {
+            addUserToLocalList(saved);
+          }
+          showToast(`${saved.employeeName} has been ${formDrawer.mode === "add" ? "added" : "updated"}.`);
+        }}
         onRequestResetPassword={(user) => {
           setFormDrawer({ isOpen: false, mode: "add" });
           setResetPasswordUser(user);

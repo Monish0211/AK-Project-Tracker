@@ -2,20 +2,21 @@ import type { User, AccountStatus } from "../types/UserModel";
 import { MOCK_USERS } from "../data/mockUsers";
 import { InMemoryUserRepository } from "./userRepository";
 import { UserStore } from "./userStore";
-import { generateCompanyEmail, generateEmployeeId, generateTemporaryPassword } from "../utils/userProvisioning";
+import { generateTemporaryPassword } from "../utils/userProvisioning";
+import { apiClient } from "./apiClient";
 
 /**
- * User Management — frontend-only mock module.
+ * User Management — Create User is real (POST /users against the backend);
+ * everything else below (listing/edit/delete/status/reset) is still the
+ * frontend-only in-memory mock this module started as, until those get
+ * their own backend phases. Deliberately NOT backed by SQL, a real API, or
+ * localStorage for those: this facade sits on top of an in-memory UserStore
+ * (see userStore.ts) seeded once from mockUsers.ts, so mock data resets to
+ * the seed set on every page reload.
  *
- * Deliberately NOT backed by SQL, a real API, or localStorage: this facade
- * sits on top of an in-memory UserStore (see userStore.ts) seeded once from
- * mockUsers.ts, so all data resets to the seed set on every page reload.
- * That's intentional per this module's spec, not a bug — User Management is
- * a frontend-only preview of the eventual PostgreSQL + API-backed feature.
- *
- * Every function below is written as the exact seam a future backend swap
- * would replace: getUsers()/getUserById() become GET requests, createUser/
- * updateUser/deleteUser become POST/PUT/DELETE, and resetUserPassword /
+ * Every mock function below is written as the exact seam a future backend
+ * swap would replace: getUsers()/getUserById() become GET requests,
+ * updateUser/deleteUser become PUT/DELETE, and resetUserPassword/
  * setUserStatus become their own dedicated endpoints. No caller anywhere in
  * the UI needs to change shape when that happens — only these function
  * bodies do.
@@ -28,37 +29,65 @@ export const getUsers = (): User[] => store.getAll();
 
 export const getUserById = (id: string): User | undefined => store.getById(id);
 
-/** Every field the Add User drawer collects, minus what the system generates itself (id, employeeId, email, temporaryPassword, audit fields). */
-export type NewUserInput = Omit<
-  User,
-  "id" | "employeeId" | "email" | "temporaryPassword" | "isFirstLogin" | "lastLoginAt" | "createdAt" | "createdBy" | "lastModifiedAt"
->;
+export interface UserLookupItem {
+  id: string;
+  name: string;
+}
+
+/** Real database ids for every role/module/region/approval type — the Add User form needs these to submit valid foreign keys. */
+export interface UserLookups {
+  roles: UserLookupItem[];
+  modules: UserLookupItem[];
+  regions: UserLookupItem[];
+  approvalTypes: UserLookupItem[];
+}
+
+export const getUserLookups = (): Promise<UserLookups> => apiClient.get<UserLookups>("/users/lookups");
+
+export interface CreateUserPayload {
+  fullName: string;
+  email: string;
+  phoneNumber?: string | null;
+  department?: string | null;
+  designation?: string | null;
+  reportingManagerId?: string | null;
+  employeeType?: string | null;
+  isActive?: boolean;
+  temporaryPassword: string;
+  forcePasswordChange?: boolean;
+  roleId: string;
+  moduleIds: string[];
+  regionIds: string[];
+  approvalIds: string[];
+}
+
+export interface CreatedPortalUser {
+  id: string;
+  fullName: string;
+  email: string;
+  phoneNumber: string | null;
+  department: string | null;
+  designation: string | null;
+  employeeType: string | null;
+  reportingManagerId: string | null;
+  role: { id: string; name: string };
+  isActive: boolean;
+  forcePasswordChange: boolean;
+  createdAt: string;
+}
+
+/** Creates a new portal login via the real backend (POST /users). */
+export const createUser = (payload: CreateUserPayload): Promise<CreatedPortalUser> =>
+  apiClient.post<CreatedPortalUser>("/users", payload);
 
 /**
- * Creates a new user, auto-generating Employee ID + Company Email +
- * Temporary Password exactly per the future auth workflow this module
- * prepares for (see module doc). Returns the created User so the caller can
- * display the generated email/temp password immediately.
+ * Inserts an already backend-created user into the local in-memory list so
+ * it appears immediately — there is no GET /users listing endpoint yet
+ * (Phase 1 is Create User only), so this is what "refresh users" means
+ * today. Takes a fully-formed display User (mapped from the real backend
+ * response by the caller), not raw input — no fake data is generated here.
  */
-export const createUser = (input: NewUserInput): User => {
-  const existing = store.getAll();
-  const now = new Date().toISOString();
-
-  const newUser: User = {
-    ...input,
-    id: `usr-${Date.now()}`,
-    employeeId: generateEmployeeId(existing),
-    email: generateCompanyEmail(input.employeeName, existing),
-    temporaryPassword: generateTemporaryPassword(),
-    isFirstLogin: true,
-    lastLoginAt: null,
-    createdAt: now,
-    createdBy: "Administrator",
-  };
-
-  store.create(newUser);
-  return newUser;
-};
+export const addUserToLocalList = (user: User): void => store.create(user);
 
 export const updateUser = (id: string, patch: Partial<User>): User | undefined => store.update(id, patch);
 
