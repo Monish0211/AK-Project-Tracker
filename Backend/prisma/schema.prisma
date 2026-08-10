@@ -1,0 +1,265 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// ROLE
+// =============================================================================
+// A fixed set of job-function roles (Administrator, PMO Manager, Project
+// Manager, Project Coordinator, Department Head, Engineer, Finance, Accounts,
+// Management Viewer, Read Only — seeded in prisma/seed.ts). Role decides
+// broad login/visibility behavior (e.g. "sees every project" vs "sees only
+// assigned projects" — enforced later by the Projects module); it is
+// deliberately NOT where individual module/region/approval access lives —
+// those are per-user grants stored in their own tables below, exactly so a
+// Manager can hand-tune one specific PMO_USER's access without that
+// affecting every other holder of the same role.
+model PortalRole {
+  id          String  @id @default(dbgenerated("gen_random_uuid()"))
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+
+  users PortalUser[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =============================================================================
+// PORTAL USER
+// =============================================================================
+// A user who can actually log into the PMO Portal — deliberately separate
+// from any future "Employee" record (Engineers/Draftsmen/Consultants never
+// log in; they exist only as Employee data for Timesheets/Manpower/Reports).
+// Login is by email + password ONLY — employeeCode is a display-only
+// business identifier, never used for authentication.
+model PortalUser {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  // Identity — login is ALWAYS by email, never employeeCode.
+  employeeCode String? @unique
+  fullName     String
+  email        String  @unique
+  passwordHash String
+
+  // HR-ish descriptive fields. Plain strings for now (not a relation into a
+  // future Departments module) — safe to upgrade to a proper FK once that
+  // module exists, since these are just display/filter attributes, not
+  // anything Auth's own logic branches on.
+  phoneNumber  String?
+  department   String?
+  designation  String?
+  employeeType String?
+
+  // A portal user's own manager — also a PortalUser (self-relation). Kept
+  // optional and self-contained; not tied to the future Employee entity.
+  reportingManagerId String?
+  reportingManager   PortalUser?  @relation("PortalUserReportingManager", fields: [reportingManagerId], references: [id], onDelete: SetNull)
+  directReports      PortalUser[] @relation("PortalUserReportingManager")
+
+  roleId String
+  role   PortalRole @relation(fields: [roleId], references: [id])
+
+  // Account security — see shared/middleware/authenticate.ts and
+  // auth.service.ts for how these gate login.
+  isActive            Boolean   @default(true)
+  forcePasswordChange Boolean   @default(false)
+  accountLocked       Boolean   @default(false)
+  // Consecutive bad-password count since the last successful login or
+  // password set — auth.service.ts locks the account once this reaches
+  // env.MAX_FAILED_LOGIN_ATTEMPTS, and resets it to 0 on success.
+  failedLoginAttempts Int       @default(0)
+  passwordResetAt     DateTime?
+  passwordExpiresAt   DateTime?
+  lastLogin           DateTime?
+
+  // Per-user, data-driven access grants — see the three sections below.
+  // Deliberately NEVER hardcoded in application code; a Manager grants/
+  // revokes these per user via rows in these join tables.
+  moduleAccess        UserModuleAccess[]
+  regionAccess        UserRegionAccess[]
+  approvalPermissions UserApprovalPermission[]
+
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  authAuditLogs       AuthAuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =============================================================================
+// REFRESH TOKENS
+// =============================================================================
+// Opaque, high-entropy bearer tokens (NOT JWTs) so an individual token can be
+// revoked server-side — a signed JWT refresh token can't be un-issued
+// without a separate blacklist, which is just this table by another name.
+// Only the sha256 hash is ever stored; the plaintext is returned to the
+// client exactly once, at issuance/rotation.
+model RefreshToken {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  userId String
+  user   PortalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash           String    @unique
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  // Set when this token was rotated forward on refresh — lets a stolen,
+  // already-rotated token be traced even after it stops working.
+  replacedByTokenHash String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// =============================================================================
+// PASSWORD RESET TOKENS
+// =============================================================================
+// Same opaque-token-plus-hash pattern as RefreshToken, for the Forgot
+// Password → Reset Password flow. Short-lived (see env.PASSWORD_RESET_TOKEN_
+// EXPIRY_MINUTES) and single-use (usedAt).
+model PasswordResetToken {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  userId String
+  user   PortalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  createdAt DateTime @default(now())
+}
+
+// =============================================================================
+// AUTH AUDIT LOG
+// =============================================================================
+// Auth-scoped security events only (login/logout/password/lock/refresh) —
+// NOT the full cross-module activity log the frontend's Settings > Audit
+// screens model (that spans every module and is its own future module).
+// userId is nullable because a failed login against an email that doesn't
+// exist has no user to attach to, but is still worth recording.
+model AuthAuditLog {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  userId String?
+  user   PortalUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  email     String
+  event     String
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// =============================================================================
+// MODULE ACCESS (Dashboard, Projects, Customer Master, Timesheets, Invoices,
+// Reports, Manpower, Documents, Settings, Notifications, Reminders)
+// =============================================================================
+// A lookup TABLE, not a Prisma/TS enum — new modules can be added later with
+// a plain INSERT, no code deployment. A row in UserModuleAccess = that user
+// currently has access to that module; absence = no access. No view/edit/
+// delete sub-levels — the frontend's "Module Permissions" step is a flat
+// per-module grant, so the schema doesn't invent finer-grained levels it
+// was never asked for.
+model Module {
+  id          String  @id @default(dbgenerated("gen_random_uuid()"))
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+
+  userAccess UserModuleAccess[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserModuleAccess {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  userId String
+  user   PortalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  moduleId String
+  module   Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, moduleId])
+}
+
+// =============================================================================
+// REGION ACCESS (India, Qatar, Malaysia, Oman, Abu Dhabi, FZI, Elixir Qatar)
+// =============================================================================
+// Same lookup-table + join-table pattern as Module Access, for the same
+// reason: which regions exist is data, not code.
+model Region {
+  id       String  @id @default(dbgenerated("gen_random_uuid()"))
+  name     String  @unique
+  isActive Boolean @default(true)
+
+  userAccess UserRegionAccess[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserRegionAccess {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  userId String
+  user   PortalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  regionId String
+  region   Region @relation(fields: [regionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, regionId])
+}
+
+// =============================================================================
+// APPROVAL PERMISSIONS (Approve Timesheets, Approve Expenses, Approve
+// Invoices, Approve Customers, Approve Budget Changes, Approve Project
+// Creation, Approve Reminders, Archive Projects)
+// =============================================================================
+// Same lookup-table + join-table pattern again, for consistency — approval
+// rights are just as much "per-user data" as module/region access, so they
+// follow the identical shape rather than becoming a one-off set of boolean
+// columns on PortalUser.
+model ApprovalType {
+  id          String  @id @default(dbgenerated("gen_random_uuid()"))
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+
+  userGrants UserApprovalPermission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserApprovalPermission {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  userId String
+  user   PortalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  approvalTypeId String
+  approvalType   ApprovalType @relation(fields: [approvalTypeId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, approvalTypeId])
+}
