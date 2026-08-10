@@ -11,7 +11,9 @@ import type {
 } from "../../../../types/UserModel";
 import { SYSTEM_ROLES, EMPLOYEE_TYPES } from "../../../../types/UserModel";
 import { createUser, updateUser } from "../../../../services/userManagementService";
-import { generateCompanyEmail } from "../../../../utils/userProvisioning";
+import type { CreatedPortalUser, UserLookupItem, UserLookups } from "../../../../services/userManagementService";
+import { ApiError } from "../../../../services/apiClient";
+import { generateCompanyEmail, generateTemporaryPassword } from "../../../../utils/userProvisioning";
 import { ROLE_MODULE_DEFAULTS, ROLE_APPROVAL_DEFAULTS, ROLE_REGION_DEFAULTS } from "../../../../utils/roleDefaults";
 import { getDepartmentOptions, addDepartment } from "../../../../services/departmentDirectoryService";
 import { getReportingManagerOptions, addReportingManager } from "../../../../services/reportingManagerDirectoryService";
@@ -28,6 +30,8 @@ interface UserDrawerProps {
   onSaved: (user: User) => void;
   onRequestResetPassword: (user: User) => void;
   existingUsers: User[];
+  /** Real role/module/region/approval ids for the backend — null while still loading. */
+  lookups: UserLookups | null;
 }
 
 const ROLE_DESCRIPTIONS: Record<SystemRole, string> = {
@@ -78,6 +82,69 @@ const APPROVAL_FIELDS: { key: keyof UserApprovalRights; label: string }[] = [
   { key: "archiveProjects", label: "Archive Projects" },
 ];
 
+/** Maps this form's selected labels (module/region/approval field labels already match the backend's seeded names) to real database ids. */
+function resolveSelectedIds(lookupItems: UserLookupItem[], selectedLabels: string[]): string[] {
+  return selectedLabels
+    .map((label) => lookupItems.find((item) => item.name === label)?.id)
+    .filter((id): id is string => Boolean(id));
+}
+
+/**
+ * Merges the real backend response (id, canonical email, createdAt, etc.)
+ * with the rest of this form's local state (moduleAccess/projectRegionAccess/
+ * approvalRights, and fields Phase 1's backend doesn't persist yet) into the
+ * frontend's display User shape, so the new user can appear in the existing
+ * mock-backed table without that table needing a real listing endpoint yet.
+ */
+function buildLocalUserFromBackendResponse(
+  created: CreatedPortalUser,
+  form: {
+    role: SystemRole;
+    status: AccountStatus;
+    phone: string;
+    designation: string;
+    reportingManager: string;
+    employeeType: EmployeeType;
+    moduleAccess: UserModuleAccess;
+    projectRegionAccess: UserProjectRegionAccess;
+    approvalRights: UserApprovalRights;
+    accountLocked: boolean;
+    temporaryPassword: string;
+  }
+): User {
+  return {
+    id: created.id,
+    // Employee ID is a generated business field the backend doesn't assign
+    // yet (Phase 1 is Create User only) — left blank until that lands.
+    employeeId: "",
+    employeeName: created.fullName,
+    email: created.email,
+    phone: form.phone,
+    department: created.department ?? "",
+    designation: created.designation ?? form.designation,
+    reportingManager: form.reportingManager,
+    employeeType: form.employeeType,
+    role: form.role,
+    status: form.status,
+    avatarUrl: "",
+    temporaryPassword: form.temporaryPassword,
+    isFirstLogin: true,
+    lastLoginAt: null,
+    moduleAccess: form.moduleAccess,
+    projectRegionAccess: form.projectRegionAccess,
+    approvalRights: form.approvalRights,
+    accountSecurity: {
+      forcePasswordChangeOnFirstLogin: created.forcePasswordChange,
+      accountLocked: form.accountLocked,
+      twoFactorEnabled: false,
+      passwordExpiryDays: null,
+      lastPasswordResetAt: null,
+    },
+    createdAt: created.createdAt,
+    createdBy: "Administrator",
+  };
+}
+
 const formatDateTime = (iso?: string | null): string => {
   if (!iso) return "Never";
   const d = new Date(iso);
@@ -87,7 +154,7 @@ const formatDateTime = (iso?: string | null): string => {
 
 const DEFAULT_ROLE: SystemRole = "Engineer";
 
-export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestResetPassword, existingUsers }: UserDrawerProps) => {
+export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestResetPassword, existingUsers, lookups }: UserDrawerProps) => {
   const [animateShow, setAnimateShow] = useState(false);
 
   const [employeeName, setEmployeeName] = useState("");
@@ -109,8 +176,10 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
   const [forcePasswordChange, setForcePasswordChange] = useState(true);
   const [accountLocked, setAccountLocked] = useState(false);
   const [lastPasswordResetAt, setLastPasswordResetAt] = useState<string | null>(null);
+  const [temporaryPassword, setTemporaryPassword] = useState("");
 
   const [formError, setFormError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
@@ -141,6 +210,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
         setForcePasswordChange(user.accountSecurity.forcePasswordChangeOnFirstLogin);
         setAccountLocked(user.accountSecurity.accountLocked);
         setLastPasswordResetAt(user.accountSecurity.lastPasswordResetAt);
+        setTemporaryPassword("");
       } else {
         setEmployeeName("");
         setEmployeeId("Generated on save");
@@ -158,6 +228,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
         setForcePasswordChange(true);
         setAccountLocked(false);
         setLastPasswordResetAt(null);
+        setTemporaryPassword(generateTemporaryPassword());
       }
     }, 0);
   }, [isOpen, mode, user]);
@@ -197,8 +268,9 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
     setApprovalRights((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError("");
 
     if (!employeeName.trim()) {
       setFormError("Full Name is required.");
@@ -208,34 +280,79 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
       setFormError("Department is required.");
       return;
     }
-    if (mode === "edit" && (!email.trim() || !email.includes("@"))) {
+    if (!email.trim() || !email.includes("@")) {
       setFormError("A valid Company Email address is required.");
       return;
     }
 
     if (mode === "add") {
-      const created = createUser({
-        employeeName: employeeName.trim(),
-        phone: phone.trim(),
-        department,
-        designation: designation.trim() || "Engineer",
-        reportingManager,
-        employeeType,
-        role,
-        status,
-        avatarUrl: "",
-        moduleAccess,
-        projectRegionAccess,
-        approvalRights,
-        accountSecurity: {
-          forcePasswordChangeOnFirstLogin: forcePasswordChange,
-          accountLocked,
-          twoFactorEnabled: false,
-          passwordExpiryDays: null,
-          lastPasswordResetAt: null,
-        },
-      });
-      onSaved(created);
+      if (!lookups) {
+        setFormError("Form reference data is still loading. Please try again in a moment.");
+        return;
+      }
+
+      const roleId = lookups.roles.find((r) => r.name === role)?.id;
+      if (!roleId) {
+        setFormError(`Role "${role}" is not configured in the system yet.`);
+        return;
+      }
+
+      const moduleIds = resolveSelectedIds(
+        lookups.modules,
+        MODULE_FIELDS.filter((f) => moduleAccess[f.key]).map((f) => f.label)
+      );
+      const regionIds = resolveSelectedIds(
+        lookups.regions,
+        REGION_FIELDS.filter((f) => projectRegionAccess[f.key]).map((f) => f.label)
+      );
+      const approvalIds = resolveSelectedIds(
+        lookups.approvalTypes,
+        APPROVAL_FIELDS.filter((f) => approvalRights[f.key]).map((f) => f.label)
+      );
+
+      setIsSaving(true);
+      try {
+        const created = await createUser({
+          fullName: employeeName.trim(),
+          email: email.trim(),
+          phoneNumber: phone.trim() || null,
+          department,
+          designation: designation.trim() || "Engineer",
+          // Reporting Manager here is a free-text mock directory, not a real
+          // PortalUser id yet — Phase 1 has no user-lookup/search endpoint to
+          // resolve a typed name against, so it's intentionally left unset.
+          reportingManagerId: null,
+          employeeType,
+          isActive: status === "Active",
+          temporaryPassword,
+          forcePasswordChange,
+          roleId,
+          moduleIds,
+          regionIds,
+          approvalIds,
+        });
+
+        onSaved(
+          buildLocalUserFromBackendResponse(created, {
+            role,
+            status,
+            phone: phone.trim(),
+            designation: designation.trim() || "Engineer",
+            reportingManager,
+            employeeType,
+            moduleAccess,
+            projectRegionAccess,
+            approvalRights,
+            accountLocked,
+            temporaryPassword,
+          })
+        );
+      } catch (error) {
+        setFormError(error instanceof ApiError ? error.message : "Something went wrong. Please try again.");
+        return;
+      } finally {
+        setIsSaving(false);
+      }
     } else if (user) {
       const updated = updateUser(user.id, {
         employeeName: employeeName.trim(),
@@ -484,7 +601,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
                     </div>
                     <div className="p-3 rounded-[var(--nu-radius-md)] bg-[var(--nu-surface-alt)] border border-[var(--nu-border)]">
                       <p className="text-[10.5px] font-bold uppercase tracking-wide text-[var(--nu-text-muted)]">Temporary Password</p>
-                      <p className="text-[12.5px] font-mono font-semibold text-[var(--nu-text)] mt-0.5">Welcome@123</p>
+                      <p className="text-[12.5px] font-mono font-semibold text-[var(--nu-text)] mt-0.5">{temporaryPassword}</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2 p-3 rounded-[var(--nu-radius-md)] bg-[var(--nu-info)]/10 border border-[var(--nu-info)]/30 text-[11.5px] leading-snug text-[var(--nu-text-secondary)]">
@@ -689,11 +806,11 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
 
           {/* Sticky Footer */}
           <div className="px-6 py-3.5 border-t border-[var(--nu-border)] bg-[var(--nu-surface)] flex justify-end gap-2.5 shrink-0 shadow-[var(--nu-shadow-md)]">
-            <Button variant="secondary" size="sm" onClick={onClose}>
+            <Button variant="secondary" size="sm" onClick={onClose} disabled={isSaving}>
               Cancel
             </Button>
-            <Button variant="primary" size="sm" icon={<Save size={14} />} onClick={handleSubmit}>
-              {mode === "add" ? "Save User" : "Update User"}
+            <Button variant="primary" size="sm" icon={<Save size={14} />} onClick={handleSubmit} disabled={isSaving}>
+              {isSaving ? "Saving..." : mode === "add" ? "Save User" : "Update User"}
             </Button>
           </div>
         </div>
