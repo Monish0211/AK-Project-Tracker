@@ -22,8 +22,22 @@ import {
   getProjects,
   deleteProject,
   saveProjects,
+  fetchProjectsFromApi,
+  softDeleteProjectViaApi,
 } from "../../services/projectService";
+import { ApiError } from "../../services/apiClient";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
+
+/** Sort fields the backend's GET /projects can order by — see listProjectsQuerySchema. Anything else (Team/Commercial/Invoice columns, not modeled server-side yet) is synced with the default sort instead and left to this page's own client-side sort exactly as before. */
+const BACKEND_SORTABLE_FIELDS = new Set([
+  "prNo",
+  "client",
+  "projectTitle",
+  "department",
+  "projectStatus",
+  "projectStartDate",
+  "createdAt",
+]);
 import {
   buildExportWorkbook,
   buildSampleTemplateWorkbook,
@@ -85,6 +99,33 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     };
   }, [mode]);
 
+  // Phase 3.1: background sync with the real backend — General Information
+  // now lives in Postgres, so this page's data needs to reflect that instead
+  // of only whatever's already in the local mirror (e.g. on a fresh
+  // browser). Genuinely exercises the backend's search/filter/sort
+  // capabilities with the current toolbar state; the local mirror it writes
+  // into (via fetchProjectsFromApi's write-through) is what the rest of
+  // this page already reads from above — no other logic here changes.
+  useEffect(() => {
+    const backendSortField = BACKEND_SORTABLE_FIELDS.has(sortField) ? sortField : "prNo";
+
+    const timer = setTimeout(() => {
+      fetchProjectsFromApi({
+        search: search || undefined,
+        department: department !== "All" ? department : undefined,
+        projectStatus: mode === "completed" ? "Completed" : status !== "All" ? status : undefined,
+        page: 1,
+        pageSize: 500,
+        sortField: backendSortField,
+        sortDirection: sortAsc ? "asc" : "desc",
+      }).catch((err) => {
+        console.error("Failed to sync projects from backend:", err);
+      });
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [search, department, status, mode, sortField, sortAsc]);
+
   // Computed statistics
   const stats = useMemo(() => {
     const active = projects.filter((p) => p.projectStatus === "Active").length;
@@ -136,12 +177,25 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     }
   };
 
-  // Delete Action
-  const handleDelete = (id: string) => {
+  // Delete Action — Phase 3.1: soft-deletes via the real backend
+  // (DELETE /projects/:id never removes the row server-side); the old
+  // local-only deleteProject() is still used as a fallback for any project
+  // that only ever existed in the local mirror (e.g. imported, never synced
+  // to the backend), so Delete never silently does nothing.
+  const handleDelete = async (id: string) => {
     if (!window.confirm("Are you sure you want to delete this project?")) {
       return;
     }
-    deleteProject(id);
+    try {
+      await softDeleteProjectViaApi(id);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        deleteProject(id);
+      } else {
+        alert(err instanceof ApiError ? err.message : "Failed to delete project. Please try again.");
+        return;
+      }
+    }
     setProjects(scopeProjectsByMode(getProjects(), mode));
   };
 

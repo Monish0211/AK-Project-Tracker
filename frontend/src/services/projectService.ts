@@ -5,6 +5,7 @@ import { createEmptyProject, inferPrCategory, inferDomesticForeign } from "../ut
 import { calculateQuantity } from "../utils/quantityCalculations";
 import { syncInvoiceItemsWithQuantity } from "./invoiceSyncService";
 import { notificationService } from "../notifications/notificationService";
+import { apiClient, ApiError } from "./apiClient";
 
 const STORAGE_KEY = "projects";
 
@@ -260,3 +261,256 @@ export const getProjectById = (id: string): Project | undefined => {
 export const clearProjects = (): void => {
   localStorage.removeItem(STORAGE_KEY);
 };
+
+// =============================================================================
+// PHASE 3.1 — BACKEND-CONNECTED GENERAL INFORMATION
+// =============================================================================
+// Everything below is new, additive, and calls the real backend
+// (Backend/src/modules/projects) for General Information fields only —
+// Quantity/Commercial/Payment Milestones/Invoice/Expense/Team/Budget/
+// Documents/Notes/Reminders all remain exactly as they were above: pure
+// localStorage, untouched by this section.
+//
+// Design: the localStorage array above stays the single source every other
+// module (Dashboard/Sidebar/Reports/Notifications/Timesheets/breadcrumbs)
+// already reads via the synchronous getProjects()/getProjectById() — none of
+// that code changes. Functions here call the API, merge the returned
+// General Information fields into whatever local record already exists for
+// that id (preserving every other field untouched), and write the result
+// back into the SAME localStorage array via saveProjects() — which already
+// dispatches "pmo:data-changed", so every other module picks up the change
+// for free, with no code of its own to change.
+
+/** Raw shape one row of GET/POST/PATCH /projects returns — see Backend's ProjectDto. */
+interface BackendProjectDto {
+  id: string;
+  poMonth: string;
+  prCategory: string;
+  prNo: string;
+  client: string;
+  department: string;
+  domesticForeign: string;
+  projectTitle: string;
+  workOrderStatus: string;
+  projectStartDate: string;
+  projectEndDate: string | null;
+  projectStatus: string;
+  actualCompletionDate: string | null;
+  completionRemarks: string | null;
+  completedBy: string | null;
+  completedTimestamp: string | null;
+  workOrderNumber: string | null;
+  workOrderDate: string | null;
+  eicName: string | null;
+  contactNumber: string | null;
+  emailId: string | null;
+  estimatedDuration: number | null;
+  durationUnit: string | null;
+  contractType: string;
+  pmoCoordinator: string | null;
+  isDeleted: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface BackendPaginatedProjectList {
+  items: BackendProjectDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** What the backend's General Information create/update endpoints accept — see Backend's createProjectSchema/updateProjectSchema. */
+interface ProjectGeneralInfoPayload {
+  poMonth: string;
+  prCategory: string;
+  prNo: string;
+  client: string;
+  department: string;
+  domesticForeign: string;
+  projectTitle: string;
+  workOrderStatus: string;
+  projectStartDate: string;
+  projectEndDate: string | null;
+  projectStatus: string;
+  actualCompletionDate: string | null;
+  completionRemarks: string | null;
+  completedBy: string | null;
+  completedTimestamp: string | null;
+  workOrderNumber: string | null;
+  workOrderDate: string | null;
+  eicName: string | null;
+  contactNumber: string | null;
+  emailId: string | null;
+  estimatedDuration: number | null;
+  durationUnit: string | null;
+  contractType: string;
+  pmoCoordinator: string | null;
+}
+
+/** Empty string -> null. The backend's optional string fields reject "" (min(1) once present) — omit-or-null is what they expect, matching Users module's own validator style. */
+function orNull(value: string | undefined): string | null {
+  return value && value.trim() !== "" ? value : null;
+}
+
+function toGeneralInfoPayload(project: Project): ProjectGeneralInfoPayload {
+  return {
+    poMonth: project.poMonth,
+    prCategory: project.prCategory,
+    prNo: project.prNo,
+    client: project.client,
+    department: project.department,
+    domesticForeign: project.domesticForeign,
+    projectTitle: project.projectTitle,
+    workOrderStatus: project.workOrderStatus,
+    projectStartDate: project.projectStartDate,
+    projectEndDate: orNull(project.projectEndDate),
+    projectStatus: project.projectStatus,
+    actualCompletionDate: orNull(project.actualCompletionDate),
+    completionRemarks: orNull(project.completionRemarks),
+    completedBy: orNull(project.completedBy),
+    completedTimestamp: orNull(project.completedTimestamp),
+    workOrderNumber: orNull(project.workOrderNumber),
+    workOrderDate: orNull(project.workOrderDate),
+    eicName: orNull(project.eicName),
+    contactNumber: orNull(project.contactNumber),
+    emailId: orNull(project.emailId),
+    estimatedDuration: typeof project.estimatedDuration === "number" ? project.estimatedDuration : null,
+    durationUnit: project.durationUnit || null,
+    contractType: project.contractType || "LUMP SUM",
+    pmoCoordinator: orNull(project.pmoCoordinator),
+  };
+}
+
+/** Full ISO datetime -> the "YYYY-MM-DD" a <input type="date"> requires. */
+function toDateOnly(iso: string | null): string {
+  return iso ? iso.slice(0, 10) : "";
+}
+
+/**
+ * Overlays a backend row's General Information fields onto whatever local
+ * record already exists for that id — every other field (quantityItems,
+ * invoiceItems, resources, notes, etc.) is preserved untouched. A brand-new
+ * project (created via the backend, never seen locally before) starts from
+ * createEmptyProject()'s defaults for everything else.
+ */
+function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto): Project {
+  const existingLocal = getProjects().find((p) => p.id === dto.id);
+  const base = existingLocal ?? createEmptyProject();
+
+  return normalizeProject({
+    ...base,
+    id: dto.id,
+    poMonth: dto.poMonth,
+    prCategory: dto.prCategory,
+    prNo: dto.prNo,
+    client: dto.client,
+    department: dto.department,
+    domesticForeign: dto.domesticForeign,
+    projectTitle: dto.projectTitle,
+    workOrderStatus: dto.workOrderStatus,
+    projectStartDate: toDateOnly(dto.projectStartDate),
+    projectEndDate: toDateOnly(dto.projectEndDate),
+    projectStatus: dto.projectStatus,
+    actualCompletionDate: toDateOnly(dto.actualCompletionDate) || undefined,
+    completionRemarks: dto.completionRemarks || undefined,
+    completedBy: dto.completedBy || undefined,
+    completedTimestamp: dto.completedTimestamp || undefined,
+    workOrderNumber: dto.workOrderNumber || undefined,
+    workOrderDate: toDateOnly(dto.workOrderDate) || undefined,
+    eicName: dto.eicName || undefined,
+    contactNumber: dto.contactNumber || undefined,
+    emailId: dto.emailId || undefined,
+    estimatedDuration: dto.estimatedDuration ?? undefined,
+    durationUnit: (dto.durationUnit as Project["durationUnit"]) || undefined,
+    contractType: dto.contractType,
+    pmoCoordinator: dto.pmoCoordinator || undefined,
+    createdAt: dto.createdAt,
+    updatedAt: dto.updatedAt,
+  });
+}
+
+/** Upserts by id into the same localStorage array getProjects() reads, via the existing saveProjects() — so pmo:data-changed fires and every other module refreshes with no code of its own to change. */
+function writeThroughProjectsMirror(projects: Project[]): void {
+  const current = getProjects();
+  const byId = new Map(current.map((p) => [p.id, p]));
+  projects.forEach((p) => byId.set(p.id, p));
+  saveProjects(Array.from(byId.values()));
+}
+
+export interface ProjectListParams {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortField?: string;
+  sortDirection?: "asc" | "desc";
+  projectStatus?: string;
+  department?: string;
+  client?: string;
+  /** Alias for prCategory — PR Category's values (India/Malaysia/Oman/...) are this app's region list. */
+  region?: string;
+  prCategory?: string;
+}
+
+export interface ProjectListResult {
+  items: Project[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** The real, paginated/searchable/sortable/filterable Project List — GET /projects. */
+export async function fetchProjectsFromApi(params: ProjectListParams = {}): Promise<ProjectListResult> {
+  const query = new URLSearchParams();
+  if (params.search) query.set("search", params.search);
+  query.set("page", String(params.page ?? 1));
+  query.set("pageSize", String(params.pageSize ?? 10));
+  if (params.sortField) query.set("sortField", params.sortField);
+  if (params.sortDirection) query.set("sortDirection", params.sortDirection);
+  if (params.projectStatus) query.set("projectStatus", params.projectStatus);
+  if (params.department) query.set("department", params.department);
+  if (params.client) query.set("client", params.client);
+  if (params.region) query.set("region", params.region);
+  if (params.prCategory) query.set("prCategory", params.prCategory);
+
+  const result = await apiClient.get<BackendPaginatedProjectList>(`/projects?${query.toString()}`);
+  const items = result.items.map(mergeBackendGeneralInfoIntoLocalProject);
+  writeThroughProjectsMirror(items);
+
+  return { items, total: result.total, page: result.page, pageSize: result.pageSize };
+}
+
+/** Fresh single-project fetch — GET /projects/:id. Returns undefined if not found (or soft-deleted). */
+export async function fetchProjectByIdFromApi(id: string): Promise<Project | undefined> {
+  try {
+    const dto = await apiClient.get<BackendProjectDto>(`/projects/${id}`);
+    const merged = mergeBackendGeneralInfoIntoLocalProject(dto);
+    writeThroughProjectsMirror([merged]);
+    return merged;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return undefined;
+    throw err;
+  }
+}
+
+/** Creates a project's General Information via the real backend — POST /projects. */
+export async function createProjectGeneralInfo(project: Project): Promise<Project> {
+  const dto = await apiClient.post<BackendProjectDto>("/projects", toGeneralInfoPayload(project));
+  const merged = mergeBackendGeneralInfoIntoLocalProject(dto);
+  writeThroughProjectsMirror([merged]);
+  return merged;
+}
+
+/** Updates a project's General Information via the real backend — PATCH /projects/:id. */
+export async function updateProjectGeneralInfo(id: string, project: Project): Promise<Project> {
+  const dto = await apiClient.patch<BackendProjectDto>(`/projects/${id}`, toGeneralInfoPayload(project));
+  const merged = mergeBackendGeneralInfoIntoLocalProject(dto);
+  writeThroughProjectsMirror([merged]);
+  return merged;
+}
+
+/** Soft-deletes via the real backend — DELETE /projects/:id never removes the row server-side; this also drops it from the local mirror so it disappears from the list immediately. */
+export async function softDeleteProjectViaApi(id: string): Promise<void> {
+  await apiClient.delete(`/projects/${id}`);
+  saveProjects(getProjects().filter((p) => p.id !== id));
+}
