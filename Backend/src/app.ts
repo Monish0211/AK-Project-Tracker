@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import { authRoutes } from "./modules/auth/index.js";
 import { userRoutes } from "./modules/users/index.js";
+import { projectRoutes } from "./modules/projects/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { AppError } from "./shared/utils/AppError.js";
 
@@ -21,6 +22,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
+app.use("/projects", projectRoutes);
 
 app.use((req, _res, next) => {
   next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));
