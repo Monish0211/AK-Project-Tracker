@@ -263,3 +263,71 @@ model UserApprovalPermission {
 
   @@unique([userId, approvalTypeId])
 }
+
+// =============================================================================
+// PROJECT — Phase 3.1 Foundation (General Information ONLY)
+// =============================================================================
+// Mirrors frontend/src/types/Project.ts's General Information fields exactly
+// — the field set actually shown/edited by GeneralInfoCard.tsx and
+// GeneralView.tsx, the frontend's source of truth for this phase. Quantity,
+// GST/Commercial, Payment Milestones, Invoice, Expense, Team, Expense
+// Budget, Documents, Notes, and Reminders all belong to later phases and are
+// deliberately NOT modeled here yet — the mature frontend for those still
+// runs entirely on localStorage until each is built out in turn.
+//
+// prCategory doubles as "Region" for filtering purposes — its values (India,
+// Malaysia, Oman, Abu Dhabi, FZI, Elixir Qatar, Qatar) are the exact same set
+// already seeded into the Region lookup table for Auth's module/region
+// access grants. There is no separate region field to invent.
+//
+// Soft delete only: isDeleted/deletedAt. No hard delete anywhere — every
+// list/detail read must filter isDeleted: false.
+model Project {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  poMonth         String
+  prCategory      String
+  prNo            String
+  client          String
+  department      String
+  domesticForeign String
+  projectTitle    String
+
+  workOrderStatus  String
+  projectStartDate DateTime
+  projectEndDate   DateTime?
+  projectStatus    String
+
+  // Formal Project Completion fields
+  actualCompletionDate DateTime?
+  completionRemarks    String?
+  completedBy          String?
+  completedTimestamp   DateTime?
+
+  // Work Order Details
+  workOrderNumber String?
+  workOrderDate   DateTime?
+  eicName         String?
+  contactNumber   String?
+  emailId         String?
+
+  // Project Scheduling
+  estimatedDuration Int?
+  durationUnit      String?
+
+  // Additional Information
+  contractType   String  @default("LUMP SUM")
+  pmoCoordinator String?
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isDeleted])
+  @@index([projectStatus])
+  @@index([department])
+  @@index([client])
+  @@index([prCategory])
+}
