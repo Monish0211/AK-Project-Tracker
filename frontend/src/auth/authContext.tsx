@@ -5,6 +5,9 @@ import type { UserSession } from "./authService";
 export interface LoginResult {
   success: boolean;
   error?: string;
+  /** True when the account must change its password before a session can be issued — no `user` was set; the caller should redirect to /auth/change-password. */
+  requiresPasswordChange?: boolean;
+  email?: string;
 }
 
 interface AuthContextType {
@@ -12,6 +15,8 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
+  /** Re-fetches GET /auth/me and updates `user` — call after any action that changes the account (e.g. Change Password) so the session reflects it immediately. */
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -52,9 +57,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<LoginResult> => {
     try {
-      const session = await authService.login(email, password);
-      setUser(session);
-      return { success: true };
+      const outcome = await authService.login(email, password);
+      if (outcome.requiresPasswordChange) {
+        return { success: true, requiresPasswordChange: true, email: outcome.email };
+      }
+      setUser(outcome.session);
+      return { success: true, requiresPasswordChange: false };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid email or password.";
       return { success: false, error: message };
@@ -69,8 +77,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     void authService.logout();
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const session = await authService.fetchCurrentUser();
+      setUser(session);
+    } catch {
+      // Invalid/expired token — apiClient's 401 handler already cleared it.
+    }
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

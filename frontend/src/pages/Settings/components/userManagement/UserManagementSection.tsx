@@ -1,13 +1,13 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import type { User, AccountStatus } from "../../../../types/UserModel";
 import {
   getUsers,
   setUserStatus,
   deleteUser,
-  addUserToLocalList,
   getUserLookups,
 } from "../../../../services/userManagementService";
 import type { UserLookups } from "../../../../services/userManagementService";
+import { ApiError } from "../../../../services/apiClient";
 import { Card, CardHeader } from "../../../../components/ui/Card";
 import { UserManagementHero } from "./UserManagementHero";
 import { UserToolbar } from "./UserToolbar";
@@ -25,7 +25,7 @@ interface FormDrawerState {
 }
 
 export const UserManagementSection = () => {
-  const [users, setUsers] = useState<User[]>(getUsers());
+  const [users, setUsers] = useState<User[]>([]);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -42,11 +42,24 @@ export const UserManagementSection = () => {
   // a valid POST /users payload — fetched once, on mount.
   const [lookups, setLookups] = useState<UserLookups | null>(null);
 
+  const refreshUsers = useCallback(async () => {
+    try {
+      const fetched = await getUsers();
+      setUsers(fetched);
+    } catch (error) {
+      console.error("Failed to load users:", error);
+    }
+  }, []);
+
   useEffect(() => {
-    const handleDataChange = () => setUsers(getUsers());
+    refreshUsers();
+  }, [refreshUsers]);
+
+  useEffect(() => {
+    const handleDataChange = () => refreshUsers();
     window.addEventListener("pmo:data-changed", handleDataChange);
     return () => window.removeEventListener("pmo:data-changed", handleDataChange);
-  }, []);
+  }, [refreshUsers]);
 
   useEffect(() => {
     getUserLookups()
@@ -105,11 +118,18 @@ export const UserManagementSection = () => {
     showToast(`${targetUser.employeeName} is now ${nextStatus}.`);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!deleteTargetUser) return;
-    deleteUser(deleteTargetUser.id);
-    showToast(`${deleteTargetUser.employeeName} has been removed.`);
-    setDeleteTargetUser(undefined);
+    const target = deleteTargetUser;
+    try {
+      await deleteUser(target.id);
+      await refreshUsers();
+      showToast(`${target.employeeName} has been removed.`);
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : "Failed to delete user. Please try again.");
+    } finally {
+      setDeleteTargetUser(undefined);
+    }
   };
 
   return (
@@ -166,14 +186,10 @@ export const UserManagementSection = () => {
         lookups={lookups}
         onClose={() => setFormDrawer({ isOpen: false, mode: "add" })}
         onSaved={(saved) => {
-          // A real, backend-created user isn't in the mock store yet (there's
-          // no GET /users listing endpoint in this phase) — inserting it here
-          // is what makes it show up in the table immediately. Edit-mode saves
-          // already went through the mock store directly, so nothing extra is
-          // needed there.
-          if (formDrawer.mode === "add") {
-            addUserToLocalList(saved);
-          }
+          // Create and Edit are both real (POST /users, PATCH /users/:id) —
+          // re-fetching from the backend is what makes the change appear
+          // immediately, no page reload needed.
+          refreshUsers();
           showToast(`${saved.employeeName} has been ${formDrawer.mode === "add" ? "added" : "updated"}.`);
         }}
         onRequestResetPassword={(user) => {

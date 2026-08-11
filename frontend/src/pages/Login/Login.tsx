@@ -9,6 +9,7 @@ import { useAuth } from "../../auth/authContext";
 import { useTheme } from "../../context/ThemeContext";
 import SplashScreen from "../../components/Splash/SplashScreen";
 import { Logo } from "../../components/ui/Logo";
+import ForgotPasswordModal from "./ForgotPasswordModal";
 
 export default function Login() {
   const { user, login } = useAuth();
@@ -43,6 +44,7 @@ export default function Login() {
   const [authStatusText, setAuthStatusText] = useState("Sign In to Portal");
   const [shakeCard, setShakeCard] = useState(false);
   const [failedAttempts, setFailedAttempts] = useState(0);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   // Splash & Transition States
   const [showSplash, setShowSplash] = useState(true);
@@ -129,6 +131,12 @@ export default function Login() {
 
     (async () => {
       const result = await login(email, password);
+      if (result.success && result.requiresPasswordChange) {
+        setIsSubmitting(false);
+        navigate("/auth/change-password", { state: { email: result.email ?? email } });
+        return;
+      }
+
       if (result.success) {
         setIsSuccess(true);
         setAuthStatusText("Success!");
@@ -651,9 +659,13 @@ export default function Login() {
                 <label className="block text-[11px] font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                   Password
                 </label>
-                <span className="text-[11px] text-blue-600 dark:text-cyan-400 font-bold hover:underline cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPassword(true)}
+                  className="text-[11px] text-blue-600 dark:text-cyan-400 font-bold hover:underline cursor-pointer border-none bg-transparent outline-none"
+                >
                   Forgot Password?
-                </span>
+                </button>
               </div>
               <div className="relative">
                 <span className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-200 ${
@@ -733,31 +745,6 @@ export default function Login() {
                 </>
               )}
             </button>
-
-            {/* OR Divider */}
-            <div className="relative py-1.5 flex items-center justify-center">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-200 dark:border-slate-800" />
-              </div>
-              <span className="relative px-3 bg-white dark:bg-slate-900 text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">
-                OR
-              </span>
-            </div>
-
-            {/* Secondary Microsoft Sign In Button */}
-            <button
-              type="button"
-              onClick={() => handleSubmit({ preventDefault: () => {} } as any)}
-              className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2.5 cursor-pointer shadow-xs"
-            >
-              <svg className="w-4 h-4 shrink-0" viewBox="0 0 23 23">
-                <path fill="#f35325" d="M1 1h10v10H1z"/>
-                <path fill="#81bc06" d="M12 1h10v10H12z"/>
-                <path fill="#05a6f0" d="M1 12h10v10H1z"/>
-                <path fill="#ffba08" d="M12 1h10v10H12z"/>
-              </svg>
-              <span>Sign in with Microsoft</span>
-            </button>
           </form>
 
           {/* Security Footer & Copyright (Inside Card Bottom) */}
@@ -772,6 +759,8 @@ export default function Login() {
           </div>
         </div>
       </div>
+
+      {showForgotPassword && <ForgotPasswordModal onClose={() => setShowForgotPassword(false)} />}
 
     </div>
   );

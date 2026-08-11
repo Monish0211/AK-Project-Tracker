@@ -58,4 +58,7 @@ export const apiClient = {
   get: <T>(path: string): Promise<T> => request<T>(path, { method: "GET" }),
   post: <T>(path: string, data?: unknown): Promise<T> =>
     request<T>(path, { method: "POST", body: data !== undefined ? JSON.stringify(data) : undefined }),
+  patch: <T>(path: string, data?: unknown): Promise<T> =>
+    request<T>(path, { method: "PATCH", body: data !== undefined ? JSON.stringify(data) : undefined }),
+  delete: <T>(path: string): Promise<T> => request<T>(path, { method: "DELETE" }),
 };

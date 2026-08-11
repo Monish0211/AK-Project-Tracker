@@ -1,13 +1,16 @@
 import React from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./authContext";
 
 interface Props {
   children: React.ReactNode;
 }
 
+const CHANGE_PASSWORD_PATH = "/auth/change-password";
+
 const ProtectedRoute: React.FC<Props> = ({ children }) => {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -21,6 +24,14 @@ const ProtectedRoute: React.FC<Props> = ({ children }) => {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // A forced password change blocks every other route — Dashboard, Sidebar,
+  // every module — until it's completed. This check runs on every protected
+  // route (including the change-password page's own wrapper below), so the
+  // explicit path comparison is what stops it from being a redirect loop.
+  if (user.forcePasswordChange && location.pathname !== CHANGE_PASSWORD_PATH) {
+    return <Navigate to={CHANGE_PASSWORD_PATH} replace />;
   }
 
   return <>{children}</>;

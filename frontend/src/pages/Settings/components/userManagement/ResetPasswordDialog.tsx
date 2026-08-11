@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { KeyRound, Copy, Check, Info } from "lucide-react";
+import { KeyRound, Copy, Check, Info, AlertTriangle } from "lucide-react";
 import type { User } from "../../../../types/UserModel";
 import { resetUserPassword } from "../../../../services/userManagementService";
+import { ApiError } from "../../../../services/apiClient";
 import { Button } from "../../../../components/ui/Button";
 
 interface ResetPasswordDialogProps {
@@ -13,10 +14,20 @@ interface ResetPasswordDialogProps {
 export const ResetPasswordDialog = ({ user, onCancel, onDone }: ResetPasswordDialogProps) => {
   const [newPassword, setNewPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleConfirm = () => {
-    const generated = resetUserPassword(user.id);
-    if (generated) setNewPassword(generated);
+  const handleConfirm = async () => {
+    setError("");
+    setIsResetting(true);
+    try {
+      const generated = await resetUserPassword(user.id);
+      if (generated) setNewPassword(generated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setIsResetting(false);
+    }
   };
 
   const handleCopy = () => {
@@ -46,6 +57,13 @@ export const ResetPasswordDialog = ({ user, onCancel, onDone }: ResetPasswordDia
           </div>
         </div>
 
+        {error && (
+          <div className="mt-4 flex items-start gap-2 p-3 rounded-[var(--nu-radius-md)] bg-[var(--nu-danger-soft)] border border-[var(--nu-danger)]/30 text-[var(--nu-danger)] text-[11.5px] font-semibold">
+            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        )}
+
         {newPassword && (
           <div className="mt-4 space-y-2.5">
             <div className="flex items-center justify-between p-3 rounded-[var(--nu-radius-md)] bg-[var(--nu-surface-alt)] border border-[var(--nu-border)]">
@@ -73,11 +91,11 @@ export const ResetPasswordDialog = ({ user, onCancel, onDone }: ResetPasswordDia
             </Button>
           ) : (
             <>
-              <Button variant="secondary" size="sm" onClick={onCancel}>
+              <Button variant="secondary" size="sm" onClick={onCancel} disabled={isResetting}>
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" onClick={handleConfirm}>
-                Reset Password
+              <Button variant="primary" size="sm" onClick={handleConfirm} disabled={isResetting}>
+                {isResetting ? "Resetting..." : "Reset Password"}
               </Button>
             </>
           )}
