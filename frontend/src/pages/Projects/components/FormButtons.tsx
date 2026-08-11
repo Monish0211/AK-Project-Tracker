@@ -10,7 +10,10 @@ import {
   updateProject,
   completeProject,
   getProjectById,
+  createProjectGeneralInfo,
+  updateProjectGeneralInfo,
 } from "../../../services/projectService";
+import { ApiError } from "../../../services/apiClient";
 
 import { createEmptyProject } from "../../../utils/createEmptyProject";
 
@@ -39,46 +42,76 @@ const FormButtons = ({
 }: Props) => {
   const navigate = useNavigate();
 
-  const saveProjectData = () => {
+  /**
+   * Phase 3.1: General Information now round-trips through the real backend
+   * (POST/PATCH /projects) as a gating pre-step, alongside the existing
+   * local-only save below — which stays completely unchanged and still owns
+   * every other tab's data (Quantity/Payments/Budget/Team/Expenses/
+   * Invoices). A brand-new project's client-generated id is replaced with
+   * the backend's real id the moment it's created, so every subsequent
+   * Save & Next/Save on this same form (any tab) already targets the right
+   * row. If the backend rejects the General Information (e.g. a duplicate
+   * PR Number), the save stops here — never silently "succeeding" locally
+   * while the server has no record of it.
+   */
+  const saveProjectData = async (): Promise<boolean> => {
     const timestamp = new Date().toISOString();
     const existing = getProjectById(project.id);
+    let projectToSave = project;
 
-    if (project.projectStatus === "Completed" && project.actualCompletionDate) {
-      completeProject(project.id, {
-        actualCompletionDate: project.actualCompletionDate,
-        completionRemarks: project.completionRemarks || "Project completed successfully.",
-        completedBy: project.completedBy || "Administrator",
+    try {
+      if (!existing) {
+        const created = await createProjectGeneralInfo(project);
+        projectToSave = { ...project, id: created.id };
+        setProject(projectToSave);
+      } else {
+        await updateProjectGeneralInfo(existing.id, project);
+      }
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Failed to save General Information. Please try again.");
+      return false;
+    }
+
+    if (projectToSave.projectStatus === "Completed" && projectToSave.actualCompletionDate) {
+      completeProject(projectToSave.id, {
+        actualCompletionDate: projectToSave.actualCompletionDate,
+        completionRemarks: projectToSave.completionRemarks || "Project completed successfully.",
+        completedBy: projectToSave.completedBy || "Administrator",
       });
       updateProject({
-        ...project,
+        ...projectToSave,
         createdAt: existing?.createdAt || timestamp,
         updatedAt: timestamp,
       });
     } else if (existing) {
       updateProject({
-        ...project,
+        ...projectToSave,
         createdAt: existing.createdAt,
         updatedAt: timestamp,
       });
     } else {
       addProject({
-        ...project,
-        createdAt: project.createdAt || timestamp,
+        ...projectToSave,
+        createdAt: projectToSave.createdAt || timestamp,
         updatedAt: timestamp,
       });
     }
+
+    return true;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (onValidate && !onValidate()) return;
-    saveProjectData();
+    const saved = await saveProjectData();
+    if (!saved) return;
     alert(mode === "add" ? "Project Saved Successfully!" : "Project Updated Successfully!");
     navigate("/projects");
   };
 
-  const handleSaveAndNext = () => {
+  const handleSaveAndNext = async () => {
     if (onValidate && !onValidate()) return;
-    saveProjectData();
+    const saved = await saveProjectData();
+    if (!saved) return;
     onSaveAndNext();
   };
 

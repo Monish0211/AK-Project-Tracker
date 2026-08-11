@@ -3,7 +3,8 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Briefcase, CreditCard, History, LayoutGrid, Package, Receipt, Users, Wallet } from "lucide-react";
 
 import "./project-workspace-theme.css";
-import { getProjectById } from "../../services/projectService";
+import type { Project } from "../../types/Project";
+import { getProjectById, fetchProjectByIdFromApi } from "../../services/projectService";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import {
   getGrossProfit,
@@ -62,6 +63,21 @@ const ViewProject = () => {
 
   const [, setRefreshTrigger] = useState(0);
 
+  // Phase 3.1: General Information is fetched fresh from the real backend
+  // on mount (not just whatever the local mirror already has), same
+  // reasoning as EditProject.tsx. Every other tab keeps reading from
+  // whatever's in the local mirror already, refreshed here whenever
+  // "pmo:data-changed" fires (e.g. from the ProjectWorkspaceDrawer), exactly
+  // as before.
+  const [project, setProjectState] = useState<Project | null>(() => (id ? getProjectById(id) ?? null : null));
+  // loadedId tracks which id the fetch below has actually completed for —
+  // deriving isLoading from "loadedId !== id" (rather than a separate
+  // boolean flipped inside the effect) means switching straight from one
+  // project's view route to another's automatically goes back to loading,
+  // with no synchronous setState call in the effect body itself.
+  const [loadedId, setLoadedId] = useState<string | undefined>(undefined);
+  const isLoading = !!id && loadedId !== id;
+
   // Sync active tab & notes state to session storage so Breadcrumb can read it
   useEffect(() => {
     sessionStorage.setItem("view-project-tab", activeTab);
@@ -69,18 +85,44 @@ const ViewProject = () => {
     window.dispatchEvent(new Event("pmo-project-view-state-change"));
   }, [activeTab, isNotesOpen]);
 
+  useEffect(() => {
+    if (!id) return;
+
+    let isMounted = true;
+
+    fetchProjectByIdFromApi(id)
+      .then((fetched) => {
+        if (isMounted && fetched) setProjectState(fetched);
+      })
+      .finally(() => {
+        if (isMounted) setLoadedId(id);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id]);
+
   // Listen for external project updates (like from the ProjectWorkspaceDrawer)
   useEffect(() => {
-    const handleDataChange = () => setRefreshTrigger((prev) => prev + 1);
+    const handleDataChange = () => {
+      setRefreshTrigger((prev) => prev + 1);
+      if (id) {
+        const latest = getProjectById(id);
+        if (latest) setProjectState(latest);
+      }
+    };
     window.addEventListener("pmo:data-changed", handleDataChange);
     return () => window.removeEventListener("pmo:data-changed", handleDataChange);
-  }, []);
+  }, [id]);
 
   if (!id) {
     return <div className="text-center mt-10">Invalid Project Id</div>;
   }
 
-  const project = getProjectById(id);
+  if (isLoading) {
+    return null;
+  }
 
   if (!project) {
     return (
