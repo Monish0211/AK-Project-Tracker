@@ -5,7 +5,16 @@ import { env } from "../../../shared/utils/env.js";
 import { signAccessToken } from "../../../shared/utils/jwt.util.js";
 import { comparePassword, hashPassword } from "../../../shared/utils/password.util.js";
 import { generateOpaqueToken, hashToken } from "../../../shared/utils/token.util.js";
-import type { ChangePasswordInput, ForgotPasswordInput, LoginInput, ResetPasswordInput } from "../validators/auth.validators.js";
+import { sendEmail } from "../../../shared/email/email.service.js";
+import { buildForgotPasswordEmail } from "../../../shared/email/templates/forgotPassword.template.js";
+import { buildResetSuccessEmail } from "../../../shared/email/templates/resetSuccess.template.js";
+import type {
+  ChangeFirstPasswordInput,
+  ChangePasswordInput,
+  ForgotPasswordInput,
+  LoginInput,
+  ResetPasswordInput,
+} from "../validators/auth.validators.js";
 import {
   createAuditLog,
   createPasswordResetToken,
@@ -26,7 +35,7 @@ import {
   setNewPassword,
   updateLastLogin,
 } from "../repository/auth.repository.js";
-import type { LoginResponseDto, RefreshTokenResponseDto } from "../dto/login.dto.js";
+import type { LoginResponseDto, LoginSuccessDto, RefreshTokenResponseDto } from "../dto/login.dto.js";
 
 function toSafeUser(user: NonNullable<Awaited<ReturnType<typeof findUserByEmail>>>): SafeUser {
   return {
@@ -34,6 +43,7 @@ function toSafeUser(user: NonNullable<Awaited<ReturnType<typeof findUserByEmail>
     employeeCode: user.employeeCode,
     fullName: user.fullName,
     email: user.email,
+    phoneNumber: user.phoneNumber,
     department: user.department,
     designation: user.designation,
     employeeType: user.employeeType,
@@ -70,6 +80,27 @@ async function issueRefreshToken(userId: string): Promise<string> {
   const expiresAt = addDays(new Date(), env.REFRESH_TOKEN_EXPIRES_IN_DAYS);
   await createRefreshToken(userId, hashToken(plaintext), expiresAt);
   return plaintext;
+}
+
+/**
+ * Best-effort notification sent after a password has already been changed
+ * (self-service, forced-first-login, or forgot-password reset) — like
+ * every other email in this app, its failure must never surface as an
+ * error to a request whose underlying password change already succeeded.
+ */
+async function sendPasswordChangedEmail(email: string, fullName: string): Promise<void> {
+  try {
+    const content = buildResetSuccessEmail({ fullName, changedAtIso: new Date().toISOString() });
+    const result = await sendEmail({ to: email, subject: content.subject, html: content.html });
+    if (!result.success) {
+      console.error(`[auth] Reset Success email failed for ${email}: ${result.error}`);
+    }
+  } catch (error) {
+    console.error(
+      `[auth] Unexpected error while sending Reset Success email for ${email}:`,
+      error instanceof Error ? error.message : error
+    );
+  }
 }
 
 /**
@@ -124,6 +155,11 @@ export async function login(input: LoginInput, context: AuthEventContext): Promi
     forcePasswordChange = true;
   }
 
+  if (forcePasswordChange) {
+    await logAuthEvent({ userId: user.id, email: user.email, event: "LOGIN_REQUIRES_PASSWORD_CHANGE" }, context);
+    return { requiresPasswordChange: true, email: user.email };
+  }
+
   const token = signAccessToken({
     sub: user.id,
     email: user.email,
@@ -135,9 +171,69 @@ export async function login(input: LoginInput, context: AuthEventContext): Promi
   await logAuthEvent({ userId: user.id, email: user.email, event: "LOGIN_SUCCESS" }, context);
 
   return {
+    requiresPasswordChange: false,
     token,
     refreshToken,
     user: { ...toSafeUser(user), forcePasswordChange },
+  };
+}
+
+/**
+ * The forced-first-login counterpart to changePassword() — used when the
+ * client has no JWT yet (login() withheld one because forcePasswordChange
+ * was true), so the caller is re-identified by email + current password
+ * instead of an auth token. On success, behaves exactly like a fresh login:
+ * a normal JWT + refresh token are issued and returned.
+ */
+export async function changeFirstPassword(
+  input: ChangeFirstPasswordInput,
+  context: AuthEventContext
+): Promise<LoginSuccessDto> {
+  const user = await findUserByEmail(input.email);
+
+  if (!user) {
+    throw new AppError("Invalid email or current password.", 401);
+  }
+
+  if (!user.forcePasswordChange) {
+    throw new AppError("Password change is not required for this account. Please log in normally.", 400);
+  }
+
+  const currentPasswordMatches = await comparePassword(input.currentPassword, user.passwordHash);
+
+  if (!currentPasswordMatches) {
+    await logAuthEvent({ userId: user.id, email: user.email, event: "FIRST_PASSWORD_CHANGE_FAILED_BAD_CURRENT" }, context);
+    throw new AppError("Invalid email or current password.", 401);
+  }
+
+  if (input.newPassword === input.currentPassword) {
+    throw new AppError("New password must be different from your current password.", 400);
+  }
+
+  const passwordHash = await hashPassword(input.newPassword);
+  const passwordExpiresAt = addDays(new Date(), env.PASSWORD_EXPIRY_DAYS);
+
+  await setNewPassword(user.id, passwordHash, passwordExpiresAt);
+  await revokeAllRefreshTokensForUser(user.id);
+  await logAuthEvent({ userId: user.id, email: user.email, event: "FIRST_PASSWORD_CHANGE_COMPLETED" }, context);
+
+  await sendPasswordChangedEmail(user.email, user.fullName);
+
+  const token = signAccessToken({
+    sub: user.id,
+    email: user.email,
+    roleId: user.roleId,
+    roleName: user.role.name,
+  });
+  const refreshToken = await issueRefreshToken(user.id);
+
+  await logAuthEvent({ userId: user.id, email: user.email, event: "LOGIN_SUCCESS" }, context);
+
+  return {
+    requiresPasswordChange: false,
+    token,
+    refreshToken,
+    user: { ...toSafeUser(user), forcePasswordChange: false },
   };
 }
 
@@ -153,6 +249,9 @@ export async function getProfile(userId: string): Promise<AuthenticatedProfile> 
     modules: user.moduleAccess.map((grant) => grant.module.name),
     regions: user.regionAccess.map((grant) => grant.region.name),
     approvals: user.approvalPermissions.map((grant) => grant.approvalType.name),
+    reportingManager: user.reportingManager
+      ? { id: user.reportingManager.id, fullName: user.reportingManager.fullName }
+      : null,
   };
 }
 
@@ -208,12 +307,18 @@ export async function changePassword(userId: string, input: ChangePasswordInput,
     throw new AppError("Current password is incorrect.", 401);
   }
 
+  if (input.newPassword === input.currentPassword) {
+    throw new AppError("New password must be different from your current password.", 400);
+  }
+
   const passwordHash = await hashPassword(input.newPassword);
   const passwordExpiresAt = addDays(new Date(), env.PASSWORD_EXPIRY_DAYS);
 
   await setNewPassword(user.id, passwordHash, passwordExpiresAt);
   await revokeAllRefreshTokensForUser(user.id);
   await logAuthEvent({ userId: user.id, email: user.email, event: "PASSWORD_CHANGED" }, context);
+
+  await sendPasswordChangedEmail(user.email, user.fullName);
 }
 
 /**
@@ -234,9 +339,24 @@ export async function forgotPassword(input: ForgotPasswordInput, context: AuthEv
   await createPasswordResetToken(user.id, hashToken(plaintext), expiresAt);
   await logAuthEvent({ userId: user.id, email: user.email, event: "PASSWORD_RESET_REQUESTED" }, context);
 
-  // No email service exists yet — logged so the flow can be exercised
-  // end-to-end until one is wired up. Never returned in the API response.
-  console.log(`[auth] Password reset token for ${user.email}: ${plaintext} (expires ${expiresAt.toISOString()})`);
+  try {
+    const resetUrl = `${env.FRONTEND_URL}/auth/reset-password?token=${plaintext}`;
+    const content = buildForgotPasswordEmail({
+      fullName: user.fullName,
+      resetUrl,
+      expiresInMinutes: env.PASSWORD_RESET_TOKEN_EXPIRY_MINUTES,
+    });
+
+    const result = await sendEmail({ to: user.email, subject: content.subject, html: content.html });
+    if (!result.success) {
+      console.error(`[auth] Forgot Password email failed for ${user.email}: ${result.error}`);
+    }
+  } catch (error) {
+    console.error(
+      `[auth] Unexpected error while sending Forgot Password email for ${user.email}:`,
+      error instanceof Error ? error.message : error
+    );
+  }
 }
 
 export async function resetPassword(input: ResetPasswordInput, context: AuthEventContext): Promise<void> {
@@ -253,4 +373,21 @@ export async function resetPassword(input: ResetPasswordInput, context: AuthEven
   await markPasswordResetTokenUsed(stored.id);
   await revokeAllRefreshTokensForUser(stored.userId);
   await logAuthEvent({ userId: stored.userId, email: stored.user.email, event: "PASSWORD_RESET_COMPLETED" }, context);
+
+  await sendPasswordChangedEmail(stored.user.email, stored.user.fullName);
+}
+
+/**
+ * Checks a reset token's hash exists, is unused, and unexpired WITHOUT
+ * consuming it — used by the Reset Password page to validate the link on
+ * load, before it shows the New Password form.
+ */
+export async function validateResetToken(token: string): Promise<{ valid: boolean }> {
+  if (!token) {
+    return { valid: false };
+  }
+
+  const stored = await findPasswordResetTokenByHash(hashToken(token));
+  const valid = !!stored && !stored.usedAt && stored.expiresAt.getTime() > Date.now();
+  return { valid };
 }

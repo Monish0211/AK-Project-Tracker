@@ -23,6 +23,7 @@ export interface SafeUser {
   employeeCode: string | null;
   fullName: string;
   email: string;
+  phoneNumber: string | null;
   department: string | null;
   designation: string | null;
   employeeType: string | null;
@@ -50,6 +51,7 @@ export interface AuthenticatedProfile extends SafeUser {
   modules: string[];
   regions: string[];
   approvals: string[];
+  reportingManager: { id: string; fullName: string } | null;
 }
 
 /**
