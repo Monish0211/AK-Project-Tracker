@@ -25,6 +25,7 @@ export function findUserAccessById(id: string) {
     where: { id },
     include: {
       role: true,
+      reportingManager: { select: { id: true, fullName: true } },
       moduleAccess: { include: { module: true } },
       regionAccess: { include: { region: true } },
       approvalPermissions: { include: { approvalType: true } },

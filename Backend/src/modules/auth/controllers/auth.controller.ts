@@ -4,6 +4,7 @@ import { AppError } from "../../../shared/utils/AppError.js";
 import type { AuthEventContext } from "../../../shared/types/auth.types.js";
 import * as authService from "../services/auth.service.js";
 import type {
+  ChangeFirstPasswordInput,
   ChangePasswordInput,
   ForgotPasswordInput,
   LoginInput,
@@ -72,4 +73,15 @@ export const forgotPassword = asyncHandler(async (req: Request, res: Response) =
 export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
   await authService.resetPassword(req.body as ResetPasswordInput, contextFrom(req));
   res.status(200).json({ success: true, data: null, message: "Password reset successfully. Please log in." });
+});
+
+export const validateResetToken = asyncHandler(async (req: Request, res: Response) => {
+  const token = typeof req.query.token === "string" ? req.query.token : "";
+  const result = await authService.validateResetToken(token);
+  res.status(200).json({ success: true, data: result });
+});
+
+export const changeFirstPassword = asyncHandler(async (req: Request, res: Response) => {
+  const result = await authService.changeFirstPassword(req.body as ChangeFirstPasswordInput, contextFrom(req));
+  res.status(200).json({ success: true, data: result });
 });

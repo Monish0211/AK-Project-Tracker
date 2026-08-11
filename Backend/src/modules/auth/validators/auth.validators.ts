@@ -21,10 +21,16 @@ const newPasswordPolicy = z
   .regex(/[A-Za-z]/, "Password must contain at least one letter.")
   .regex(/[0-9]/, "Password must contain at least one number.");
 
-export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, "Current password is required."),
-  newPassword: newPasswordPolicy,
-});
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Current password is required."),
+    newPassword: newPasswordPolicy,
+    confirmPassword: z.string().min(1, "Confirm password is required."),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "New password and confirm password do not match.",
+    path: ["confirmPassword"],
+  });
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
@@ -34,12 +40,39 @@ export const forgotPasswordSchema = z.object({
 
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 
-export const resetPasswordSchema = z.object({
-  token: z.string().min(1, "Reset token is required."),
-  newPassword: newPasswordPolicy,
-});
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1, "Reset token is required."),
+    newPassword: newPasswordPolicy,
+    confirmPassword: z.string().min(1, "Confirm password is required."),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "New password and confirm password do not match.",
+    path: ["confirmPassword"],
+  });
 
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
+/**
+ * Used only by the forced-first-login flow, where the client has no JWT yet
+ * — the user is re-identified by email + their current (temporary) password
+ * instead of an auth token. Kept fully separate from changePasswordSchema
+ * (the JWT-protected self-service endpoint) rather than reused, since the
+ * two endpoints authenticate the caller in different ways.
+ */
+export const changeFirstPasswordSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().min(1, "Email is required.").email("Enter a valid email address."),
+    currentPassword: z.string().min(1, "Current password is required."),
+    newPassword: newPasswordPolicy,
+    confirmPassword: z.string().min(1, "Confirm password is required."),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "New password and confirm password do not match.",
+    path: ["confirmPassword"],
+  });
+
+export type ChangeFirstPasswordInput = z.infer<typeof changeFirstPasswordSchema>;
 
 export const refreshTokenSchema = z.object({
   refreshToken: z.string().min(1, "Refresh token is required."),
