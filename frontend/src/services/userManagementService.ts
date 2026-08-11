@@ -1,31 +1,25 @@
-import type { User, AccountStatus } from "../types/UserModel";
+import type { User, AccountStatus, EmployeeType, SystemRole } from "../types/UserModel";
 import { MOCK_USERS } from "../data/mockUsers";
 import { InMemoryUserRepository } from "./userRepository";
 import { UserStore } from "./userStore";
-import { generateTemporaryPassword } from "../utils/userProvisioning";
+import { DEFAULT_TEMP_PASSWORD } from "../utils/userProvisioning";
+import { buildModuleAccess, buildRegionAccess, buildApprovalRights } from "../utils/accessFields";
 import { apiClient } from "./apiClient";
 
 /**
- * User Management — Create User is real (POST /users against the backend);
- * everything else below (listing/edit/delete/status/reset) is still the
- * frontend-only in-memory mock this module started as, until those get
- * their own backend phases. Deliberately NOT backed by SQL, a real API, or
- * localStorage for those: this facade sits on top of an in-memory UserStore
- * (see userStore.ts) seeded once from mockUsers.ts, so mock data resets to
- * the seed set on every page reload.
- *
- * Every mock function below is written as the exact seam a future backend
- * swap would replace: getUsers()/getUserById() become GET requests,
- * updateUser/deleteUser become PUT/DELETE, and resetUserPassword/
- * setUserStatus become their own dedicated endpoints. No caller anywhere in
- * the UI needs to change shape when that happens — only these function
- * bodies do.
+ * User Management — Create User, User Listing, Delete User, Edit User, and
+ * Admin Reset Password are all real (against the backend). Toggle Status
+ * is NOT yet backed by a real endpoint — it still calls the frontend-only
+ * in-memory mock below, which has no live connection to what getUsers() now
+ * shows: the directory always reflects real database truth, so a
+ * toggle-status click will not persist and will not survive the next
+ * refresh. That's a known gap, not something this change introduces — it
+ * needs its own backend work, following the same pattern Edit User just
+ * established here.
  */
 
 const repository = new InMemoryUserRepository(MOCK_USERS);
 const store = new UserStore(repository);
-
-export const getUsers = (): User[] => store.getAll();
 
 export const getUserById = (id: string): User | undefined => store.getById(id);
 
@@ -80,35 +74,111 @@ export interface CreatedPortalUser {
 export const createUser = (payload: CreateUserPayload): Promise<CreatedPortalUser> =>
   apiClient.post<CreatedPortalUser>("/users", payload);
 
+/** Raw shape of each row GET /users returns — see Backend's UserListItemDto. */
+interface BackendUserListItem {
+  id: string;
+  employeeCode: string | null;
+  fullName: string;
+  email: string;
+  phoneNumber: string | null;
+  department: string | null;
+  designation: string | null;
+  employeeType: string | null;
+  reportingManagerId: string | null;
+  reportingManagerName: string | null;
+  role: { id: string; name: string };
+  isActive: boolean;
+  forcePasswordChange: boolean;
+  accountLocked: boolean;
+  lastLogin: string | null;
+  passwordResetAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  modules: string[];
+  regions: string[];
+  approvals: string[];
+}
+
 /**
- * Inserts an already backend-created user into the local in-memory list so
- * it appears immediately — there is no GET /users listing endpoint yet
- * (Phase 1 is Create User only), so this is what "refresh users" means
- * today. Takes a fully-formed display User (mapped from the real backend
- * response by the caller), not raw input — no fake data is generated here.
+ * Maps one backend row into this app's display User shape — the same
+ * boolean-flag access objects (moduleAccess/projectRegionAccess/
+ * approvalRights) the table, filters, and drawers already expect, built
+ * from the backend's name arrays via the shared accessFields helpers so
+ * Create User and Listing can never label things differently.
  */
-export const addUserToLocalList = (user: User): void => store.create(user);
+function toLocalUser(u: BackendUserListItem): User {
+  return {
+    id: u.id,
+    employeeId: u.employeeCode ?? "",
+    employeeName: u.fullName,
+    email: u.email,
+    phone: u.phoneNumber ?? undefined,
+    department: u.department ?? "",
+    designation: u.designation ?? "",
+    reportingManager: u.reportingManagerName ?? undefined,
+    employeeType: (u.employeeType as EmployeeType | null) ?? "Permanent",
+    role: u.role.name as SystemRole,
+    status: u.isActive ? "Active" : "Inactive",
+    avatarUrl: undefined,
+    temporaryPassword: undefined,
+    isFirstLogin: u.forcePasswordChange,
+    lastLoginAt: u.lastLogin,
+    moduleAccess: buildModuleAccess(u.modules),
+    projectRegionAccess: buildRegionAccess(u.regions),
+    approvalRights: buildApprovalRights(u.approvals),
+    accountSecurity: {
+      forcePasswordChangeOnFirstLogin: u.forcePasswordChange,
+      accountLocked: u.accountLocked,
+      twoFactorEnabled: false,
+      passwordExpiryDays: null,
+      lastPasswordResetAt: u.passwordResetAt,
+    },
+    createdAt: u.createdAt,
+    createdBy: "—",
+    lastModifiedAt: u.updatedAt,
+  };
+}
 
-export const updateUser = (id: string, patch: Partial<User>): User | undefined => store.update(id, patch);
+/** The User Directory — every PortalUser in Postgres, mapped to this app's display shape. */
+export const getUsers = async (): Promise<User[]> => {
+  const rows = await apiClient.get<BackendUserListItem[]>("/users");
+  return rows.map(toLocalUser);
+};
 
-export const deleteUser = (id: string): void => store.remove(id);
+export interface UpdateUserPayload {
+  fullName?: string;
+  email?: string;
+  phoneNumber?: string | null;
+  department?: string | null;
+  designation?: string | null;
+  employeeType?: string | null;
+  isActive?: boolean;
+  roleId?: string;
+  moduleIds?: string[];
+  regionIds?: string[];
+  approvalIds?: string[];
+  forcePasswordChange?: boolean;
+  accountLocked?: boolean;
+}
+
+/** Updates a portal user via the real backend (PATCH /users/:id) and returns the same directory row shape getUsers() does. */
+export const updateUser = async (id: string, payload: UpdateUserPayload): Promise<User> => {
+  const row = await apiClient.patch<BackendUserListItem>(`/users/${id}`, payload);
+  return toLocalUser(row);
+};
+
+/** Permanently deletes a portal login via the real backend (DELETE /users/:id). */
+export const deleteUser = (id: string): Promise<void> => apiClient.delete(`/users/${id}`);
 
 export const setUserStatus = (id: string, status: AccountStatus): void => store.setStatus(id, status);
 
-/** Generates and stores a new temporary password, returning it so the caller can display it once. */
-export const resetUserPassword = (id: string): string | undefined => {
-  const user = store.getById(id);
-  if (!user) return undefined;
-
-  const temporaryPassword = generateTemporaryPassword();
-  store.update(id, {
-    temporaryPassword,
-    isFirstLogin: true,
-    accountSecurity: {
-      ...user.accountSecurity,
-      lastPasswordResetAt: new Date().toISOString(),
-    },
-  });
-
-  return temporaryPassword;
+/**
+ * Resets a user's password via the real backend (POST /users/:id/reset-password)
+ * — the account is set back to the shared DEFAULT_TEMP_PASSWORD and forced
+ * to change it on next login. Returns the temp password so the caller can
+ * display it once.
+ */
+export const resetUserPassword = async (id: string): Promise<string> => {
+  await apiClient.post(`/users/${id}/reset-password`);
+  return DEFAULT_TEMP_PASSWORD;
 };

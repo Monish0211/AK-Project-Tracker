@@ -41,11 +41,22 @@ export function generateCompanyEmail(fullName: string, existingUsers: User[]): s
 }
 
 /**
+ * The one place the frontend defines the default temporary password —
+ * Create User's suggested value and Admin Reset Password's displayed value
+ * both come from here. The backend has its own matching constant
+ * (Backend/src/shared/constants/password.constants.ts) that actually hashes
+ * and sets this value for Reset Password; keep the two literal values equal
+ * if this ever changes, since there is no live network call to keep them
+ * in sync automatically.
+ */
+export const DEFAULT_TEMP_PASSWORD = "Welcome@123";
+
+/**
  * Standard temporary password issued to every newly created or reset
  * account — a fixed, friendly template (matching the PMO's own onboarding
  * convention) rather than a randomly generated string, since the employee
  * is always required to replace it on first login anyway.
  */
 export function generateTemporaryPassword(): string {
-  return "Welcome@123";
+  return DEFAULT_TEMP_PASSWORD;
 }

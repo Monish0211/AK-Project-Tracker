@@ -14,6 +14,7 @@ import { createUser, updateUser } from "../../../../services/userManagementServi
 import type { CreatedPortalUser, UserLookupItem, UserLookups } from "../../../../services/userManagementService";
 import { ApiError } from "../../../../services/apiClient";
 import { generateCompanyEmail, generateTemporaryPassword } from "../../../../utils/userProvisioning";
+import { MODULE_FIELDS, REGION_FIELDS, APPROVAL_FIELDS } from "../../../../utils/accessFields";
 import { ROLE_MODULE_DEFAULTS, ROLE_APPROVAL_DEFAULTS, ROLE_REGION_DEFAULTS } from "../../../../utils/roleDefaults";
 import { getDepartmentOptions, addDepartment } from "../../../../services/departmentDirectoryService";
 import { getReportingManagerOptions, addReportingManager } from "../../../../services/reportingManagerDirectoryService";
@@ -46,41 +47,6 @@ const ROLE_DESCRIPTIONS: Record<SystemRole, string> = {
   "Management Viewer": "Read-only executive visibility",
   "Read Only": "View-only, no edit permissions",
 };
-
-const MODULE_FIELDS: { key: keyof UserModuleAccess; label: string }[] = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "projects", label: "Projects" },
-  { key: "customerMaster", label: "Customer Master" },
-  { key: "timesheets", label: "Timesheets" },
-  { key: "invoices", label: "Invoices" },
-  { key: "reports", label: "Reports" },
-  { key: "manpower", label: "Manpower" },
-  { key: "documents", label: "Documents" },
-  { key: "settings", label: "Settings" },
-  { key: "notifications", label: "Notifications" },
-  { key: "reminders", label: "Reminders" },
-];
-
-const REGION_FIELDS: { key: keyof UserProjectRegionAccess; label: string }[] = [
-  { key: "india", label: "India" },
-  { key: "qatar", label: "Qatar" },
-  { key: "malaysia", label: "Malaysia" },
-  { key: "oman", label: "Oman" },
-  { key: "abuDhabi", label: "Abu Dhabi" },
-  { key: "fzi", label: "FZI" },
-  { key: "elixirQatar", label: "Elixir Qatar" },
-];
-
-const APPROVAL_FIELDS: { key: keyof UserApprovalRights; label: string }[] = [
-  { key: "approveTimesheets", label: "Approve Timesheets" },
-  { key: "approveExpenses", label: "Approve Expenses" },
-  { key: "approveInvoices", label: "Approve Invoices" },
-  { key: "approveCustomers", label: "Approve Customers" },
-  { key: "approveBudgetChanges", label: "Approve Budget Changes" },
-  { key: "approveProjectCreation", label: "Approve Project Creation" },
-  { key: "approveReminders", label: "Approve Reminders" },
-  { key: "archiveProjects", label: "Archive Projects" },
-];
 
 /** Maps this form's selected labels (module/region/approval field labels already match the backend's seeded names) to real database ids. */
 function resolveSelectedIds(lookupItems: UserLookupItem[], selectedLabels: string[]): string[] {
@@ -354,26 +320,54 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
         setIsSaving(false);
       }
     } else if (user) {
-      const updated = updateUser(user.id, {
-        employeeName: employeeName.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        department,
-        designation: designation.trim(),
-        reportingManager,
-        employeeType,
-        role,
-        status,
-        moduleAccess,
-        projectRegionAccess,
-        approvalRights,
-        accountSecurity: {
-          ...user.accountSecurity,
-          forcePasswordChangeOnFirstLogin: forcePasswordChange,
+      if (!lookups) {
+        setFormError("Form reference data is still loading. Please try again in a moment.");
+        return;
+      }
+
+      const roleId = lookups.roles.find((r) => r.name === role)?.id;
+      if (!roleId) {
+        setFormError(`Role "${role}" is not configured in the system yet.`);
+        return;
+      }
+
+      const moduleIds = resolveSelectedIds(
+        lookups.modules,
+        MODULE_FIELDS.filter((f) => moduleAccess[f.key]).map((f) => f.label)
+      );
+      const regionIds = resolveSelectedIds(
+        lookups.regions,
+        REGION_FIELDS.filter((f) => projectRegionAccess[f.key]).map((f) => f.label)
+      );
+      const approvalIds = resolveSelectedIds(
+        lookups.approvalTypes,
+        APPROVAL_FIELDS.filter((f) => approvalRights[f.key]).map((f) => f.label)
+      );
+
+      setIsSaving(true);
+      try {
+        const updated = await updateUser(user.id, {
+          fullName: employeeName.trim(),
+          email: email.trim(),
+          phoneNumber: phone.trim() || null,
+          department,
+          designation: designation.trim() || null,
+          employeeType,
+          isActive: status === "Active",
+          roleId,
+          moduleIds,
+          regionIds,
+          approvalIds,
+          forcePasswordChange,
           accountLocked,
-        },
-      });
-      if (updated) onSaved(updated);
+        });
+        onSaved(updated);
+      } catch (error) {
+        setFormError(error instanceof ApiError ? error.message : "Something went wrong. Please try again.");
+        return;
+      } finally {
+        setIsSaving(false);
+      }
     }
 
     onClose();
