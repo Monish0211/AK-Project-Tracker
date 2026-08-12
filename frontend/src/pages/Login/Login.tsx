@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../auth/authContext";
 import { useTheme } from "../../context/ThemeContext";
-import SplashScreen from "../../components/Splash/SplashScreen";
+import LoadingScreen from "../../components/LoadingScreen/LoadingScreen";
 import { Logo } from "../../components/ui/Logo";
 import ForgotPasswordModal from "./ForgotPasswordModal";
 
@@ -61,13 +61,8 @@ export default function Login() {
     const listener = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
     mediaQuery.addEventListener("change", listener);
 
-    const splashTimer = setTimeout(() => {
-      setShowSplash(false);
-    }, 2800);
-
     return () => {
       mediaQuery.removeEventListener("change", listener);
-      clearTimeout(splashTimer);
     };
   }, []);
 
@@ -170,7 +165,7 @@ export default function Login() {
   };
 
   if (showSplash) {
-    return <SplashScreen />;
+    return <LoadingScreen onComplete={() => setShowSplash(false)} />;
   }
 
   return (
