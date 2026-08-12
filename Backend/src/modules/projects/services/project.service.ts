@@ -1,14 +1,22 @@
 import { AppError } from "../../../shared/utils/AppError.js";
-import type { PaginatedProjectListDto, ProjectDto } from "../dto/project.dto.js";
+import type { ImportProjectsResultDto, PaginatedProjectListDto, ProjectDto } from "../dto/project.dto.js";
+import type { ProjectGeneralInfoData } from "../repository/project.repository.js";
 import {
   createProject as createProjectInRepository,
+  createProjectsBulk,
   findActiveProjectByPrNo,
+  findActiveProjectsByPrNos,
   findProjectById,
   findProjectsPage,
   softDeleteProject as softDeleteProjectInRepository,
   updateProject as updateProjectInRepository,
 } from "../repository/project.repository.js";
-import type { CreateProjectInput, ListProjectsQuery, UpdateProjectInput } from "../validators/project.validators.js";
+import type {
+  CreateProjectInput,
+  ImportProjectsInput,
+  ListProjectsQuery,
+  UpdateProjectInput,
+} from "../validators/project.validators.js";
 
 function toProjectDto(project: Awaited<ReturnType<typeof findProjectById>>): ProjectDto {
   if (!project) {
@@ -59,10 +67,9 @@ async function assertPrNoAvailable(prNo: string, excludingProjectId?: string): P
   }
 }
 
-export async function createProject(input: CreateProjectInput): Promise<ProjectDto> {
-  await assertPrNoAvailable(input.prNo);
-
-  const created = await createProjectInRepository({
+/** Shared by createProject() and bulkImportProjects() so the two paths can never drift apart on how a validated row becomes a DB row. */
+function toGeneralInfoData(input: CreateProjectInput): ProjectGeneralInfoData {
+  return {
     poMonth: input.poMonth,
     prCategory: input.prCategory,
     prNo: input.prNo,
@@ -87,9 +94,59 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectD
     durationUnit: input.durationUnit ?? null,
     contractType: input.contractType,
     pmoCoordinator: input.pmoCoordinator ?? null,
-  });
+  };
+}
+
+export async function createProject(input: CreateProjectInput): Promise<ProjectDto> {
+  await assertPrNoAvailable(input.prNo);
+
+  const created = await createProjectInRepository(toGeneralInfoData(input));
 
   return toProjectDto(created);
+}
+
+/**
+ * Excel import — every row is the exact same createProjectSchema a single
+ * POST /projects validates, so acceptance here can never disagree with
+ * acceptance one at a time. All rows land or none do: a single multi-row
+ * INSERT (createProjectsBulk) is already atomic, and the duplicate checks
+ * below run first so a bad batch never reaches the database at all.
+ * Response order matches the request's projects[] order (matched back by
+ * prNo — already confirmed unique within the batch below — rather than
+ * assumed from DB insert order).
+ */
+export async function bulkImportProjects(input: ImportProjectsInput): Promise<ImportProjectsResultDto> {
+  const prNos = input.projects.map((p) => p.prNo);
+
+  const seen = new Set<string>();
+  for (const prNo of prNos) {
+    const key = prNo.trim().toLowerCase();
+    if (seen.has(key)) {
+      throw new AppError(`Duplicate PR Number "${prNo}" within the import file.`, 409);
+    }
+    seen.add(key);
+  }
+
+  const existing = await findActiveProjectsByPrNos(prNos);
+  if (existing.length > 0) {
+    const names = existing.map((p) => `"${p.prNo}"`).join(", ");
+    throw new AppError(`The following PR Numbers already exist: ${names}.`, 409);
+  }
+
+  const created = await createProjectsBulk(input.projects.map(toGeneralInfoData));
+  const createdByPrNo = new Map(created.map((row) => [row.prNo, row]));
+
+  const items = input.projects.map((p) => {
+    const row = createdByPrNo.get(p.prNo);
+    if (!row) {
+      // Should be unreachable — createProjectsBulk() inserted exactly one
+      // row per submitted prNo, already confirmed unique above.
+      throw new AppError(`Project with PR Number "${p.prNo}" was not created.`, 500);
+    }
+    return toProjectDto(row);
+  });
+
+  return { items };
 }
 
 export async function getProjectById(id: string): Promise<ProjectDto> {

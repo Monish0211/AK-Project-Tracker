@@ -48,6 +48,19 @@ export function findActiveProjectByPrNo(prNo: string) {
   return prisma.project.findFirst({ where: { prNo, isDeleted: false } });
 }
 
+/** Bulk-import duplicate check — one query for the whole batch instead of one per row. */
+export function findActiveProjectsByPrNos(prNos: string[]) {
+  return prisma.project.findMany({ where: { prNo: { in: prNos }, isDeleted: false } });
+}
+
+/**
+ * A single multi-row INSERT — atomic on its own (all rows land or none do),
+ * so the Excel import path doesn't need a separate $transaction wrapper.
+ */
+export function createProjectsBulk(rows: ProjectGeneralInfoData[]) {
+  return prisma.project.createManyAndReturn({ data: rows });
+}
+
 export function updateProject(id: string, data: Partial<ProjectGeneralInfoData>) {
   return prisma.project.update({ where: { id }, data });
 }

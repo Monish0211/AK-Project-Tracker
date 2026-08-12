@@ -14,7 +14,11 @@ const app = express();
 app.set("trust proxy", 1);
 
 app.use(cors());
-app.use(express.json());
+// Default 100kb is too small for a bulk Excel import's JSON payload
+// (POST /projects/import can carry hundreds of rows) — every other route's
+// payloads are tiny by comparison, so this is a safe, generous ceiling
+// rather than a per-route override.
+app.use(express.json({ limit: "5mb" }));
 
 app.get("/health", (_req, res) => {
   res.status(200).json({ success: true, data: { status: "ok" } });

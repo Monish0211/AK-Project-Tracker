@@ -50,3 +50,8 @@ export interface PaginatedProjectListDto {
   page: number;
   pageSize: number;
 }
+
+/** POST /projects/import response — items are in the exact same order as the request's projects[] array. */
+export interface ImportProjectsResultDto {
+  items: ProjectDto[];
+}
