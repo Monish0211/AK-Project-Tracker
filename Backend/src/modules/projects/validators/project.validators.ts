@@ -105,3 +105,16 @@ export const listProjectsQuerySchema = z.object({
 });
 
 export type ListProjectsQuery = z.infer<typeof listProjectsQuerySchema>;
+
+/**
+ * POST /projects/import — bulk Excel import. Each row is validated by the
+ * exact same createProjectSchema a single POST /projects uses, so a row
+ * that would be accepted one at a time is guaranteed to be accepted here
+ * too, and vice versa — no separate, potentially-drifting validation rules
+ * for the bulk path.
+ */
+export const importProjectsSchema = z.object({
+  projects: z.array(createProjectSchema).min(1, "At least one project is required."),
+});
+
+export type ImportProjectsInput = z.infer<typeof importProjectsSchema>;

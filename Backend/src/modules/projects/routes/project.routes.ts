@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
 import { validate } from "../../../shared/middleware/validate.js";
-import { createProject, deleteProject, getProject, getProjects, updateProject } from "../controllers/project.controller.js";
-import { createProjectSchema, updateProjectSchema } from "../validators/project.validators.js";
+import { createProject, deleteProject, getProject, getProjects, importProjects, updateProject } from "../controllers/project.controller.js";
+import { createProjectSchema, importProjectsSchema, updateProjectSchema } from "../validators/project.validators.js";
 
 const router = Router();
 
@@ -15,6 +15,11 @@ const router = Router();
 router.get("/", authenticate, getProjects);
 router.get("/:id", authenticate, getProject);
 router.post("/", authenticate, validate(createProjectSchema), createProject);
+// Excel import — General Information for every row in one request; see
+// bulkImportProjects() in project.service.ts for the all-or-nothing
+// semantics (matches the pre-existing "if any row fails validation, the
+// entire import is rejected" behavior the Import UI already documents).
+router.post("/import", authenticate, validate(importProjectsSchema), importProjects);
 router.patch("/:id", authenticate, validate(updateProjectSchema), updateProject);
 router.delete("/:id", authenticate, deleteProject);
 
