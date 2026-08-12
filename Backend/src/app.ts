@@ -3,6 +3,7 @@ import express from "express";
 import { authRoutes } from "./modules/auth/index.js";
 import { userRoutes } from "./modules/users/index.js";
 import { projectRoutes } from "./modules/projects/index.js";
+import { quantityRoutes } from "./modules/quantity/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { AppError } from "./shared/utils/AppError.js";
 
@@ -27,6 +28,11 @@ app.get("/health", (_req, res) => {
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
 app.use("/projects", projectRoutes);
+// quantity.routes.ts already declares its own full paths
+// (/projects/:projectId/quantity, /quantity/:id) — mounted at root rather
+// than under a prefix, same as the two routers above share the /projects
+// namespace without conflicting.
+app.use(quantityRoutes);
 
 app.use((req, _res, next) => {
   next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));
