@@ -1,0 +1,148 @@
+/*
+ * Keyframes for the premium loading experience. Kept in one plain CSS file
+ * (rather than Tailwind arbitrary values) because several of these are
+ * multi-property or paired (a ring spinning one way while its contents
+ * counter-spin to stay upright) — clearer here than as inline style objects
+ * scattered across components.
+ */
+
+@keyframes ls-carousel-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ls-carousel-spin-reverse {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes ls-ring-spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ls-ring-spin-slow-reverse {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes ls-pulse-glow {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.06); }
+}
+
+@keyframes ls-float {
+  0%, 100% { transform: translateY(0) translateX(0); }
+  50% { transform: translateY(-14px) translateX(4px); }
+}
+
+@keyframes ls-node-pulse {
+  0%, 100% { opacity: 0.25; transform: scale(0.85); }
+  50% { opacity: 0.85; transform: scale(1.15); }
+}
+
+@keyframes ls-shimmer-sweep {
+  0% { transform: translateX(-160%) skewX(-18deg); }
+  100% { transform: translateX(160%) skewX(-18deg); }
+}
+
+@keyframes ls-fade-slide-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ls-progress-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes ls-scale-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes ls-image-scale-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+@keyframes ls-tile-glow-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.94); }
+  50% { opacity: 0.65; transform: scale(1.1); }
+}
+
+.ls-carousel-ring {
+  animation: ls-carousel-spin 34s linear infinite;
+}
+
+.ls-carousel-counter {
+  animation: ls-carousel-spin-reverse 34s linear infinite;
+}
+
+.ls-ring-outer {
+  animation: ls-ring-spin-slow 26s linear infinite;
+}
+
+.ls-ring-inner {
+  animation: ls-ring-spin-slow-reverse 18s linear infinite;
+}
+
+.ls-pulse-glow {
+  animation: ls-pulse-glow 3.2s ease-in-out infinite;
+}
+
+.ls-float {
+  animation: ls-float 7s ease-in-out infinite;
+}
+
+.ls-node-pulse {
+  animation: ls-node-pulse 2.4s ease-in-out infinite;
+}
+
+.ls-shimmer-sweep {
+  animation: ls-shimmer-sweep 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.ls-fade-slide-up {
+  animation: ls-fade-slide-up 0.35s ease-out both;
+}
+
+.ls-progress-shimmer {
+  animation: ls-progress-shimmer 1.8s ease-in-out infinite;
+}
+
+.ls-scale-in {
+  animation: ls-scale-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ls-image-scale {
+  animation: ls-image-scale-pulse 5s ease-in-out infinite;
+}
+
+.ls-tile-glow {
+  animation: ls-tile-glow-pulse 4s ease-in-out infinite;
+}
+
+/*
+ * prefers-reduced-motion: every continuous/decorative animation above is
+ * disabled outright rather than merely slowed — the loading experience
+ * itself (messages advancing, progress bar filling, final fade to Login)
+ * is preserved via component logic, which doesn't rely on any of these
+ * classes to function.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .ls-carousel-ring,
+  .ls-carousel-counter,
+  .ls-ring-outer,
+  .ls-ring-inner,
+  .ls-pulse-glow,
+  .ls-float,
+  .ls-node-pulse,
+  .ls-shimmer-sweep,
+  .ls-progress-shimmer,
+  .ls-scale-in,
+  .ls-image-scale,
+  .ls-tile-glow {
+    animation: none !important;
+  }
+}
