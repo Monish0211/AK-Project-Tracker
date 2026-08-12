@@ -39,6 +39,8 @@ export interface ProjectDto {
   contractType: string;
   pmoCoordinator: string | null;
 
+  paymentType: string;
+
   isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;

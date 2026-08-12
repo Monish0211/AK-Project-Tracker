@@ -6,6 +6,7 @@ import {
   deleteQuantity as deleteQuantityInRepository,
   getQuantityById,
   getQuantityByProjectId,
+  sumWoValueByProjectId,
   updateQuantity as updateQuantityInRepository,
 } from "../repository/quantity.repository.js";
 import type { QuantityItemData } from "../quantity.types.js";
@@ -141,4 +142,18 @@ export async function deleteQuantityItem(id: string): Promise<void> {
   }
 
   await deleteQuantityInRepository(id);
+}
+
+/**
+ * The backend equivalent of the frontend's workOrderValueINR — sum of every
+ * QuantityItem.woValue for this project. Exported for the Payment
+ * Milestones module (see milestone.service.ts's computeAmount()), which
+ * needs a project's Work Order Value to derive a milestone's amount but has
+ * no Quantity data of its own. Never throws on a project with zero Quantity
+ * rows — returns 0, matching the frontend's own `|| 0` fallback everywhere
+ * this value is read.
+ */
+export async function getWorkOrderValueForProject(projectId: string): Promise<number> {
+  const result = await sumWoValueByProjectId(projectId);
+  return result._sum.woValue ?? 0;
 }

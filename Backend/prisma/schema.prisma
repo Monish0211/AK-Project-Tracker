@@ -319,8 +319,18 @@ model Project {
   contractType   String  @default("LUMP SUM")
   pmoCoordinator String?
 
+  // Payment Milestones — "Single" forces exactly one milestone at 100% on
+  // the frontend; "Multiple" allows 1+ milestones. Lives on Project (not
+  // PaymentMilestone) because it is a project-wide toggle, not per-row data
+  // — see docs/PMO_PORTAL_TECHNICAL_DOCUMENTATION.md's Payment Milestone
+  // architectural analysis.
+  paymentType String @default("Single")
+
   // Quantity Information
   quantityItems QuantityItem[]
+
+  // Payment Milestone Information
+  paymentMilestones PaymentMilestone[]
 
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
@@ -357,6 +367,37 @@ model QuantityItem {
 
   woValue       Float
   pendingAmount Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+// =============================================================================
+// PAYMENT MILESTONE — approved via docs/PMO_PORTAL_TECHNICAL_DOCUMENTATION.md's
+// "Payment Milestone ID Stability Strategy" design.
+// =============================================================================
+// `amount` is deliberately NOT a column here — same reasoning as
+// QuantityItem's derived fields: it is 100% computable from
+// paymentPercentage and the parent project's Work Order Value (the sum of
+// QuantityItem.woValue for that project) at read time, and storing it would
+// let it silently drift from Quantity the moment any Quantity row changes
+// after a milestone was saved. See milestone.service.ts's computeAmount().
+//
+// `id` stays @default(dbgenerated(...)) exactly like every other model —
+// the approved design's Ingest path explicitly supplies its own id value in
+// the data passed to Prisma (honored over the default), rather than
+// requiring any schema-level exception here.
+model PaymentMilestone {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  milestoneName     String
+  paymentPercentage Float
+  dueDate           DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

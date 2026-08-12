@@ -49,6 +49,7 @@ function toProjectDto(project: Awaited<ReturnType<typeof findProjectById>>): Pro
     durationUnit: project.durationUnit,
     contractType: project.contractType,
     pmoCoordinator: project.pmoCoordinator,
+    paymentType: project.paymentType,
     isDeleted: project.isDeleted,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
@@ -94,6 +95,7 @@ function toGeneralInfoData(input: CreateProjectInput): ProjectGeneralInfoData {
     durationUnit: input.durationUnit ?? null,
     contractType: input.contractType,
     pmoCoordinator: input.pmoCoordinator ?? null,
+    paymentType: input.paymentType,
   };
 }
 
@@ -189,6 +191,7 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
     ...(input.durationUnit !== undefined && { durationUnit: input.durationUnit }),
     ...(input.contractType !== undefined && { contractType: input.contractType }),
     ...(input.pmoCoordinator !== undefined && { pmoCoordinator: input.pmoCoordinator }),
+    ...(input.paymentType !== undefined && { paymentType: input.paymentType }),
   });
 
   return toProjectDto(updated);

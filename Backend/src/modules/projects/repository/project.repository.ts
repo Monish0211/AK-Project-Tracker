@@ -34,6 +34,7 @@ export interface ProjectGeneralInfoData {
   durationUnit?: string | null;
   contractType: string;
   pmoCoordinator?: string | null;
+  paymentType: string;
 }
 
 export function createProject(data: ProjectGeneralInfoData) {

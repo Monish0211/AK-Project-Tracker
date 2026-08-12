@@ -35,3 +35,19 @@ export function deleteQuantity(id: string) {
 export function deleteAllByProject(projectId: string) {
   return prisma.quantityItem.deleteMany({ where: { projectId } });
 }
+
+/**
+ * Sum of every QuantityItem.woValue for a project — i.e. the backend
+ * equivalent of the frontend's workOrderValueINR (calculateQuantity() sums
+ * the exact same per-row field). Added for the Payment Milestones module
+ * (see milestone.service.ts's computeAmount()), which needs a project's
+ * Work Order Value to derive a milestone's amount but has no Quantity data
+ * of its own — reusing this repository query, via a new exported service
+ * function, avoids Milestones querying the QuantityItem table directly.
+ */
+export function sumWoValueByProjectId(projectId: string) {
+  return prisma.quantityItem.aggregate({
+    where: { projectId },
+    _sum: { woValue: true },
+  });
+}
