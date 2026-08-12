@@ -319,6 +319,9 @@ model Project {
   contractType   String  @default("LUMP SUM")
   pmoCoordinator String?
 
+  // Quantity Information
+  quantityItems QuantityItem[]
+
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
 
@@ -330,4 +333,33 @@ model Project {
   @@index([department])
   @@index([client])
   @@index([prCategory])
+}
+
+model QuantityItem {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  description String
+
+  woQty      Float
+  invoiceQty Float
+  pendingQty Float
+
+  uom        String  @default("")
+  assignedTo String?
+  currency   String  @default("INR")
+
+  unitRate     Float
+  exchangeRate Float
+  unitRateINR  Float
+
+  woValue       Float
+  pendingAmount Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
 }
