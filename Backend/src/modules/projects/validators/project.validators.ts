@@ -37,6 +37,12 @@ export const createProjectSchema = z.object({
 
   contractType: z.string().trim().min(1, "Contract Type is required.").default("LUMP SUM"),
   pmoCoordinator: z.string().trim().min(1, "PMO Coordinator is required."),
+
+  // Payment Milestones — project-wide toggle, not per-milestone data (see
+  // Backend/src/modules/milestones). Defaults to "Single" so existing
+  // frontend callers that don't yet send this field keep working
+  // unchanged, same technique as contractType's own default above.
+  paymentType: z.enum(["Single", "Multiple"]).default("Single"),
 });
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
@@ -77,6 +83,10 @@ export const updateProjectSchema = z.object({
 
   contractType: z.string().trim().min(1).optional(),
   pmoCoordinator: z.string().trim().min(1).optional(),
+
+  // No default here (unlike create) — omitting it on an update must leave
+  // the existing value alone, not silently reset it to "Single".
+  paymentType: z.enum(["Single", "Multiple"]).optional(),
 });
 
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;

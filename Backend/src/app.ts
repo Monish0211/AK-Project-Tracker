@@ -4,6 +4,7 @@ import { authRoutes } from "./modules/auth/index.js";
 import { userRoutes } from "./modules/users/index.js";
 import { projectRoutes } from "./modules/projects/index.js";
 import { quantityRoutes } from "./modules/quantity/index.js";
+import { milestoneRoutes } from "./modules/milestones/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { AppError } from "./shared/utils/AppError.js";
 
@@ -33,6 +34,10 @@ app.use("/projects", projectRoutes);
 // than under a prefix, same as the two routers above share the /projects
 // namespace without conflicting.
 app.use(quantityRoutes);
+// milestone.routes.ts follows the exact same shape — its own full paths
+// (/projects/:projectId/milestones[/ingest], /milestones/:id), mounted at
+// root alongside the two routers above.
+app.use(milestoneRoutes);
 
 app.use((req, _res, next) => {
   next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));
