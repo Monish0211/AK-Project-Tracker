@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import type { Project } from "../../types/Project";
 import { getProjectById, normalizeProject, fetchProjectByIdFromApi } from "../../services/projectService";
+import { loadQuantityForProject } from "../../services/quantityService";
 import { createEmptyProject } from "../../utils/createEmptyProject";
 import ProjectForm from "./components/ProjectForm";
 import type { TabKey } from "./components/ProjectForm";
@@ -21,9 +22,11 @@ const EditProject = () => {
   // on every mount (not just read from whatever the local mirror already
   // has) — this is the only way Edit is guaranteed correct even when the
   // user deep-links or refreshes straight into /projects/edit/:id without
-  // having visited the List page first. Quantity/Payments/Budget/Team/
-  // Expenses/Invoices continue to come from the local mirror exactly as
-  // before, since those fields aren't backend-sourced yet.
+  // having visited the List page first. Phase 3.3 adds the same treatment
+  // for Quantity, fetched immediately after General Information resolves,
+  // before the form is ever shown — see loadQuantityForProject().
+  // Payments/Budget/Team/Expenses/Invoices continue to come from the local
+  // mirror exactly as before, since those fields aren't backend-sourced yet.
   // loadedId tracks which id the fetch below has actually completed for —
   // deriving isLoading from "loadedId !== id" (rather than a separate
   // boolean flipped inside the effect) means switching straight from one
@@ -45,13 +48,25 @@ const EditProject = () => {
     let isMounted = true;
 
     fetchProjectByIdFromApi(id)
-      .then((fetched) => {
-        if (!isMounted) return;
-        if (fetched) {
-          setProject(fetched);
-          setNotFound(false);
-        } else {
-          setNotFound(true);
+      .then(async (fetched) => {
+        if (!isMounted || !fetched) {
+          if (isMounted) setNotFound(!fetched);
+          return;
+        }
+
+        setNotFound(false);
+
+        // Immediately load Quantity from the backend once General
+        // Information resolves, so the form never renders with stale
+        // Quantity data — a failure here still shows the project (General
+        // Information already loaded); Quantity simply falls back to
+        // whatever normalizeProject() already carried over.
+        try {
+          const quantityItems = await loadQuantityForProject(id);
+          if (!isMounted) return;
+          setProject(normalizeProject({ ...fetched, quantityItems }));
+        } catch {
+          if (isMounted) setProject(fetched);
         }
       })
       .catch(() => {
