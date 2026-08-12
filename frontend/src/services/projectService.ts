@@ -394,8 +394,18 @@ function toDateOnly(iso: string | null): string {
  * project (created via the backend, never seen locally before) starts from
  * createEmptyProject()'s defaults for everything else.
  */
-function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto): Project {
-  const existingLocal = getProjects().find((p) => p.id === dto.id);
+/**
+ * `explicitBase` lets a caller that already has a fully-built local Project
+ * object (e.g. Excel import, which parses Quantity/Payment Milestones/
+ * Expense Budget from the workbook before General Information even reaches
+ * the backend) supply it directly, instead of this function looking one up
+ * by `dto.id` — which would never match for a brand-new row anyway, since
+ * the backend hasn't issued that id yet at parse time. Every other caller
+ * (create/update/list/get) omits it and keeps the original lookup-by-id
+ * behavior unchanged.
+ */
+function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explicitBase?: Project): Project {
+  const existingLocal = explicitBase ?? getProjects().find((p) => p.id === dto.id);
   const base = existingLocal ?? createEmptyProject();
 
   return normalizeProject({
@@ -513,4 +523,51 @@ export async function updateProjectGeneralInfo(id: string, project: Project): Pr
 export async function softDeleteProjectViaApi(id: string): Promise<void> {
   await apiClient.delete(`/projects/${id}`);
   saveProjects(getProjects().filter((p) => p.id !== id));
+}
+
+interface ImportProjectsResponse {
+  items: BackendProjectDto[];
+}
+
+/**
+ * Excel import's persistence layer — General Information for every parsed
+ * row goes through the real backend (POST /projects/import) in one
+ * request, same all-or-nothing semantics the Import UI already documents
+ * ("if any row fails validation, the entire import is rejected"): either
+ * every row lands in Postgres with a real id, or the whole call throws and
+ * nothing is written anywhere, including the local mirror.
+ *
+ * `parsedProjects` are the full local Project objects parseProjectsWorkbook()
+ * already built — Quantity/Payment Milestones/Expense Budget/Invoice Items
+ * included, since those modules aren't backend-migrated yet. Each one is
+ * passed as the explicit base to mergeBackendGeneralInfoIntoLocalProject()
+ * so that data survives the round trip; only the id and General Information
+ * fields are overwritten with what the backend actually stored.
+ */
+export async function bulkImportProjectGeneralInfo(parsedProjects: Project[]): Promise<Project[]> {
+  // The Excel Import template (see projectWorkbookService.ts's
+  // PROJECTS_COLUMNS) has no Work Order Number / Work Order Date / EIC Name
+  // columns — those three were added to General Information after Import's
+  // column schema was designed, and adding columns to Import now would be
+  // redesigning it, which this change must not do. The backend requires all
+  // three (same createProjectSchema the manual Add/Edit form's General tab
+  // already enforces), so a row with none of them would 400 on every
+  // import. These fallbacks are applied ONLY to the outgoing payload, never
+  // to Import's own UI/columns/validation — the values actually stored are
+  // still visible and correctable afterward via the normal Edit screen.
+  const payload = {
+    projects: parsedProjects.map((p) =>
+      toGeneralInfoPayload({
+        ...p,
+        workOrderNumber: p.workOrderNumber?.trim() || p.prNo,
+        workOrderDate: p.workOrderDate?.trim() || p.projectStartDate,
+        eicName: p.eicName?.trim() || p.primaryProjectManager?.trim() || "Not Specified",
+      })
+    ),
+  };
+  const result = await apiClient.post<ImportProjectsResponse>("/projects/import", payload);
+
+  const merged = result.items.map((dto, index) => mergeBackendGeneralInfoIntoLocalProject(dto, parsedProjects[index]));
+  writeThroughProjectsMirror(merged);
+  return merged;
 }

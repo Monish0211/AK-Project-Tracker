@@ -21,9 +21,9 @@ import type { Project } from "../../types/Project";
 import {
   getProjects,
   deleteProject,
-  saveProjects,
   fetchProjectsFromApi,
   softDeleteProjectViaApi,
+  bulkImportProjectGeneralInfo,
 } from "../../services/projectService";
 import { ApiError } from "../../services/apiClient";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
@@ -115,7 +115,10 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
         department: department !== "All" ? department : undefined,
         projectStatus: mode === "completed" ? "Completed" : status !== "All" ? status : undefined,
         page: 1,
-        pageSize: 500,
+        // Matches the backend's listProjectsQuerySchema pageSize ceiling
+        // exactly (see project.validators.ts) — this bulk "stats scope"
+        // fetch must stay within it or the whole sync request 400s.
+        pageSize: 200,
         sortField: backendSortField,
         sortDirection: sortAsc ? "asc" : "desc",
       }).catch((err) => {
@@ -326,10 +329,19 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
         return;
       }
 
-      saveProjects([...existing, ...imported]);
-      alert(`Import complete! Successfully added ${imported.length} project(s).`);
+      // Persistence layer only: General Information for every parsed row
+      // goes to the real backend in one request (POST /projects/import),
+      // which issues the real ids used everywhere else in the app from
+      // this point on. All-or-nothing — if the backend rejects the batch
+      // (e.g. a race-condition duplicate PR Number), nothing is written
+      // here either. Quantity/Payment Milestones/Expense Budget/Invoice
+      // Items already parsed by parseProjectsWorkbook() above are
+      // untouched and travel with each row into the local mirror.
+      const createdProjects = await bulkImportProjectGeneralInfo(imported);
+      setProjects(scopeProjectsByMode(getProjects(), mode));
+      alert(`Import complete! Successfully added ${createdProjects.length} project(s).`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error while reading the file.";
+      const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Unknown error while reading the file.";
       alert(`Error reading file: ${message}`);
     } finally {
       e.target.value = ""; // clear file
