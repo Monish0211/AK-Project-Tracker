@@ -13,7 +13,9 @@ import {
   createProjectGeneralInfo,
   updateProjectGeneralInfo,
 } from "../../../services/projectService";
+import { syncQuantityItemsWithApi } from "../../../services/quantityService";
 import { ApiError } from "../../../services/apiClient";
+import { validateQuantityTab } from "../../../utils/projectValidation";
 
 import { createEmptyProject } from "../../../utils/createEmptyProject";
 
@@ -70,6 +72,25 @@ const FormButtons = ({
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "Failed to save General Information. Please try again.");
       return false;
+    }
+
+    // Phase 3.3: Quantity now round-trips through the real backend
+    // (POST/PATCH/DELETE /projects/:projectId/quantity, /quantity/:id) the
+    // same way General Information does above — only once the Quantity tab
+    // itself is valid (matches validateQuantityTab, the same rule that
+    // already gates leaving that tab). If the user hasn't finished filling
+    // it in yet (e.g. still on the General tab of a brand-new project),
+    // syncing is skipped for this Save; nothing is lost, since it will sync
+    // the next time Save runs with valid Quantity data.
+    if (Object.keys(validateQuantityTab(projectToSave)).length === 0) {
+      try {
+        const syncedQuantityItems = await syncQuantityItemsWithApi(projectToSave.id, projectToSave.quantityItems);
+        projectToSave = { ...projectToSave, quantityItems: syncedQuantityItems };
+        setProject(projectToSave);
+      } catch (err) {
+        alert(err instanceof ApiError ? err.message : "Failed to save Quantity Details. Please try again.");
+        return false;
+      }
     }
 
     if (projectToSave.projectStatus === "Completed" && projectToSave.actualCompletionDate) {
