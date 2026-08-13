@@ -308,6 +308,7 @@ interface BackendProjectDto {
   durationUnit: string | null;
   contractType: string;
   pmoCoordinator: string | null;
+  paymentType: string;
   isDeleted: boolean;
   createdAt: string;
   updatedAt: string;
@@ -346,6 +347,7 @@ interface ProjectGeneralInfoPayload {
   durationUnit: string | null;
   contractType: string;
   pmoCoordinator: string | null;
+  paymentType: string;
 }
 
 /** Empty string -> null. The backend's optional string fields reject "" (min(1) once present) — omit-or-null is what they expect, matching Users module's own validator style. */
@@ -379,6 +381,7 @@ function toGeneralInfoPayload(project: Project): ProjectGeneralInfoPayload {
     durationUnit: project.durationUnit || null,
     contractType: project.contractType || "LUMP SUM",
     pmoCoordinator: orNull(project.pmoCoordinator),
+    paymentType: project.paymentType || "Single",
   };
 }
 
@@ -435,6 +438,7 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     durationUnit: (dto.durationUnit as Project["durationUnit"]) || undefined,
     contractType: dto.contractType,
     pmoCoordinator: dto.pmoCoordinator || undefined,
+    paymentType: (dto.paymentType as Project["paymentType"]) || "Single",
     createdAt: dto.createdAt,
     updatedAt: dto.updatedAt,
   });
