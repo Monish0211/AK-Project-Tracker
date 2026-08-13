@@ -14,8 +14,9 @@ import {
   updateProjectGeneralInfo,
 } from "../../../services/projectService";
 import { syncQuantityItemsWithApi } from "../../../services/quantityService";
+import { syncMilestonesWithApi } from "../../../services/paymentMilestoneService";
 import { ApiError } from "../../../services/apiClient";
-import { validateQuantityTab } from "../../../utils/projectValidation";
+import { validateQuantityTab, validatePaymentMilestonesTab } from "../../../utils/projectValidation";
 
 import { createEmptyProject } from "../../../utils/createEmptyProject";
 
@@ -89,6 +90,28 @@ const FormButtons = ({
         setProject(projectToSave);
       } catch (err) {
         alert(err instanceof ApiError ? err.message : "Failed to save Quantity Details. Please try again.");
+        return false;
+      }
+    }
+
+    // Phase 3.4: Payment Milestones round-trip through the real backend the
+    // same way Quantity does above — only once the Payments tab itself is
+    // valid (matches validatePaymentMilestonesTab, the same rule that
+    // already gates leaving that tab). Every sync from here on is ordinary
+    // CRUD (Create/Update/Delete), never the backend's Ingest endpoint —
+    // Ingest only ever runs once, from loadMilestonesForProject() when Edit
+    // Project first opens, specifically to adopt pre-existing legacy/
+    // imported rows without changing their id. A milestone reaching this
+    // point either already went through Ingest (its id is already backend-
+    // known) or is a genuinely new row added via "Add Payment" this session
+    // (safe to Create with a fresh id, since nothing could reference it yet).
+    if (Object.keys(validatePaymentMilestonesTab(projectToSave)).length === 0) {
+      try {
+        const syncedMilestones = await syncMilestonesWithApi(projectToSave.id, projectToSave.paymentMilestones);
+        projectToSave = { ...projectToSave, paymentMilestones: syncedMilestones };
+        setProject(projectToSave);
+      } catch (err) {
+        alert(err instanceof ApiError ? err.message : "Failed to save Payment Milestones. Please try again.");
         return false;
       }
     }

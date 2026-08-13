@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import type { Project } from "../../types/Project";
 import { getProjectById, normalizeProject, fetchProjectByIdFromApi } from "../../services/projectService";
 import { loadQuantityForProject } from "../../services/quantityService";
+import { loadMilestonesForProject } from "../../services/paymentMilestoneService";
 import { createEmptyProject } from "../../utils/createEmptyProject";
 import ProjectForm from "./components/ProjectForm";
 import type { TabKey } from "./components/ProjectForm";
@@ -23,10 +24,11 @@ const EditProject = () => {
   // has) — this is the only way Edit is guaranteed correct even when the
   // user deep-links or refreshes straight into /projects/edit/:id without
   // having visited the List page first. Phase 3.3 adds the same treatment
-  // for Quantity, fetched immediately after General Information resolves,
-  // before the form is ever shown — see loadQuantityForProject().
-  // Payments/Budget/Team/Expenses/Invoices continue to come from the local
-  // mirror exactly as before, since those fields aren't backend-sourced yet.
+  // for Quantity, and Phase 3.4 for Payment Milestones, each fetched
+  // immediately after General Information resolves, before the form is
+  // ever shown — see loadQuantityForProject()/loadMilestonesForProject().
+  // Budget/Team/Expenses/Invoices continue to come from the local mirror
+  // exactly as before, since those fields aren't backend-sourced yet.
   // loadedId tracks which id the fetch below has actually completed for —
   // deriving isLoading from "loadedId !== id" (rather than a separate
   // boolean flipped inside the effect) means switching straight from one
@@ -64,7 +66,24 @@ const EditProject = () => {
         try {
           const quantityItems = await loadQuantityForProject(id);
           if (!isMounted) return;
-          setProject(normalizeProject({ ...fetched, quantityItems }));
+          let nextProject = normalizeProject({ ...fetched, quantityItems });
+
+          // Payment Milestones load the same way, immediately after
+          // Quantity — this failure is isolated from Quantity's: if General
+          // Information and Quantity already loaded successfully above,
+          // Milestones failing to load (e.g. an incomplete legacy row the
+          // backend's Ingest validation rejects) never discards that
+          // progress. Milestones simply falls back to whatever the local
+          // mirror already had for this session.
+          try {
+            const paymentMilestones = await loadMilestonesForProject(id);
+            if (!isMounted) return;
+            nextProject = normalizeProject({ ...nextProject, paymentMilestones });
+          } catch {
+            // Fall through with nextProject as already set above.
+          }
+
+          setProject(nextProject);
         } catch {
           if (isMounted) setProject(fetched);
         }
