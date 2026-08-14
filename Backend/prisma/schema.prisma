@@ -326,11 +326,48 @@ model Project {
   // architectural analysis.
   paymentType String @default("Single")
 
+  // Expense Budget — Phase 3.5. Deliberately flat on Project, NOT a child
+  // table: this is a 1:1 attribute (exactly one Man-Hour Budget and one
+  // Non-Man-Hour Budget per project, always), same treatment as every other
+  // General Information scalar field above. Do not confuse with
+  // ProjectExpense below, which IS a real child collection — two
+  // independent modules that happen to ship in the same phase.
+  manhourBudgetAmount     Float?
+  manhourBudgetHours      Float?
+  manhourBudgetRemarks    String?
+  nonManhourBudgetAmount  Float?
+  nonManhourBudgetRemarks String?
+
+  // Project Leadership — Phase 3.7. Flat on Project (not a child table):
+  // exactly one leadership team per project, same 1:1-attribute treatment
+  // as Expense Budget above. pmoCoordinator already existed (Phase 3.1) —
+  // not repeated here. All nullable/optional: a brand-new project's General
+  // Information create request has no reason to already know its
+  // leadership team, matching every other additive field set's precedent.
+  primaryProjectManager   String?
+  secondaryProjectManager String?
+  projectEngineer         String?
+  projectCoordinator      String?
+  clientCoordinator       String?
+
   // Quantity Information
   quantityItems QuantityItem[]
 
   // Payment Milestone Information
   paymentMilestones PaymentMilestone[]
+
+  // Other Project Expenses — Phase 3.5. The actual expense ledger
+  // (Add/Edit/Delete rows) — a genuine 1:many child collection, same shape
+  // as QuantityItem/PaymentMilestone above. See the Expense Budget note
+  // above for why this is modeled differently.
+  projectExpenses ProjectExpense[]
+
+  // Team Assigned — Phase 3.7. Read-only, Timesheet-import-derived child
+  // collection (see ProjectResource below) — Project itself never writes to
+  // it; nothing in this phase does either. Included on the relation side
+  // only so onDelete: Cascade (declared on ProjectResource) has something
+  // to cascade from.
+  projectResources ProjectResource[]
 
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
@@ -403,4 +440,125 @@ model PaymentMilestone {
   updatedAt DateTime @updatedAt
 
   @@index([projectId])
+}
+
+// =============================================================================
+// PROJECT EXPENSE — "Other Project Expenses," Phase 3.5. A real child
+// collection (Add/Edit/Delete rows), independent of the flat Expense Budget
+// fields on Project above — same shape as QuantityItem/PaymentMilestone.
+// =============================================================================
+// `totalCost` mirrors QuantityItem's `woValue`/`unitRateINR`: derived
+// server-side (quantity * unitCost) and stored as a real column rather than
+// trusted from client input, per project.repository.ts's own convention. See
+// expense.service.ts's computeTotalCost().
+model ProjectExpense {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  category    String
+  description String
+  quantity    Float
+  unitCost    Float
+  totalCost   Float
+  remarks     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+// =============================================================================
+// EMPLOYEE — "Employee Master" / Manpower, Phase 3.7. The single source of
+// employee information across the whole Portal. `employeeNo` is the natural,
+// human-assigned business key every other module already references by
+// (TimesheetEntry, the pre-existing frontend ProjectResource type) — kept as
+// the primary matching key here too, not replaced by the surrogate `id`.
+// =============================================================================
+model Employee {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  employeeNo       String  @unique
+  employeeName     String
+  department       String
+  designation      String
+  reportingManager String?
+  grade            String
+  location         String
+
+  // "Current Hourly Rate" in business terms — kept under the frontend's own
+  // existing field name (see EmployeeModal.tsx / Excel import template) so
+  // this migration doesn't invent a second name for the same thing.
+  manhourExpenses Float @default(0)
+
+  status String @default("Active")
+
+  dateOfJoining DateTime?
+  employeeType  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([department])
+  @@index([status])
+}
+
+// =============================================================================
+// PROJECT RESOURCE — "Team Assigned," Phase 3.7. Represents Employee ↔
+// Project assignment ONLY — never a second Employee Master. Name/department/
+// designation/grade/reportingManager/location are always read live from
+// Employee above, never duplicated onto this table.
+// =============================================================================
+// `employeeNo` is a plain column, not a Prisma relation to Employee: this is
+// deliberate, not an oversight — `hourlyRateSnapshot` exists specifically so
+// a row's historical cost survives independently of whatever Employee Master
+// says later (including if that Employee row is ever deleted). Referential
+// sanity on create/update is enforced in the service layer instead (a row's
+// employeeNo must currently exist in Employee), matching the same
+// "application-level guard, no DB-level FK" approach already used for
+// Delete Permanently's Invoice Protection check.
+//
+// This module is backend-only as of Phase 3.7 — no frontend code calls it
+// yet. Team Assigned's live UI (ExpandableTeamMembersCard.tsx) continues to
+// compute everything from raw Timesheet data, exactly as it does today; a
+// future Timesheet backend phase will become the only process that ever
+// creates or updates rows here, via the API shape already built now.
+model ProjectResource {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  employeeNo String
+
+  assignmentStartDate DateTime?
+  assignmentEndDate   DateTime?
+  assignmentStatus    String    @default("Active")
+
+  // Frozen at row creation/update time from Employee.manhourExpenses —
+  // never re-derived from a later Employee read. See the model-level
+  // comment above for why this must never change historical cost.
+  hourlyRateSnapshot Float
+
+  workingDays Float @default(0)
+  totalHours  Float @default(0)
+
+  // Server-derived: totalHours * hourlyRateSnapshot. Never accepted from a
+  // client — same "never trust a client-computed derived value" convention
+  // as QuantityItem.woValue/unitRateINR and ProjectExpense.totalCost.
+  manhourCost Float @default(0)
+
+  lastSyncedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // One row per Employee + Project — an assignment sync is an upsert on
+  // this key, matching the brief's "one employee, multiple projects, each
+  // its own record" rule exactly.
+  @@unique([projectId, employeeNo])
+  @@index([projectId])
+  @@index([employeeNo])
 }

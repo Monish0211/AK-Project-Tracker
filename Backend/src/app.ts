@@ -5,6 +5,9 @@ import { userRoutes } from "./modules/users/index.js";
 import { projectRoutes } from "./modules/projects/index.js";
 import { quantityRoutes } from "./modules/quantity/index.js";
 import { milestoneRoutes } from "./modules/milestones/index.js";
+import { expenseRoutes } from "./modules/expenses/index.js";
+import { employeeRoutes } from "./modules/employees/index.js";
+import { resourceRoutes } from "./modules/resources/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { AppError } from "./shared/utils/AppError.js";
 
@@ -38,6 +41,25 @@ app.use(quantityRoutes);
 // (/projects/:projectId/milestones[/ingest], /milestones/:id), mounted at
 // root alongside the two routers above.
 app.use(milestoneRoutes);
+// expense.routes.ts follows the exact same shape — its own full paths
+// (/projects/:projectId/expenses, /expenses/:id), mounted at root alongside
+// the routers above. This is the Other Project Expenses child-collection
+// module only — Expense Budget's 5 flat fields ride on projectRoutes above,
+// with no separate router of their own.
+app.use(expenseRoutes);
+// Manpower / Employee Master — Phase 3.7. Declares only relative paths
+// (/, /:id, /import), same convention as /users and the base /projects
+// routes above, so it's mounted under its own prefix rather than at root.
+app.use("/employees", employeeRoutes);
+// Project Resource ("Team Assigned") — Phase 3.7, backend-only (see
+// resource.routes.ts's own note: no frontend code calls these routes yet).
+// Declares its own full paths (/projects/:projectId/resources,
+// /employees/:employeeNo/assignments, /resources/:id), mounted at root
+// alongside quantity/milestone/expense routes above — its
+// /employees/:employeeNo/assignments literal never collides with
+// employeeRoutes' /employees/:id above, since Express matches on exact
+// segment count/structure, not just a shared prefix.
+app.use(resourceRoutes);
 
 app.use((req, _res, next) => {
   next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));
