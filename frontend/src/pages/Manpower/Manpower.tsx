@@ -14,6 +14,7 @@ import {
   Layers,
   MapPin,
   CheckCircle,
+  X,
 } from "lucide-react";
 
 import type { Employee } from "../../types/EmployeeModel";
@@ -21,10 +22,15 @@ import { GlassReflectionOverlay } from "../../components/ui/GlassReflectionOverl
 import {
   getEmployees,
   deleteEmployee,
+  deleteEmployeeViaApi,
   exportEmployeesToExcel,
   importEmployeesFromExcel,
   downloadEmployeeTemplate,
+  loadEmployeesForApp,
+  fetchEmployeesFromApi,
+  type EmployeeMigrationResult,
 } from "../../services/employeeService";
+import { ApiError } from "../../services/apiClient";
 import EmployeeModal from "./components/EmployeeModal";
 import { Button } from "../../components/ui/Button";
 import { EmptyStateRow } from "../../components/ui/EmptyStateRow";
@@ -34,6 +40,42 @@ const Manpower = () => {
 
   // Live employee database state
   const [employees, setEmployees] = useState<Employee[]>(getEmployees());
+
+  // Phase 3.7.1: migration result surfaced to the user when (and only when)
+  // a one-time legacy-localStorage migration actually ran this load — see
+  // employeeService.ts's loadEmployeesForApp()/migrateLegacyEmployees().
+  // Never fabricated locally; always exactly what the backend attempt
+  // produced, skips/failures included.
+  const [migrationResult, setMigrationResult] = useState<EmployeeMigrationResult | null>(null);
+
+  // Phase 3.7: Employee Master is fetched fresh from the real backend on
+  // every mount (not just read from whatever the local mirror already has)
+  // — the same "guaranteed correct even on a fresh browser/deep link"
+  // reasoning Projects.tsx's own General Information fetch already
+  // established. If the backend is empty and legacy localStorage data
+  // exists, loadEmployeesForApp() migrates it once; either way, the local
+  // mirror is refreshed and this page's own client-side filter/sort/
+  // paginate logic below keeps working unchanged on top of it.
+  useEffect(() => {
+    let isMounted = true;
+    loadEmployeesForApp()
+      .then(({ employees: items, migration }) => {
+        if (!isMounted) return;
+        setEmployees(items);
+        if (migration) {
+          setMigrationResult(migration);
+          if (migration.failed > 0 || migration.skipped > 0) {
+            console.warn("[Employee Migration] Not every legacy record migrated cleanly:", migration.failures);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load Employee Master from backend:", err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Search & Filter State
   const [search, setSearch] = useState("");
@@ -82,6 +124,31 @@ const Manpower = () => {
   // Reset page when filter changes
   useEffect(() => {
     setCurrentPage(1);
+  }, [search, deptFilter, locFilter, statusFilter, gradeFilter]);
+
+  // Phase 3.7: background sync with the real backend — mirrors Projects.tsx's
+  // own debounced fetchProjectsFromApi effect exactly. The local mirror it
+  // writes into (via fetchEmployeesFromApi's write-through) is what this
+  // page's existing client-side filter/sort/paginate logic already reads
+  // from above — no other logic here changes.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchEmployeesFromApi({
+        search: search || undefined,
+        department: deptFilter !== "All" ? deptFilter : undefined,
+        status: statusFilter !== "All" ? statusFilter : undefined,
+        grade: gradeFilter !== "All" ? gradeFilter : undefined,
+        location: locFilter !== "All" ? locFilter : undefined,
+        page: 1,
+        pageSize: 200,
+      })
+        .then((result) => setEmployees(result.items))
+        .catch((err) => {
+          console.error("Failed to sync employees from backend:", err);
+        });
+    }, 300);
+
+    return () => clearTimeout(timer);
   }, [search, deptFilter, locFilter, statusFilter, gradeFilter]);
 
   // Handle Sort Toggle
@@ -336,6 +403,43 @@ const Manpower = () => {
         </div>
       </div>
 
+      {/* ═══════════ LEGACY MIGRATION REPORT (only shown once, if a migration attempt just ran) ═══════════ */}
+      {migrationResult && (
+        <div
+          className={`rounded-xl border p-4 text-xs sm:text-sm flex items-start justify-between gap-4 ${
+            migrationResult.failed > 0 || migrationResult.skipped > 0
+              ? "border-amber-300 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/20"
+              : "border-emerald-300 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/20"
+          }`}
+        >
+          <div className="min-w-0">
+            <p className="font-bold text-slate-800 dark:text-slate-100">
+              Legacy Employee Migration {migrationResult.failed > 0 || migrationResult.skipped > 0 ? "Completed With Issues" : "Completed"}
+            </p>
+            <p className="text-slate-600 dark:text-slate-300 mt-1">
+              {migrationResult.total} record(s) found in this browser's local storage — {migrationResult.migrated} migrated to PostgreSQL,{" "}
+              {migrationResult.skipped} skipped, {migrationResult.failed} failed.
+            </p>
+            {migrationResult.failures.length > 0 && (
+              <ul className="mt-2 space-y-0.5 text-slate-500 dark:text-slate-400 list-disc list-inside max-h-32 overflow-y-auto">
+                {migrationResult.failures.map((f, i) => (
+                  <li key={`${f.employeeNo}-${i}`}>
+                    <strong>{f.employeeNo}</strong> ({f.employeeName}): {f.reason}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <button
+            onClick={() => setMigrationResult(null)}
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0"
+            title="Dismiss"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* ═══════════ KPI SUMMARY BAR ═══════════ */}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
         <div className="pmo-mc bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3 shadow-sm">
@@ -578,8 +682,12 @@ const Manpower = () => {
               {paginatedEmployees.length === 0 ? (
                 <EmptyStateRow
                   colSpan={10}
-                  title="No Employees Found"
-                  description="No employees match the selected filter criteria."
+                  title={employees.length === 0 ? "No Employees Yet" : "No Employees Found"}
+                  description={
+                    employees.length === 0
+                      ? "Get started by adding your first employee or importing an Excel file."
+                      : "No employees match the selected filter criteria."
+                  }
                 />
               ) : (
                 paginatedEmployees.map((e) => (
@@ -711,12 +819,20 @@ const Manpower = () => {
               <Button
                 variant="danger"
                 size="sm"
-                onClick={() => {
-                  if (deleteConfirmId) {
-                    deleteEmployee(deleteConfirmId);
-                    setEmployees(getEmployees());
-                    setDeleteConfirmId(null);
+                onClick={async () => {
+                  if (!deleteConfirmId) return;
+                  try {
+                    await deleteEmployeeViaApi(deleteConfirmId);
+                  } catch (err) {
+                    if (err instanceof ApiError && err.status === 404) {
+                      deleteEmployee(deleteConfirmId);
+                    } else {
+                      alert(err instanceof ApiError ? err.message : "Failed to delete employee. Please try again.");
+                      return;
+                    }
                   }
+                  setEmployees(getEmployees());
+                  setDeleteConfirmId(null);
                 }}
               >
                 Delete

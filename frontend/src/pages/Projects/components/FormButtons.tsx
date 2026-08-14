@@ -15,8 +15,9 @@ import {
 } from "../../../services/projectService";
 import { syncQuantityItemsWithApi } from "../../../services/quantityService";
 import { syncMilestonesWithApi } from "../../../services/paymentMilestoneService";
+import { syncExpensesWithApi } from "../../../services/otherProjectExpenseService";
 import { ApiError } from "../../../services/apiClient";
-import { validateQuantityTab, validatePaymentMilestonesTab } from "../../../utils/projectValidation";
+import { validateQuantityTab, validatePaymentMilestonesTab, validateOtherExpensesTab } from "../../../utils/projectValidation";
 
 import { createEmptyProject } from "../../../utils/createEmptyProject";
 
@@ -112,6 +113,25 @@ const FormButtons = ({
         setProject(projectToSave);
       } catch (err) {
         alert(err instanceof ApiError ? err.message : "Failed to save Payment Milestones. Please try again.");
+        return false;
+      }
+    }
+
+    // Phase 3.5: Other Project Expenses round-trip through the real backend
+    // the same way Quantity/Payment Milestones do above — only once the
+    // Other Project Expenses tab itself is valid (matches
+    // validateOtherExpensesTab, the same rule that already gates leaving
+    // that tab). This is a completely separate module from Expense Budget
+    // (the 5 flat fields on Project) — Budget has no sync step of its own
+    // here, since it already round-tripped as part of the General
+    // Information save at the top of this function.
+    if (Object.keys(validateOtherExpensesTab(projectToSave)).length === 0) {
+      try {
+        const syncedExpenses = await syncExpensesWithApi(projectToSave.id, projectToSave.nonManhourExpenses);
+        projectToSave = { ...projectToSave, nonManhourExpenses: syncedExpenses };
+        setProject(projectToSave);
+      } catch (err) {
+        alert(err instanceof ApiError ? err.message : "Failed to save Other Project Expenses. Please try again.");
         return false;
       }
     }

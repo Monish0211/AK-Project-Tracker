@@ -49,6 +49,33 @@ export const validateQuantityTab = (project: Project): Record<string, string> =>
   return errors;
 };
 
+/**
+ * Expense Budget has no required-field markers in ExpenseBudgetCard.tsx
+ * today (Budget Amount/Hours/Remarks are all optional planning inputs) — so
+ * there is nothing to reject yet. This still exists as its own gate (per
+ * the Phase 3.5 design, matching validateQuantityTab/
+ * validatePaymentMilestonesTab's role of gating that tab's backend sync)
+ * rather than being skipped, so a future required-field rule has a home
+ * without inventing a new validator wiring path.
+ */
+export const validateExpenseBudgetTab = (_project: Project): Record<string, string> => {
+  return {};
+};
+
+/**
+ * Other Project Expenses validates each row at the point of entry —
+ * NonManhourExpenseModal.tsx already blocks Save unless category,
+ * description, quantity > 0, and unitCost > 0 all pass, so nothing invalid
+ * can ever reach project.nonManhourExpenses in the first place. This
+ * tab-level gate exists to match validateQuantityTab/
+ * validatePaymentMilestonesTab's role of gating FormButtons.tsx's backend
+ * sync call, not to re-validate rows the modal already guaranteed are
+ * complete.
+ */
+export const validateOtherExpensesTab = (_project: Project): Record<string, string> => {
+  return {};
+};
+
 export const validatePaymentMilestonesTab = (project: Project): Record<string, string> => {
   const errors: Record<string, string> = {};
 

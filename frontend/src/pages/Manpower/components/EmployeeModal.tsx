@@ -5,8 +5,10 @@ import type { Employee } from "../../../types/EmployeeModel";
 
 import {
   getEmployees,
-  saveEmployees,
+  createEmployeeViaApi,
+  updateEmployeeViaApi,
 } from "../../../services/employeeService";
+import { ApiError } from "../../../services/apiClient";
 import { DEFAULT_DEPARTMENTS } from "../../../data/departmentMasterData";
 
 interface Props {
@@ -83,9 +85,19 @@ const EmployeeModal = ({
     employee?.status ?? "Active"
   );
 
-  const [error, setError] = useState("");
+  // Phase 3.7 — new, optional fields; no prior UI field before this phase.
+  const [dateOfJoining, setDateOfJoining] = useState(
+    employee?.dateOfJoining ?? ""
+  );
 
-  const handleSave = () => {
+  const [employeeType, setEmployeeType] = useState(
+    employee?.employeeType ?? ""
+  );
+
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
     if (!employeeNo.trim()) {
       setError("Employee number is required.");
       return;
@@ -160,45 +172,35 @@ const EmployeeModal = ({
         ? otherDepartment.trim()
         : department;
 
-    if (employee) {
-      const updatedEmployees = employees.map((e) =>
-        e.id === employee.id
-          ? {
-              ...e,
-              employeeNo: employeeNo.trim(),
-              employeeName: employeeName.trim(),
-              designation: designation.trim(),
-              department: finalDepartment,
-              location: location.trim(),
-              reportingManager: reportingManager.trim(),
-              grade: grade.trim(),
-              manhourExpenses,
-              status,
-            }
-          : e
-      );
+    const candidate: Employee = {
+      id: employee?.id ?? crypto.randomUUID(),
+      employeeNo: employeeNo.trim(),
+      employeeName: employeeName.trim(),
+      designation: designation.trim(),
+      department: finalDepartment,
+      location: location.trim(),
+      reportingManager: reportingManager.trim(),
+      grade: grade.trim(),
+      manhourExpenses,
+      status,
+      dateOfJoining: dateOfJoining.trim() || undefined,
+      employeeType: employeeType.trim() || undefined,
+      createdAt: employee?.createdAt ?? new Date().toISOString(),
+    };
 
-      saveEmployees(updatedEmployees);
-    } else {
-      const updatedEmployees = [
-        ...employees,
-        {
-          id: crypto.randomUUID(),
-          employeeNo: employeeNo.trim(),
-          employeeName: employeeName.trim(),
-          designation: designation.trim(),
-          department: finalDepartment,
-          location: location.trim(),
-          reportingManager: reportingManager.trim(),
-          grade: grade.trim(),
-          manhourExpenses,
-          status,
-          createdAt: new Date().toISOString(),
-        },
-      ];
-
-      saveEmployees(updatedEmployees);
+    setSaving(true);
+    try {
+      if (employee) {
+        await updateEmployeeViaApi(employee.id, candidate);
+      } else {
+        await createEmployeeViaApi(candidate);
+      }
+    } catch (err) {
+      setSaving(false);
+      setError(err instanceof ApiError ? err.message : "Failed to save employee. Please try again.");
+      return;
     }
+    setSaving(false);
 
     setEmployees(getEmployees());
 
@@ -502,6 +504,49 @@ const EmployeeModal = ({
             />
           </div>
 
+          {/* Date of Joining */}
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Date of Joining
+            </label>
+            <input
+              type="date"
+              value={dateOfJoining}
+              onChange={(e) => setDateOfJoining(e.target.value)}
+              className="
+                w-full
+                border
+                rounded-xl
+                p-3
+                focus:ring-2
+                focus:ring-blue-500
+                outline-none
+              "
+            />
+          </div>
+
+          {/* Employee Type */}
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Employee Type
+            </label>
+            <input
+              type="text"
+              value={employeeType}
+              onChange={(e) => setEmployeeType(e.target.value)}
+              placeholder="Enter Employee Type (e.g. Permanent, Contract)"
+              className="
+                w-full
+                border
+                rounded-xl
+                p-3
+                focus:ring-2
+                focus:ring-blue-500
+                outline-none
+              "
+            />
+          </div>
+
           {/* Status */}
           <div>
 
@@ -560,6 +605,7 @@ const EmployeeModal = ({
 
           <button
             onClick={handleSave}
+            disabled={saving}
             className="
               px-5
               py-2.5
@@ -569,9 +615,11 @@ const EmployeeModal = ({
               text-white
               font-bold
               cursor-pointer
+              disabled:opacity-60
+              disabled:cursor-not-allowed
             "
           >
-            {isEditMode ? "Update Employee" : "Save Employee"}
+            {saving ? "Saving..." : isEditMode ? "Update Employee" : "Save Employee"}
           </button>
 
         </div>

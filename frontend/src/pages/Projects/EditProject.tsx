@@ -4,6 +4,7 @@ import type { Project } from "../../types/Project";
 import { getProjectById, normalizeProject, fetchProjectByIdFromApi } from "../../services/projectService";
 import { loadQuantityForProject } from "../../services/quantityService";
 import { loadMilestonesForProject } from "../../services/paymentMilestoneService";
+import { loadExpensesForProject } from "../../services/otherProjectExpenseService";
 import { createEmptyProject } from "../../utils/createEmptyProject";
 import ProjectForm from "./components/ProjectForm";
 import type { TabKey } from "./components/ProjectForm";
@@ -79,6 +80,19 @@ const EditProject = () => {
             const paymentMilestones = await loadMilestonesForProject(id);
             if (!isMounted) return;
             nextProject = normalizeProject({ ...nextProject, paymentMilestones });
+          } catch {
+            // Fall through with nextProject as already set above.
+          }
+
+          // Other Project Expenses load the same way, immediately after
+          // Payment Milestones — isolated the same way: a failure here never
+          // discards General Information/Quantity/Milestones already
+          // loaded above, it simply falls back to whatever the local mirror
+          // already had for this session.
+          try {
+            const nonManhourExpenses = await loadExpensesForProject(id);
+            if (!isMounted) return;
+            nextProject = normalizeProject({ ...nextProject, nonManhourExpenses });
           } catch {
             // Fall through with nextProject as already set above.
           }

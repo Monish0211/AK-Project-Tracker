@@ -309,6 +309,19 @@ interface BackendProjectDto {
   contractType: string;
   pmoCoordinator: string | null;
   paymentType: string;
+  // Expense Budget — Phase 3.5. Flat fields on Project, same as everything
+  // else in this DTO — see Backend's ProjectDto.
+  manhourBudgetAmount: number | null;
+  manhourBudgetHours: number | null;
+  manhourBudgetRemarks: string | null;
+  nonManhourBudgetAmount: number | null;
+  nonManhourBudgetRemarks: string | null;
+  // Project Leadership — Phase 3.7. Same 5 flat fields as Backend's ProjectDto.
+  primaryProjectManager: string | null;
+  secondaryProjectManager: string | null;
+  projectEngineer: string | null;
+  projectCoordinator: string | null;
+  clientCoordinator: string | null;
   isDeleted: boolean;
   createdAt: string;
   updatedAt: string;
@@ -348,6 +361,18 @@ interface ProjectGeneralInfoPayload {
   contractType: string;
   pmoCoordinator: string | null;
   paymentType: string;
+  // Expense Budget — Phase 3.5. Same 5 flat fields as BackendProjectDto.
+  manhourBudgetAmount: number | null;
+  manhourBudgetHours: number | null;
+  manhourBudgetRemarks: string | null;
+  nonManhourBudgetAmount: number | null;
+  nonManhourBudgetRemarks: string | null;
+  // Project Leadership — Phase 3.7. Same 5 flat fields as BackendProjectDto.
+  primaryProjectManager: string | null;
+  secondaryProjectManager: string | null;
+  projectEngineer: string | null;
+  projectCoordinator: string | null;
+  clientCoordinator: string | null;
 }
 
 /** Empty string -> null. The backend's optional string fields reject "" (min(1) once present) — omit-or-null is what they expect, matching Users module's own validator style. */
@@ -382,6 +407,16 @@ function toGeneralInfoPayload(project: Project): ProjectGeneralInfoPayload {
     contractType: project.contractType || "LUMP SUM",
     pmoCoordinator: orNull(project.pmoCoordinator),
     paymentType: project.paymentType || "Single",
+    manhourBudgetAmount: typeof project.manhourBudgetAmount === "number" ? project.manhourBudgetAmount : null,
+    manhourBudgetHours: typeof project.manhourBudgetHours === "number" ? project.manhourBudgetHours : null,
+    manhourBudgetRemarks: orNull(project.manhourBudgetRemarks),
+    nonManhourBudgetAmount: typeof project.nonManhourBudgetAmount === "number" ? project.nonManhourBudgetAmount : null,
+    nonManhourBudgetRemarks: orNull(project.nonManhourBudgetRemarks),
+    primaryProjectManager: orNull(project.primaryProjectManager),
+    secondaryProjectManager: orNull(project.secondaryProjectManager),
+    projectEngineer: orNull(project.projectEngineer),
+    projectCoordinator: orNull(project.projectCoordinator),
+    clientCoordinator: orNull(project.clientCoordinator),
   };
 }
 
@@ -439,6 +474,16 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     contractType: dto.contractType,
     pmoCoordinator: dto.pmoCoordinator || undefined,
     paymentType: (dto.paymentType as Project["paymentType"]) || "Single",
+    manhourBudgetAmount: dto.manhourBudgetAmount ?? undefined,
+    manhourBudgetHours: dto.manhourBudgetHours ?? undefined,
+    manhourBudgetRemarks: dto.manhourBudgetRemarks || undefined,
+    nonManhourBudgetAmount: dto.nonManhourBudgetAmount ?? undefined,
+    nonManhourBudgetRemarks: dto.nonManhourBudgetRemarks || undefined,
+    primaryProjectManager: dto.primaryProjectManager || "",
+    secondaryProjectManager: dto.secondaryProjectManager || "",
+    projectEngineer: dto.projectEngineer || "",
+    projectCoordinator: dto.projectCoordinator || "",
+    clientCoordinator: dto.clientCoordinator || "",
     createdAt: dto.createdAt,
     updatedAt: dto.updatedAt,
   });
@@ -523,9 +568,31 @@ export async function updateProjectGeneralInfo(id: string, project: Project): Pr
   return merged;
 }
 
-/** Soft-deletes via the real backend — DELETE /projects/:id never removes the row server-side; this also drops it from the local mirror so it disappears from the list immediately. */
-export async function softDeleteProjectViaApi(id: string): Promise<void> {
+/** Archive — reversible. DELETE /projects/:id never removes the row server-side, only sets isDeleted/deletedAt; this also drops it from the local mirror so it disappears from the Project Repository list immediately. Every child record (Quantity/Payment Milestones/Other Project Expenses) is left completely untouched. */
+export async function archiveProjectViaApi(id: string): Promise<void> {
   await apiClient.delete(`/projects/${id}`);
+  saveProjects(getProjects().filter((p) => p.id !== id));
+}
+
+/**
+ * Permanent Delete — irreversible, Administrator-only (enforced server-side
+ * via authorize("Administrator") on DELETE /projects/:id/permanent; this
+ * function does not itself check the caller's role — the UI is expected to
+ * only ever surface this action to an Administrator, and the backend
+ * enforces it regardless).
+ *
+ * `hasInvoiceHistory` must be computed by the caller (see Projects.tsx,
+ * which reuses invoiceProgressService.ts's getInvoiceCount() — the same
+ * definition of "has invoice history" already used everywhere else in the
+ * app) and is asserted to the backend, which cannot verify it independently:
+ * Invoices/InvoiceLines are still localStorage-only, no Postgres table
+ * exists for them yet. A true value gets a 409 back from the backend before
+ * anything is removed; a false value proceeds to a real, cascading delete of
+ * the Project row and every QuantityItem/PaymentMilestone/ProjectExpense row
+ * that references it.
+ */
+export async function permanentlyDeleteProjectViaApi(id: string, hasInvoiceHistory: boolean): Promise<void> {
+  await apiClient.delete(`/projects/${id}/permanent`, { hasInvoiceHistory });
   saveProjects(getProjects().filter((p) => p.id !== id));
 }
 

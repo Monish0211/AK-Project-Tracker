@@ -11,22 +11,27 @@ import {
   Eye,
   Pencil,
   Trash2,
+  ShieldAlert,
+  Archive as ArchiveIcon,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 import ExcelJS from "exceljs";
 
 import { Button } from "../../components/ui/Button";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import type { Project } from "../../types/Project";
 import {
   getProjects,
   deleteProject,
   fetchProjectsFromApi,
-  softDeleteProjectViaApi,
+  archiveProjectViaApi,
+  permanentlyDeleteProjectViaApi,
   bulkImportProjectGeneralInfo,
 } from "../../services/projectService";
 import { ApiError } from "../../services/apiClient";
-import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
+import { getProjectCommercialSummary, getInvoiceCount } from "../../services/invoiceProgressService";
+import { useAuth } from "../../auth/authContext";
 
 /** Sort fields the backend's GET /projects can order by — see listProjectsQuerySchema. Anything else (Team/Commercial/Invoice columns, not modeled server-side yet) is synced with the default sort instead and left to this page's own client-side sort exactly as before. */
 const BACKEND_SORTABLE_FIELDS = new Set([
@@ -61,6 +66,11 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const statusParam = searchParams.get("status") || "All";
+  const { user } = useAuth();
+  // Delete Permanently is Administrator-only — the backend enforces this
+  // independently (authorize("Administrator") on DELETE /projects/:id/permanent),
+  // this only controls whether the action is even offered in the UI.
+  const canPermanentlyDelete = user?.role === "Administrator";
 
   const pageTitle = mode === "completed" ? "Completed Projects" : "Projects";
   const repoCardTitle = mode === "completed" ? "Completed Projects" : "Project Repository";
@@ -71,6 +81,13 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
 
   // Live project state — already scoped to this page's dataset
   const [projects, setProjects] = useState<Project[]>(() => scopeProjectsByMode(getProjects(), mode));
+
+  // Phase 3.7.2: pending confirmation targets for the custom ConfirmDialog —
+  // replaces window.confirm() for both Archive and Delete Permanently.
+  // Holding the id/project here (rather than confirming inline) is what lets
+  // a single reusable modal serve both actions.
+  const [archiveTargetId, setArchiveTargetId] = useState<string | null>(null);
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<Project | null>(null);
 
   // Search & Filter State
   const [search, setSearch] = useState("");
@@ -180,24 +197,43 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     }
   };
 
-  // Delete Action — Phase 3.1: soft-deletes via the real backend
-  // (DELETE /projects/:id never removes the row server-side); the old
+  // Archive Action — Phase 3.1, renamed for clarity. Reversible: sets
+  // isDeleted/deletedAt via the real backend (DELETE /projects/:id never
+  // removes the row server-side); every child record (Quantity/Payment
+  // Milestones/Other Project Expenses) is left completely untouched. The old
   // local-only deleteProject() is still used as a fallback for any project
   // that only ever existed in the local mirror (e.g. imported, never synced
-  // to the backend), so Delete never silently does nothing.
-  const handleDelete = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this project?")) {
-      return;
-    }
+  // to the backend), so Archive never silently does nothing.
+  const handleArchive = async (id: string) => {
     try {
-      await softDeleteProjectViaApi(id);
+      await archiveProjectViaApi(id);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         deleteProject(id);
       } else {
-        alert(err instanceof ApiError ? err.message : "Failed to delete project. Please try again.");
+        alert(err instanceof ApiError ? err.message : "Failed to archive project. Please try again.");
         return;
       }
+    }
+    setProjects(scopeProjectsByMode(getProjects(), mode));
+  };
+
+  // Permanent Delete — irreversible, Administrator-only (see
+  // canPermanentlyDelete above; the backend independently enforces this via
+  // authorize("Administrator")). Always calls the backend, which is the
+  // single source of truth for the Invoice Protection block below — this
+  // component never pre-empts that decision, it only computes the
+  // `hasInvoiceHistory` flag the backend has no Postgres data of its own to
+  // verify (Invoices/InvoiceLines are still localStorage-only) and displays
+  // whatever message the backend actually returns.
+  const handlePermanentDelete = async (project: Project) => {
+    const hasInvoiceHistory = getInvoiceCount(project.invoiceItems) > 0;
+
+    try {
+      await permanentlyDeleteProjectViaApi(project.id, hasInvoiceHistory);
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Failed to permanently delete project. Please try again.");
+      return;
     }
     setProjects(scopeProjectsByMode(getProjects(), mode));
   };
@@ -479,19 +515,24 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
           width: 38px; height: 38px; border-radius: 7px;
           display: flex; align-items: center; justify-content: center;
           border: none; background: transparent; position: relative;
+          transition: background-color 150ms ease, color 150ms ease;
         }
         .pmo-act-btn svg { width: 15px; height: 15px; }
-        .pmo-act-btn::after {
-          content: attr(title);
-          position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
-          background: #111827; color: #fff;
-          font-size: 9.5px; font-weight: 600; white-space: nowrap;
-          padding: 3px 7px; border-radius: 5px;
-          opacity: 0; pointer-events: none; z-index: 20;
-          transition: opacity 150ms ease;
+        /* Delete Permanently — same transparent-at-rest / tinted-on-hover
+           treatment as every other action button; only the icon color
+           signals "warning", so the button doesn't visually break away
+           from the group at rest. No tooltip on any of these 4 buttons
+           (Phase 3.7.2) — action labels are self-evident from the icon,
+           and Archive/Delete Permanently now confirm via ConfirmDialog
+           instead of relying on hover text. */
+        .pmo-act-btn.act-perm-del {
+          color: #DC2626;
         }
-        html.dark .pmo-act-btn::after { background: #E6EDF3; color: #111827; }
-        .pmo-act-btn:hover::after { opacity: 1; }
+        .pmo-act-btn.act-perm-del:hover {
+          background: rgba(220,38,38,.12); color: #B91C1C;
+        }
+        html.dark .pmo-act-btn.act-perm-del { color: #F87171; }
+        html.dark .pmo-act-btn.act-perm-del:hover { background: rgba(248,113,113,.18); color: #FCA5A5; }
       ` }} />
 
       {/* ═══════════ HERO BANNER ═══════════ */}
@@ -861,30 +902,37 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                         {fmtCurrency(comm.pendingDue)}
                       </td>
                       <td className="p-3 text-center">
-                        <div className="acts">
-                          <div className="pmo-act-wrap bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-900">
+                        <div className="pmo-act-wrap bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-900">
+                          <button
+                            onClick={() => navigate(`/projects/view/${p.id}`, { state: { source: mode } })}
+                            className="pmo-act-btn act-v hover:bg-blue-100/40 hover:text-blue-600"
+                            aria-label="View Project Details"
+                          >
+                            <Eye />
+                          </button>
+                          <button
+                            onClick={() => navigate(`/projects/edit/${p.id}`, { state: { source: mode } })}
+                            className="pmo-act-btn act-e hover:bg-slate-100/50 hover:text-slate-600"
+                            aria-label="Edit Project Details"
+                          >
+                            <Pencil />
+                          </button>
+                          <button
+                            onClick={() => setArchiveTargetId(p.id)}
+                            className="pmo-act-btn act-d hover:bg-red-100/40 hover:text-red-600"
+                            aria-label="Archive Project"
+                          >
+                            <Trash2 />
+                          </button>
+                          {canPermanentlyDelete && (
                             <button
-                              onClick={() => navigate(`/projects/view/${p.id}`, { state: { source: mode } })}
-                              className="pmo-act-btn act-v hover:bg-blue-100/40 hover:text-blue-600"
-                              title="View Project Details"
+                              onClick={() => setPermanentDeleteTarget(p)}
+                              className="pmo-act-btn act-perm-del"
+                              aria-label="Delete Project Permanently"
                             >
-                              <Eye />
+                              <ShieldAlert />
                             </button>
-                            <button
-                              onClick={() => navigate(`/projects/edit/${p.id}`, { state: { source: mode } })}
-                              className="pmo-act-btn act-e hover:bg-slate-100/50 hover:text-slate-600"
-                              title="Edit Project Details"
-                            >
-                              <Pencil />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(p.id)}
-                              className="pmo-act-btn act-d hover:bg-red-100/40 hover:text-red-600"
-                              title="Delete Project Record"
-                            >
-                              <Trash2 />
-                            </button>
-                          </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -937,6 +985,39 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
           </div>
         </div>
       </div>
+
+      {/* Archive confirmation — replaces window.confirm(); Archive's own API call/business logic (handleArchive) is unchanged. */}
+      <ConfirmDialog
+        open={archiveTargetId !== null}
+        title="Archive Project"
+        message={"This project will be removed from the active project repository.\n\nArchived projects can be restored later."}
+        confirmLabel="Archive Project"
+        icon={<ArchiveIcon size={18} />}
+        onCancel={() => setArchiveTargetId(null)}
+        onConfirm={async () => {
+          if (!archiveTargetId) return;
+          await handleArchive(archiveTargetId);
+          setArchiveTargetId(null);
+        }}
+      />
+
+      {/* Delete Permanently confirmation — replaces window.confirm(); the underlying permanent-delete API call/business logic (handlePermanentDelete) is unchanged. */}
+      <ConfirmDialog
+        open={permanentDeleteTarget !== null}
+        title="Delete Project Permanently"
+        message={
+          "You are about to permanently delete this project.\n\nAll associated project information and related records will be permanently removed.\n\nThis action cannot be undone."
+        }
+        confirmLabel="Delete Permanently"
+        variant="danger"
+        icon={<ShieldAlert size={18} />}
+        onCancel={() => setPermanentDeleteTarget(null)}
+        onConfirm={async () => {
+          if (!permanentDeleteTarget) return;
+          await handlePermanentDelete(permanentDeleteTarget);
+          setPermanentDeleteTarget(null);
+        }}
+      />
     </div>
   );
 };

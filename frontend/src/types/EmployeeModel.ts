@@ -12,5 +12,9 @@ export interface Employee {
 
   status: "Active" | "Inactive";
 
+  // Phase 3.7 — optional, no prior UI field before this phase.
+  dateOfJoining?: string;
+  employeeType?: string;
+
   createdAt: string;
 }

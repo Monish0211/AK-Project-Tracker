@@ -60,5 +60,10 @@ export const apiClient = {
     request<T>(path, { method: "POST", body: data !== undefined ? JSON.stringify(data) : undefined }),
   patch: <T>(path: string, data?: unknown): Promise<T> =>
     request<T>(path, { method: "PATCH", body: data !== undefined ? JSON.stringify(data) : undefined }),
-  delete: <T>(path: string): Promise<T> => request<T>(path, { method: "DELETE" }),
+  // `data` is optional — every existing caller passes none and is unaffected.
+  // Added for Permanent Delete's Invoice Protection flag (see
+  // projectService.ts's permanentlyDeleteProjectViaApi()), the first DELETE
+  // call in this app that needs to carry a body.
+  delete: <T>(path: string, data?: unknown): Promise<T> =>
+    request<T>(path, { method: "DELETE", body: data !== undefined ? JSON.stringify(data) : undefined }),
 };
