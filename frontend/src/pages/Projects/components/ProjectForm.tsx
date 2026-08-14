@@ -36,7 +36,13 @@ import NonManhourExpenseCard from "./ExpenseInformation/NonManhourExpenseCard";
 import { syncInvoiceItemsWithQuantity } from "../../../services/invoiceSyncService";
 import { ProjectWorkspaceDrawer } from "../../../components/Dashboard/ProjectWorkspaceDrawer";
 import { useFormValidation } from "../../../hooks/useFormValidation";
-import { validateGeneralTab, validateQuantityTab, validatePaymentMilestonesTab } from "../../../utils/projectValidation";
+import {
+  validateGeneralTab,
+  validateQuantityTab,
+  validatePaymentMilestonesTab,
+  validateExpenseBudgetTab,
+  validateOtherExpensesTab,
+} from "../../../utils/projectValidation";
 import "../project-workspace-theme.css";
 
 // All possible tab keys
@@ -116,6 +122,10 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
         return validate(project, validateQuantityTab);
       case "payments":
         return validate(project, validatePaymentMilestonesTab);
+      case "budget":
+        return validate(project, validateExpenseBudgetTab);
+      case "expenses":
+        return validate(project, validateOtherExpensesTab);
       default:
         return true;
     }
