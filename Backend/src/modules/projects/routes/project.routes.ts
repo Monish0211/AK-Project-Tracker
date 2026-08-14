@@ -1,8 +1,22 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
+import { authorize } from "../../../shared/middleware/authorize.js";
 import { validate } from "../../../shared/middleware/validate.js";
-import { createProject, deleteProject, getProject, getProjects, importProjects, updateProject } from "../controllers/project.controller.js";
-import { createProjectSchema, importProjectsSchema, updateProjectSchema } from "../validators/project.validators.js";
+import {
+  archiveProject,
+  createProject,
+  getProject,
+  getProjects,
+  importProjects,
+  permanentlyDeleteProject,
+  updateProject,
+} from "../controllers/project.controller.js";
+import {
+  createProjectSchema,
+  importProjectsSchema,
+  permanentDeleteProjectSchema,
+  updateProjectSchema,
+} from "../validators/project.validators.js";
 
 const router = Router();
 
@@ -21,6 +35,16 @@ router.post("/", authenticate, validate(createProjectSchema), createProject);
 // entire import is rejected" behavior the Import UI already documents).
 router.post("/import", authenticate, validate(importProjectsSchema), importProjects);
 router.patch("/:id", authenticate, validate(updateProjectSchema), updateProject);
-router.delete("/:id", authenticate, deleteProject);
+// Archive — reversible, every portal role (same access rule as every other
+// route in this file); this is the pre-existing Phase 3.1 soft-delete
+// behavior, renamed for clarity, never redesigned.
+router.delete("/:id", authenticate, archiveProject);
+// Permanent Delete — irreversible, Administrator-only. A real row delete;
+// QuantityItem/PaymentMilestone/ProjectExpense are removed automatically via
+// their onDelete: Cascade foreign keys (see schema.prisma), never manually.
+// Registered after "/:id" for readability, not because ordering matters here
+// — Express matches "/:id/permanent" (two path segments) and "/:id" (one)
+// independently regardless of declaration order.
+router.delete("/:id/permanent", authenticate, authorize("Administrator"), validate(permanentDeleteProjectSchema), permanentlyDeleteProject);
 
 export default router;

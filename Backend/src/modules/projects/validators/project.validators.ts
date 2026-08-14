@@ -43,6 +43,31 @@ export const createProjectSchema = z.object({
   // frontend callers that don't yet send this field keep working
   // unchanged, same technique as contractType's own default above.
   paymentType: z.enum(["Single", "Multiple"]).default("Single"),
+
+  // Expense Budget — Phase 3.5. Flat 1:1 fields on Project, all optional:
+  // a brand-new project's General Information create request has no
+  // reason to already know its budget, and ExpenseBudgetCard.tsx has no
+  // required-field markers today (matching that exactly, not inventing new
+  // required-field rules the UI doesn't already enforce).
+  manhourBudgetAmount: z.coerce.number().min(0, "Man-Hour Budget Amount cannot be negative.").optional().nullable(),
+  manhourBudgetHours: z.coerce.number().min(0, "Man-Hour Budget Hours cannot be negative.").optional().nullable(),
+  manhourBudgetRemarks: z.string().trim().optional().nullable(),
+  nonManhourBudgetAmount: z.coerce
+    .number()
+    .min(0, "Non Man-Hour Budget Amount cannot be negative.")
+    .optional()
+    .nullable(),
+  nonManhourBudgetRemarks: z.string().trim().optional().nullable(),
+
+  // Project Leadership — Phase 3.7. Flat 1:1 fields on Project, all
+  // optional: a brand-new project's General Information create request has
+  // no reason to already know its leadership team, matching every other
+  // additive field set's precedent (Expense Budget, Phase 3.5).
+  primaryProjectManager: z.string().trim().optional().nullable(),
+  secondaryProjectManager: z.string().trim().optional().nullable(),
+  projectEngineer: z.string().trim().optional().nullable(),
+  projectCoordinator: z.string().trim().optional().nullable(),
+  clientCoordinator: z.string().trim().optional().nullable(),
 });
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
@@ -87,6 +112,24 @@ export const updateProjectSchema = z.object({
   // No default here (unlike create) — omitting it on an update must leave
   // the existing value alone, not silently reset it to "Single".
   paymentType: z.enum(["Single", "Multiple"]).optional(),
+
+  // Expense Budget — Phase 3.5. Same 5 optional fields as createProjectSchema.
+  manhourBudgetAmount: z.coerce.number().min(0, "Man-Hour Budget Amount cannot be negative.").optional().nullable(),
+  manhourBudgetHours: z.coerce.number().min(0, "Man-Hour Budget Hours cannot be negative.").optional().nullable(),
+  manhourBudgetRemarks: z.string().trim().optional().nullable(),
+  nonManhourBudgetAmount: z.coerce
+    .number()
+    .min(0, "Non Man-Hour Budget Amount cannot be negative.")
+    .optional()
+    .nullable(),
+  nonManhourBudgetRemarks: z.string().trim().optional().nullable(),
+
+  // Project Leadership — Phase 3.7. Same 5 optional fields as createProjectSchema.
+  primaryProjectManager: z.string().trim().optional().nullable(),
+  secondaryProjectManager: z.string().trim().optional().nullable(),
+  projectEngineer: z.string().trim().optional().nullable(),
+  projectCoordinator: z.string().trim().optional().nullable(),
+  clientCoordinator: z.string().trim().optional().nullable(),
 });
 
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
@@ -128,3 +171,19 @@ export const importProjectsSchema = z.object({
 });
 
 export type ImportProjectsInput = z.infer<typeof importProjectsSchema>;
+
+/**
+ * DELETE /projects/:id/permanent — Permanent Delete's Invoice Protection gate
+ * (see project.service.ts's permanentlyDeleteProject()). `hasInvoiceHistory`
+ * is asserted by the client, not independently verified server-side:
+ * Invoices/InvoiceLines are still `localStorage`-only (no Postgres table
+ * exists for them yet — see docs/PMO_PORTAL_TECHNICAL_DOCUMENTATION.md's
+ * Project Delete Flow analysis), so the backend has no data of its own to
+ * check this against. Required (no default) so a caller that forgets to
+ * compute it gets a clear 400 rather than an assumed "no invoices."
+ */
+export const permanentDeleteProjectSchema = z.object({
+  hasInvoiceHistory: z.boolean(),
+});
+
+export type PermanentDeleteProjectInput = z.infer<typeof permanentDeleteProjectSchema>;

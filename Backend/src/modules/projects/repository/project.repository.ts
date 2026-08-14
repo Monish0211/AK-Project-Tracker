@@ -35,6 +35,23 @@ export interface ProjectGeneralInfoData {
   contractType: string;
   pmoCoordinator?: string | null;
   paymentType: string;
+
+  // Expense Budget — Phase 3.5, flat on Project (see schema.prisma's own
+  // note on this model for why it isn't a child table).
+  manhourBudgetAmount?: number | null;
+  manhourBudgetHours?: number | null;
+  manhourBudgetRemarks?: string | null;
+  nonManhourBudgetAmount?: number | null;
+  nonManhourBudgetRemarks?: string | null;
+
+  // Project Leadership — Phase 3.7. Flat on Project, same 1:1-attribute
+  // treatment as Expense Budget above. pmoCoordinator already existed
+  // (Phase 3.1) — not repeated here.
+  primaryProjectManager?: string | null;
+  secondaryProjectManager?: string | null;
+  projectEngineer?: string | null;
+  projectCoordinator?: string | null;
+  clientCoordinator?: string | null;
 }
 
 export function createProject(data: ProjectGeneralInfoData) {
@@ -43,6 +60,16 @@ export function createProject(data: ProjectGeneralInfoData) {
 
 export function findProjectById(id: string) {
   return prisma.project.findFirst({ where: { id, isDeleted: false } });
+}
+
+/**
+ * Unlike findProjectById, does NOT filter by isDeleted — Permanent Delete
+ * (see permanentlyDeleteProject() in project.service.ts) must be reachable
+ * for both an active project and one that's already archived; an archived
+ * project is exactly the expected starting point for this action.
+ */
+export function findProjectByIdAny(id: string) {
+  return prisma.project.findUnique({ where: { id } });
 }
 
 export function findActiveProjectByPrNo(prNo: string) {
@@ -66,11 +93,22 @@ export function updateProject(id: string, data: Partial<ProjectGeneralInfoData>)
   return prisma.project.update({ where: { id }, data });
 }
 
-export function softDeleteProject(id: string) {
+/** Archive — reversible. Sets isDeleted/deletedAt; the row and every child row (QuantityItem/PaymentMilestone/ProjectExpense) are left completely untouched. */
+export function archiveProject(id: string) {
   return prisma.project.update({
     where: { id },
     data: { isDeleted: true, deletedAt: new Date() },
   });
+}
+
+/**
+ * Permanent Delete — irreversible. A real row delete; QuantityItem/
+ * PaymentMilestone/ProjectExpense are removed automatically by Postgres via
+ * their `onDelete: Cascade` foreign keys (see schema.prisma) — never deleted
+ * manually here or anywhere in the service layer above this function.
+ */
+export function hardDeleteProject(id: string) {
+  return prisma.project.delete({ where: { id } });
 }
 
 export interface ProjectListFilters {

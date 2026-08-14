@@ -2,13 +2,15 @@ import { AppError } from "../../../shared/utils/AppError.js";
 import type { ImportProjectsResultDto, PaginatedProjectListDto, ProjectDto } from "../dto/project.dto.js";
 import type { ProjectGeneralInfoData } from "../repository/project.repository.js";
 import {
+  archiveProject as archiveProjectInRepository,
   createProject as createProjectInRepository,
   createProjectsBulk,
   findActiveProjectByPrNo,
   findActiveProjectsByPrNos,
   findProjectById,
+  findProjectByIdAny,
   findProjectsPage,
-  softDeleteProject as softDeleteProjectInRepository,
+  hardDeleteProject as hardDeleteProjectInRepository,
   updateProject as updateProjectInRepository,
 } from "../repository/project.repository.js";
 import type {
@@ -50,6 +52,16 @@ function toProjectDto(project: Awaited<ReturnType<typeof findProjectById>>): Pro
     contractType: project.contractType,
     pmoCoordinator: project.pmoCoordinator,
     paymentType: project.paymentType,
+    manhourBudgetAmount: project.manhourBudgetAmount,
+    manhourBudgetHours: project.manhourBudgetHours,
+    manhourBudgetRemarks: project.manhourBudgetRemarks,
+    nonManhourBudgetAmount: project.nonManhourBudgetAmount,
+    nonManhourBudgetRemarks: project.nonManhourBudgetRemarks,
+    primaryProjectManager: project.primaryProjectManager,
+    secondaryProjectManager: project.secondaryProjectManager,
+    projectEngineer: project.projectEngineer,
+    projectCoordinator: project.projectCoordinator,
+    clientCoordinator: project.clientCoordinator,
     isDeleted: project.isDeleted,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
@@ -96,6 +108,16 @@ function toGeneralInfoData(input: CreateProjectInput): ProjectGeneralInfoData {
     contractType: input.contractType,
     pmoCoordinator: input.pmoCoordinator ?? null,
     paymentType: input.paymentType,
+    manhourBudgetAmount: input.manhourBudgetAmount ?? null,
+    manhourBudgetHours: input.manhourBudgetHours ?? null,
+    manhourBudgetRemarks: input.manhourBudgetRemarks ?? null,
+    nonManhourBudgetAmount: input.nonManhourBudgetAmount ?? null,
+    nonManhourBudgetRemarks: input.nonManhourBudgetRemarks ?? null,
+    primaryProjectManager: input.primaryProjectManager ?? null,
+    secondaryProjectManager: input.secondaryProjectManager ?? null,
+    projectEngineer: input.projectEngineer ?? null,
+    projectCoordinator: input.projectCoordinator ?? null,
+    clientCoordinator: input.clientCoordinator ?? null,
   };
 }
 
@@ -192,19 +214,69 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
     ...(input.contractType !== undefined && { contractType: input.contractType }),
     ...(input.pmoCoordinator !== undefined && { pmoCoordinator: input.pmoCoordinator }),
     ...(input.paymentType !== undefined && { paymentType: input.paymentType }),
+    ...(input.manhourBudgetAmount !== undefined && { manhourBudgetAmount: input.manhourBudgetAmount }),
+    ...(input.manhourBudgetHours !== undefined && { manhourBudgetHours: input.manhourBudgetHours }),
+    ...(input.manhourBudgetRemarks !== undefined && { manhourBudgetRemarks: input.manhourBudgetRemarks }),
+    ...(input.nonManhourBudgetAmount !== undefined && { nonManhourBudgetAmount: input.nonManhourBudgetAmount }),
+    ...(input.nonManhourBudgetRemarks !== undefined && { nonManhourBudgetRemarks: input.nonManhourBudgetRemarks }),
+    ...(input.primaryProjectManager !== undefined && { primaryProjectManager: input.primaryProjectManager }),
+    ...(input.secondaryProjectManager !== undefined && { secondaryProjectManager: input.secondaryProjectManager }),
+    ...(input.projectEngineer !== undefined && { projectEngineer: input.projectEngineer }),
+    ...(input.projectCoordinator !== undefined && { projectCoordinator: input.projectCoordinator }),
+    ...(input.clientCoordinator !== undefined && { clientCoordinator: input.clientCoordinator }),
   });
 
   return toProjectDto(updated);
 }
 
-/** Soft delete only — never a hard delete. isDeleted/deletedAt are set; the row itself is never removed. */
-export async function deleteProject(id: string): Promise<void> {
+/**
+ * Archive — reversible, the "Delete" button's actual behavior since Phase
+ * 3.1. Sets isDeleted/deletedAt only; the row itself, and every child row
+ * (QuantityItem/PaymentMilestone/ProjectExpense), are left completely
+ * untouched. This is NOT the same operation as permanentlyDeleteProject()
+ * below — the two coexist, and this one's behavior does not change.
+ */
+export async function archiveProject(id: string): Promise<void> {
   const existing = await findProjectById(id);
   if (!existing) {
     throw new AppError("Project not found.", 404);
   }
 
-  await softDeleteProjectInRepository(id);
+  await archiveProjectInRepository(id);
+}
+
+/**
+ * Permanent Delete — irreversible, Administrator-only (enforced at the route
+ * layer via authorize("Administrator")). A real row delete: PostgreSQL
+ * removes every QuantityItem/PaymentMilestone/ProjectExpense row for this
+ * project automatically via their onDelete: Cascade foreign keys (see
+ * schema.prisma) — nothing here or in any other module's repository ever
+ * deletes those rows directly.
+ *
+ * Looks the project up via findProjectByIdAny() (not findProjectById), since
+ * this must also work on a project that's already archived — Archive first,
+ * Permanent Delete later is the expected, recommended path.
+ *
+ * `hasInvoiceHistory` is asserted by the caller (see
+ * permanentDeleteProjectSchema in project.validators.ts for why this can't
+ * be independently verified here yet — Invoices/InvoiceLines have no
+ * Postgres table today). A true value blocks the delete with a 409,
+ * preserving financial history exactly as Archive already does.
+ */
+export async function permanentlyDeleteProject(id: string, hasInvoiceHistory: boolean): Promise<void> {
+  const existing = await findProjectByIdAny(id);
+  if (!existing) {
+    throw new AppError("Project not found.", 404);
+  }
+
+  if (hasInvoiceHistory) {
+    throw new AppError(
+      "This project contains financial records and cannot be permanently deleted. Archive the project instead.",
+      409
+    );
+  }
+
+  await hardDeleteProjectInRepository(id);
 }
 
 export async function listProjects(query: ListProjectsQuery): Promise<PaginatedProjectListDto> {

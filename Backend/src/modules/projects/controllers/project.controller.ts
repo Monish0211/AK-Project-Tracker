@@ -3,7 +3,12 @@ import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import * as projectService from "../services/project.service.js";
 import { listProjectsQuerySchema } from "../validators/project.validators.js";
-import type { CreateProjectInput, ImportProjectsInput, UpdateProjectInput } from "../validators/project.validators.js";
+import type {
+  CreateProjectInput,
+  ImportProjectsInput,
+  PermanentDeleteProjectInput,
+  UpdateProjectInput,
+} from "../validators/project.validators.js";
 
 export const createProject = asyncHandler(async (req: Request, res: Response) => {
   const project = await projectService.createProject(req.body as CreateProjectInput);
@@ -44,7 +49,15 @@ export const updateProject = asyncHandler(async (req: Request, res: Response) =>
   res.status(200).json({ success: true, data: project, message: "Project updated successfully." });
 });
 
-export const deleteProject = asyncHandler(async (req: Request, res: Response) => {
-  await projectService.deleteProject(req.params.id as string);
-  res.status(200).json({ success: true, data: null, message: "Project deleted successfully." });
+/** Archive — reversible. The route path (DELETE /projects/:id) is unchanged; only the name reflects what this has always actually done. */
+export const archiveProject = asyncHandler(async (req: Request, res: Response) => {
+  await projectService.archiveProject(req.params.id as string);
+  res.status(200).json({ success: true, data: null, message: "Project archived successfully." });
+});
+
+/** Permanent Delete — irreversible, Administrator-only (see project.routes.ts's authorize("Administrator") gate). */
+export const permanentlyDeleteProject = asyncHandler(async (req: Request, res: Response) => {
+  const { hasInvoiceHistory } = req.body as PermanentDeleteProjectInput;
+  await projectService.permanentlyDeleteProject(req.params.id as string, hasInvoiceHistory);
+  res.status(200).json({ success: true, data: null, message: "Project permanently deleted." });
 });

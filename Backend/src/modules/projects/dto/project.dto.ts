@@ -41,6 +41,20 @@ export interface ProjectDto {
 
   paymentType: string;
 
+  // Expense Budget — Phase 3.5.
+  manhourBudgetAmount: number | null;
+  manhourBudgetHours: number | null;
+  manhourBudgetRemarks: string | null;
+  nonManhourBudgetAmount: number | null;
+  nonManhourBudgetRemarks: string | null;
+
+  // Project Leadership — Phase 3.7.
+  primaryProjectManager: string | null;
+  secondaryProjectManager: string | null;
+  projectEngineer: string | null;
+  projectCoordinator: string | null;
+  clientCoordinator: string | null;
+
   isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
