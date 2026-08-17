@@ -82,6 +82,22 @@ export function findActiveProjectsByPrNos(prNos: string[]) {
 }
 
 /**
+ * Phase 3.8 — every project's id/prNo/isDeleted, WITHOUT the isDeleted
+ * filter every other lookup above applies. The Timesheet reconciliation
+ * engine (timesheets/services/timesheet.service.ts) builds an in-memory,
+ * normalized PR-code lookup map from this once per import — it must
+ * include archived projects (a historical Timesheet row for an archived
+ * project is still processed, per the approved Phase 3.8 design; it must
+ * never be treated as "not found" just because the project is no longer
+ * active). Selecting only these 3 columns keeps this cheap even as the
+ * Project table grows, since the Timesheet engine only ever needs the id
+ * to resolve a match, never the full row.
+ */
+export function findAllProjectsForTimesheetMatching() {
+  return prisma.project.findMany({ select: { id: true, prNo: true, isDeleted: true } });
+}
+
+/**
  * A single multi-row INSERT — atomic on its own (all rows land or none do),
  * so the Excel import path doesn't need a separate $transaction wrapper.
  */

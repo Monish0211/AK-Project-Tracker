@@ -8,6 +8,9 @@ import { milestoneRoutes } from "./modules/milestones/index.js";
 import { expenseRoutes } from "./modules/expenses/index.js";
 import { employeeRoutes } from "./modules/employees/index.js";
 import { resourceRoutes } from "./modules/resources/index.js";
+import { timesheetRoutes } from "./modules/timesheets/index.js";
+import { mailIngestionRoutes } from "./modules/mailIngestion/index.js";
+import { pdfImportRoutes } from "./modules/pdfImport/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { AppError } from "./shared/utils/AppError.js";
 
@@ -60,6 +63,25 @@ app.use("/employees", employeeRoutes);
 // employeeRoutes' /employees/:id above, since Express matches on exact
 // segment count/structure, not just a shared prefix.
 app.use(resourceRoutes);
+// Timesheet backend — Phase 3.8. Declares its own full paths
+// (/timesheets/import, /timesheets/imports[...], /timesheets/entries[...]),
+// mounted at root alongside quantity/milestone/expense/resource routes
+// above. Team Assigned's live UI is untouched by this phase — it continues
+// to compute everything from raw localStorage Timesheet data exactly as it
+// does today; nothing here is called by the frontend yet.
+app.use(timesheetRoutes);
+// Microsoft Graph / KEKA mailbox polling — Phase 3.8. A single internal,
+// shared-secret-protected route (POST /internal/timesheets/poll), never
+// reachable by a logged-in Portal User or the frontend. Not yet verified
+// against a real Microsoft Entra tenant — see graphAuth.service.ts.
+app.use(mailIngestionRoutes);
+// PDF Import AI-assist (Claude) — declares its own full path
+// (/pdf-import/ai-extract), mounted at root alongside the routers above.
+// Authenticated, user-triggered; only invoked from the frontend's existing
+// PDF Import flow when the browser-side rule engine's own result signals
+// it needs help (see pdfImportAiTrigger.ts) — never called automatically
+// for every upload.
+app.use(pdfImportRoutes);
 
 app.use((req, _res, next) => {
   next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));

@@ -369,6 +369,15 @@ model Project {
   // to cascade from.
   projectResources ProjectResource[]
 
+  // Timesheet raw rows — Phase 3.8. onDelete: SetNull is declared on
+  // TimesheetEntry.project, not here — included on this side only so that
+  // behavior has something to relate from. See TimesheetEntry's own comment
+  // for why this is SetNull (not Cascade): a permanently-deleted project
+  // must not erase the historical fact that someone logged hours against
+  // it, unlike ProjectResource above, which legitimately has nothing left
+  // to aggregate once its Project is gone.
+  timesheetEntries TimesheetEntry[]
+
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
 
@@ -561,4 +570,181 @@ model ProjectResource {
   @@unique([projectId, employeeNo])
   @@index([projectId])
   @@index([employeeNo])
+}
+
+// =============================================================================
+// TIMESHEET ENTRY — Phase 3.8. The reconciled, current-state record for one
+// (employeeNo, projectId, workDate, task) combination, sourced from KEKA
+// Timesheet data (Microsoft Graph email ingestion or an Administrator's
+// manual upload — both go through the exact same processTimesheetImport()
+// engine, see timesheet.service.ts). This is the actual source of truth
+// ProjectResource is recomputed from; it is never itself derived from
+// ProjectResource.
+// =============================================================================
+// Row identity (employeeNo + projectId + workDate + task) is DELIBERATELY
+// NOT a database UNIQUE constraint yet — see @@index below. The real KEKA
+// Excel format has not been verified as of this phase (Stage 1-4 analysis),
+// and Task's reliability as a differentiator is provisional evidence from a
+// synthetic test fixture, not a confirmed real-world fact. Reconciliation
+// (find-existing-or-create) is therefore enforced in timesheet.service.ts at
+// the application level, which stays cheap to revise if a real file proves
+// Task should be dropped from the identity — a DB-level constraint would
+// not.
+//
+// employeeNo is a plain string, no FK — same precedent as
+// ProjectResource.employeeNo (Phase 3.7): historical timesheet data must
+// survive independently of Employee Master's lifecycle. This is not a gap
+// in practice — employees/employee.service.ts's deleteEmployee() already
+// refuses to delete an Employee referenced by any ProjectResource, and a
+// ProjectResource always exists for the same (employeeNo, projectId) pair
+// wherever a TimesheetEntry does (see projectResource.service.ts), so this
+// loop is already closed by existing, unmodified Phase 3.7 code.
+//
+// projectId IS a real, nullable FK, with onDelete: SetNull — deliberately
+// different from ProjectResource's onDelete: Cascade above. If a Project
+// this row currently points to is ever permanently deleted (Phase 3.6),
+// Postgres nulls this FK out automatically; rawProjectCode (plain text,
+// never touched by that cascade) keeps the historical fact readable even
+// though there is no longer a live Project to relate to. Team Assigned/
+// ProjectResource correctly show nothing for a permanently-deleted
+// project's assignments (there is no ProjectResource left to read, since
+// that table WAS cascade-deleted) — this table alone preserves the raw
+// historical record for audit purposes.
+model TimesheetEntry {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  employeeNo String
+
+  projectId      String?
+  project        Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  rawProjectCode String
+
+  workDate DateTime
+
+  // Normalized to "" when the source Excel row has no Task column/value —
+  // never left null, so identity comparisons in application code never hit
+  // Postgres's "NULL is distinct from every other NULL" surprise.
+  task String @default("")
+
+  hours Float
+
+  // KEKA's own optional per-row lifecycle marker ("Active"/"Released").
+  // Deliberately independent of ProjectResource.assignmentStatus, which is
+  // never inferred purely from hours reaching zero (see
+  // projectResource.service.ts) — this is the raw signal that feeds it.
+  sourceStatus String @default("Active")
+
+  // Which import first created this exact row, and which one most recently
+  // changed it — enough to answer "which import changed this record"
+  // (Phase 3.8's audit requirement) without always joining through
+  // TimesheetImportRowLog. Full change-by-change history still lives there.
+  firstImportId String
+  firstImport   TimesheetImport @relation("TimesheetEntryFirstImport", fields: [firstImportId], references: [id])
+  lastImportId  String
+  lastImport    TimesheetImport @relation("TimesheetEntryLastImport", fields: [lastImportId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rowLogs TimesheetImportRowLog[]
+
+  // Non-unique — see the model-level comment above for why reconciliation
+  // is application-level, not enforced here.
+  @@index([employeeNo, projectId, workDate, task])
+  @@index([projectId])
+  @@index([employeeNo])
+}
+
+// =============================================================================
+// TIMESHEET IMPORT — Phase 3.8. One row per processed KEKA email attachment
+// OR Administrator manual upload (see triggeredBy) — the permanent audit
+// header record. Never deleted.
+// =============================================================================
+model TimesheetImport {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  // Null for a manual upload. Unique when present — this IS the duplicate
+  // email guard (a different concern from row-level reconciliation above:
+  // this answers "have we already processed this exact email," row identity
+  // answers "has this specific timesheet fact changed").
+  emailMessageId     String? @unique
+  attachmentId       String?
+  attachmentFilename String?
+
+  receivedAt           DateTime? // from the source email's metadata; null for a manual upload
+  processingStartedAt  DateTime?
+  processingFinishedAt DateTime?
+
+  // Pending | Processing | Succeeded | PartiallySucceeded | Failed — a plain
+  // string with a default, matching every other status-like field already
+  // in this schema (Employee.status, ProjectResource.assignmentStatus), not
+  // a Prisma enum.
+  status String @default("Pending")
+
+  totalRows      Int @default(0)
+  createdCount   Int @default(0)
+  updatedCount   Int @default(0)
+  unchangedCount Int @default(0)
+  removedCount   Int @default(0)
+  failedCount    Int @default(0)
+
+  errorSummary String?
+
+  // EmailPoll | ManualUpload — the only thing that ever differs between the
+  // two callers of processTimesheetImport(); see timesheet.service.ts.
+  triggeredBy String
+
+  // Set only for a ManualUpload — the acting PortalUser.id. No relation
+  // declared (this module doesn't need to join back to PortalUser for
+  // anything) — same "plain reference, not a hard FK" treatment already
+  // used for employeeNo above and ProjectResource.employeeNo in Phase 3.7.
+  uploadedByUserId String?
+
+  rowLogs                 TimesheetImportRowLog[]
+  entriesFirstCreated     TimesheetEntry[]        @relation("TimesheetEntryFirstImport")
+  entriesLastTouched      TimesheetEntry[]        @relation("TimesheetEntryLastImport")
+
+  createdAt DateTime @default(now())
+
+  @@index([receivedAt])
+  @@index([status])
+}
+
+// =============================================================================
+// TIMESHEET IMPORT ROW LOG — Phase 3.8. Append-only, one row per (Excel row,
+// import) outcome. Never updated after creation — this is what makes
+// "which KEKA email changed this employee's hours from 4 to 6" a real,
+// traceable database query rather than a reconstruction exercise.
+// =============================================================================
+model TimesheetImportRowLog {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  importId String
+  import   TimesheetImport @relation(fields: [importId], references: [id])
+
+  // Nullable + SetNull deliberately: if the referenced TimesheetEntry is
+  // later removed (a zero-hour correction, see the Removed outcome below),
+  // this historical log row must survive regardless — the raw values below
+  // (rawEmployeeNo/rawProjectCode/workDate/task/previousHours/newHours)
+  // always carry the full historical fact independent of the live entry's
+  // fate.
+  entryId String?
+  entry   TimesheetEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
+
+  rawEmployeeNo  String
+  rawProjectCode String
+  workDate       DateTime
+  task           String
+
+  previousHours Float?
+  newHours      Float?
+
+  // Created | Updated | Unchanged | Removed | Failed
+  outcome       String
+  failureReason String?
+
+  createdAt DateTime @default(now())
+
+  @@index([importId])
+  @@index([entryId])
 }
