@@ -73,6 +73,50 @@ const envSchema = z.object({
     (value) => (value === "" ? undefined : value),
     z.string().url("FRONTEND_URL must be a valid URL").default("http://localhost:5173")
   ),
+
+  // Microsoft Graph / KEKA — Phase 3.8. All optional, same treatment as
+  // SMTP above: the app boots fine with these blank, and mailPoll.service.ts
+  // simply refuses to run (logging why) until every one of them is filled
+  // in. Never hardcode any of these — the real values are entered directly
+  // into .env, never committed, never placed in TypeScript source. The
+  // subject pattern in particular is deliberately just a plain string
+  // (matched as a case-insensitive substring, see mailPoll.service.ts) —
+  // the real KEKA subject line is not yet confirmed, so this must stay
+  // configurable rather than guessed.
+  MICROSOFT_TENANT_ID: optionalTrimmedString(z.string()),
+  MICROSOFT_CLIENT_ID: optionalTrimmedString(z.string()),
+  MICROSOFT_CLIENT_SECRET: optionalTrimmedString(z.string()),
+  KEKA_MAILBOX: optionalTrimmedString(z.string()),
+  KEKA_SENDER_EMAIL: optionalTrimmedString(z.string()),
+  KEKA_SUBJECT_PATTERN: optionalTrimmedString(z.string()),
+  KEKA_ATTACHMENT_NAME: optionalTrimmedString(z.string()),
+
+  // How many days back the mailbox poll looks for candidate KEKA emails —
+  // deliberately generous (not just "today"), since Decision 9 confirms an
+  // email can legitimately be late, and a missed poll cycle must not mean a
+  // permanently-missed email (see mailPoll.service.ts).
+  KEKA_POLL_LOOKBACK_DAYS: z.coerce.number().int().positive().default(7),
+
+  // Protects POST /internal/timesheets/poll — a shared-secret header check,
+  // not a JWT-user route, since a cron/scheduler process has no logged-in
+  // user context. Optional like the rest of this section; the route
+  // rejects every request with a clear 503 until this is set (see
+  // verifyInternalSecret.ts) rather than silently accepting an unprotected
+  // call.
+  INTERNAL_POLL_SECRET: optionalTrimmedString(z.string()),
+
+  // Anthropic Claude — PDF Import AI-assist supplement (Stage 4, PDF Import
+  // feature). Same optional/fail-closed treatment as Graph/KEKA above: the
+  // app boots fine with these blank, and the pdfImport module's
+  // isClaudeConfigured() simply refuses to run (503) until ANTHROPIC_API_KEY
+  // is set. Never hardcode this key anywhere in source — Backend/.env only.
+  // NOTE: this is read once at process startup (see the module-level parse
+  // below) — changing it in .env requires a backend restart to take effect,
+  // there is no hot-reload.
+  ANTHROPIC_API_KEY: optionalTrimmedString(z.string()),
+  CLAUDE_MODEL: optionalTrimmedString(z.string()),
+  CLAUDE_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
+  PDF_IMPORT_AI_MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(20),
 });
 
 const parsed = envSchema.safeParse(process.env);
