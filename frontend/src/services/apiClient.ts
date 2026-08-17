@@ -54,6 +54,36 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return body.data;
 }
 
+/**
+ * Multipart upload — deliberately NOT built on request()'s shared path,
+ * because that function always hardcodes Content-Type: application/json.
+ * For a FormData body the browser must set its own multipart boundary in
+ * Content-Type itself; explicitly setting it here (even to the "right"
+ * value) breaks the boundary and the backend fails to parse the upload.
+ * This is the one deliberate deviation from request()'s behavior — first
+ * file-upload call this frontend makes to the backend (confirmed: no prior
+ * multipart usage exists anywhere in frontend/src).
+ */
+async function requestFormData<T>(path: string, formData: FormData): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers["Authorization"] = `Bearer ${accessToken}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, { method: "POST", body: formData, headers });
+  const body = (await response.json().catch(() => null)) as ApiEnvelope<T> | null;
+
+  if (response.status === 401) {
+    onUnauthorized?.();
+  }
+
+  if (!response.ok || !body?.success) {
+    throw new ApiError(response.status, body?.message ?? "Something went wrong. Please try again.");
+  }
+
+  return body.data;
+}
+
 export const apiClient = {
   get: <T>(path: string): Promise<T> => request<T>(path, { method: "GET" }),
   post: <T>(path: string, data?: unknown): Promise<T> =>
@@ -66,4 +96,5 @@ export const apiClient = {
   // call in this app that needs to carry a body.
   delete: <T>(path: string, data?: unknown): Promise<T> =>
     request<T>(path, { method: "DELETE", body: data !== undefined ? JSON.stringify(data) : undefined }),
+  postFormData: <T>(path: string, formData: FormData): Promise<T> => requestFormData<T>(path, formData),
 };

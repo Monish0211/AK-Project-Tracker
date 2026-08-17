@@ -10,10 +10,21 @@
 /** 100 Exact Match / 90 Strong Match / 70 Partial Match / 40 Low Confidence / 0 Not Found — the five-tier scale the (future) Rule Engine scores every extracted field against. */
 export type PdfImportConfidence = 100 | 90 | 70 | 40 | 0;
 
+/**
+ * "rule-engine" (default when omitted — every existing extraction path
+ * predates this field and never sets it) vs. "ai" (the Claude AI-assist
+ * supplement, added on top of the existing rule engine per the approved
+ * PDF Import + Claude architecture — see pdfImportAiTrigger.ts /
+ * pdfImportMerge.ts). Purely additive: no existing caller that constructs
+ * an ExtractedField without `source` needs to change.
+ */
+export type FieldSource = "rule-engine" | "ai";
+
 export interface ExtractedField<T> {
   value: T;
   confidence: PdfImportConfidence;
   warnings?: string[];
+  source?: FieldSource;
 }
 
 export interface PdfImportGeneralInformation {

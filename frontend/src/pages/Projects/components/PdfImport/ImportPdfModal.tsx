@@ -19,9 +19,10 @@ interface Props {
   onApply: (updatedProject: Project) => void;
 }
 
-const STAGE_LABEL: Record<"uploading" | "processing", string> = {
+const STAGE_LABEL: Record<"uploading" | "processing" | "ai-enhancing", string> = {
   uploading: "Uploading document…",
   processing: "Extracting data…",
+  "ai-enhancing": "Enhancing with AI — this may take a little longer…",
 };
 
 /**
@@ -35,7 +36,7 @@ const STAGE_LABEL: Record<"uploading" | "processing", string> = {
  */
 export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => {
   const [stage, setStage] = useState<PdfUploadStage>("idle");
-  const [progress, setProgress] = useState<{ stage: "uploading" | "processing"; percent: number }>({
+  const [progress, setProgress] = useState<{ stage: "uploading" | "processing" | "ai-enhancing"; percent: number }>({
     stage: "uploading",
     percent: 0,
   });
@@ -64,6 +65,12 @@ export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => 
     try {
       const result = await uploadAndExtractPdf(file, (event) => {
         setStage(event.stage === "uploading" ? "uploading" : "processing");
+        // Modal-level `stage` (PdfUploadStage) only distinguishes
+        // uploading/processing/preview/error for its own layout branching
+        // (line ~113 below) — collapsing "ai-enhancing" into "processing"
+        // there is correct and unchanged. The finer-grained `progress`
+        // state below keeps the real stage so STAGE_LABEL can show the
+        // distinct "Enhancing with AI…" message during that leg.
         setProgress(event);
       });
       setResponse(result);
