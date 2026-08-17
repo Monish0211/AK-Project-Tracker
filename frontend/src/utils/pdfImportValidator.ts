@@ -6,7 +6,7 @@ import type { PdfImportResponse, PdfImportWarning } from "../types/PdfImport";
  * validator flags as "missing" is guaranteed to be one the existing form
  * would also block Save on if left blank.
  */
-const REQUIRED_GENERAL_FIELDS: Array<{
+export const REQUIRED_GENERAL_FIELDS: Array<{
   key: keyof PdfImportResponse["generalInformation"];
   label: string;
 }> = [
@@ -26,7 +26,7 @@ const REQUIRED_GENERAL_FIELDS: Array<{
   { key: "eicName", label: "EIC Name" },
 ];
 
-const LOW_CONFIDENCE_THRESHOLD = 70;
+export const LOW_CONFIDENCE_THRESHOLD = 70;
 
 function isEmptyValue(value: unknown): boolean {
   return value === null || value === undefined || (typeof value === "string" && value.trim() === "");
