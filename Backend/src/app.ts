@@ -13,6 +13,7 @@ import { mailIngestionRoutes } from "./modules/mailIngestion/index.js";
 import { pdfImportRoutes } from "./modules/pdfImport/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { AppError } from "./shared/utils/AppError.js";
+import { env } from "./shared/utils/env.js";
 
 const app = express();
 
@@ -21,7 +22,10 @@ const app = express();
 // log entry and rate-limit decision meaningless.
 app.set("trust proxy", 1);
 
-app.use(cors());
+// CORS_ALLOWED_ORIGIN is opt-in (see env.ts's comment) — unset means every
+// origin is allowed, exactly as before this line was added. Only set once
+// the real production frontend origin is confirmed.
+app.use(cors(env.CORS_ALLOWED_ORIGIN ? { origin: env.CORS_ALLOWED_ORIGIN } : undefined));
 // Default 100kb is too small for a bulk Excel import's JSON payload
 // (POST /projects/import can carry hundreds of rows) — every other route's
 // payloads are tiny by comparison, so this is a safe, generous ceiling
@@ -77,10 +81,10 @@ app.use(timesheetRoutes);
 app.use(mailIngestionRoutes);
 // PDF Import AI-assist (Claude) — declares its own full path
 // (/pdf-import/ai-extract), mounted at root alongside the routers above.
-// Authenticated, user-triggered; only invoked from the frontend's existing
-// PDF Import flow when the browser-side rule engine's own result signals
-// it needs help (see pdfImportAiTrigger.ts) — never called automatically
-// for every upload.
+// Authenticated, user-triggered ONLY: the frontend calls this once per
+// selected PDF, sequentially, and only when the user has explicitly
+// checked "Use Claude AI for enhanced extraction" in the PDF Import modal
+// — never automatically based on OCR confidence (see pdfImportService.ts).
 app.use(pdfImportRoutes);
 
 app.use((req, _res, next) => {

@@ -1,9 +1,13 @@
 import { useState } from "react";
-import { AlertCircle, FileUp, Loader2, RotateCcw, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronLeft, FileUp, Loader2, RotateCcw, Sparkles, XCircle, X } from "lucide-react";
 import type { Project } from "../../../../types/Project";
-import type { PdfImportResponse, PdfImportWarning } from "../../../../types/PdfImport";
+import type { PdfImportWarning } from "../../../../types/PdfImport";
 import type { PdfUploadStage } from "../../../../types/PdfImport";
-import { uploadAndExtractPdf } from "../../../../services/pdfImportService";
+import {
+  extractPdfFilesSequentially,
+  type PdfBatchFileResult,
+  type PdfBatchProgressEvent,
+} from "../../../../services/pdfImportService";
 import { mapPdfImportResponseToProject } from "../../../../utils/pdfImportMapper";
 import { validatePdfImportResponse } from "../../../../utils/pdfImportValidator";
 import { Button } from "../../../../components/ui/Button";
@@ -20,27 +24,32 @@ interface Props {
 }
 
 const STAGE_LABEL: Record<"uploading" | "processing" | "ai-enhancing", string> = {
-  uploading: "Uploading document…",
-  processing: "Extracting data…",
-  "ai-enhancing": "Enhancing with AI — this may take a little longer…",
+  uploading: "Reading document…",
+  processing: "OCR extraction…",
+  "ai-enhancing": "Claude AI verification…",
 };
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /**
- * Owns the whole Upload → Extract → Preview → Apply flow. Version 1 has no
- * backend — uploadAndExtractPdf() (pdfImportService.ts) returns mock data —
- * but this component only ever talks to that one function's public
- * signature, so pointing it at a real backend later is a change inside
- * that file only, never here. Never touches Project fields directly:
+ * Owns the whole Upload → Extract → Results → Preview → Apply flow, for one
+ * or many PDFs in a single session. Every file is processed independently
+ * (see pdfImportService.ts's extractPdfFilesSequentially()) — one bad or
+ * Claude-failing file never loses the others. When exactly one file is
+ * selected and it succeeds, the "results" list is skipped entirely and the
+ * flow goes straight to preview, exactly as it did before multi-file
+ * support existed. Never touches Project fields directly:
  * mapPdfImportResponseToProject() (pdfImportMapper.ts) is the only place
  * that happens, and only on Apply.
  */
 export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => {
   const [stage, setStage] = useState<PdfUploadStage>("idle");
-  const [progress, setProgress] = useState<{ stage: "uploading" | "processing" | "ai-enhancing"; percent: number }>({
-    stage: "uploading",
-    percent: 0,
-  });
-  const [response, setResponse] = useState<PdfImportResponse | null>(null);
+  const [batchProgress, setBatchProgress] = useState<PdfBatchProgressEvent | null>(null);
+  const [batchResults, setBatchResults] = useState<PdfBatchFileResult[]>([]);
+  const [activeResultId, setActiveResultId] = useState<string | null>(null);
   const [computedWarnings, setComputedWarnings] = useState<PdfImportWarning[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,10 +57,11 @@ export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => 
 
   const reset = () => {
     setStage("idle");
-    setResponse(null);
+    setBatchProgress(null);
+    setBatchResults([]);
+    setActiveResultId(null);
     setComputedWarnings([]);
     setError(null);
-    setProgress({ stage: "uploading", percent: 0 });
   };
 
   const handleClose = () => {
@@ -59,37 +69,55 @@ export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => 
     onClose();
   };
 
-  const handleExtract = async (file: File) => {
-    setStage("uploading");
+  const openPreview = (result: PdfBatchFileResult) => {
+    if (!result.response) return;
+    setActiveResultId(result.id);
+    setComputedWarnings(validatePdfImportResponse(result.response));
+    setStage("preview");
+  };
+
+  const handleExtract = async (files: File[], useClaude: boolean) => {
+    setStage("processing");
     setError(null);
     try {
-      const result = await uploadAndExtractPdf(file, (event) => {
-        setStage(event.stage === "uploading" ? "uploading" : "processing");
-        // Modal-level `stage` (PdfUploadStage) only distinguishes
-        // uploading/processing/preview/error for its own layout branching
-        // (line ~113 below) — collapsing "ai-enhancing" into "processing"
-        // there is correct and unchanged. The finer-grained `progress`
-        // state below keeps the real stage so STAGE_LABEL can show the
-        // distinct "Enhancing with AI…" message during that leg.
-        setProgress(event);
-      });
-      setResponse(result);
-      setComputedWarnings(validatePdfImportResponse(result));
-      setStage("preview");
+      const results = await extractPdfFilesSequentially(files, useClaude, (event) => setBatchProgress(event));
+      setBatchResults(results);
+
+      const firstSuccess = results.find((r) => r.status === "success");
+      if (results.length === 1 && firstSuccess) {
+        // Single-file happy path — go straight to preview, unchanged from
+        // before multi-file support existed.
+        openPreview(firstSuccess);
+      } else {
+        setStage("results");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to extract data from this document. Please try again.");
+      // Safety net only — extractPdfFilesSequentially() isolates every
+      // per-file failure internally and should not itself throw. If it
+      // somehow does, this is the one place that still surfaces a clean
+      // error instead of leaving the modal stuck on a spinner.
+      setError(err instanceof Error ? err.message : "Failed to process the selected files. Please try again.");
       setStage("error");
     }
   };
 
+  const activeResult = batchResults.find((r) => r.id === activeResultId) ?? null;
+
   const handleApply = () => {
-    if (!response) return;
-    const updatedProject = mapPdfImportResponseToProject(response, project);
+    if (!activeResult?.response) return;
+    const updatedProject = mapPdfImportResponseToProject(activeResult.response, project);
     onApply(updatedProject);
     handleClose();
   };
 
-  const allWarnings = response ? [...response.warnings, ...computedWarnings] : [];
+  const successCount = batchResults.filter((r) => r.status === "success").length;
+  const allWarnings = activeResult?.response
+    ? [...activeResult.response.warnings, ...computedWarnings]
+    : [];
+
+  const overallPercent = batchProgress
+    ? Math.round(((batchProgress.fileIndex + batchProgress.percent / 100) / batchProgress.totalFiles) * 100)
+    : 0;
 
   return (
     <Portal>
@@ -104,7 +132,7 @@ export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => 
               <div>
                 <h2 className="text-lg font-black uppercase tracking-tight text-white">Import Project from PDF</h2>
                 <p className="text-xs text-blue-100/80 mt-0.5">
-                  Upload a Work Order, Purchase Order, Proposal, or Client PDF to auto-fill this form.
+                  Upload one or more Work Order, Purchase Order, Proposal, or Client PDFs to auto-fill this form.
                 </p>
               </div>
             </div>
@@ -117,17 +145,25 @@ export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => 
           <div className="p-5 overflow-y-auto nu-scrollbar flex-1">
             {stage === "idle" && <UploadZone onExtract={handleExtract} />}
 
-            {(stage === "uploading" || stage === "processing") && (
+            {stage === "processing" && batchProgress && (
               <div className="flex flex-col items-center justify-center gap-4 py-10">
                 <Loader2 size={28} className="animate-spin text-[var(--nu-accent)]" />
-                <p className="text-[13px] font-semibold text-[var(--nu-text)]">{STAGE_LABEL[progress.stage]}</p>
+                <div className="text-center">
+                  <p className="text-[13px] font-semibold text-[var(--nu-text)]">
+                    Processing PDF {batchProgress.fileIndex + 1} of {batchProgress.totalFiles}
+                  </p>
+                  <p className="text-[12px] text-[var(--nu-text-muted)] mt-0.5 truncate max-w-xs" title={batchProgress.fileName}>
+                    {batchProgress.fileName}
+                  </p>
+                  <p className="text-[11.5px] text-[var(--nu-accent)] font-medium mt-1.5">{STAGE_LABEL[batchProgress.stage]}</p>
+                </div>
                 <div className="w-full max-w-xs h-1.5 rounded-full bg-[var(--nu-surface-alt)] overflow-hidden">
                   <div
                     className="h-full rounded-full bg-[var(--nu-accent)] transition-all duration-200"
-                    style={{ width: `${progress.percent}%` }}
+                    style={{ width: `${overallPercent}%` }}
                   />
                 </div>
-                <p className="text-[11px] text-[var(--nu-text-muted)]">{progress.percent}%</p>
+                <p className="text-[11px] text-[var(--nu-text-muted)]">{overallPercent}%</p>
               </div>
             )}
 
@@ -141,10 +177,55 @@ export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => 
               </div>
             )}
 
-            {stage === "preview" && response && (
+            {stage === "results" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[13px] font-semibold text-[var(--nu-text)]">
+                    {successCount}/{batchResults.length} successfully processed
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {batchResults.map((result) => (
+                    <div
+                      key={result.id}
+                      className="flex items-center justify-between gap-3 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] px-3.5 py-3"
+                    >
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        {result.status === "success" ? (
+                          <CheckCircle2 size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+                        ) : (
+                          <XCircle size={16} className="text-[var(--nu-danger)] shrink-0 mt-0.5" />
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-[12.5px] font-semibold text-[var(--nu-text)] truncate" title={result.file.name}>
+                            {result.file.name}
+                          </p>
+                          <p className="text-[11px] text-[var(--nu-text-muted)]">{formatFileSize(result.file.size)}</p>
+                          {result.status !== "success" && (
+                            <p className="text-[11px] text-[var(--nu-danger)] mt-0.5">{result.errorMessage}</p>
+                          )}
+                          {result.status === "success" && result.aiFallbackUsed && (
+                            <p className="text-[11px] text-amber-600 mt-0.5">
+                              Claude verification unavailable — standard extraction used for this PDF.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {result.status === "success" && (
+                        <Button type="button" variant="outline" size="sm" onClick={() => openPreview(result)} className="shrink-0">
+                          Review
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {stage === "preview" && activeResult?.response && (
               <div className="space-y-4">
-                <WarningsPanel warnings={allWarnings} unmappedFields={response.unmappedFields} />
-                <PdfPreview response={response} />
+                <WarningsPanel warnings={allWarnings} unmappedFields={activeResult.response.unmappedFields} />
+                <PdfPreview response={activeResult.response} />
               </div>
             )}
           </div>
@@ -152,17 +233,35 @@ export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => 
           {/* Footer */}
           {stage === "preview" && (
             <div className="flex items-center justify-between gap-3 border-t border-[var(--nu-border)] p-4 shrink-0">
-              <Button type="button" variant="ghost" size="sm" onClick={reset}>
-                Upload a Different File
-              </Button>
+              <div className="flex items-center gap-2">
+                {batchResults.length > 1 && (
+                  <Button type="button" variant="ghost" size="sm" icon={<ChevronLeft size={14} />} onClick={() => setStage("results")}>
+                    Back to Results
+                  </Button>
+                )}
+                <Button type="button" variant="ghost" size="sm" onClick={reset}>
+                  Upload Different Files
+                </Button>
+              </div>
               <div className="flex items-center gap-2">
                 <Button type="button" variant="secondary" size="sm" onClick={handleClose}>
                   Cancel
                 </Button>
-                <Button type="button" variant="primary" size="sm" onClick={handleApply}>
+                <Button type="button" variant="primary" size="sm" icon={<Sparkles size={14} />} onClick={handleApply}>
                   Apply to Form
                 </Button>
               </div>
+            </div>
+          )}
+
+          {stage === "results" && (
+            <div className="flex items-center justify-between gap-3 border-t border-[var(--nu-border)] p-4 shrink-0">
+              <Button type="button" variant="ghost" size="sm" onClick={reset}>
+                Upload Different Files
+              </Button>
+              <Button type="button" variant="secondary" size="sm" onClick={handleClose}>
+                Close
+              </Button>
             </div>
           )}
         </div>

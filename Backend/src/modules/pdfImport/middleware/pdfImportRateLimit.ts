@@ -17,7 +17,14 @@ import { AppError } from "../../../shared/utils/AppError.js";
  * deployment, but a known limitation worth naming rather than hiding.
  */
 
-export const PDF_IMPORT_AI_RATE_LIMIT_MAX_REQUESTS = 10;
+// Raised from an earlier 10/hour: the PDF Import modal now supports up to
+// 20 files per import session, each calling this endpoint once (sequential,
+// never parallel — see extractPdfFilesSequentially() on the frontend) when
+// the user's Claude checkbox is on. A limit below ~20 would make a single
+// legitimate full-batch import fall back for its own back half purely
+// because of this counter, not because of any real abuse — so this is set
+// comfortably above one full batch while still bounding repeated-batch abuse.
+export const PDF_IMPORT_AI_RATE_LIMIT_MAX_REQUESTS = 25;
 export const PDF_IMPORT_AI_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
 interface WindowState {
