@@ -117,6 +117,17 @@ const envSchema = z.object({
   CLAUDE_MODEL: optionalTrimmedString(z.string()),
   CLAUDE_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
   PDF_IMPORT_AI_MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(20),
+
+  // Deliberately OPT-IN, not a default-on restriction: app.ts's cors()
+  // currently allows every origin. Restricting that by default here would
+  // risk locking the real production frontend out entirely if this value
+  // were ever wrong/stale/unset on the server — a far worse failure mode
+  // than the modest security benefit of tightening it (this app uses
+  // Bearer-token auth, not cookies, so wildcard CORS doesn't carry the
+  // classic cookie-CSRF risk). Only set this in production once the real
+  // frontend origin is confirmed; leave unset to keep today's exact
+  // behavior (every origin allowed) unchanged.
+  CORS_ALLOWED_ORIGIN: optionalTrimmedString(z.string()),
 });
 
 const parsed = envSchema.safeParse(process.env);

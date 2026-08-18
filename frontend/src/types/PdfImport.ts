@@ -14,9 +14,12 @@ export type PdfImportConfidence = 100 | 90 | 70 | 40 | 0;
  * "rule-engine" (default when omitted — every existing extraction path
  * predates this field and never sets it) vs. "ai" (the Claude AI-assist
  * supplement, added on top of the existing rule engine per the approved
- * PDF Import + Claude architecture — see pdfImportAiTrigger.ts /
- * pdfImportMerge.ts). Purely additive: no existing caller that constructs
- * an ExtractedField without `source` needs to change.
+ * PDF Import + Claude architecture — see pdfImportService.ts's
+ * extractPdfFilesSequentially() / pdfImportMerge.ts). Claude only ever runs
+ * when the user explicitly checks "Use Claude AI for enhanced extraction"
+ * in the PDF Import modal — never automatically. Purely additive: no
+ * existing caller that constructs an ExtractedField without `source` needs
+ * to change.
  */
 export type FieldSource = "rule-engine" | "ai";
 
@@ -105,4 +108,12 @@ export interface PdfImportResponse {
   overallConfidence: number;
 }
 
-export type PdfUploadStage = "idle" | "uploading" | "processing" | "preview" | "error";
+/**
+ * "results" is new — shown after a multi-file batch finishes, listing
+ * every selected PDF's outcome (success/invalid/failed) before the user
+ * picks one to review in "preview". Skipped automatically when exactly one
+ * file was selected and it succeeded, so the single-file case still goes
+ * straight from processing to preview, unchanged from before multi-file
+ * support existed.
+ */
+export type PdfUploadStage = "idle" | "uploading" | "processing" | "results" | "preview" | "error";
