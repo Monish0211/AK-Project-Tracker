@@ -20,7 +20,8 @@ import { prisma } from "../../../shared/utils/prismaClient.js";
 
 export interface TimesheetEntryCreateData {
   employeeNo: string;
-  projectId: string;
+  /** null = "Unassigned" — Employee matched, Project did not (per the PR-optional-for-display decision). */
+  projectId: string | null;
   rawProjectCode: string;
   workDate: Date;
   task: string;
@@ -32,19 +33,27 @@ export interface TimesheetEntryCreateData {
 
 /**
  * Bulk-fetch every current TimesheetEntry row for the given set of Project
- * ids — used ONCE per import to build the in-memory identity lookup map
- * (see timesheet.service.ts's buildEntryLookupMap()), rather than one query
- * per Excel row. Scoped to `projectId IN (...)` (bounded by the distinct
- * projects actually present in the file — realistically dozens, never
- * thousands) rather than a compound-key IN clause over every
- * (employeeNo, projectId, workDate, task) tuple, which would risk hitting
- * practical parameter-count limits on a large file. Read-only — runs
- * against the plain client, not tx, since it happens before the write
- * transaction begins.
+ * ids, PLUS every existing "Unassigned" (projectId: null) row regardless of
+ * this set — used ONCE per import to build the in-memory identity lookup
+ * map (see timesheet.service.ts), rather than one query per Excel row.
+ * Including Unassigned rows unconditionally is required for correct
+ * cross-import reconciliation: without it, a later day's revision of a
+ * previously-created Unassigned row would never be recognized as
+ * "existing," and would always look like a brand-new Created row instead
+ * of correctly being Updated/Removed. Scoped to `projectId IN (...)`
+ * (bounded by the distinct projects actually present in the file —
+ * realistically dozens, never thousands) rather than a compound-key IN
+ * clause over every (employeeNo, projectId, workDate, task) tuple, which
+ * would risk hitting practical parameter-count limits on a large file.
+ * Read-only — runs against the plain client, not tx, since it happens
+ * before the write transaction begins.
  */
 export function findEntriesByProjectIds(projectIds: string[]) {
-  if (projectIds.length === 0) return Promise.resolve([]);
-  return prisma.timesheetEntry.findMany({ where: { projectId: { in: projectIds } } });
+  return prisma.timesheetEntry.findMany({
+    where: {
+      OR: [...(projectIds.length > 0 ? [{ projectId: { in: projectIds } }] : []), { projectId: null }],
+    },
+  });
 }
 
 /** Full history for one (employeeNo, projectId) pair — the ONLY input to ProjectResource recomputation (projectResource.service.ts). Never scoped to a date range or a single import. Read-only, runs after the write transaction has already committed. */
@@ -87,4 +96,77 @@ export function updateEntryHours(tx: Prisma.TransactionClient, id: string, hours
 /** Backs the "Removed" outcome — a correction to 0 hours deletes the row rather than storing a zero (matches the existing frontend parser's own "0 hours is not a real entry" precedent). */
 export function deleteEntry(tx: Prisma.TransactionClient, id: string) {
   return tx.timesheetEntry.delete({ where: { id } });
+}
+
+export interface TimesheetEntryUpdateData {
+  hours?: number;
+  task?: string;
+  workDate?: Date;
+  sourceStatus?: string;
+}
+
+/**
+ * Manual, single-row correction outside the KEKA reconciliation engine — a
+ * standalone update, not part of any import transaction. Deliberately does
+ * NOT touch firstImportId/lastImportId: those track which import created/
+ * last changed a row, and a manual edit isn't an import (see
+ * timesheet.service.ts's editTimesheetEntry, which is the only caller).
+ */
+export function updateEntryFields(id: string, data: TimesheetEntryUpdateData) {
+  return prisma.timesheetEntry.update({ where: { id }, data });
+}
+
+/** Standalone single-row delete for the manual Delete-one-entry API — outside any import transaction (compare deleteEntry(tx, id) above, which only ever runs inside processTimesheetImport()'s transaction). */
+export function deleteEntryStandalone(id: string) {
+  return prisma.timesheetEntry.delete({ where: { id } });
+}
+
+/**
+ * Every distinct (employeeNo, projectId) pair currently backed by at least
+ * one mapped TimesheetEntry — used only by Delete-All to know which
+ * ProjectResource rows are timesheet-derived and must be recomputed to
+ * zero afterward. A ProjectResource row for a pair with no TimesheetEntry
+ * at all (a purely manual Team-Assigned resource, never touched by any
+ * KEKA import) is never in this set and is therefore never recomputed or
+ * altered by Delete-All.
+ */
+export function findDistinctMappedPairs() {
+  return prisma.timesheetEntry.findMany({
+    where: { projectId: { not: null } },
+    select: { employeeNo: true, projectId: true },
+    distinct: ["employeeNo", "projectId"],
+  });
+}
+
+/** Backs Delete-All — every TimesheetEntry row, unconditionally. Projects/Employees/TimesheetImport history are untouched (see timesheet.service.ts's deleteAllTimesheetEntries). */
+export function deleteAllEntries() {
+  return prisma.timesheetEntry.deleteMany({});
+}
+
+/**
+ * Every live TimesheetEntry for exactly one Project — read-only, used only
+ * by Project Completion cleanup (see timesheet.service.ts's
+ * removeTimesheetsForCompletedProject) to capture the affected employeeNos
+ * BEFORE deletion, so ProjectResource can be recomputed for exactly those
+ * pairs afterward. Takes the Project Completion transaction's own `tx` so
+ * this read is part of the same atomic snapshot as the delete below.
+ */
+export function findEntriesByProjectId(tx: Prisma.TransactionClient, projectId: string) {
+  return tx.timesheetEntry.findMany({ where: { projectId }, select: { employeeNo: true } });
+}
+
+/**
+ * Deletes every live TimesheetEntry for exactly one Project — scoped
+ * strictly by projectId, never touching another Project's rows,
+ * Project-Not-Mapped rows (projectId: null), or any other TimesheetEntry.
+ * Runs inside the SAME transaction as the Project's own status flip to
+ * COMPLETED (see project.service.ts's updateProject), so a failure on
+ * either side rolls both back. TimesheetImport/TimesheetImportRowLog audit
+ * history is never touched — the row-log FK is nullable + onDelete:
+ * SetNull (see schema.prisma), so historical log rows survive with
+ * entryId: null, exactly as they already do for every other deletion path
+ * in this module.
+ */
+export function deleteEntriesByProjectId(tx: Prisma.TransactionClient, projectId: string) {
+  return tx.timesheetEntry.deleteMany({ where: { projectId } });
 }

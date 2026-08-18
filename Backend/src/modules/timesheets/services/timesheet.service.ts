@@ -1,3 +1,4 @@
+import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { normalizeProjectCode } from "../../../shared/utils/projectCode.util.js";
@@ -14,6 +15,7 @@ import type {
   RowLogEntry,
   TimesheetImportMeta,
 } from "../timesheet.types.js";
+import type { EditEntryBody } from "../validators/timesheet.validators.js";
 
 function normalizeEmployeeNo(raw: string): string {
   return raw.trim().toLowerCase();
@@ -24,8 +26,9 @@ function dateKey(date: Date): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
-function identityKey(employeeNo: string, projectId: string, workDate: Date, task: string): string {
-  return `${normalizeEmployeeNo(employeeNo)}||${projectId}||${dateKey(workDate)}||${task.trim()}`;
+/** projectId is null for an "Unassigned" row (Employee matched, Project did not) — still a stable, distinct identity per employee+date+task among other unassigned rows. */
+function identityKey(employeeNo: string, projectId: string | null, workDate: Date, task: string): string {
+  return `${normalizeEmployeeNo(employeeNo)}||${projectId ?? "UNASSIGNED"}||${dateKey(workDate)}||${task.trim()}`;
 }
 
 /**
@@ -108,30 +111,30 @@ export async function processTimesheetImport(
     const projectKey = normalizeProjectCode(row.rawProjectCode);
     const project = projectKey ? projectMap.get(projectKey) : undefined;
 
-    let failureReason: string | null = null;
-    if (!employee) {
-      failureReason = `Employee No "${row.employeeNo}" not found in Employee Master.`;
-    } else if (!project) {
-      // Deliberately the same outcome for "PR never existed" and "PR
-      // existed but its Project was permanently deleted before this row
-      // could ever be resolved" — the Project table gives no way to tell
-      // these apart for a row that has never been seen before (see
-      // schema.prisma's TimesheetEntry model comment / Stage 4 §9). A row
-      // whose Project is archived (not permanently deleted) DOES resolve
-      // here — archived projects stay in projectMap, only their isDeleted
-      // flag differs, which this reconciliation loop never inspects.
-      failureReason = `Project not found for PR "${row.rawProjectCode}".`;
-    }
+    // A missing Project is deliberately NOT a failure — the row is still
+    // retained as a real TimesheetEntry with projectId: null ("Unassigned"),
+    // per the approved PR-optional-for-display integration decision. Only a
+    // missing Employee remains a hard failure (unchanged). rawProjectCode is
+    // always preserved on the entry itself, so an unmatched PR is never lost
+    // and can be assigned later once the matching Project is created — the
+    // existing normalizeProjectCode()/matching rules are entirely unchanged;
+    // this only changes what happens AFTER a match attempt comes back empty.
+    const failureReason: string | null = !employee ? `Employee No "${row.employeeNo}" not found in Employee Master.` : null;
 
     if (project) resolvedProjectIds.add(project.id);
 
     return { row, employee, projectId: project?.id ?? null, failureReason };
   });
 
+  // Includes existing "Unassigned" (projectId: null) entries too — not just
+  // resolvedProjectIds — so a future day's revision of a previously-created
+  // Unassigned row is correctly recognized as "existing" (Updated/Removed)
+  // instead of always looking like a brand-new row. See
+  // findEntriesByProjectIds()'s own comment for why this was necessary.
   const existingEntries = await timesheetRepo.findEntriesByProjectIds([...resolvedProjectIds]);
   const initialExisting = new Map<string, (typeof existingEntries)[number]>();
   for (const entry of existingEntries) {
-    if (entry.projectId) initialExisting.set(identityKey(entry.employeeNo, entry.projectId, entry.workDate, entry.task), entry);
+    initialExisting.set(identityKey(entry.employeeNo, entry.projectId, entry.workDate, entry.task), entry);
   }
 
   let createdCount = 0;
@@ -153,7 +156,7 @@ export async function processTimesheetImport(
       const rowLogs: RowLogEntry[] = [];
 
       for (const { row, employee, projectId, failureReason } of resolutions) {
-        if (failureReason || !employee || !projectId) {
+        if (failureReason || !employee) {
           failedCount++;
           rowLogs.push({
             entryId: null,
@@ -169,11 +172,17 @@ export async function processTimesheetImport(
           continue;
         }
 
+        // projectId may legitimately be null here (Project not found) — the
+        // row is still created/reconciled as an "Unassigned" entry below.
         const canonicalEmployeeNo = employee.employeeNo;
         const key = identityKey(canonicalEmployeeNo, projectId, row.workDate, row.task);
         const existing = existingMap.get(key);
-        const pairKey = `${canonicalEmployeeNo}||${projectId}`;
-        resolvedPairs.add(pairKey);
+        // ProjectResource is inherently project-scoped — never recompute it
+        // for an Unassigned pair, since there is no Project to attach it to
+        // (per the approved decision).
+        if (projectId) {
+          resolvedPairs.add(`${canonicalEmployeeNo}||${projectId}`);
+        }
 
         if (!existing) {
           // A row that never existed before, arriving with 0 hours, creates
@@ -336,4 +345,120 @@ export async function processTimesheetImport(
     failedCount,
     errorSummary: finalized.errorSummary,
   };
+}
+
+/**
+ * Manual, single-row correction (e.g. fixing a typo'd hours value) — a
+ * completely separate path from processTimesheetImport() above and never
+ * called by it. Identity fields (employeeNo, projectId, rawProjectCode)
+ * are never editable here; only the mutable/correction fields
+ * (hours/task/workDate/sourceStatus) can change, so the entry's identity
+ * and existing revision history stay exactly as the KEKA pipeline left
+ * them. ProjectResource is recomputed only when the entry already belongs
+ * to a mapped Project — an Unassigned entry (projectId: null) has no
+ * ProjectResource to recompute, per the PR-optional-for-display decision.
+ */
+export async function editTimesheetEntry(id: string, input: EditEntryBody) {
+  const existing = await timesheetRepo.findEntryById(id);
+  if (!existing) {
+    throw new AppError("Timesheet entry not found.", 404);
+  }
+
+  const updated = await timesheetRepo.updateEntryFields(id, {
+    ...(input.hours !== undefined && { hours: input.hours }),
+    ...(input.task !== undefined && { task: input.task }),
+    ...(input.workDate !== undefined && { workDate: input.workDate }),
+    ...(input.sourceStatus !== undefined && { sourceStatus: input.sourceStatus }),
+  });
+
+  if (existing.projectId) {
+    await recomputeProjectResource(existing.employeeNo, existing.projectId);
+  }
+
+  return updated;
+}
+
+/**
+ * Manual, single-row delete — remembers the entry's (employeeNo, projectId)
+ * before removing it so the affected ProjectResource (if any) can be
+ * recomputed afterward. Never touches the Project, Employee, or any
+ * TimesheetImport/RowLog audit record (the row-log FK is nullable +
+ * onDelete: SetNull — see schema.prisma's TimesheetImportRowLog.entryId —
+ * so historical log rows survive with entryId: null, exactly as they
+ * already do for KEKA's own "Removed" outcome above).
+ */
+export async function deleteTimesheetEntry(id: string): Promise<void> {
+  const existing = await timesheetRepo.findEntryById(id);
+  if (!existing) {
+    throw new AppError("Timesheet entry not found.", 404);
+  }
+
+  await timesheetRepo.deleteEntryStandalone(id);
+
+  if (existing.projectId) {
+    await recomputeProjectResource(existing.employeeNo, existing.projectId);
+  }
+}
+
+/**
+ * Deletes every TimesheetEntry row. Projects, Employees, Customers, KEKA
+ * configuration, and TimesheetImport/RowLog audit history are all
+ * untouched — only TimesheetEntry itself is cleared.
+ *
+ * ProjectResource safety: a ProjectResource row can also be created purely
+ * manually (Team Assigned's "Add Resource"), with no TimesheetEntry ever
+ * backing its (employeeNo, projectId) pair — that data must survive
+ * Delete-All untouched. findDistinctMappedPairs() captures, BEFORE the
+ * delete, exactly the set of pairs that currently have at least one real
+ * TimesheetEntry; only those pairs are recomputed afterward (correctly
+ * zeroing their now-stale totalHours/workingDays/manhourCost while
+ * preserving assignment dates/status/hourlyRateSnapshot, per
+ * projectResource.service.ts's existing "zero entries remain" branch). Any
+ * ProjectResource row outside that set was never timesheet-derived and is
+ * never touched.
+ */
+export async function deleteAllTimesheetEntries(): Promise<{ deletedCount: number; recomputedPairCount: number }> {
+  const mappedPairs = await timesheetRepo.findDistinctMappedPairs();
+
+  const result = await timesheetRepo.deleteAllEntries();
+
+  for (const pair of mappedPairs) {
+    if (pair.projectId) {
+      await recomputeProjectResource(pair.employeeNo, pair.projectId);
+    }
+  }
+
+  return { deletedCount: result.count, recomputedPairCount: mappedPairs.length };
+}
+
+export interface TimesheetProjectCleanupResult {
+  deletedCount: number;
+  affectedEmployeeNos: string[];
+}
+
+/**
+ * Called from within Project Completion's own transaction (see
+ * project.service.ts's updateProject) — accepts that SAME `tx` client so
+ * the Project's status flip to COMPLETED and this deletion commit or roll
+ * back together as one atomic operation; a failure on either side leaves
+ * neither applied. Scoped strictly to one projectId via
+ * deleteEntriesByProjectId() — never touches another Project's rows,
+ * Project-Not-Mapped rows (projectId: null), the Project/Employee rows
+ * themselves, or TimesheetImport/TimesheetImportRowLog audit history.
+ *
+ * Returns the affected employeeNos, not a recompute — ProjectResource
+ * recomputation must happen AFTER the transaction commits, matching this
+ * module's existing convention (see processTimesheetImport()'s own
+ * after-commit recompute loop above) rather than running inside it.
+ */
+export async function removeTimesheetsForCompletedProject(
+  tx: Prisma.TransactionClient,
+  projectId: string
+): Promise<TimesheetProjectCleanupResult> {
+  const entries = await timesheetRepo.findEntriesByProjectId(tx, projectId);
+  const affectedEmployeeNos = [...new Set(entries.map((e) => e.employeeNo))];
+
+  const result = await timesheetRepo.deleteEntriesByProjectId(tx, projectId);
+
+  return { deletedCount: result.count, affectedEmployeeNos };
 }

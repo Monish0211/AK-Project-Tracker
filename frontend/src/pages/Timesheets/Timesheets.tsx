@@ -1,16 +1,13 @@
-import React, { useRef, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import {
-  Upload,
   CalendarDays,
   AlertTriangle,
-  Check,
   FileText,
   Clock,
   Users,
   Search,
   Pencil,
   Trash2,
-  Loader,
   ChevronLeft,
   ChevronRight,
   Plus,
@@ -19,26 +16,17 @@ import { GlassReflectionOverlay } from "../../components/ui/GlassReflectionOverl
 
 import type { TimesheetEntry, TimesheetImportMonth } from "../../types/Timesheet";
 import {
-  extractTimesheetEntries,
-  createImportMonth,
   formatDisplayDate,
   formatMonthDisplay,
   getMonthFromDate,
   getAllTimesheetImports,
   saveAllTimesheetImports,
+  refreshTimesheetImportsFromBackend,
 } from "../../services/timesheetService";
-import {
-  parseWorkbook,
-  findHeaderRow,
-  normalizeHeaders,
-  validateHeaders,
-  sheetToRows,
-  normalizeProjectCode,
-  type ImportReport,
-} from "../../services/timesheetImportService";
 import { syncTimesheetToProjects } from "../../services/timesheetSyncService";
 import { getProjects, updateProject } from "../../services/projectService";
 import { getEmployees } from "../../services/employeeService";
+import { apiClient, ApiError } from "../../services/apiClient";
 import type { Employee } from "../../types/EmployeeModel";
 import { Card, CardHeader } from "../../components/ui/Card";
 import { StatTile } from "../../components/ui/StatTile";
@@ -69,9 +57,15 @@ const computeSummary = (entries: TimesheetEntry[]) => ({
   totalWorkingDays: new Set(entries.map((e) => e.date)).size,
 });
 
+// Manually-added entries (this page's own local-only "Add Entry" modal) get
+// a client-generated "manual-..." id and have no backing TimesheetEntry row
+// in Postgres — only ids without this prefix are real backend rows that
+// Edit/Delete/Delete-All may call the API for.
+const isBackendEntryId = (id: string) => !id.startsWith("manual-");
+
 interface EntryModalState {
   mode: "add" | "edit";
-  original?: { employeeNo: string; projectCode: string };
+  original?: { employeeNo: string; projectCode: string; entryId: string | null };
 }
 
 interface EmployeeAutocompleteProps {
@@ -140,7 +134,6 @@ const EmployeeAutocomplete = ({ value, onChange, onSelect, employees }: Employee
 };
 
 const Timesheets = () => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [allMonths, setAllMonths] = useState<TimesheetImportMonth[]>(
     timesheetStorage.getMonths()
   );
@@ -148,16 +141,27 @@ const Timesheets = () => {
   const [selectedProject, setSelectedProject] = useState<string>("all");
   const [searchEmployee, setSearchEmployee] = useState<string>("");
 
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [importReport, setImportReport] = useState<ImportReport | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [syncedProjects, setSyncedProjects] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 30;
 
+  // Edit/Delete/Delete-All now call the real backend (Part 2/3 of the
+  // Timesheet CRUD integration) — actionPending disables the relevant
+  // buttons mid-request to prevent double-submits, actionError surfaces a
+  // failed backend call instead of silently pretending it succeeded.
+  const [actionPending, setActionPending] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
   const masterEmployees = useMemo(() => getEmployees(), []);
+
+  // Connects Timesheet Records to the real backend TimesheetEntry data
+  // (KEKA import pipeline) instead of only whatever was last uploaded in
+  // this browser. Non-fatal on failure — the page still works from
+  // whatever local data already exists (e.g. offline, or backend down).
+  useEffect(() => {
+    refreshTimesheetImportsFromBackend()
+      .then(() => setAllMonths(timesheetStorage.getMonths()))
+      .catch((err) => console.warn("Could not refresh Timesheet Records from backend:", err));
+  }, []);
 
   // Manual Add/Edit Entry modal state
   const [entryModal, setEntryModal] = useState<EntryModalState | null>(null);
@@ -205,12 +209,17 @@ const Timesheets = () => {
   });
 
   const allEmployees = useMemo(() => {
-    return Object.entries(employeeGroups).map(([empNo, empEntries]) => {
+    // Grouped by the internal `${employeeNo}___${projectCode}` key above
+    // (kept, unchanged — needed so the same employee's entries for two
+    // different projects stay in separate rows), but that composite key
+    // itself must never be displayed. The real Employee No always comes
+    // from the grouped entry's own .employeeNo field below, not the key.
+    return Object.values(employeeGroups).map((empEntries) => {
       const first = empEntries[0];
       const totalHours = empEntries.reduce((sum, e) => sum + e.hours, 0);
       const workingDays = new Set(empEntries.map((e) => e.date)).size;
       return {
-        employeeNo: empNo,
+        employeeNo: first.employeeNo,
         employeeName: first.employeeName,
         projectCode: first.projectCode,
         projectName: first.projectName,
@@ -221,6 +230,13 @@ const Timesheets = () => {
         workingDays,
         totalHours,
         employeeCost: 0,
+        // Only a row backed by exactly one raw TimesheetEntry has an
+        // unambiguous single record to PATCH — most rows aggregate several
+        // dates/tasks (see the group-shape check that grounded this design:
+        // 50 of 65 real employee+project groups span more than one entry).
+        // null here disables Edit for that row rather than guessing how to
+        // split an edited total back across multiple real database rows.
+        entryId: empEntries.length === 1 ? empEntries[0].id : null,
       };
     });
   }, [employeeGroups]);
@@ -244,197 +260,6 @@ const Timesheets = () => {
     setCurrentPage(1);
   }, [selectedMonth, selectedProject, searchEmployee]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      setImportReport(null);
-      setImportError(null);
-      setShowImportModal(true);
-    }
-    e.target.value = "";
-  };
-
-  const closeImportModal = useCallback(() => {
-    setShowImportModal(false);
-    setSelectedFile(null);
-    setImportReport(null);
-    setImportError(null);
-  }, []);
-
-  const handleExecuteImport = async () => {
-    if (!selectedFile) return;
-    setImporting(true);
-    setImportReport(null);
-    setImportError(null);
-
-    try {
-      const workbook = await parseWorkbook(selectedFile);
-      const detectedSheets = workbook.SheetNames;
-
-      let found = false;
-      let selectedSheetName = "";
-      let headerRowIndex = 0;
-      let headerRow: unknown[] = [];
-      let dataRows: unknown[][] = [];
-
-      for (const sheetName of detectedSheets) {
-        const sheet = workbook.Sheets[sheetName];
-        const rows = sheetToRows(sheet);
-        const headerMatch = findHeaderRow(rows);
-
-        if (!headerMatch) continue;
-
-        const normalized = normalizeHeaders(headerMatch.row);
-        const hasRequiredFields = [
-          "employeeNo",
-          "employeeName",
-          "projectCode",
-          "date",
-          "totalHours",
-        ].every((field) => {
-          const synonyms: Record<string, string[]> = {
-            employeeNo: ["employee number", "employee no", "emp no"],
-            employeeName: ["employee name", "full name", "name"],
-            projectCode: ["project code", "pr number", "pr no"],
-            date: ["date", "working date"],
-            totalHours: ["total hours", "hours"],
-          };
-          return synonyms[field].some((syn) =>
-            normalized.includes(syn.toLowerCase().replace(/\s+/g, " "))
-          );
-        });
-
-        if (hasRequiredFields) {
-          found = true;
-          selectedSheetName = sheetName;
-          headerRowIndex = headerMatch.rowIndex;
-          headerRow = headerMatch.row;
-          dataRows = rows.slice(headerMatch.rowIndex + 1);
-          break;
-        }
-      }
-
-      if (!found) {
-        throw new Error(
-          "Could not find timesheet data. Required columns: Employee No, Employee Name, Project Code, Date, Hours"
-        );
-      }
-
-      const normalizedHeaders = normalizeHeaders(headerRow);
-      const { indices, missing } = validateHeaders(normalizedHeaders);
-
-      if (missing.length > 0) {
-        throw new Error(`Missing columns: ${missing.join(", ")}`);
-      }
-
-      const allEntries = extractTimesheetEntries(
-        dataRows.filter((row) => row.some((cell) => cell !== "" && cell !== null && cell !== undefined)),
-        indices as Record<string, number>
-      );
-
-      if (allEntries.length === 0) {
-        throw new Error("No valid timesheet entries found.");
-      }
-
-      // A single Excel upload can legitimately span multiple calendar
-      // months (e.g. Feb-Jul). Group entries by each row's own work date
-      // instead of tagging the whole upload with just the first row's
-      // month, so every month present gets its own TimesheetImportMonth
-      // container and shows up in the month selector.
-      const entriesByMonth = new Map<string, TimesheetEntry[]>();
-      allEntries.forEach((entry) => {
-        const key = getMonthFromDate(entry.date);
-        const list = entriesByMonth.get(key);
-        if (list) list.push(entry);
-        else entriesByMonth.set(key, [entry]);
-      });
-
-      const duplicateMonths: string[] = [];
-      entriesByMonth.forEach((monthEntries, monthKey) => {
-        const existingMonth = allMonths.find((m) => m.month === monthKey);
-        if (!existingMonth) return;
-
-        const duplicateCheck = monthEntries.filter((newEntry) =>
-          existingMonth.entries.some(
-            (existing) =>
-              existing.employeeNo === newEntry.employeeNo &&
-              existing.projectCode === newEntry.projectCode &&
-              existing.date === newEntry.date
-          )
-        );
-
-        if (duplicateCheck.length > 0) {
-          duplicateMonths.push(`${formatMonthDisplay(monthKey)} (${duplicateCheck.length})`);
-        }
-      });
-
-      if (duplicateMonths.length > 0) {
-        throw new Error(
-          `Found duplicate entries in ${duplicateMonths.join(", ")}. Update the existing import or use a different month.`
-        );
-      }
-
-      const newMonths = Array.from(entriesByMonth.entries()).map(([, monthEntries]) =>
-        createImportMonth(monthEntries, "Admin", "monthly")
-      );
-      const newMonthKeys = newMonths.map((m) => m.month);
-
-      let updatedMonths = allMonths.filter((m) => !newMonthKeys.includes(m.month));
-      updatedMonths = [...updatedMonths, ...newMonths];
-      updatedMonths.sort((a, b) => a.month.localeCompare(b.month));
-
-      timesheetStorage.save(updatedMonths);
-      setAllMonths(updatedMonths);
-      setSelectedMonth([...newMonthKeys].sort().reverse()[0] || "");
-      setSelectedProject("all");
-      setSearchEmployee("");
-
-      // AUTO-SYNC: push the latest resource snapshot onto matching projects
-      // (kept for Reports/other views that read project.resources directly).
-      // The Team Members tab itself no longer depends on this snapshot — it
-      // matches Project Code = PR Number live, so it can never go stale.
-      try {
-        const allProjects = getProjects();
-        const importEntryCodes = new Set(
-          allEntries.map((e) => normalizeProjectCode(e.projectCode)).filter(Boolean)
-        );
-
-        const matchedPrNos = allProjects
-          .filter((p) => importEntryCodes.has(normalizeProjectCode(p.prNo)))
-          .map((p) => p.prNo);
-        setSyncedProjects(matchedPrNos);
-
-        let synced = allProjects;
-        newMonths.forEach((newMonth) => {
-          synced = syncTimesheetToProjects(synced, newMonth);
-        });
-        synced.forEach((project) => updateProject(project));
-      } catch (syncErr) {
-        console.warn("Sync warning:", syncErr);
-      }
-
-      const report: ImportReport = {
-        workbookName: selectedFile.name,
-        detectedSheets,
-        selectedSheet: selectedSheetName,
-        headerRowNumber: headerRowIndex + 1,
-        detectedHeaders: headerRow.map((h) => String(h ?? "")),
-        missingHeaders: [],
-        importedRows: dataRows.length,
-        matchedRows: allEntries.length,
-        ignoredRows: 0,
-      };
-
-      setImportReport(report);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Import failed";
-      setImportError(message);
-    } finally {
-      setImporting(false);
-    }
-  };
-
   const handleDeleteMonth = (month: string) => {
     if (window.confirm(`Delete timesheet data for ${formatMonthDisplay(month)}?`)) {
       const updated = allMonths.filter((m) => m.month !== month);
@@ -446,11 +271,31 @@ const Timesheets = () => {
     }
   };
 
-  const handleDeleteAllMonths = () => {
-    if (window.confirm("Are you sure you want to delete all imported timesheet records?")) {
-      timesheetStorage.save([]);
-      setAllMonths([]);
+  // Real, protected backend operation (Part 2D) — deletes every
+  // TimesheetEntry row in Postgres (Projects/Employees/KEKA config/
+  // TimesheetImport history are untouched; affected ProjectResource rows
+  // are recomputed server-side, see timesheet.service.ts's
+  // deleteAllTimesheetEntries()). Local state is only cleared and
+  // re-synced from the backend AFTER that call succeeds — a failure
+  // leaves every existing record visible, per the "never pretend it
+  // succeeded" requirement.
+  const handleDeleteAllMonths = async () => {
+    if (!window.confirm("Are you sure you want to delete all imported timesheet records? This permanently removes every timesheet entry and cannot be undone.")) {
+      return;
+    }
+
+    setActionError(null);
+    setActionPending(true);
+    try {
+      await apiClient.delete("/timesheets/entries");
+      saveAllTimesheetImports([]);
+      await refreshTimesheetImportsFromBackend();
+      setAllMonths(timesheetStorage.getMonths());
       setSelectedMonth("");
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : "Failed to delete all timesheet records. Please try again.");
+    } finally {
+      setActionPending(false);
     }
   };
 
@@ -494,7 +339,7 @@ const Timesheets = () => {
   };
 
   const openEditEntry = (emp: (typeof allEmployees)[number]) => {
-    setEntryModal({ mode: "edit", original: { employeeNo: emp.employeeNo, projectCode: emp.projectCode } });
+    setEntryModal({ mode: "edit", original: { employeeNo: emp.employeeNo, projectCode: emp.projectCode, entryId: emp.entryId } });
     setFormEmployeeNo(emp.employeeNo);
     setFormEmployeeSearch(`${emp.employeeNo} — ${emp.employeeName}`);
     setFormProjectCode(emp.projectCode);
@@ -507,7 +352,7 @@ const Timesheets = () => {
 
   const closeEntryModal = () => setEntryModal(null);
 
-  const handleSaveEntry = () => {
+  const handleSaveEntry = async () => {
     if (!currentMonthData || !entryModal) return;
 
     if (!formEmployeeNo) {
@@ -540,6 +385,30 @@ const Timesheets = () => {
     const employee = masterEmployees.find((e) => e.employeeNo === formEmployeeNo);
     if (!employee) {
       setFormError("Selected employee not found in Employee Master.");
+      return;
+    }
+
+    // A single real TimesheetEntry row — correct it via the backend API
+    // (Part 2B) instead of only writing to localStorage. Project Code/Name
+    // reassignment isn't sent: editTimesheetEntry() deliberately keeps
+    // identity fields (employeeNo/projectId) frozen, so only Hours/Date
+    // changes here have any effect on the real record.
+    if (entryModal.mode === "edit" && entryModal.original?.entryId && isBackendEntryId(entryModal.original.entryId)) {
+      setActionError(null);
+      setActionPending(true);
+      try {
+        await apiClient.patch(`/timesheets/entries/${entryModal.original.entryId}`, {
+          hours: hoursNum,
+          workDate: formStartDate,
+        });
+        await refreshTimesheetImportsFromBackend();
+        setAllMonths(timesheetStorage.getMonths());
+        setEntryModal(null);
+      } catch (err) {
+        setFormError(err instanceof ApiError ? err.message : "Failed to update the timesheet entry. Please try again.");
+      } finally {
+        setActionPending(false);
+      }
       return;
     }
 
@@ -592,7 +461,12 @@ const Timesheets = () => {
     setEntryModal(null);
   };
 
-  const handleDeleteEntry = (emp: (typeof allEmployees)[number]) => {
+  // Deletes every raw TimesheetEntry backing this row (Part 2C/3) — a row
+  // in this table aggregates every date/task for one employee+project, so
+  // "delete this row" means deleting each of its underlying real entries.
+  // Falls back to the old local-only removal only when none of them are
+  // real backend rows (a purely manually-added group).
+  const handleDeleteEntry = async (emp: (typeof allEmployees)[number]) => {
     const targetMonthKey = selectedMonth !== "all" ? selectedMonth : getMonthFromDate(emp.startDate);
     const targetMonthData = allMonths.find((m) => m.month === targetMonthKey);
     if (!targetMonthData) return;
@@ -605,6 +479,29 @@ const Timesheets = () => {
       return;
     }
 
+    const groupEntries = targetMonthData.entries.filter(
+      (e) => e.employeeNo === emp.employeeNo && e.projectCode === emp.projectCode
+    );
+    const realEntryIds = groupEntries.map((e) => e.id).filter(isBackendEntryId);
+
+    setActionError(null);
+
+    if (realEntryIds.length > 0) {
+      setActionPending(true);
+      try {
+        await Promise.all(realEntryIds.map((id) => apiClient.delete(`/timesheets/entries/${id}`)));
+        await refreshTimesheetImportsFromBackend();
+        setAllMonths(timesheetStorage.getMonths());
+      } catch (err) {
+        setActionError(err instanceof ApiError ? err.message : "Failed to delete the timesheet entry. Please try again.");
+      } finally {
+        setActionPending(false);
+      }
+      return;
+    }
+
+    // Purely local (manually-added) entries never had a backend row to
+    // begin with — remove them from local state directly, as before.
     const updatedEntries = targetMonthData.entries.filter(
       (e) => !(e.employeeNo === emp.employeeNo && e.projectCode === emp.projectCode)
     );
@@ -630,14 +527,6 @@ const Timesheets = () => {
 
   return (
     <div className="timesheets-shell -m-6">
-      <input
-        type="file"
-        ref={fileInputRef}
-        accept=".xlsx,.xls"
-        onChange={handleFileChange}
-        className="hidden"
-      />
-
       <div className="p-4 space-y-3.5 nu-fade-in">
         {/* ═══ Hero Banner ═══ */}
         <div
@@ -651,10 +540,6 @@ const Timesheets = () => {
               Import employee timesheets — automatically synced to Projects by PR Number.
             </p>
           </div>
-
-          <Button variant="hero" size="sm" icon={<Upload size={14} />} onClick={() => fileInputRef.current?.click()}>
-            Upload Timesheet
-          </Button>
         </div>
 
         {/* ═══ KPI Strip ═══ */}
@@ -725,6 +610,20 @@ const Timesheets = () => {
             </div>
           )}
 
+          {actionError && (
+            <div className="mx-4 mt-3 flex items-start gap-2 rounded-[var(--nu-radius-md)] border border-[var(--nu-danger)]/20 bg-[var(--nu-danger-soft)] p-3">
+              <AlertTriangle size={14} className="text-[var(--nu-danger)] shrink-0 mt-0.5" />
+              <p className="flex-1 text-[12px] font-medium text-[var(--nu-danger)]">{actionError}</p>
+              <button
+                type="button"
+                onClick={() => setActionError(null)}
+                className="text-[11px] font-medium text-[var(--nu-danger)] underline shrink-0"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {/* Body */}
           {allMonths.length === 0 ? (
             <div className="py-10">
@@ -734,17 +633,8 @@ const Timesheets = () => {
                 </div>
                 <p className="text-[14px] font-semibold text-[var(--nu-text)]">No Timesheets Imported</p>
                 <p className="text-[12.5px] text-[var(--nu-text-muted)] mt-1 max-w-[300px] leading-snug">
-                  Upload your first Excel timesheet to get started.
+                  Timesheet data will appear automatically once the KEKA daily report is processed.
                 </p>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={<Upload size={14} />}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="mt-4"
-                >
-                  Upload Timesheet
-                </Button>
               </div>
             </div>
           ) : !selectedMonth ? (
@@ -771,6 +661,7 @@ const Timesheets = () => {
                       size="sm"
                       icon={<Trash2 size={13} />}
                       onClick={handleDeleteAllMonths}
+                      disabled={actionPending}
                       className="!text-[var(--nu-danger)] hover:!bg-[var(--nu-danger-soft)]"
                     >
                       Delete All Timesheets
@@ -852,15 +743,21 @@ const Timesheets = () => {
                             <div className="flex items-center justify-center gap-2">
                               <button
                                 type="button"
-                                title="Edit"
-                                onClick={() => openEditEntry(emp)}
-                                className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150"
+                                title={
+                                  emp.entryId === null
+                                    ? "Editing is only available for a record spanning a single date/task — this row aggregates several. Delete and re-add if it needs correcting."
+                                    : "Edit"
+                                }
+                                onClick={() => emp.entryId !== null && openEditEntry(emp)}
+                                disabled={emp.entryId === null || actionPending}
+                                className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
                               >
                                 <Pencil size={15} />
                               </button>
                               <button
                                 type="button"
                                 title="Delete"
+                                disabled={actionPending}
                                 onClick={() => handleDeleteEntry(emp)}
                                 className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-danger-soft)] text-[var(--nu-danger)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150"
                               >
@@ -909,151 +806,6 @@ const Timesheets = () => {
           )}
         </Card>
       </div>
-
-      {/* ═══ Import Modal ═══ */}
-      {showImportModal && selectedFile && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden">
-            {!importReport && !importError && (
-              <>
-                <div className="shrink-0 p-5 border-b border-[var(--nu-border)] flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] flex items-center justify-center shrink-0">
-                    {importing ? <Loader size={18} className="animate-spin" /> : <Upload size={18} />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h2 className="text-[15px] font-semibold text-[var(--nu-text)]">
-                      {importing ? "Importing Timesheet…" : "Import Timesheet"}
-                    </h2>
-                    <p className="text-[12.5px] text-[var(--nu-text-secondary)] mt-1 truncate">
-                      File: {selectedFile.name}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4 custom-scrollbar">
-                  {importing && (
-                    <div className="bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] p-3">
-                      <div className="flex items-center gap-2 text-[12.5px] text-[var(--nu-text-secondary)]">
-                        <Loader size={14} className="animate-spin" />
-                        Processing timesheet entries...
-                      </div>
-                    </div>
-                  )}
-
-                  <p className="text-[12.5px] text-[var(--nu-text-secondary)]">
-                    This timesheet will be validated for duplicates and synced to projects.
-                  </p>
-                </div>
-
-                <div className="shrink-0 sticky bottom-0 z-10 p-4 bg-[var(--nu-surface)] border-t border-[var(--nu-border)] flex items-center justify-end gap-2.5">
-                  <Button variant="secondary" size="sm" onClick={closeImportModal} disabled={importing}>
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={importing}
-                    onClick={handleExecuteImport}
-                    icon={importing ? <Loader size={13} className="animate-spin" /> : undefined}
-                  >
-                    {importing ? "Importing..." : "Import"}
-                  </Button>
-                </div>
-              </>
-            )}
-
-            {importError && (
-              <>
-                <div className="shrink-0 p-5 border-b border-[var(--nu-border)] flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-[var(--nu-radius-md)] bg-[var(--nu-danger-soft)] text-[var(--nu-danger)] flex items-center justify-center shrink-0">
-                    <AlertTriangle size={18} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h2 className="text-[15px] font-semibold text-[var(--nu-text)]">Import Failed</h2>
-                  </div>
-                </div>
-
-                <div className="flex-1 min-h-0 overflow-y-auto p-5 custom-scrollbar">
-                  <p className="text-[12.5px] text-[var(--nu-danger)] font-medium">{importError}</p>
-                </div>
-
-                <div className="shrink-0 sticky bottom-0 z-10 p-4 bg-[var(--nu-surface)] border-t border-[var(--nu-border)] flex items-center justify-end gap-2.5">
-                  <Button variant="secondary" size="sm" onClick={closeImportModal}>
-                    Close
-                  </Button>
-                  <Button variant="primary" size="sm" onClick={() => setImportError(null)}>
-                    Try Again
-                  </Button>
-                </div>
-              </>
-            )}
-
-            {importReport && (
-              <>
-                <div className="shrink-0 p-5 border-b border-[var(--nu-border)] flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-[var(--nu-radius-md)] bg-[var(--nu-success-soft)] text-[var(--nu-success)] flex items-center justify-center shrink-0">
-                    <Check size={18} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h2 className="text-[15px] font-semibold text-[var(--nu-text)]">Import Completed</h2>
-                    <p className="text-[12.5px] text-[var(--nu-text-secondary)] mt-0.5">
-                      {importReport.matchedRows} entries imported successfully.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-3 custom-scrollbar">
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="bg-[var(--nu-surface-alt)] rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] p-2 text-center">
-                      <p className="text-[10px] uppercase tracking-wide text-[var(--nu-text-muted)]">Total Rows</p>
-                      <p className="text-[13px] font-bold text-[var(--nu-text)]">{importReport.importedRows}</p>
-                    </div>
-                    <div className="bg-[var(--nu-surface-alt)] rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] p-2 text-center">
-                      <p className="text-[10px] uppercase tracking-wide text-[var(--nu-text-muted)]">Imported</p>
-                      <p className="text-[13px] font-bold text-[var(--nu-success)]">{importReport.matchedRows}</p>
-                    </div>
-                    <div className="bg-[var(--nu-surface-alt)] rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] p-2 text-center">
-                      <p className="text-[10px] uppercase tracking-wide text-[var(--nu-text-muted)]">Ignored</p>
-                      <p className="text-[13px] font-bold text-[var(--nu-text-secondary)]">{importReport.ignoredRows}</p>
-                    </div>
-                  </div>
-
-                  {syncedProjects.length > 0 ? (
-                    <div className="bg-[var(--nu-accent-soft)] border border-[var(--nu-accent)]/20 rounded-[var(--nu-radius-md)] p-3">
-                      <p className="text-[10px] font-bold text-[var(--nu-accent)] uppercase tracking-wide mb-1.5">
-                        Synced to Projects
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {syncedProjects.map((prNo) => (
-                          <Badge key={prNo} tone="accent">
-                            {prNo}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-[var(--nu-warning-soft)] border border-[var(--nu-warning)]/20 rounded-[var(--nu-radius-md)] p-3">
-                      <p className="text-[11.5px] font-bold text-[var(--nu-warning)] uppercase tracking-wide flex items-center gap-1.5">
-                        <AlertTriangle size={13} />
-                        No Projects Matched
-                      </p>
-                      <p className="text-[11.5px] text-[var(--nu-text-secondary)] mt-1">
-                        Verify that the Project Code in your Excel matches the PR Number in the Projects list.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="shrink-0 sticky bottom-0 z-10 p-4 bg-[var(--nu-surface)] border-t border-[var(--nu-border)] flex items-center justify-end gap-2.5">
-                  <Button variant="primary" size="sm" onClick={closeImportModal}>
-                    Done
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* ═══ Add / Edit Entry Modal ═══ */}
       {entryModal && (

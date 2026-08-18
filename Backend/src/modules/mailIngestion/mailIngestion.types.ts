@@ -6,6 +6,15 @@ export interface PollResult {
   skippedAlreadyProcessed: number;
   skippedNoAttachment: number;
   errors: string[];
+  // Summed across every message's processTimesheetImport() result this poll
+  // run touched — lets a caller (the daily scheduler, see
+  // shared/scheduler/timesheetPollScheduler.ts) log row-level outcomes
+  // without re-deriving them or querying TimesheetImport separately.
+  createdCount: number;
+  updatedCount: number;
+  unchangedCount: number;
+  removedCount: number;
+  failedCount: number;
 }
 
 /** Minimal fields read from a Graph message — see mailPoll.service.ts's $select. */

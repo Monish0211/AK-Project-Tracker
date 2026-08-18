@@ -109,6 +109,18 @@ export function updateProject(id: string, data: Partial<ProjectGeneralInfoData>)
   return prisma.project.update({ where: { id }, data });
 }
 
+/**
+ * Tx-aware variant of updateProject() above — used only when a status
+ * change to COMPLETED must commit atomically together with that Project's
+ * Timesheet cleanup (see project.service.ts's updateProject and
+ * timesheets/services/timesheet.service.ts's
+ * removeTimesheetsForCompletedProject). Identical operation, just bound to
+ * the caller's transaction client instead of the plain one.
+ */
+export function updateProjectTx(tx: Prisma.TransactionClient, id: string, data: Partial<ProjectGeneralInfoData>) {
+  return tx.project.update({ where: { id }, data });
+}
+
 /** Archive — reversible. Sets isDeleted/deletedAt; the row and every child row (QuantityItem/PaymentMilestone/ProjectExpense) are left completely untouched. */
 export function archiveProject(id: string) {
   return prisma.project.update({

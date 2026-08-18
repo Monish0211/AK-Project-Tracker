@@ -1,4 +1,4 @@
-import type { Project } from "../types/Project";
+import type { Project, ProjectResource } from "../types/Project";
 import type { ProjectNote } from "../types/ProjectNote";
 import type { InvoiceLine, InvoiceLineStatus } from "../types/InvoiceItem";
 import { createEmptyProject, inferPrCategory, inferDomesticForeign } from "../utils/createEmptyProject";
@@ -6,6 +6,7 @@ import { calculateQuantity } from "../utils/quantityCalculations";
 import { syncInvoiceItemsWithQuantity } from "./invoiceSyncService";
 import { notificationService } from "../notifications/notificationService";
 import { apiClient, ApiError } from "./apiClient";
+import { getEmployees } from "./employeeService";
 
 const STORAGE_KEY = "projects";
 
@@ -325,6 +326,17 @@ interface BackendProjectDto {
   isDeleted: boolean;
   createdAt: string;
   updatedAt: string;
+  // Only ever present when this specific PATCH call transitioned
+  // projectStatus into "Completed" for the first time (see Backend's
+  // project.service.ts isNewlyCompleted check) — absent on every other
+  // response. See updateProjectGeneralInfo() below for how this drives the
+  // completion notification + Timesheet refresh.
+  timesheetCleanup?: TimesheetCleanupResult | null;
+}
+
+export interface TimesheetCleanupResult {
+  deletedTimesheetEntries: number;
+  projectResourcesUpdated: number;
 }
 
 interface BackendPaginatedProjectList {
@@ -543,11 +555,69 @@ export async function fetchProjectsFromApi(params: ProjectListParams = {}): Prom
   return { items, total: result.total, page: result.page, pageSize: result.pageSize };
 }
 
+interface BackendResourceDto {
+  id: string;
+  employeeNo: string;
+  assignmentStartDate: string | null;
+  assignmentEndDate: string | null;
+  assignmentStatus: string;
+  workingDays: number;
+  totalHours: number;
+}
+
+/**
+ * Connects Team Assigned / Project manpower display to the real backend
+ * ProjectResource data (produced by the KEKA Timesheet import pipeline —
+ * see Backend/src/modules/timesheets/services/projectResource.service.ts).
+ * Upserts by the backend resource's own id, so real KEKA-derived resources
+ * coexist with any manually-added resource rows (TeamAssignedCard.tsx's own
+ * "Add" flow) rather than replacing them — mirrors the exact write-through
+ * pattern already used for Employees/Projects. TeamAssignedCard.tsx itself
+ * is completely unmodified: it already reads project.resources exactly as
+ * it always has.
+ */
+async function refreshProjectResourcesFromBackend(project: Project): Promise<Project> {
+  try {
+    const result = await apiClient.get<{ items: BackendResourceDto[] }>(`/projects/${project.id}/resources`);
+    const employees = getEmployees();
+
+    const backendResources: ProjectResource[] = result.items.map((r) => {
+      const emp = employees.find((e) => e.employeeNo.trim().toLowerCase() === r.employeeNo.trim().toLowerCase());
+      return {
+        id: r.id,
+        employeeNo: r.employeeNo,
+        employeeName: emp?.employeeName || r.employeeNo,
+        reportingManager: emp?.reportingManager || "",
+        department: emp?.department || "",
+        designation: emp?.designation || "",
+        startDate: r.assignmentStartDate ? r.assignmentStartDate.slice(0, 10) : "",
+        endDate: r.assignmentEndDate ? r.assignmentEndDate.slice(0, 10) : "",
+        workingDays: r.workingDays,
+        totalHours: r.totalHours,
+        status: (r.assignmentStatus === "Released" ? "Released" : "Active") as "Active" | "Released",
+        location: emp?.location || "",
+      };
+    });
+
+    const existingResources = Array.isArray(project.resources) ? project.resources : [];
+    const byId = new Map(existingResources.map((r) => [r.id, r]));
+    backendResources.forEach((r) => byId.set(r.id, r));
+
+    return { ...project, resources: Array.from(byId.values()) };
+  } catch {
+    // Non-fatal — Team Assigned still works with whatever local resources
+    // already exist if this call fails (e.g. offline, or the project has
+    // no backend resources yet).
+    return project;
+  }
+}
+
 /** Fresh single-project fetch — GET /projects/:id. Returns undefined if not found (or soft-deleted). */
 export async function fetchProjectByIdFromApi(id: string): Promise<Project | undefined> {
   try {
     const dto = await apiClient.get<BackendProjectDto>(`/projects/${id}`);
-    const merged = mergeBackendGeneralInfoIntoLocalProject(dto);
+    let merged = mergeBackendGeneralInfoIntoLocalProject(dto);
+    merged = await refreshProjectResourcesFromBackend(merged);
     writeThroughProjectsMirror([merged]);
     return merged;
   } catch (err) {
@@ -564,12 +634,58 @@ export async function createProjectGeneralInfo(project: Project): Promise<Projec
   return merged;
 }
 
-/** Updates a project's General Information via the real backend — PATCH /projects/:id. */
-export async function updateProjectGeneralInfo(id: string, project: Project): Promise<Project> {
+/**
+ * Updates a project's General Information via the real backend — PATCH
+ * /projects/:id. When this specific save transitioned Project Status into
+ * "Completed", the backend has already deleted that Project's live
+ * Timesheet records and recomputed the affected ProjectResource rows in
+ * one atomic operation (see Backend's project.service.ts updateProject) —
+ * `timesheetCleanup` on the response is how the caller finds out. This
+ * function reacts to that by dispatching the existing in-app notification
+ * (the same notificationService completeProject() below already uses);
+ * refreshing the Timesheets page's own data is the caller's job (see
+ * FormButtons.tsx), since this service has no reason to depend on
+ * timesheetService.ts.
+ */
+export async function updateProjectGeneralInfo(
+  id: string,
+  project: Project
+): Promise<{ project: Project; timesheetCleanup: TimesheetCleanupResult | null }> {
   const dto = await apiClient.patch<BackendProjectDto>(`/projects/${id}`, toGeneralInfoPayload(project));
   const merged = mergeBackendGeneralInfoIntoLocalProject(dto);
   writeThroughProjectsMirror([merged]);
-  return merged;
+
+  const timesheetCleanup = dto.timesheetCleanup ?? null;
+  if (timesheetCleanup) {
+    const { deletedTimesheetEntries } = timesheetCleanup;
+    const message =
+      deletedTimesheetEntries > 0
+        ? `Project completed successfully. ${deletedTimesheetEntries} Timesheet record${deletedTimesheetEntries === 1 ? "" : "s"} ${deletedTimesheetEntries === 1 ? "was" : "were"} removed.`
+        : "Project completed successfully. No Timesheet records were found for this Project.";
+
+    try {
+      notificationService.dispatchEvent({
+        ruleId: "PROJECT_TIMESHEET_CLEANUP",
+        version: 1,
+        title: `Project Completed: ${merged.prNo}`,
+        message,
+        category: "Success",
+        severity: "Info",
+        source: "Projects",
+        targetAudience: "Everyone",
+        deliveryChannels: ["InApp"],
+        projectId: merged.id,
+        projectCode: merged.prNo,
+        actionLabel: "View Project",
+        actionRoute: `/projects/view/${merged.id}`,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error("Failed to dispatch Timesheet cleanup notification:", err);
+    }
+  }
+
+  return { project: merged, timesheetCleanup };
 }
 
 /** Archive — reversible. DELETE /projects/:id never removes the row server-side, only sets isDeleted/deletedAt; this also drops it from the local mirror so it disappears from the Project Repository list immediately. Every child record (Quantity/Payment Milestones/Other Project Expenses) is left completely untouched. */

@@ -46,7 +46,20 @@ export const getProject = asyncHandler(async (req: Request, res: Response) => {
 
 export const updateProject = asyncHandler(async (req: Request, res: Response) => {
   const project = await projectService.updateProject(req.params.id as string, req.body as UpdateProjectInput);
-  res.status(200).json({ success: true, data: project, message: "Project updated successfully." });
+
+  // timesheetCleanup is only ever present when this call just transitioned
+  // the Project into Completed (see project.service.ts's isNewlyCompleted)
+  // — every other save keeps the plain message unchanged.
+  let message = "Project updated successfully.";
+  if (project.timesheetCleanup) {
+    const { deletedTimesheetEntries } = project.timesheetCleanup;
+    message =
+      deletedTimesheetEntries > 0
+        ? `Project completed successfully. ${deletedTimesheetEntries} Timesheet record${deletedTimesheetEntries === 1 ? "" : "s"} ${deletedTimesheetEntries === 1 ? "was" : "were"} removed.`
+        : "Project completed successfully. No Timesheet records were found for this Project.";
+  }
+
+  res.status(200).json({ success: true, data: project, message });
 });
 
 /** Archive — reversible. The route path (DELETE /projects/:id) is unchanged; only the name reflects what this has always actually done. */
