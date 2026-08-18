@@ -36,3 +36,20 @@ export const entryIdParamSchema = z.object({
   id: z.string().trim().min(1, "Timesheet Entry ID is required."),
 });
 export type EntryIdParam = z.infer<typeof entryIdParamSchema>;
+
+/**
+ * PATCH /timesheets/entries/:id — a manual, single-row correction outside
+ * the KEKA reconciliation engine. Identity fields (employeeNo, projectId,
+ * rawProjectCode) are deliberately not editable here — reassigning an
+ * entry's employee/project is a re-match, not a correction, and stays out
+ * of scope (see timesheet.service.ts's editTimesheetEntry).
+ */
+export const editEntryBodySchema = z
+  .object({
+    hours: z.coerce.number().positive("Hours must be greater than zero.").optional(),
+    task: z.string().trim().optional(),
+    workDate: z.coerce.date().optional(),
+    sourceStatus: z.enum(["Active", "Released"]).optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, { message: "At least one field must be provided." });
+export type EditEntryBody = z.infer<typeof editEntryBodySchema>;

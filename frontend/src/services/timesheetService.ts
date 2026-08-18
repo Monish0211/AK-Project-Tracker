@@ -1,6 +1,9 @@
 import type { TimesheetEntry, TimesheetImportMonth, ProjectTimesheetData } from "../types/Timesheet";
 import type { ProjectResource } from "../types/Project";
 import { getCellText, parseExcelDateKey } from "./timesheetImportService";
+import { apiClient } from "./apiClient";
+import { getEmployees } from "./employeeService";
+import { getProjects } from "./projectService";
 
 const TIMESHEET_STORAGE_KEY = "timesheets_imports";
 
@@ -20,6 +23,96 @@ export function getAllTimesheetImports(): TimesheetImportMonth[] {
 
 export function saveAllTimesheetImports(months: TimesheetImportMonth[]): void {
   localStorage.setItem(TIMESHEET_STORAGE_KEY, JSON.stringify(months));
+}
+
+interface BackendTimesheetEntryDto {
+  id: string;
+  employeeNo: string;
+  projectId: string | null;
+  rawProjectCode: string;
+  workDate: string;
+  task: string;
+  hours: number;
+  sourceStatus: string;
+}
+
+/**
+ * Connects the Timesheets page's "Timesheet Records" display to the real
+ * backend TimesheetEntry data (produced by the KEKA import pipeline — see
+ * Backend/src/modules/timesheets/services/timesheet.service.ts's
+ * processTimesheetImport()). Fetches every real entry, adapts it into the
+ * existing TimesheetEntry/TimesheetImportMonth shape this module has always
+ * used, and writes it into the SAME localStorage key getAllTimesheetImports()
+ * already reads — so every existing consumer (this page, Team Assigned via
+ * project.resources, TimesheetProcessingService, Reports, Dashboard) keeps
+ * working completely unchanged; only the underlying data source moves from
+ * "whatever was last uploaded in this browser" to "the real database."
+ *
+ * Months are merged, not replaced wholesale: any month with real backend
+ * data takes over that month's slot; any other locally-uploaded month (not
+ * yet represented in the backend) is left exactly as it was — mirroring
+ * storeTimesheetImport()'s own "remove existing month if present, replace"
+ * rule.
+ */
+export async function refreshTimesheetImportsFromBackend(): Promise<void> {
+  const result = await apiClient.get<{ items: BackendTimesheetEntryDto[] }>("/timesheets/entries");
+  const employees = getEmployees();
+  const projects = getProjects();
+
+  const entriesByMonth = new Map<string, TimesheetEntry[]>();
+
+  for (const dto of result.items) {
+    const empMaster = employees.find((e) => e.employeeNo.trim().toLowerCase() === dto.employeeNo.trim().toLowerCase());
+    const project = dto.projectId ? projects.find((p) => p.id === dto.projectId) : undefined;
+    const dateKey = dto.workDate.slice(0, 10);
+
+    // projectId is null whenever the Project didn't exist at import time
+    // (Employee still matched) — the row is retained regardless, with the
+    // raw KEKA Project Code preserved and shown as "Project Not Mapped"
+    // rather than hidden. Display label only — the underlying null
+    // projectId/database value is unchanged. See
+    // Backend/.../timesheet.service.ts's identical decision.
+    const entry: TimesheetEntry = {
+      id: dto.id,
+      employeeNo: dto.employeeNo,
+      employeeName: empMaster?.employeeName || dto.employeeNo,
+      projectCode: dto.rawProjectCode,
+      projectName: dto.projectId ? project?.projectTitle || "" : "Project Not Mapped",
+      date: dateKey,
+      hours: dto.hours,
+      status: (dto.sourceStatus === "Released" ? "Released" : "Active") as "Active" | "Released",
+    };
+    if (dto.task) entry.task = dto.task;
+
+    const month = getMonthFromDate(dateKey);
+    if (!entriesByMonth.has(month)) entriesByMonth.set(month, []);
+    entriesByMonth.get(month)!.push(entry);
+  }
+
+  const backendMonths: TimesheetImportMonth[] = [...entriesByMonth.entries()].map(([month, entries]) => {
+    const dates = new Set(entries.map((e) => e.date));
+    const uniqueEmployees = new Set(entries.map((e) => e.employeeNo));
+    const totalHours = entries.reduce((sum, e) => sum + e.hours, 0);
+
+    return {
+      id: `keka-backend-${month}`,
+      month,
+      importType: "monthly",
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: "KEKA (Automated Import)",
+      entries,
+      summary: {
+        totalEmployees: uniqueEmployees.size,
+        totalHours: Math.round(totalHours * 100) / 100,
+        totalWorkingDays: dates.size,
+      },
+    };
+  });
+
+  const backendMonthKeys = new Set(backendMonths.map((m) => m.month));
+  const preservedLocalMonths = getAllTimesheetImports().filter((m) => !backendMonthKeys.has(m.month));
+
+  saveAllTimesheetImports([...preservedLocalMonths, ...backendMonths]);
 }
 
 /**

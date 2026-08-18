@@ -59,6 +59,11 @@ export async function pollKekaMailbox(): Promise<PollResult> {
     skippedAlreadyProcessed: 0,
     skippedNoAttachment: 0,
     errors: [],
+    createdCount: 0,
+    updatedCount: 0,
+    unchangedCount: 0,
+    removedCount: 0,
+    failedCount: 0,
   };
 
   const token = await getGraphAccessToken();
@@ -127,7 +132,7 @@ export async function pollKekaMailbox(): Promise<PollResult> {
       // before this point leaves no trace at all, so the next poll cycle
       // naturally retries this same message (Stage 4 §15's idempotent-
       // retry design).
-      await processTimesheetImport(parsed.rows, {
+      const importResult = await processTimesheetImport(parsed.rows, {
         triggeredBy: "EmailPoll",
         emailMessageId: message.id,
         attachmentId: attachment.id,
@@ -136,6 +141,11 @@ export async function pollKekaMailbox(): Promise<PollResult> {
       });
 
       result.processed++;
+      result.createdCount += importResult.createdCount;
+      result.updatedCount += importResult.updatedCount;
+      result.unchangedCount += importResult.unchangedCount;
+      result.removedCount += importResult.removedCount;
+      result.failedCount += importResult.failedCount;
     } catch (err) {
       const messageText = err instanceof Error ? err.message : "Unknown error.";
       result.errors.push(`Message ${message.id}: ${messageText}`);

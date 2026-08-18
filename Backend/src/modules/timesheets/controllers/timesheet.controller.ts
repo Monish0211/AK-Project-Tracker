@@ -2,10 +2,16 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { parseTimesheetWorkbook, validateAttachment } from "../services/excelParser.service.js";
-import { processTimesheetImport } from "../services/timesheet.service.js";
+import {
+  deleteAllTimesheetEntries,
+  deleteTimesheetEntry,
+  editTimesheetEntry,
+  processTimesheetImport,
+} from "../services/timesheet.service.js";
 import * as importRepo from "../repository/timesheetImport.repository.js";
 import * as rowLogRepo from "../repository/timesheetImportRowLog.repository.js";
 import * as timesheetRepo from "../repository/timesheet.repository.js";
+import type { EditEntryBody } from "../validators/timesheet.validators.js";
 import {
   entryIdParamSchema,
   findEntriesQuerySchema,
@@ -102,4 +108,30 @@ export const getEntryHistory = asyncHandler(async (req: Request, res: Response) 
   const history = await rowLogRepo.findHistoryForEntry(id);
 
   res.status(200).json({ success: true, data: { entry: entry ?? null, history } });
+});
+
+/**
+ * Manual, single-row correction — req.body is already parsed/typed by the
+ * route's validate(editEntryBodySchema) middleware (see timesheet.routes.ts).
+ */
+export const editEntry = asyncHandler(async (req: Request, res: Response) => {
+  const id = parseEntryIdParam(req);
+  const updated = await editTimesheetEntry(id, req.body as EditEntryBody);
+  res.status(200).json({ success: true, data: updated, message: "Timesheet entry updated." });
+});
+
+export const deleteEntry = asyncHandler(async (req: Request, res: Response) => {
+  const id = parseEntryIdParam(req);
+  await deleteTimesheetEntry(id);
+  res.status(200).json({ success: true, message: "Timesheet entry deleted." });
+});
+
+/** Administrator-only, irreversible — see timesheet.routes.ts's authorize("Administrator") gate. */
+export const deleteAllEntries = asyncHandler(async (_req: Request, res: Response) => {
+  const result = await deleteAllTimesheetEntries();
+  res.status(200).json({
+    success: true,
+    data: result,
+    message: `Deleted ${result.deletedCount} timesheet entr${result.deletedCount === 1 ? "y" : "ies"}.`,
+  });
 });
