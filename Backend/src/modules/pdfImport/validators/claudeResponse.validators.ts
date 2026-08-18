@@ -53,15 +53,47 @@ export const claudeMilestoneSchema = z.object({
   dueDate: nullableString(),
 });
 
+/**
+ * Multi-document cross-verification — which uploaded document(s) Claude
+ * drew each generalInformation field's value from, keyed by field name
+ * (e.g. "client": ["Quotation_01.pdf", "LOA_7251988.pdf"]). Entirely
+ * optional/nullable: a single-document request, or a model response that
+ * omits this, degrades gracefully — pdfImportResponseAdapter.service.ts
+ * treats a missing entry as "one source" (today's existing behavior),
+ * never as an error.
+ */
+const claudeFieldSourcesSchema = z.record(z.string(), z.array(z.string())).nullable().optional();
+
+/**
+ * A field where the uploaded documents disagreed — Claude must never
+ * silently resolve this on its own; every distinct value plus which
+ * document said it is preserved here so
+ * pdfImportResponseAdapter.service.ts can fold it into that field's
+ * existing `warnings` array (never a new UI structure) and force its
+ * confidence down to the existing "Low Confidence" tier.
+ */
+const claudeConflictSchema = z.object({
+  field: z.string(),
+  values: z.array(
+    z.object({
+      documentName: z.string(),
+      value: z.union([z.string(), z.number()]).nullable(),
+    })
+  ),
+});
+
 export const claudeExtractionSchema = z.object({
   generalInformation: claudeGeneralInformationSchema.nullable().optional(),
   quantity: z.array(claudeQuantityRowSchema).nullable().optional(),
   paymentMilestones: z.array(claudeMilestoneSchema).nullable().optional(),
+  fieldSources: claudeFieldSourcesSchema,
+  conflicts: z.array(claudeConflictSchema).nullable().optional(),
 });
 
 export type ClaudeGeneralInformation = z.infer<typeof claudeGeneralInformationSchema>;
 export type ClaudeQuantityRow = z.infer<typeof claudeQuantityRowSchema>;
 export type ClaudeMilestone = z.infer<typeof claudeMilestoneSchema>;
+export type ClaudeFieldConflict = z.infer<typeof claudeConflictSchema>;
 export type ClaudeExtractionResult = z.infer<typeof claudeExtractionSchema>;
 
 export interface ParsedClaudeResponse {

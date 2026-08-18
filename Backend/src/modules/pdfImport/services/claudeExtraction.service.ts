@@ -69,8 +69,30 @@ function getClient(): Anthropic {
  * mirroring the approved architecture's "document understanding and
  * candidate extraction only" boundary (Stage 3 §7) at the prompt level,
  * even though the real enforcement happens downstream in validation.
+ *
+ * One unified prompt handles both one document and a multi-document set —
+ * a single document naturally has nothing to cross-check, so
+ * fieldSources/conflicts degrade to "one source, no conflicts" on their
+ * own without a separate single-file prompt to maintain.
  */
-const EXTRACTION_PROMPT = `You are extracting candidate field values from a project-related PDF (a work order, purchase order, or similar commercial document) for a project management form. Read the entire document, including any scanned/image pages.
+function buildExtractionPrompt(documentNames: string[]): string {
+  const documentDescription =
+    documentNames.length === 1
+      ? `a project-related PDF (${documentNames[0]} — a work order, purchase order, or similar commercial document)`
+      : `a SET of ${documentNames.length} project-related PDFs belonging to the same project/document package (${documentNames.join(", ")} — work orders, purchase orders, quotations, LOAs, or similar commercial documents)`;
+
+  const crossCheckInstructions =
+    documentNames.length === 1
+      ? ""
+      : `
+
+These documents describe the SAME project — treat them as one document set, not independent files:
+- A field present in only one document: use that value.
+- A field present in multiple documents that AGREE (same value): use that value once.
+- A field present in multiple documents that DISAGREE (different values): do NOT pick one silently. Instead leave "generalInformation" for that field set to whichever value you consider most likely, but ALSO add an entry to "conflicts" (see shape below) listing every distinct value and which document it came from. Never fabricate a resolution.
+- Also return "fieldSources": for every generalInformation field you found a value for, list the exact document name(s) (from: ${documentNames.join(", ")}) that value came from.`;
+
+  return `You are extracting candidate field values from ${documentDescription} for a project management form. Read every page of every document provided, including any scanned/image pages.${crossCheckInstructions}
 
 Return ONLY a single JSON object (no prose, no markdown fences) with this exact shape — every field is optional; use null for anything not found, never guess or fabricate a value:
 
@@ -83,18 +105,46 @@ Return ONLY a single JSON object (no prose, no markdown fences) with this exact 
     "emailId": string|null, "contractType": string|null, "pmoCoordinator": string|null, "workOrderValue": number|null, "currency": string|null
   },
   "quantity": [ { "description": string|null, "qty": number|null, "uom": string|null, "unitRate": number|null } ],
-  "paymentMilestones": [ { "milestoneName": string|null, "paymentPercentage": number|null, "dueDate": string|null } ]
+  "paymentMilestones": [ { "milestoneName": string|null, "paymentPercentage": number|null, "dueDate": string|null } ],
+  "fieldSources": { "<generalInformation field name>": ["<document name>", ...] },
+  "conflicts": [ { "field": "<generalInformation field name>", "values": [ { "documentName": string, "value": string|number|null } ] } ]
 }
 
-Do not calculate pending quantities, pending amounts, totals, or currency conversions — return only the raw values as they appear in the document. Do not invent a PO/PR number if none is visible. If department, currency, or any other categorical field is genuinely ambiguous, return your best literal reading of the document text rather than a category you are unsure applies.`;
+Do not calculate pending quantities, pending amounts, totals, or currency conversions — return only the raw values as they appear in the document(s). Do not invent a PO/PR number if none is visible. If department, currency, or any other categorical field is genuinely ambiguous, return your best literal reading of the document text rather than a category you are unsure applies. Omit "fieldSources"/"conflicts" entirely (or leave them empty) for a single document with nothing to cross-check.`;
+}
 
 export interface ClaudeExtractionResult {
   /** Claude's raw text response — NOT yet parsed/validated. See claudeResponse.validators.ts. */
   rawText: string;
 }
 
-export async function extractViaClaudeApi(pdfBuffer: Buffer, fileName: string): Promise<ClaudeExtractionResult> {
+export interface ClaudeSourceDocument {
+  buffer: Buffer;
+  fileName: string;
+}
+
+/**
+ * Multi-document cross-verification — sends every document in `documents`
+ * as its own `type: "document"` content block within ONE Anthropic
+ * request, so Claude can read and reason across all of them together
+ * (Option A: one request for the whole set, not N independent calls plus
+ * a separate merge call — see the approved cost/architecture reasoning).
+ * A single-element array is the exact same code path as the original
+ * single-file behavior; nothing here special-cases "only one document."
+ */
+export async function extractViaClaudeApi(documents: ClaudeSourceDocument[]): Promise<ClaudeExtractionResult> {
   const anthropic = getClient();
+
+  const documentNames = documents.map((d) => d.fileName);
+  const documentBlocks = documents.map((d) => ({
+    type: "document" as const,
+    source: {
+      type: "base64" as const,
+      media_type: "application/pdf" as const,
+      data: d.buffer.toString("base64"),
+    },
+    title: d.fileName,
+  }));
 
   let response;
   try {
@@ -105,18 +155,7 @@ export async function extractViaClaudeApi(pdfBuffer: Buffer, fileName: string): 
         messages: [
           {
             role: "user",
-            content: [
-              {
-                type: "document",
-                source: {
-                  type: "base64",
-                  media_type: "application/pdf",
-                  data: pdfBuffer.toString("base64"),
-                },
-                title: fileName,
-              },
-              { type: "text", text: EXTRACTION_PROMPT },
-            ],
+            content: [...documentBlocks, { type: "text", text: buildExtractionPrompt(documentNames) }],
           },
         ],
       },

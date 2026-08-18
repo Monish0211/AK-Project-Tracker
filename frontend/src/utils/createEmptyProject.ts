@@ -21,6 +21,23 @@ export const PR_NUMBER_PREFIX_MAP: Record<string, string> = {
   Qatar: "Q-PR-",
 };
 
+/**
+ * Single source of truth for "what happens to PR Number when PR Category
+ * changes" — used by both the manual PR Category dropdown
+ * (GeneralInfoCard.tsx) and PDF Import's Apply to Form
+ * (pdfImportMapper.ts), so a category arriving from either path always
+ * produces the same PR Number prefix behavior. Strips the OLD category's
+ * prefix off the current PR Number (if present) to recover whatever
+ * number the user already typed, then prepends the NEW category's prefix
+ * — never destroys a manually-entered number, never invents one.
+ */
+export function applyPrCategoryToPrNo(oldCategory: string, oldPrNo: string, newCategory: string): string {
+  const oldPrefix = PR_NUMBER_PREFIX_MAP[oldCategory] || "";
+  const newPrefix = PR_NUMBER_PREFIX_MAP[newCategory] || "";
+  const numberPart = oldPrNo.startsWith(oldPrefix) ? oldPrNo.slice(oldPrefix.length) : oldPrNo;
+  return newPrefix + numberPart;
+}
+
 export function inferPrCategory(prNo: string, rawPrCategory?: string): string {
   if (rawPrCategory && rawPrCategory.trim()) {
     const trimmed = rawPrCategory.trim();

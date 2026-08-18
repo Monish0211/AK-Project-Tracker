@@ -2,6 +2,7 @@ import type { Project } from "../types/Project";
 import type { PdfImportResponse } from "../types/PdfImport";
 import { normalizeProject } from "../services/projectService";
 import { createEmptyQuantityItem, recalcQuantityItem } from "./quantityCalculations";
+import { applyPrCategoryToPrNo } from "./createEmptyProject";
 
 /**
  * The ONLY place a PdfImportResponse becomes a Project. Nothing else in the
@@ -35,12 +36,28 @@ export function mapPdfImportResponseToProject(response: PdfImportResponse, baseP
     ? (extractedDurationUnit as Project["durationUnit"])
     : baseProject.durationUnit;
 
+  // PO Number / prNo's own DIGITS are intentionally NEVER set here — always
+  // manual entry, per explicit business rule (see
+  // PdfImportResponse.unmappedFields). What DOES need to happen: if the
+  // extracted PR Category changes the category, the PR Number field must
+  // pick up the correct prefix exactly as if the user had just selected
+  // that category from the dropdown (see GeneralInfoCard.tsx's PR Category
+  // onChange, which calls this SAME function) — otherwise Apply to Form
+  // silently skips the category-change side effect the manual flow always
+  // performs. Only recomputed when the category actually changes, so a PDF
+  // with no PR Category (or the same one already on the form) never
+  // touches an existing PR Number.
+  const resolvedPrCategory = valueOrKeep(gi.prCategory, baseProject.prCategory);
+  const prNo =
+    resolvedPrCategory !== baseProject.prCategory
+      ? applyPrCategoryToPrNo(baseProject.prCategory, baseProject.prNo, resolvedPrCategory)
+      : baseProject.prNo;
+
   const merged: Project = {
     ...baseProject,
-    // PO Number / prNo is intentionally NEVER set here — always manual
-    // entry, per explicit business rule (see PdfImportResponse.unmappedFields).
+    prNo,
     poMonth: valueOrKeep(gi.poMonth, baseProject.poMonth),
-    prCategory: valueOrKeep(gi.prCategory, baseProject.prCategory),
+    prCategory: resolvedPrCategory,
     projectTitle: valueOrKeep(gi.projectTitle, baseProject.projectTitle),
     client: valueOrKeep(gi.client, baseProject.client),
     department: valueOrKeep(gi.department, baseProject.department),
