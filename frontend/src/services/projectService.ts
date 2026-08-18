@@ -533,7 +533,11 @@ export async function fetchProjectsFromApi(params: ProjectListParams = {}): Prom
   if (params.prCategory) query.set("prCategory", params.prCategory);
 
   const result = await apiClient.get<BackendPaginatedProjectList>(`/projects?${query.toString()}`);
-  const items = result.items.map(mergeBackendGeneralInfoIntoLocalProject);
+  // Wrapped in an arrow, not passed directly: Array.prototype.map() calls its
+  // callback as (value, index, array) — passed directly, the numeric index
+  // would flow into mergeBackendGeneralInfoIntoLocalProject's optional
+  // second parameter (explicitBase?: Project), which is never the intent.
+  const items = result.items.map((dto) => mergeBackendGeneralInfoIntoLocalProject(dto));
   writeThroughProjectsMirror(items);
 
   return { items, total: result.total, page: result.page, pageSize: result.pageSize };
