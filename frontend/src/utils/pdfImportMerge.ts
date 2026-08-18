@@ -25,11 +25,12 @@ const FIELD_LABELS: Partial<Record<keyof PdfImportGeneralInformation, string>> =
   REQUIRED_GENERAL_FIELDS.map(({ key, label }) => [key, label])
 );
 
-function isEmptyValue(value: unknown): boolean {
+/** Exported for pdfImportDocumentSetMerge.ts's own N-way merge — same equality rules apply whether the two sides being compared are (rule-engine, AI) or (document A, document B). */
+export function isEmptyValue(value: unknown): boolean {
   return value === null || value === undefined || (typeof value === "string" && value.trim() === "");
 }
 
-function valuesEqual(a: unknown, b: unknown): boolean {
+export function valuesEqual(a: unknown, b: unknown): boolean {
   if (typeof a === "string" && typeof b === "string") {
     return a.trim().toLowerCase() === b.trim().toLowerCase();
   }

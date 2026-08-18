@@ -15,7 +15,7 @@ export type PdfImportConfidence = 100 | 90 | 70 | 40 | 0;
  * predates this field and never sets it) vs. "ai" (the Claude AI-assist
  * supplement, added on top of the existing rule engine per the approved
  * PDF Import + Claude architecture — see pdfImportService.ts's
- * extractPdfFilesSequentially() / pdfImportMerge.ts). Claude only ever runs
+ * extractPdfDocumentSet() / pdfImportMerge.ts). Claude only ever runs
  * when the user explicitly checks "Use Claude AI for enhanced extraction"
  * in the PDF Import modal — never automatically. Purely additive: no
  * existing caller that constructs an ExtractedField without `source` needs

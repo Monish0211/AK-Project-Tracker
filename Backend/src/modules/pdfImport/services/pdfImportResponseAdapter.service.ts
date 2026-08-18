@@ -38,6 +38,45 @@ import type {
 
 const AI_VERIFY_WARNING = "AI-suggested value — please verify.";
 
+/**
+ * Multi-document cross-verification — layered on top of every wrap*Field()
+ * call below, never replacing it. A field the normal wrap logic already
+ * rejected/blanked (confidence 0 — not found, or an enum value Claude
+ * suggested that isn't a recognized option) is left untouched: there is
+ * nothing to escalate or flag on a value that was never accepted in the
+ * first place.
+ *
+ * - A genuine conflict (claude.conflicts has an entry for this field) always
+ *   wins over the agreement check below: confidence drops to the existing
+ *   "Low Confidence" tier (40) and the conflicting values + their source
+ *   documents are folded into the field's own `warnings` array — the
+ *   EXISTING mechanism, never a new UI structure — exactly matching the
+ *   required "⚠ Conflicting values found across uploaded documents" text.
+ * - Otherwise, if 2+ documents contributed this exact value
+ *   (claude.fieldSources[key].length >= 2), confidence is bumped to the
+ *   existing "Strong Match" tier (90) — cross-document agreement is
+ *   inherently stronger evidence than one document's own reading.
+ * - A single-source field (or a response that omitted fieldSources
+ *   entirely — e.g. an older/simpler Claude reply) keeps today's existing
+ *   flat 70, unchanged.
+ */
+function withDocumentSetSignal<T>(claude: ClaudeExtractionResult, key: string, field: AiExtractedField<T>): AiExtractedField<T> {
+  if (field.confidence === 0) return field;
+
+  const conflict = claude.conflicts?.find((c) => c.field === key);
+  if (conflict) {
+    const summary = conflict.values.map((v) => `${v.documentName}: ${v.value ?? "(not found)"}`).join(" | ");
+    return { ...field, confidence: 40, warnings: [`Conflicting values found across uploaded documents. ${summary}`] };
+  }
+
+  const sourceCount = claude.fieldSources?.[key]?.length ?? 1;
+  if (sourceCount >= 2) {
+    return { ...field, confidence: 90 };
+  }
+
+  return field;
+}
+
 function wrapStringField(value: string | null | undefined): AiExtractedField<string> {
   const trimmed = value?.trim();
   if (!trimmed) {
@@ -104,27 +143,27 @@ export function buildPdfImportAiCandidate(claude: ClaudeExtractionResult): PdfIm
   const g = claude.generalInformation ?? {};
 
   const generalInformation = {
-    poMonth: wrapStringField(g.poMonth),
-    prCategory: wrapEnumField(g.prCategory, isValidPrCategory),
-    projectTitle: wrapStringField(g.projectTitle),
-    client: wrapStringField(g.client),
-    department: wrapDepartmentField(g.department),
-    domesticForeign: wrapEnumField(g.domesticForeign, isValidDomesticForeign),
-    workOrderStatus: wrapEnumField(g.workOrderStatus, isValidWorkOrderStatus),
-    projectStatus: wrapEnumField(g.projectStatus, isValidProjectStatus),
-    projectStartDate: wrapStringField(g.projectStartDate),
-    projectEndDate: wrapStringField(g.projectEndDate),
-    estimatedDuration: wrapNumberField(g.estimatedDuration),
-    durationUnit: wrapEnumField(g.durationUnit, isValidDurationUnit),
-    workOrderNumber: wrapStringField(g.workOrderNumber),
-    workOrderDate: wrapStringField(g.workOrderDate),
-    eicName: wrapStringField(g.eicName),
-    contactNumber: wrapStringField(g.contactNumber),
-    emailId: wrapStringField(g.emailId),
-    contractType: wrapEnumField(g.contractType, isValidContractType),
-    pmoCoordinator: wrapStringField(g.pmoCoordinator),
-    workOrderValue: wrapNumberField(g.workOrderValue),
-    currency: wrapEnumField(g.currency, isValidCurrency),
+    poMonth: withDocumentSetSignal(claude, "poMonth", wrapStringField(g.poMonth)),
+    prCategory: withDocumentSetSignal(claude, "prCategory", wrapEnumField(g.prCategory, isValidPrCategory)),
+    projectTitle: withDocumentSetSignal(claude, "projectTitle", wrapStringField(g.projectTitle)),
+    client: withDocumentSetSignal(claude, "client", wrapStringField(g.client)),
+    department: withDocumentSetSignal(claude, "department", wrapDepartmentField(g.department)),
+    domesticForeign: withDocumentSetSignal(claude, "domesticForeign", wrapEnumField(g.domesticForeign, isValidDomesticForeign)),
+    workOrderStatus: withDocumentSetSignal(claude, "workOrderStatus", wrapEnumField(g.workOrderStatus, isValidWorkOrderStatus)),
+    projectStatus: withDocumentSetSignal(claude, "projectStatus", wrapEnumField(g.projectStatus, isValidProjectStatus)),
+    projectStartDate: withDocumentSetSignal(claude, "projectStartDate", wrapStringField(g.projectStartDate)),
+    projectEndDate: withDocumentSetSignal(claude, "projectEndDate", wrapStringField(g.projectEndDate)),
+    estimatedDuration: withDocumentSetSignal(claude, "estimatedDuration", wrapNumberField(g.estimatedDuration)),
+    durationUnit: withDocumentSetSignal(claude, "durationUnit", wrapEnumField(g.durationUnit, isValidDurationUnit)),
+    workOrderNumber: withDocumentSetSignal(claude, "workOrderNumber", wrapStringField(g.workOrderNumber)),
+    workOrderDate: withDocumentSetSignal(claude, "workOrderDate", wrapStringField(g.workOrderDate)),
+    eicName: withDocumentSetSignal(claude, "eicName", wrapStringField(g.eicName)),
+    contactNumber: withDocumentSetSignal(claude, "contactNumber", wrapStringField(g.contactNumber)),
+    emailId: withDocumentSetSignal(claude, "emailId", wrapStringField(g.emailId)),
+    contractType: withDocumentSetSignal(claude, "contractType", wrapEnumField(g.contractType, isValidContractType)),
+    pmoCoordinator: withDocumentSetSignal(claude, "pmoCoordinator", wrapStringField(g.pmoCoordinator)),
+    workOrderValue: withDocumentSetSignal(claude, "workOrderValue", wrapNumberField(g.workOrderValue)),
+    currency: withDocumentSetSignal(claude, "currency", wrapEnumField(g.currency, isValidCurrency)),
   };
 
   const quantity: AiQuantityRow[] = (claude.quantity ?? []).map((row) => ({

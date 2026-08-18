@@ -20,7 +20,7 @@ interface Props {
   clearError?: (field: string) => void;
 }
 
-import { PR_CATEGORIES as prCategories, PR_NUMBER_PREFIX_MAP as prNumberPrefixMap } from "../../../utils/createEmptyProject";
+import { PR_CATEGORIES as prCategories, PR_NUMBER_PREFIX_MAP as prNumberPrefixMap, applyPrCategoryToPrNo } from "../../../utils/createEmptyProject";
 
 const departmentOptions = [
   "Design Engineering Services",
@@ -299,17 +299,11 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
               value={project.prCategory}
               onChange={(e) => {
                 const newCategory = e.target.value;
-                const oldPrefix = prNumberPrefixMap[project.prCategory] || "";
-                const newPrefix = prNumberPrefixMap[newCategory] || "";
-
-                const numberPart = project.prNo.startsWith(oldPrefix)
-                  ? project.prNo.slice(oldPrefix.length)
-                  : project.prNo;
 
                 setProject({
                   ...project,
                   prCategory: newCategory,
-                  prNo: newPrefix + numberPart,
+                  prNo: applyPrCategoryToPrNo(project.prCategory, project.prNo, newCategory),
                 });
                 clearError?.("prCategory");
               }}

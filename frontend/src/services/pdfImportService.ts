@@ -2,27 +2,33 @@ import type { PdfImportResponse } from "../types/PdfImport";
 import { extractPdfImportResponse } from "./pdfExtraction";
 import { apiClient } from "./apiClient";
 import { mergeWithAiCandidate, type PdfImportAiCandidate } from "../utils/pdfImportMerge";
+import { mergeDocumentSet, type DocumentSetMember } from "../utils/pdfImportDocumentSetMerge";
 
 // =============================================================================
 // PDF IMPORT — real client-side extraction (pdfjs-dist + tesseract.js OCR fallback)
-// + optional, EXPLICIT backend Claude AI-assist supplement, for one or many files
+// + optional, EXPLICIT backend Claude AI-assist supplement, treating every
+// uploaded file as ONE document set (multi-document cross-verification)
 // =============================================================================
 // Client-side extraction (pdfReader → OCR fallback → Rule Engine) remains the
-// primary, always-run, free path for every file — completely unchanged below.
+// primary, always-run, free path for every file — completely unchanged below,
+// still one call per file. What changed: instead of producing N independent
+// results (one Review per file), every file's rule-engine result is combined
+// into ONE consolidated result via mergeDocumentSet() (see
+// pdfImportDocumentSetMerge.ts) — a single file is simply a document set of
+// size 1, the exact same code path.
+//
 // Claude is called ONLY when the caller explicitly passes useClaude:true (the
 // PDF Import modal's "Use Claude AI for enhanced extraction" checkbox, default
-// OFF) — never automatically based on OCR/rule-engine confidence. When
-// useClaude is false, extractPdfFilesSequentially() never imports, calls, or
-// awaits anything Claude-related for that file: zero backend requests.
+// OFF) — never automatically. When on, EVERY valid file in the set is sent to
+// the backend in ONE request (not one request per file) so Claude can cross-
+// check them together — see callClaudeForDocumentSet() below. When useClaude
+// is false, no backend request is ever made.
 //
-// Multiple files are processed strictly ONE AT A TIME (never in parallel) —
-// this is deliberate, not an oversight: a single multipart request per file
-// keeps backend memory bounded regardless of batch size, and sequential
-// Claude calls (at most one in flight at a time) avoids ever sending
-// concurrent requests to the Claude endpoint or its rate limiter. A failure
-// on any one file (invalid PDF, Claude unavailable, OCR error) is caught and
-// recorded for that file only — it never stops the remaining files in the
-// batch.
+// Rule-engine extraction still runs strictly ONE FILE AT A TIME (never in
+// parallel) to keep client memory bounded regardless of batch size. A failure
+// on any one file (invalid PDF, OCR error) is recorded for that file only —
+// it never stops the remaining files in the set; only that file's own
+// contribution to the consolidated result is missing.
 
 export const MAX_PDF_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20MB per file — the same limit the backend endpoint enforces (PDF_IMPORT_AI_MAX_FILE_SIZE_MB).
 export const MAX_PDF_FILE_COUNT = 20;
@@ -67,92 +73,124 @@ export interface PdfBatchProgressEvent extends PdfImportProgressEvent {
   fileName: string;
 }
 
-export type PdfBatchFileStatus = "success" | "invalid" | "failed";
+export type PdfDocumentFileStatus = "valid" | "invalid";
 
-export interface PdfBatchFileResult {
-  /** Stable, index-based key for React lists — not a random ID, since this is deterministic per batch run. */
+/** One uploaded file's own standing within the document set — independent of whether the SET as a whole succeeded, so an invalid file is still listed to the user without blocking the other valid files from contributing. */
+export interface PdfDocumentSetFile {
+  /** Stable, index-based key for React lists — not a random ID, since this is deterministic per run. */
   id: string;
   file: File;
-  status: PdfBatchFileStatus;
-  /** Present only when status === "success". */
-  response?: PdfImportResponse;
-  /** Present when status is "invalid" or "failed" — a user-facing reason. */
+  status: PdfDocumentFileStatus;
+  /** Present only when status === "invalid". */
   errorMessage?: string;
-  /** True only when useClaude was on for this batch but Claude itself failed for THIS file specifically — the rule-engine result was used instead. Distinct from status, since the file still succeeded overall. */
-  aiFallbackUsed?: boolean;
+}
+
+export type PdfDocumentSetStatus = "success" | "failed";
+
+/**
+ * The outcome of treating every selected file as ONE document set —
+ * replaces the old per-file PdfBatchFileResult[]. `files` still reports
+ * each individual file's own validity (for the "2/2 successfully
+ * processed" file list), but there is only ONE `response` for the whole
+ * set to review, never one per file.
+ */
+export interface PdfDocumentSetResult {
+  files: PdfDocumentSetFile[];
+  status: PdfDocumentSetStatus;
+  /** Present only when status === "success" — the ONE consolidated result. */
+  response?: PdfImportResponse;
+  /** Present when status === "failed" (e.g. every selected file was invalid). */
+  errorMessage?: string;
+  /** True only when useClaude was on but the Claude leg failed/was skipped for the WHOLE set — the OCR/rule-engine consolidated result was used instead. Distinct from status, since the set still succeeded overall. */
+  aiFallbackUsed: boolean;
 }
 
 /**
- * Runs the existing client-side extraction pipeline for a single file, then
- * — only if useClaude is true — calls the backend Claude endpoint and
- * merges the result. ANY Claude-leg failure (unconfigured, network,
- * timeout, rate-limited, malformed response) falls back to the plain
- * rule-engine result for this file; it never throws past this point.
+ * Sends every valid file in the set to the backend in ONE multipart
+ * request (repeated "files" field — see Backend's pdfImport.routes.ts
+ * upload.array("files", ...)), so Claude reads and cross-checks the whole
+ * document set in a single call rather than one call per file (Option A —
+ * see the approved cost/architecture reasoning: N independent Claude
+ * calls plus a separate merge call was explicitly rejected).
  */
-async function extractSingleFile(
-  file: File,
-  useClaude: boolean,
-  onProgress: (event: PdfImportProgressEvent) => void
-): Promise<{ response: PdfImportResponse; aiFallbackUsed: boolean }> {
-  const ruleEngineResult = await extractPdfImportResponse(file, onProgress);
-
-  if (!useClaude) {
-    return { response: ruleEngineResult, aiFallbackUsed: false };
+async function callClaudeForDocumentSet(files: File[]): Promise<PdfImportAiCandidate> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file);
   }
-
-  try {
-    onProgress({ stage: "ai-enhancing", percent: 0 });
-    const formData = new FormData();
-    formData.append("file", file);
-    const aiCandidate = await apiClient.postFormData<PdfImportAiCandidate>("/pdf-import/ai-extract", formData);
-    onProgress({ stage: "ai-enhancing", percent: 100 });
-    return { response: mergeWithAiCandidate(ruleEngineResult, aiCandidate), aiFallbackUsed: false };
-  } catch {
-    // Claude unavailable/misconfigured/network error/timeout/rate-limited/
-    // malformed response — every failure mode falls back to the plain
-    // rule-engine result for this one file. The batch as a whole, and every
-    // other file in it, is entirely unaffected.
-    return { response: ruleEngineResult, aiFallbackUsed: true };
-  }
+  return apiClient.postFormData<PdfImportAiCandidate>("/pdf-import/ai-extract", formData);
 }
 
 /**
- * Processes every selected file strictly sequentially (never Promise.all —
- * see header comment). One bad or Claude-failing file never stops the rest:
- * each file's outcome is recorded independently in the returned array, in
- * the same order the files were selected.
+ * Runs the existing client-side extraction pipeline once per valid file,
+ * strictly sequentially (never Promise.all — keeps client memory bounded
+ * regardless of set size), then combines every file's own result into ONE
+ * consolidated PdfImportResponse via mergeDocumentSet(). If useClaude is
+ * on, the whole set is additionally sent to Claude in one request and the
+ * consolidated rule-engine result is merged against that ONE AI candidate
+ * via the existing, unchanged mergeWithAiCandidate(). ANY Claude-leg
+ * failure (unconfigured, network, timeout, rate-limited, malformed
+ * response, over the document-set size/count cap) falls back to the
+ * OCR/rule-engine consolidated result for the WHOLE set — it never throws
+ * past this point, and never partially applies to only some files.
  */
-export async function extractPdfFilesSequentially(
+export async function extractPdfDocumentSet(
   files: File[],
   useClaude: boolean,
   onProgress: (event: PdfBatchProgressEvent) => void
-): Promise<PdfBatchFileResult[]> {
-  const results: PdfBatchFileResult[] = [];
-
-  for (let index = 0; index < files.length; index++) {
-    const file = files[index];
+): Promise<PdfDocumentSetResult> {
+  const fileStatuses: PdfDocumentSetFile[] = files.map((file, index) => {
     const id = `${index}-${file.name}-${file.size}`;
-
     const validationError = validateUploadFile(file);
-    if (validationError) {
-      results.push({ id, file, status: "invalid", errorMessage: validationError });
-      continue;
-    }
+    return validationError ? { id, file, status: "invalid", errorMessage: validationError } : { id, file, status: "valid" };
+  });
 
-    try {
-      const { response, aiFallbackUsed } = await extractSingleFile(file, useClaude, (event) =>
-        onProgress({ ...event, fileIndex: index, totalFiles: files.length, fileName: file.name })
-      );
-      results.push({ id, file, status: "success", response, aiFallbackUsed });
-    } catch (err) {
-      results.push({
-        id,
-        file,
-        status: "failed",
-        errorMessage: err instanceof Error ? err.message : "Failed to extract data from this document. Please try again.",
-      });
-    }
+  const validFiles = fileStatuses.filter((f): f is PdfDocumentSetFile & { status: "valid" } => f.status === "valid").map((f) => f.file);
+
+  if (validFiles.length === 0) {
+    return {
+      files: fileStatuses,
+      status: "failed",
+      errorMessage: "None of the selected files could be processed.",
+      aiFallbackUsed: false,
+    };
   }
 
-  return results;
+  try {
+    const members: DocumentSetMember[] = [];
+    for (let index = 0; index < validFiles.length; index++) {
+      const file = validFiles[index];
+      const response = await extractPdfImportResponse(file, (event) =>
+        onProgress({ ...event, fileIndex: index, totalFiles: validFiles.length, fileName: file.name })
+      );
+      members.push({ fileName: file.name, response });
+    }
+
+    const ruleResult = mergeDocumentSet(members);
+
+    if (!useClaude) {
+      return { files: fileStatuses, status: "success", response: ruleResult, aiFallbackUsed: false };
+    }
+
+    const lastIndex = validFiles.length - 1;
+    try {
+      onProgress({ stage: "ai-enhancing", percent: 0, fileIndex: lastIndex, totalFiles: validFiles.length, fileName: validFiles[lastIndex].name });
+      const aiCandidate = await callClaudeForDocumentSet(validFiles);
+      onProgress({ stage: "ai-enhancing", percent: 100, fileIndex: lastIndex, totalFiles: validFiles.length, fileName: validFiles[lastIndex].name });
+      return { files: fileStatuses, status: "success", response: mergeWithAiCandidate(ruleResult, aiCandidate), aiFallbackUsed: false };
+    } catch {
+      // Claude unavailable/misconfigured/network error/timeout/rate-limited/
+      // malformed response/over the document-set size or count cap — every
+      // failure mode falls back to the plain OCR/rule-engine consolidated
+      // result for the WHOLE set, never partially.
+      return { files: fileStatuses, status: "success", response: ruleResult, aiFallbackUsed: true };
+    }
+  } catch (err) {
+    return {
+      files: fileStatuses,
+      status: "failed",
+      errorMessage: err instanceof Error ? err.message : "Failed to extract data from the selected documents. Please try again.",
+      aiFallbackUsed: false,
+    };
+  }
 }

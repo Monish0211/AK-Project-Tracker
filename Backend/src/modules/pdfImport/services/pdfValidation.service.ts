@@ -40,3 +40,40 @@ export function validatePdfUpload(file: Express.Multer.File | undefined): void {
     throw new AppError("Uploaded file is not a valid PDF.", 400);
   }
 }
+
+/**
+ * Multi-document cross-verification — validates every file in a document
+ * set the same way validatePdfUpload() always has (reused per file, not
+ * reimplemented), PLUS the two constraints that only exist once more than
+ * one file can land in a single Claude request: a combined size ceiling
+ * (base64 inflates raw bytes ~37%, and Anthropic's own request-size limit
+ * is a hard external constraint PDF_IMPORT_AI_MAX_FILE_SIZE_MB alone never
+ * protected against) and a document-count ceiling. See env.ts's own
+ * comment on PDF_IMPORT_AI_MAX_DOCUMENT_SET_MB/
+ * PDF_IMPORT_AI_MAX_DOCUMENTS_PER_SET for the reasoning behind both.
+ */
+export function validatePdfDocumentSet(files: Express.Multer.File[] | undefined): void {
+  if (!files || files.length === 0) {
+    throw new AppError("At least one PDF file is required (field name: files).", 400);
+  }
+
+  if (files.length > env.PDF_IMPORT_AI_MAX_DOCUMENTS_PER_SET) {
+    throw new AppError(
+      `A document set can contain at most ${env.PDF_IMPORT_AI_MAX_DOCUMENTS_PER_SET} PDFs for Claude cross-verification.`,
+      400
+    );
+  }
+
+  for (const file of files) {
+    validatePdfUpload(file);
+  }
+
+  const totalBytes = files.reduce((sum, file) => sum + file.buffer.length, 0);
+  const maxTotalBytes = env.PDF_IMPORT_AI_MAX_DOCUMENT_SET_MB * 1024 * 1024;
+  if (totalBytes > maxTotalBytes) {
+    throw new AppError(
+      `This document set's combined size exceeds the ${env.PDF_IMPORT_AI_MAX_DOCUMENT_SET_MB}MB limit for Claude cross-verification.`,
+      400
+    );
+  }
+}

@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { AlertCircle, CheckCircle2, ChevronLeft, FileUp, Loader2, RotateCcw, Sparkles, XCircle, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileUp, Loader2, RotateCcw, Sparkles, XCircle, X } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { PdfImportWarning } from "../../../../types/PdfImport";
 import type { PdfUploadStage } from "../../../../types/PdfImport";
 import {
-  extractPdfFilesSequentially,
-  type PdfBatchFileResult,
+  extractPdfDocumentSet,
+  type PdfDocumentSetResult,
   type PdfBatchProgressEvent,
 } from "../../../../services/pdfImportService";
 import { mapPdfImportResponseToProject } from "../../../../utils/pdfImportMapper";
@@ -26,7 +26,7 @@ interface Props {
 const STAGE_LABEL: Record<"uploading" | "processing" | "ai-enhancing", string> = {
   uploading: "Reading document…",
   processing: "OCR extraction…",
-  "ai-enhancing": "Claude AI verification…",
+  "ai-enhancing": "Claude AI cross-document verification…",
 };
 
 function formatFileSize(bytes: number): string {
@@ -35,21 +35,21 @@ function formatFileSize(bytes: number): string {
 }
 
 /**
- * Owns the whole Upload → Extract → Results → Preview → Apply flow, for one
- * or many PDFs in a single session. Every file is processed independently
- * (see pdfImportService.ts's extractPdfFilesSequentially()) — one bad or
- * Claude-failing file never loses the others. When exactly one file is
- * selected and it succeeds, the "results" list is skipped entirely and the
- * flow goes straight to preview, exactly as it did before multi-file
- * support existed. Never touches Project fields directly:
+ * Owns the whole Upload → Extract → Results → Preview → Apply flow. Every
+ * uploaded PDF is treated as ONE document set (see pdfImportService.ts's
+ * extractPdfDocumentSet()) — multiple files are cross-verified and
+ * combined into a SINGLE consolidated result, never one result per file.
+ * When exactly one valid file is selected, the "results" list is skipped
+ * entirely and the flow goes straight to preview, exactly as it did before
+ * multi-document cross-verification existed (a single file is simply a
+ * document set of size 1). Never touches Project fields directly:
  * mapPdfImportResponseToProject() (pdfImportMapper.ts) is the only place
  * that happens, and only on Apply.
  */
 export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => {
   const [stage, setStage] = useState<PdfUploadStage>("idle");
   const [batchProgress, setBatchProgress] = useState<PdfBatchProgressEvent | null>(null);
-  const [batchResults, setBatchResults] = useState<PdfBatchFileResult[]>([]);
-  const [activeResultId, setActiveResultId] = useState<string | null>(null);
+  const [documentSetResult, setDocumentSetResult] = useState<PdfDocumentSetResult | null>(null);
   const [computedWarnings, setComputedWarnings] = useState<PdfImportWarning[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,8 +58,7 @@ export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => 
   const reset = () => {
     setStage("idle");
     setBatchProgress(null);
-    setBatchResults([]);
-    setActiveResultId(null);
+    setDocumentSetResult(null);
     setComputedWarnings([]);
     setError(null);
   };
@@ -69,9 +68,8 @@ export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => 
     onClose();
   };
 
-  const openPreview = (result: PdfBatchFileResult) => {
+  const openPreview = (result: PdfDocumentSetResult) => {
     if (!result.response) return;
-    setActiveResultId(result.id);
     setComputedWarnings(validatePdfImportResponse(result.response));
     setStage("preview");
   };
@@ -80,39 +78,43 @@ export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => 
     setStage("processing");
     setError(null);
     try {
-      const results = await extractPdfFilesSequentially(files, useClaude, (event) => setBatchProgress(event));
-      setBatchResults(results);
+      const result = await extractPdfDocumentSet(files, useClaude, (event) => setBatchProgress(event));
+      setDocumentSetResult(result);
 
-      const firstSuccess = results.find((r) => r.status === "success");
-      if (results.length === 1 && firstSuccess) {
+      if (result.status === "failed") {
+        setError(result.errorMessage ?? "Failed to process the selected files. Please try again.");
+        setStage("error");
+        return;
+      }
+
+      if (result.files.length === 1 && result.files[0].status === "valid") {
         // Single-file happy path — go straight to preview, unchanged from
-        // before multi-file support existed.
-        openPreview(firstSuccess);
+        // before multi-document cross-verification existed.
+        openPreview(result);
       } else {
         setStage("results");
       }
     } catch (err) {
-      // Safety net only — extractPdfFilesSequentially() isolates every
-      // per-file failure internally and should not itself throw. If it
-      // somehow does, this is the one place that still surfaces a clean
-      // error instead of leaving the modal stuck on a spinner.
+      // Safety net only — extractPdfDocumentSet() isolates every failure
+      // mode internally and should not itself throw. If it somehow does,
+      // this is the one place that still surfaces a clean error instead of
+      // leaving the modal stuck on a spinner.
       setError(err instanceof Error ? err.message : "Failed to process the selected files. Please try again.");
       setStage("error");
     }
   };
 
-  const activeResult = batchResults.find((r) => r.id === activeResultId) ?? null;
-
   const handleApply = () => {
-    if (!activeResult?.response) return;
-    const updatedProject = mapPdfImportResponseToProject(activeResult.response, project);
+    if (!documentSetResult?.response) return;
+    const updatedProject = mapPdfImportResponseToProject(documentSetResult.response, project);
     onApply(updatedProject);
     handleClose();
   };
 
-  const successCount = batchResults.filter((r) => r.status === "success").length;
-  const allWarnings = activeResult?.response
-    ? [...activeResult.response.warnings, ...computedWarnings]
+  const validCount = documentSetResult?.files.filter((f) => f.status === "valid").length ?? 0;
+  const totalCount = documentSetResult?.files.length ?? 0;
+  const allWarnings = documentSetResult?.response
+    ? [...documentSetResult.response.warnings, ...computedWarnings]
     : [];
 
   const overallPercent = batchProgress
@@ -177,55 +179,50 @@ export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => 
               </div>
             )}
 
-            {stage === "results" && (
+            {stage === "results" && documentSetResult && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-[13px] font-semibold text-[var(--nu-text)]">
-                    {successCount}/{batchResults.length} successfully processed
+                    {validCount}/{totalCount} successfully processed
                   </p>
                 </div>
                 <div className="space-y-2">
-                  {batchResults.map((result) => (
+                  {documentSetResult.files.map((fileStatus) => (
                     <div
-                      key={result.id}
-                      className="flex items-center justify-between gap-3 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] px-3.5 py-3"
+                      key={fileStatus.id}
+                      className="flex items-center gap-3 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] px-3.5 py-3"
                     >
                       <div className="flex items-start gap-2.5 min-w-0">
-                        {result.status === "success" ? (
+                        {fileStatus.status === "valid" ? (
                           <CheckCircle2 size={16} className="text-emerald-500 shrink-0 mt-0.5" />
                         ) : (
                           <XCircle size={16} className="text-[var(--nu-danger)] shrink-0 mt-0.5" />
                         )}
                         <div className="min-w-0">
-                          <p className="text-[12.5px] font-semibold text-[var(--nu-text)] truncate" title={result.file.name}>
-                            {result.file.name}
+                          <p className="text-[12.5px] font-semibold text-[var(--nu-text)] truncate" title={fileStatus.file.name}>
+                            {fileStatus.file.name}
                           </p>
-                          <p className="text-[11px] text-[var(--nu-text-muted)]">{formatFileSize(result.file.size)}</p>
-                          {result.status !== "success" && (
-                            <p className="text-[11px] text-[var(--nu-danger)] mt-0.5">{result.errorMessage}</p>
-                          )}
-                          {result.status === "success" && result.aiFallbackUsed && (
-                            <p className="text-[11px] text-amber-600 mt-0.5">
-                              Claude verification unavailable — standard extraction used for this PDF.
-                            </p>
+                          <p className="text-[11px] text-[var(--nu-text-muted)]">{formatFileSize(fileStatus.file.size)}</p>
+                          {fileStatus.status === "invalid" && (
+                            <p className="text-[11px] text-[var(--nu-danger)] mt-0.5">{fileStatus.errorMessage}</p>
                           )}
                         </div>
                       </div>
-                      {result.status === "success" && (
-                        <Button type="button" variant="outline" size="sm" onClick={() => openPreview(result)} className="shrink-0">
-                          Review
-                        </Button>
-                      )}
                     </div>
                   ))}
                 </div>
+                {documentSetResult.aiFallbackUsed && (
+                  <p className="text-[11px] text-amber-600">
+                    Claude cross-document verification unavailable — standard extraction used for this document set.
+                  </p>
+                )}
               </div>
             )}
 
-            {stage === "preview" && activeResult?.response && (
+            {stage === "preview" && documentSetResult?.response && (
               <div className="space-y-4">
-                <WarningsPanel warnings={allWarnings} unmappedFields={activeResult.response.unmappedFields} />
-                <PdfPreview response={activeResult.response} />
+                <WarningsPanel warnings={allWarnings} unmappedFields={documentSetResult.response.unmappedFields} />
+                <PdfPreview response={documentSetResult.response} />
               </div>
             )}
           </div>
@@ -234,11 +231,6 @@ export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => 
           {stage === "preview" && (
             <div className="flex items-center justify-between gap-3 border-t border-[var(--nu-border)] p-4 shrink-0">
               <div className="flex items-center gap-2">
-                {batchResults.length > 1 && (
-                  <Button type="button" variant="ghost" size="sm" icon={<ChevronLeft size={14} />} onClick={() => setStage("results")}>
-                    Back to Results
-                  </Button>
-                )}
                 <Button type="button" variant="ghost" size="sm" onClick={reset}>
                   Upload Different Files
                 </Button>
@@ -254,14 +246,21 @@ export const ImportPdfModal = ({ isOpen, onClose, project, onApply }: Props) => 
             </div>
           )}
 
-          {stage === "results" && (
+          {stage === "results" && documentSetResult && (
             <div className="flex items-center justify-between gap-3 border-t border-[var(--nu-border)] p-4 shrink-0">
               <Button type="button" variant="ghost" size="sm" onClick={reset}>
                 Upload Different Files
               </Button>
-              <Button type="button" variant="secondary" size="sm" onClick={handleClose}>
-                Close
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="secondary" size="sm" onClick={handleClose}>
+                  Close
+                </Button>
+                {documentSetResult.response && (
+                  <Button type="button" variant="primary" size="sm" onClick={() => openPreview(documentSetResult)}>
+                    Review Consolidated Result
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </div>

@@ -118,6 +118,22 @@ const envSchema = z.object({
   CLAUDE_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
   PDF_IMPORT_AI_MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(20),
 
+  // Multi-document cross-verification (document sets — e.g. Quotation +
+  // LOA for one project) sends every uploaded PDF to Claude in a SINGLE
+  // request as multiple `document` content blocks, so these two bound that
+  // one request independently of PDF_IMPORT_AI_MAX_FILE_SIZE_MB above
+  // (which only ever bounded one file). Base64 inflates raw bytes by ~37%,
+  // and the Anthropic API's own request-size ceiling is a hard external
+  // limit this app doesn't control — 20MB combined keeps even a worst-case
+  // multi-file set comfortably under it. 10 documents is a deliberately
+  // conservative cap on a realistic "one project's document package"
+  // (typically 2-5 files); exceeding either cap skips the Claude leg for
+  // the WHOLE set (never partially) and falls back to the OCR/rule-engine
+  // consolidated result, mirroring the existing per-file Claude-fallback
+  // behavior at the document-set level.
+  PDF_IMPORT_AI_MAX_DOCUMENT_SET_MB: z.coerce.number().int().positive().default(20),
+  PDF_IMPORT_AI_MAX_DOCUMENTS_PER_SET: z.coerce.number().int().positive().default(10),
+
   // Deliberately OPT-IN, not a default-on restriction: app.ts's cors()
   // currently allows every origin. Restricting that by default here would
   // risk locking the real production frontend out entirely if this value
