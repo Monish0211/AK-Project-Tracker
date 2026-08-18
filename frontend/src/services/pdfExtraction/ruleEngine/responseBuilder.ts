@@ -1,4 +1,4 @@
-import type { PdfImportResponse, PdfImportUnmappedField, PdfImportWarning } from "../../../types/PdfImport";
+import type { PdfImportConfidence, PdfImportResponse, PdfImportUnmappedField, PdfImportWarning } from "../../../types/PdfImport";
 import type { ExtractedFields } from "./extractor";
 import { normalizeGeneralInformation, normalizeMilestones, normalizeQuantityRows } from "./normalizer";
 
@@ -63,7 +63,7 @@ export function buildPdfImportResponse(input: ResponseBuilderInput): PdfImportRe
   const paymentMilestones = {
     paymentType: {
       value: (milestones.length > 1 ? "Multiple" : "Single") as "Single" | "Multiple",
-      confidence: milestones.length > 0 ? 70 : 0,
+      confidence: (milestones.length > 0 ? 70 : 0) as PdfImportConfidence,
     },
     milestones,
   };
