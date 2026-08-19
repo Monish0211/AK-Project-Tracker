@@ -1,5 +1,6 @@
 import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
+import { countNonCancelledLinesForMilestone } from "../../invoices/repository/invoice.repository.js";
 import { getProjectById } from "../../projects/services/project.service.js";
 import { getWorkOrderValueForProject } from "../../quantity/services/quantity.service.js";
 import type { IngestMilestonesResultDto, MilestoneDto, MilestoneListDto } from "../dto/milestone.dto.js";
@@ -129,6 +130,14 @@ export async function deleteMilestoneItem(id: string): Promise<void> {
   const existing = await getMilestoneById(id);
   if (!existing) {
     throw new AppError("Milestone not found.", 404);
+  }
+
+  const invoiceLineCount = await countNonCancelledLinesForMilestone(id);
+  if (invoiceLineCount > 0) {
+    throw new AppError(
+      `This payment milestone has ${invoiceLineCount} invoice line(s) raised against it and cannot be deleted.`,
+      409
+    );
   }
 
   await deleteMilestoneInRepository(id);
