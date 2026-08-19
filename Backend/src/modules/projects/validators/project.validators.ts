@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PROJECT_STATUS_VALUES, WORK_ORDER_STATUS_VALUES } from "../project.constants.js";
 
 /**
  * Every required field here matches validateGeneralTab() in
@@ -16,10 +17,10 @@ export const createProjectSchema = z.object({
   domesticForeign: z.string().trim().min(1, "Domestic / Foreign is required."),
   projectTitle: z.string().trim().min(1, "Project Title is required."),
 
-  workOrderStatus: z.string().trim().min(1, "Work Order Status is required."),
+  workOrderStatus: z.enum(WORK_ORDER_STATUS_VALUES),
   projectStartDate: z.coerce.date(),
   projectEndDate: z.coerce.date().optional().nullable(),
-  projectStatus: z.string().trim().min(1, "Project Status is required."),
+  projectStatus: z.enum(PROJECT_STATUS_VALUES),
 
   actualCompletionDate: z.coerce.date().optional().nullable(),
   completionRemarks: z.string().trim().min(1).optional().nullable(),
@@ -87,10 +88,10 @@ export const updateProjectSchema = z.object({
   domesticForeign: z.string().trim().min(1).optional(),
   projectTitle: z.string().trim().min(1).optional(),
 
-  workOrderStatus: z.string().trim().min(1).optional(),
+  workOrderStatus: z.enum(WORK_ORDER_STATUS_VALUES).optional(),
   projectStartDate: z.coerce.date().optional(),
   projectEndDate: z.coerce.date().optional().nullable(),
-  projectStatus: z.string().trim().min(1).optional(),
+  projectStatus: z.enum(PROJECT_STATUS_VALUES).optional(),
 
   actualCompletionDate: z.coerce.date().optional().nullable(),
   completionRemarks: z.string().trim().min(1).optional().nullable(),
@@ -161,13 +162,26 @@ export type ListProjectsQuery = z.infer<typeof listProjectsQuerySchema>;
 
 /**
  * POST /projects/import — bulk Excel import. Each row is validated by the
- * exact same createProjectSchema a single POST /projects uses, so a row
- * that would be accepted one at a time is guaranteed to be accepted here
- * too, and vice versa — no separate, potentially-drifting validation rules
- * for the bulk path.
+ * exact same createProjectSchema a single POST /projects uses — with ONE
+ * deliberate exception: projectStatus/workOrderStatus are overridden back
+ * to a permissive free-text string here. Real historical Excel data
+ * predates the standardized dropdown vocabulary (createProjectSchema's
+ * strict z.enum) and uses free-form phrasing that import must keep
+ * accepting — see projectWorkbookService.ts's own comment on this exact
+ * point ("Dropdown columns ... accept whatever value the file actually
+ * has ... import just never rejects a row for using a value outside that
+ * list"). Every other field stays identical to createProjectSchema, so a
+ * row that would be accepted one at a time is still guaranteed to be
+ * accepted here too for everything except these two intentionally-relaxed
+ * fields.
  */
+export const importProjectRowSchema = createProjectSchema.extend({
+  workOrderStatus: z.string().trim().min(1, "Work Order Status is required."),
+  projectStatus: z.string().trim().min(1, "Project Status is required."),
+});
+
 export const importProjectsSchema = z.object({
-  projects: z.array(createProjectSchema).min(1, "At least one project is required."),
+  projects: z.array(importProjectRowSchema).min(1, "At least one project is required."),
 });
 
 export type ImportProjectsInput = z.infer<typeof importProjectsSchema>;

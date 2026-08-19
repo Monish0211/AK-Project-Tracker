@@ -1,4 +1,3 @@
-import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { normalizeProjectCode } from "../../../shared/utils/projectCode.util.js";
@@ -429,36 +428,4 @@ export async function deleteAllTimesheetEntries(): Promise<{ deletedCount: numbe
   }
 
   return { deletedCount: result.count, recomputedPairCount: mappedPairs.length };
-}
-
-export interface TimesheetProjectCleanupResult {
-  deletedCount: number;
-  affectedEmployeeNos: string[];
-}
-
-/**
- * Called from within Project Completion's own transaction (see
- * project.service.ts's updateProject) — accepts that SAME `tx` client so
- * the Project's status flip to COMPLETED and this deletion commit or roll
- * back together as one atomic operation; a failure on either side leaves
- * neither applied. Scoped strictly to one projectId via
- * deleteEntriesByProjectId() — never touches another Project's rows,
- * Project-Not-Mapped rows (projectId: null), the Project/Employee rows
- * themselves, or TimesheetImport/TimesheetImportRowLog audit history.
- *
- * Returns the affected employeeNos, not a recompute — ProjectResource
- * recomputation must happen AFTER the transaction commits, matching this
- * module's existing convention (see processTimesheetImport()'s own
- * after-commit recompute loop above) rather than running inside it.
- */
-export async function removeTimesheetsForCompletedProject(
-  tx: Prisma.TransactionClient,
-  projectId: string
-): Promise<TimesheetProjectCleanupResult> {
-  const entries = await timesheetRepo.findEntriesByProjectId(tx, projectId);
-  const affectedEmployeeNos = [...new Set(entries.map((e) => e.employeeNo))];
-
-  const result = await timesheetRepo.deleteEntriesByProjectId(tx, projectId);
-
-  return { deletedCount: result.count, affectedEmployeeNos };
 }

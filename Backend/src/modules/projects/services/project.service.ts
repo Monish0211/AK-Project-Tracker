@@ -1,11 +1,8 @@
-import type { Prisma } from "../../../../generated/prisma/client.js";
-import { prisma } from "../../../shared/utils/prismaClient.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import type {
   ImportProjectsResultDto,
   PaginatedProjectListDto,
   ProjectDto,
-  UpdateProjectResultDto,
 } from "../dto/project.dto.js";
 import type { ProjectGeneralInfoData } from "../repository/project.repository.js";
 import {
@@ -19,10 +16,7 @@ import {
   findProjectsPage,
   hardDeleteProject as hardDeleteProjectInRepository,
   updateProject as updateProjectInRepository,
-  updateProjectTx,
 } from "../repository/project.repository.js";
-import { removeTimesheetsForCompletedProject } from "../../timesheets/services/timesheet.service.js";
-import { recomputeProjectResource } from "../../timesheets/services/projectResource.service.js";
 import type {
   CreateProjectInput,
   ImportProjectsInput,
@@ -90,8 +84,20 @@ async function assertPrNoAvailable(prNo: string, excludingProjectId?: string): P
   }
 }
 
+/**
+ * Widened relative to CreateProjectInput only for workOrderStatus/
+ * projectStatus (plain string instead of the strict enum) — so this same
+ * function can also accept a row validated by importProjectRowSchema, whose
+ * whole point is to keep those two fields permissive for legacy Excel data.
+ * CreateProjectInput's own narrower enum values are still assignable here.
+ */
+type GeneralInfoInput = Omit<CreateProjectInput, "workOrderStatus" | "projectStatus"> & {
+  workOrderStatus: string;
+  projectStatus: string;
+};
+
 /** Shared by createProject() and bulkImportProjects() so the two paths can never drift apart on how a validated row becomes a DB row. */
-function toGeneralInfoData(input: CreateProjectInput): ProjectGeneralInfoData {
+function toGeneralInfoData(input: GeneralInfoInput): ProjectGeneralInfoData {
   return {
     poMonth: input.poMonth,
     prCategory: input.prCategory,
@@ -234,7 +240,14 @@ function toUpdateData(input: UpdateProjectInput): Partial<ProjectGeneralInfoData
   };
 }
 
-export async function updateProject(id: string, input: UpdateProjectInput): Promise<UpdateProjectResultDto> {
+/**
+ * A project transitioning to (or out of, or re-entering) "Completed" is a
+ * plain field update like any other — Timesheet/ProjectResource history is
+ * never touched here. A completed project must remain reopenable with its
+ * full manpower/timesheet history intact, so nothing about that status
+ * value triggers a side effect on this path at all.
+ */
+export async function updateProject(id: string, input: UpdateProjectInput): Promise<ProjectDto> {
   const existing = await findProjectById(id);
   if (!existing) {
     throw new AppError("Project not found.", 404);
@@ -245,51 +258,8 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
   }
 
   const updateData = toUpdateData(input);
-
-  // The Timesheet cleanup business rule fires exactly once, on the
-  // TRANSITION into "Completed" — never on a re-save of a project that was
-  // already Completed (which would otherwise re-announce "N records
-  // removed" every time completionRemarks or any other field is edited
-  // later, when in fact nothing Timesheet-related changed that save).
-  const isNewlyCompleted = input.projectStatus === "Completed" && existing.projectStatus !== "Completed";
-
-  if (!isNewlyCompleted) {
-    const updated = await updateProjectInRepository(id, updateData);
-    return toProjectDto(updated);
-  }
-
-  // Project status flip + that Project's Timesheet cleanup commit or roll
-  // back together — never leaving the Project marked Completed with its
-  // Timesheets still present, and never leaving Timesheets deleted while
-  // the status update failed. Mirrors timesheet.service.ts's own
-  // processTimesheetImport(), which is the only other place in this
-  // codebase that already owns a multi-step $transaction this way.
-  const { updatedProject, deletedCount, affectedEmployeeNos } = await prisma.$transaction(
-    async (tx: Prisma.TransactionClient) => {
-      const updatedProject = await updateProjectTx(tx, id, updateData);
-      const { deletedCount, affectedEmployeeNos } = await removeTimesheetsForCompletedProject(tx, id);
-      return { updatedProject, deletedCount, affectedEmployeeNos };
-    }
-  );
-
-  // ProjectResource recompute runs AFTER the transaction commits, exactly
-  // like processTimesheetImport()'s own after-commit recompute loop —
-  // never inside the transaction. Scoped to exactly the employeeNos that
-  // had a real TimesheetEntry for THIS project (captured before deletion),
-  // so a ProjectResource row for this project with no backing
-  // TimesheetEntry at all (a purely manual Team-Assigned assignment) is
-  // never touched.
-  for (const employeeNo of affectedEmployeeNos) {
-    await recomputeProjectResource(employeeNo, id);
-  }
-
-  return {
-    ...toProjectDto(updatedProject),
-    timesheetCleanup: {
-      deletedTimesheetEntries: deletedCount,
-      projectResourcesUpdated: affectedEmployeeNos.length,
-    },
-  };
+  const updated = await updateProjectInRepository(id, updateData);
+  return toProjectDto(updated);
 }
 
 /**

@@ -143,30 +143,3 @@ export function deleteAllEntries() {
   return prisma.timesheetEntry.deleteMany({});
 }
 
-/**
- * Every live TimesheetEntry for exactly one Project — read-only, used only
- * by Project Completion cleanup (see timesheet.service.ts's
- * removeTimesheetsForCompletedProject) to capture the affected employeeNos
- * BEFORE deletion, so ProjectResource can be recomputed for exactly those
- * pairs afterward. Takes the Project Completion transaction's own `tx` so
- * this read is part of the same atomic snapshot as the delete below.
- */
-export function findEntriesByProjectId(tx: Prisma.TransactionClient, projectId: string) {
-  return tx.timesheetEntry.findMany({ where: { projectId }, select: { employeeNo: true } });
-}
-
-/**
- * Deletes every live TimesheetEntry for exactly one Project — scoped
- * strictly by projectId, never touching another Project's rows,
- * Project-Not-Mapped rows (projectId: null), or any other TimesheetEntry.
- * Runs inside the SAME transaction as the Project's own status flip to
- * COMPLETED (see project.service.ts's updateProject), so a failure on
- * either side rolls both back. TimesheetImport/TimesheetImportRowLog audit
- * history is never touched — the row-log FK is nullable + onDelete:
- * SetNull (see schema.prisma), so historical log rows survive with
- * entryId: null, exactly as they already do for every other deletion path
- * in this module.
- */
-export function deleteEntriesByProjectId(tx: Prisma.TransactionClient, projectId: string) {
-  return tx.timesheetEntry.deleteMany({ where: { projectId } });
-}

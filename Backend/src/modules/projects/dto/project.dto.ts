@@ -60,23 +60,6 @@ export interface ProjectDto {
   updatedAt: Date;
 }
 
-/**
- * Only ever populated by updateProject() when this specific PATCH call
- * transitioned projectStatus into "Completed" for the first time — see
- * project.service.ts's isNewlyCompleted check. Absent (undefined) on every
- * other response (GET, create, an edit that doesn't touch status, or a
- * re-save of an already-Completed project) — never a persisted column,
- * purely a transient result of that one operation.
- */
-export interface TimesheetCleanupResultDto {
-  deletedTimesheetEntries: number;
-  projectResourcesUpdated: number;
-}
-
-export interface UpdateProjectResultDto extends ProjectDto {
-  timesheetCleanup?: TimesheetCleanupResultDto | null;
-}
-
 export interface PaginatedProjectListDto {
   items: ProjectDto[];
   total: number;
