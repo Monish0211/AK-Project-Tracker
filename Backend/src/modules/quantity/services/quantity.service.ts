@@ -1,4 +1,8 @@
 import { AppError } from "../../../shared/utils/AppError.js";
+import {
+  countNonCancelledLinesForQuantityItem,
+  deleteCancelledLinesForQuantityItem,
+} from "../../invoices/repository/invoice.repository.js";
 import { getProjectById } from "../../projects/services/project.service.js";
 import type { QuantityDto, QuantityListDto } from "../dto/quantity.dto.js";
 import {
@@ -141,7 +145,31 @@ export async function deleteQuantityItem(id: string): Promise<void> {
     throw new AppError("Quantity item not found.", 404);
   }
 
+  const invoiceLineCount = await countNonCancelledLinesForQuantityItem(id);
+  if (invoiceLineCount > 0) {
+    throw new AppError(
+      `This activity has ${invoiceLineCount} invoice line(s) raised against it and cannot be deleted.`,
+      409
+    );
+  }
+
+  // Any lines left at this point are Cancelled (see the count check above) —
+  // clear them so the FK's onDelete: Restrict doesn't block this delete.
+  await deleteCancelledLinesForQuantityItem(id);
   await deleteQuantityInRepository(id);
+}
+
+/**
+ * Single-item lookup, exported for the Invoices module (Invoices →
+ * Quantity, one direction only — see invoice.service.ts, which needs a
+ * QuantityItem's current unitRateINR to derive a new InvoiceLine's
+ * calculatedAmountINR and to build the joined "InvoiceItem" shape at read
+ * time). Throws AppError(404) the same way every other lookup in this
+ * service does, rather than returning null, so a caller never has to
+ * duplicate the not-found check.
+ */
+export async function getQuantityItemById(id: string): Promise<QuantityDto> {
+  return toQuantityDto(await getQuantityById(id));
 }
 
 /**

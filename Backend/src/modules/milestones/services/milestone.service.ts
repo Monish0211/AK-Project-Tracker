@@ -109,6 +109,22 @@ export async function updateMilestoneItem(id: string, input: UpdateMilestoneInpu
   return toMilestoneDto(updated, workOrderValueINR);
 }
 
+/**
+ * Single-field lookup, exported for the Invoices module (Invoices →
+ * Milestones, one direction only — see invoice.service.ts, which needs a
+ * milestone's paymentPercentage to derive an MLMP/Lump-Sum InvoiceLine's
+ * calculatedAmountINR but has no Milestones data of its own). Returns null
+ * for a milestoneId that doesn't exist rather than throwing — an
+ * InvoiceLine's milestoneId is a plain, unenforced string (no FK; see
+ * schema.prisma's InvoiceLine comment), so a stale/renamed reference is a
+ * normal, expected case the caller decides how to handle, not this
+ * function's concern.
+ */
+export async function getMilestonePercentageById(milestoneId: string): Promise<number | null> {
+  const milestone = await getMilestoneById(milestoneId);
+  return milestone ? milestone.paymentPercentage : null;
+}
+
 export async function deleteMilestoneItem(id: string): Promise<void> {
   const existing = await getMilestoneById(id);
   if (!existing) {
