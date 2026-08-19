@@ -98,6 +98,69 @@ export function countNonCancelledLinesForMilestone(milestoneId: string) {
 }
 
 /**
+ * Backs the duplicate-milestone-billing guard for the flat/milestone-value
+ * invoice methods (Lump Sum, MLMP) — never applies to quantity-driven
+ * billing (Invoice Line Items' Commercial Milestone Billing mode
+ * legitimately re-bills the same milestoneId multiple times, bounded by a
+ * quantity ceiling instead of a one-shot lock — see invoice.service.ts's
+ * caller, which only invokes this when quantityBilled === 0).
+ *
+ * Scope depends on setIndex, mirroring the exact two lock shapes already
+ * implemented client-side (frontend/.../InvoiceCalculations.ts):
+ *  - setIndex present (MLMP — getMlmpSetRows()): locked per
+ *    (quantityItemId, setIndex, milestoneId) — the same milestone template
+ *    deliberately repeats across every SET/activity, so only an exact
+ *    (activity, SET, milestone) tuple counts as "the same billing," not the
+ *    milestoneId alone.
+ *  - setIndex absent (Lump Sum — getProjectLumpSumMilestoneRows()): locked
+ *    by milestoneId alone, PROJECT-WIDE — Lump Sum bills one milestone
+ *    across every activity in a single cycle, so any activity's
+ *    non-cancelled line for this milestone counts.
+ *
+ * Either way, a match under the SAME invoiceNo is not a conflict — that is
+ * the existing cycle being added to/edited, exactly matching the frontend's
+ * own `isLockedElsewhere = alreadyInvoiced && invoicedUnderInvoiceNo !==
+ * invoiceNo` check (without this exception, Lump Sum's own multi-activity
+ * single-cycle billing — several POSTs, one per activity, all sharing one
+ * invoiceNo — would incorrectly reject itself). Cancelled lines never
+ * count — the same "billing that was undone" rule as the Quantity/
+ * Milestone delete guards.
+ *
+ * This is a plain check-then-insert (same shape as ProjectResource's own
+ * duplicate-assignment guard — see resource.service.ts's
+ * findResourceByProjectAndEmployee) — not wrapped in a transaction and no
+ * database unique constraint backs it. A narrow race window exists (two
+ * near-simultaneous requests could both pass this check before either
+ * writes), matching the same accepted, undefended risk level as every
+ * other duplicate-prevention check already in this codebase. A unique
+ * constraint isn't a safe fit here anyway: the correct one would need to be
+ * partial ("unique per milestoneId among non-Cancelled rows, OR unique per
+ * (quantityItemId, setIndex, milestoneId) when setIndex is set") and
+ * Postgres has no per-row conditional branching in a single index
+ * definition — enforcing this fully at the DB level would need two
+ * separate partial unique indexes with duplicated exclusion logic, a much
+ * larger and riskier schema change than this single-operator tool's actual
+ * concurrency profile justifies today.
+ */
+export function findConflictingLineForMilestone(params: {
+  milestoneId: string;
+  invoiceNo: string;
+  setIndex: number | null;
+  quantityItemId: string;
+  excludeLineId?: string;
+}) {
+  return prisma.invoiceLine.findFirst({
+    where: {
+      milestoneId: params.milestoneId,
+      status: { not: "Cancelled" },
+      invoiceNo: { not: params.invoiceNo },
+      ...(params.setIndex !== null ? { setIndex: params.setIndex, quantityItemId: params.quantityItemId } : {}),
+      ...(params.excludeLineId ? { id: { not: params.excludeLineId } } : {}),
+    },
+  });
+}
+
+/**
  * Also backs the Quantity delete guard — called only once
  * countNonCancelledLinesForQuantityItem() above has confirmed zero
  * non-cancelled lines remain. The InvoiceLine.quantityItemId FK is
