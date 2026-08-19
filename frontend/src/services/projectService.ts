@@ -326,17 +326,6 @@ interface BackendProjectDto {
   isDeleted: boolean;
   createdAt: string;
   updatedAt: string;
-  // Only ever present when this specific PATCH call transitioned
-  // projectStatus into "Completed" for the first time (see Backend's
-  // project.service.ts isNewlyCompleted check) — absent on every other
-  // response. See updateProjectGeneralInfo() below for how this drives the
-  // completion notification + Timesheet refresh.
-  timesheetCleanup?: TimesheetCleanupResult | null;
-}
-
-export interface TimesheetCleanupResult {
-  deletedTimesheetEntries: number;
-  projectResourcesUpdated: number;
 }
 
 interface BackendPaginatedProjectList {
@@ -636,56 +625,17 @@ export async function createProjectGeneralInfo(project: Project): Promise<Projec
 
 /**
  * Updates a project's General Information via the real backend — PATCH
- * /projects/:id. When this specific save transitioned Project Status into
- * "Completed", the backend has already deleted that Project's live
- * Timesheet records and recomputed the affected ProjectResource rows in
- * one atomic operation (see Backend's project.service.ts updateProject) —
- * `timesheetCleanup` on the response is how the caller finds out. This
- * function reacts to that by dispatching the existing in-app notification
- * (the same notificationService completeProject() below already uses);
- * refreshing the Timesheets page's own data is the caller's job (see
- * FormButtons.tsx), since this service has no reason to depend on
- * timesheetService.ts.
+ * /projects/:id. A projectStatus transition to/from/through "Completed" is
+ * a plain field update like any other here — it no longer deletes or
+ * recomputes any Timesheet/ProjectResource data (see Backend's
+ * project.service.ts updateProject), so a completed project stays fully
+ * reopenable with its manpower/timesheet history intact.
  */
-export async function updateProjectGeneralInfo(
-  id: string,
-  project: Project
-): Promise<{ project: Project; timesheetCleanup: TimesheetCleanupResult | null }> {
+export async function updateProjectGeneralInfo(id: string, project: Project): Promise<Project> {
   const dto = await apiClient.patch<BackendProjectDto>(`/projects/${id}`, toGeneralInfoPayload(project));
   const merged = mergeBackendGeneralInfoIntoLocalProject(dto);
   writeThroughProjectsMirror([merged]);
-
-  const timesheetCleanup = dto.timesheetCleanup ?? null;
-  if (timesheetCleanup) {
-    const { deletedTimesheetEntries } = timesheetCleanup;
-    const message =
-      deletedTimesheetEntries > 0
-        ? `Project completed successfully. ${deletedTimesheetEntries} Timesheet record${deletedTimesheetEntries === 1 ? "" : "s"} ${deletedTimesheetEntries === 1 ? "was" : "were"} removed.`
-        : "Project completed successfully. No Timesheet records were found for this Project.";
-
-    try {
-      notificationService.dispatchEvent({
-        ruleId: "PROJECT_TIMESHEET_CLEANUP",
-        version: 1,
-        title: `Project Completed: ${merged.prNo}`,
-        message,
-        category: "Success",
-        severity: "Info",
-        source: "Projects",
-        targetAudience: "Everyone",
-        deliveryChannels: ["InApp"],
-        projectId: merged.id,
-        projectCode: merged.prNo,
-        actionLabel: "View Project",
-        actionRoute: `/projects/view/${merged.id}`,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.error("Failed to dispatch Timesheet cleanup notification:", err);
-    }
-  }
-
-  return { project: merged, timesheetCleanup };
+  return merged;
 }
 
 /** Archive — reversible. DELETE /projects/:id never removes the row server-side, only sets isDeleted/deletedAt; this also drops it from the local mirror so it disappears from the Project Repository list immediately. Every child record (Quantity/Payment Milestones/Other Project Expenses) is left completely untouched. */

@@ -12,6 +12,7 @@ import { ProjectCompletionModal } from "../../../components/Projects/ProjectComp
 
 import { FieldError } from "../../../components/ui/FieldError";
 import { completeProject, getProjectById } from "../../../services/projectService";
+import { PROJECT_STATUS_OPTIONS, WORK_ORDER_STATUS_OPTIONS } from "../../../constants/projectStatus";
 
 interface Props {
   project: Project;
@@ -502,11 +503,11 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
               invalid={!!errors["workOrderStatus"]}
             >
               <option value="">Select Work Order Status</option>
-              <option value="Received">Received</option>
-              <option value="Yet to Receive">Yet to Receive</option>
-              <option value="Pending">Pending</option>
-              <option value="Closed">Closed</option>
-              <option value="Cancelled">Cancelled</option>
+              {WORK_ORDER_STATUS_OPTIONS.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
             </Select>
           </Field>
 
@@ -529,12 +530,11 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
               invalid={!!errors["projectStatus"]}
             >
               <option value="">Select Project Status</option>
-              <option value="Active">Active</option>
-              <option value="Ongoing">Ongoing</option>
-              <option value="Not Started">Not Started</option>
-              <option value="Completed">Completed</option>
-              <option value="On Hold">On Hold</option>
-              <option value="Cancelled">Cancelled</option>
+              {PROJECT_STATUS_OPTIONS.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
             </Select>
           </Field>
 
