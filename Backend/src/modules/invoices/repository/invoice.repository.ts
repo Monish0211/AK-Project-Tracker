@@ -77,6 +77,27 @@ export function countNonCancelledLinesForQuantityItem(quantityItemId: string) {
 }
 
 /**
+ * Backs the Payment Milestones module's delete guard (Milestones →
+ * Invoices). Deliberately imported directly from THIS repository file by
+ * milestone.service.ts, bypassing invoice.service.ts — the same narrow,
+ * intentional exception as countNonCancelledLinesForQuantityItem() above,
+ * and for the identical reason: invoice.service.ts already imports FROM
+ * milestone.service.ts (getMilestonePercentageById, to price a line against
+ * a milestone's percentage), so a reverse service-to-service import back
+ * from milestone.service.ts would create a genuine import cycle between the
+ * two service files. This function has zero business logic (a plain
+ * count), so reading it straight from the repository loses nothing while
+ * keeping the dependency graph acyclic. Excludes Cancelled for the same
+ * reason as the Quantity guard — a cancelled invoice line represents
+ * billing that was undone, not history that should still block deletion.
+ */
+export function countNonCancelledLinesForMilestone(milestoneId: string) {
+  return prisma.invoiceLine.count({
+    where: { milestoneId, status: { not: "Cancelled" } },
+  });
+}
+
+/**
  * Also backs the Quantity delete guard — called only once
  * countNonCancelledLinesForQuantityItem() above has confirmed zero
  * non-cancelled lines remain. The InvoiceLine.quantityItemId FK is
