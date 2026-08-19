@@ -115,18 +115,28 @@ export async function fetchQuantityItemsFromApi(projectId: string): Promise<Quan
  * Opening Edit Project: loads Quantity from the backend. If the backend has
  * no rows yet for this project AND the local mirror already has Quantity
  * data (a project whose activities were only ever saved to localStorage,
- * before this module existed on the backend), those legacy rows are pushed
- * to the backend once here — the same "touch it once, it becomes a real
- * backend row from then on" approach already used for Excel Import's
- * General Information. A genuinely new/empty project just returns [].
+ * before this module existed on the backend — including a project just
+ * brought in via Excel Import, whose parsed Quantity Details rows travel
+ * only as far as the local mirror, see projectService.ts's
+ * bulkImportProjectGeneralInfo()), those legacy rows are pushed to the
+ * backend once here — the same "touch it once, it becomes a real backend
+ * row from then on" approach already used for Excel Import's General
+ * Information. A genuinely new/empty project just returns [].
  */
 export async function loadQuantityForProject(projectId: string): Promise<QuantityItem[]> {
+  // Snapshot any pre-existing local Quantity items BEFORE the GET below —
+  // fetchQuantityItemsFromApi() always writes through to the mirror, even
+  // when the backend returns zero rows, which would otherwise overwrite
+  // this project's quantityItems to [] and destroy the very legacy data
+  // this function exists to migrate, before it's ever read (same fix
+  // paymentMilestoneService.ts's loadMilestonesForProject() already applies).
+  const legacyLocalItems = getProjectById(projectId)?.quantityItems ?? [];
+
   const backendItems = await fetchQuantityItemsFromApi(projectId);
   if (backendItems.length > 0) {
     return backendItems;
   }
 
-  const legacyLocalItems = getProjectById(projectId)?.quantityItems ?? [];
   if (legacyLocalItems.length === 0) {
     return backendItems;
   }

@@ -5,6 +5,7 @@ import { ListChecks } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
 import { updateProject } from "../../../../services/projectService";
+import { syncInvoiceLinesWithApi } from "../../../../services/invoiceService";
 
 import { CommercialSummary } from "./CommercialSummary";
 import { InvoiceSummaryPanel } from "./InvoiceSummaryPanel";
@@ -157,9 +158,34 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
   // writes straight to the same localStorage record FormButtons' "Update
   // Project" writes to, so an invoice raised/edited/deleted here is durable
   // immediately, exactly like clicking Save Invoice implies.
+  //
+  // The backend is now the real source of truth (Invoice Backend Phase) —
+  // every one of the 5 callers below (drawer save, all 4 workspace modals,
+  // delete, status change) still builds its own `updatedProject` exactly as
+  // before; this is the ONE place that also reconciles with the API, so
+  // none of that existing UI/business logic needed to change. The
+  // localStorage write happens first (optimistic — same immediate UX as
+  // before there was a backend at all), then syncInvoiceLinesWithApi()
+  // diffs old vs. new InvoiceLines by id (POST new, PATCH changed, DELETE
+  // removed) and the backend's authoritative response — real ids for
+  // anything just created, current server-derived calculatedAmountINR/
+  // commercialAdjustmentINR — replaces the optimistic guess. If the backend
+  // call fails, the optimistic localStorage write still stands (same
+  // degraded behavior as before this phase existed) and the error is
+  // surfaced to the console rather than silently swallowed.
   const persistProjectChange = (updatedProject: Project) => {
     setProject?.(updatedProject);
     updateProject({ ...updatedProject, updatedAt: new Date().toISOString() });
+
+    syncInvoiceLinesWithApi(project.id, project.invoiceItems, updatedProject.invoiceItems)
+      .then((reconciledItems) => {
+        const reconciledProject = { ...updatedProject, invoiceItems: reconciledItems };
+        setProject?.(reconciledProject);
+        updateProject({ ...reconciledProject, updatedAt: new Date().toISOString() });
+      })
+      .catch((error) => {
+        console.error("Failed to sync invoice changes with the backend:", error);
+      });
   };
 
   const handleDeleteInvoiceLine = (item: InvoiceItem, line: InvoiceLine) => {
