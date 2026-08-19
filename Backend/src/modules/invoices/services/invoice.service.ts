@@ -9,6 +9,7 @@ import {
   createLine as createLineInRepository,
   createLinesWithIds,
   deleteLine as deleteLineInRepository,
+  findConflictingLineForMilestone,
   getLineById,
   getLinesByIds,
   getLinesByQuantityItemIds,
@@ -131,12 +132,47 @@ function computeAmounts(params: {
   return { calculatedAmountINR: params.invoiceAmountINR, commercialAdjustmentINR: 0 };
 }
 
+/**
+ * Rejects a line that would double-bill a Payment Milestone — see
+ * findConflictingLineForMilestone()'s own comment in invoice.repository.ts
+ * for the full scoping rationale (project-wide per milestoneId for Lump
+ * Sum, per (quantityItemId, setIndex, milestoneId) for MLMP). Callers only
+ * invoke this when quantityBilled === 0 and a milestoneId is present —
+ * Invoice Line Items' Commercial Milestone Billing mode (quantityBilled > 0)
+ * is deliberately exempt, since it legitimately re-bills the same milestone
+ * multiple times bounded by a quantity ceiling, not a one-shot lock.
+ */
+async function assertNoDuplicateMilestoneBilling(params: {
+  milestoneId: string;
+  invoiceNo: string;
+  setIndex: number | null;
+  quantityItemId: string;
+  excludeLineId?: string;
+}): Promise<void> {
+  const conflict = await findConflictingLineForMilestone(params);
+  if (conflict) {
+    throw new AppError(
+      `This payment milestone has already been invoiced under a different invoice cycle (${conflict.invoiceNo}).`,
+      409
+    );
+  }
+}
+
 export async function createInvoiceLineForQuantityItem(
   quantityItemId: string,
   input: CreateInvoiceLineInput
 ): Promise<InvoiceLineDto> {
   const quantityItem = await getQuantityItemById(quantityItemId);
   const milestonePercent = await resolveMilestonePercent(input.milestoneId);
+
+  if (input.milestoneId && input.quantityBilled === 0) {
+    await assertNoDuplicateMilestoneBilling({
+      milestoneId: input.milestoneId,
+      invoiceNo: input.invoiceNo,
+      setIndex: input.setIndex ?? null,
+      quantityItemId,
+    });
+  }
 
   const unitPriceINR = quantityItem.unitRateINR;
   const { calculatedAmountINR, commercialAdjustmentINR } = computeAmounts({
@@ -185,6 +221,27 @@ export async function updateInvoiceLine(id: string, input: UpdateInvoiceLineInpu
 
   const needsRecompute =
     input.quantityBilled !== undefined || input.invoiceAmountINR !== undefined || input.milestoneId !== undefined;
+
+  // Duplicate-milestone-billing guard — only re-checked when a field that
+  // could newly create a conflict is actually changing (milestoneId,
+  // invoiceNo, or setIndex), and only meaningful for the merged result if
+  // it's still a flat/milestone-value line (quantityBilled === 0) with a
+  // real milestoneId. See assertNoDuplicateMilestoneBilling()'s comment.
+  const milestoneFieldsChanging =
+    input.milestoneId !== undefined || input.invoiceNo !== undefined || input.setIndex !== undefined;
+  if (milestoneFieldsChanging) {
+    const mergedMilestoneId = input.milestoneId !== undefined ? input.milestoneId : existing.milestoneId;
+    const mergedQuantityBilled = input.quantityBilled ?? existing.quantityBilled;
+    if (mergedMilestoneId && mergedQuantityBilled === 0) {
+      await assertNoDuplicateMilestoneBilling({
+        milestoneId: mergedMilestoneId,
+        invoiceNo: input.invoiceNo ?? existing.invoiceNo,
+        setIndex: input.setIndex !== undefined ? input.setIndex : existing.setIndex,
+        quantityItemId: existing.quantityItemId,
+        excludeLineId: id,
+      });
+    }
+  }
 
   let unitPriceINR = existing.unitPriceINR;
   let calculatedAmountINR = existing.calculatedAmountINR;
