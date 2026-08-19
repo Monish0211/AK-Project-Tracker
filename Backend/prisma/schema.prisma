@@ -414,6 +414,8 @@ model QuantityItem {
   woValue       Float
   pendingAmount Float
 
+  invoiceLines InvoiceLine[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -449,6 +451,87 @@ model PaymentMilestone {
   updatedAt DateTime @updatedAt
 
   @@index([projectId])
+}
+
+// =============================================================================
+// INVOICE LINE — Invoice Backend Phase. No separate "InvoiceItem" table
+// exists: the frontend's InvoiceItem shape (id/description/qty/uom/
+// unitPrice/totalPrice/invoices[]) is 100% derived from a QuantityItem plus
+// its InvoiceLine rows, computed at read time by invoice.service.ts. This
+// makes `InvoiceItem.id === QuantityItem.id` true by construction, exactly
+// matching what frontend/src/services/invoiceSyncService.ts's
+// syncInvoiceItemsWithQuantity() already assumes today (it keys every
+// InvoiceItem off `quantityItem.id`).
+//
+// quantityItemId is a real FK with onDelete: Restrict (not Cascade) — a
+// QuantityItem with non-Cancelled invoice history must not be deletable at
+// all, let alone silently take that history down with it. Enforced twice:
+// here at the DB level as the final backstop, and in quantity.service.ts's
+// deleteQuantityItem() as the actual user-facing 409 guard (see
+// invoice.repository.ts's countNonCancelledLinesForQuantityItem()).
+//
+// unitPriceINR/calculatedAmountINR/commercialAdjustmentINR are real, stored
+// columns (unlike PaymentMilestone.amount) because they are historical
+// snapshots, not always-current derived values: unitPriceINR is the
+// QuantityItem's rate AT THE TIME this line was raised, and
+// calculatedAmountINR/commercialAdjustmentINR are computed from it then —
+// recomputing them later from a QuantityItem's CURRENT unitRateINR would
+// silently rewrite invoice history every time a rate changes. See
+// invoice.service.ts for exactly when each is computed vs. preserved
+// verbatim (ordinary create vs. legacy-migration ingest).
+//
+// milestoneId/milestoneName are plain, unenforced strings (no FK to
+// PaymentMilestone) — same treatment as every other cross-reference in this
+// schema that must survive its target's own lifecycle (TimesheetEntry.
+// employeeNo, ProjectResource.employeeNo): a milestone can be renamed or
+// removed without corrupting already-raised invoice history.
+//
+// status is a plain string with a default, matching every other status-like
+// field in this schema (Employee.status, TimesheetImport.status) rather
+// than a Prisma enum — see frontend/src/types/InvoiceItem.ts's
+// InvoiceLineStatus for the 5 values actually in use
+// (Draft/Raised/PartiallyPaid/Paid/Cancelled).
+//
+// `id` stays @default(dbgenerated(...)) exactly like every other model —
+// the legacy-migration Ingest path (mirroring Payment Milestones' own
+// Ingest) explicitly supplies its own id value, honored by Prisma over the
+// default, because notifications/notificationTypes.ts's invoiceLineId deep-
+// link field may already reference a pre-migration id from an
+// already-dispatched local notification.
+// =============================================================================
+model InvoiceLine {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  quantityItemId String
+  quantityItem   QuantityItem @relation(fields: [quantityItemId], references: [id], onDelete: Restrict)
+
+  invoiceNo   String
+  invoiceDate DateTime
+
+  milestoneId   String?
+  milestoneName String?
+  setIndex      Int?
+
+  description String?
+
+  quantityBilled Float
+
+  unitPriceINR            Float?
+  calculatedAmountINR     Float?
+  invoiceAmountINR        Float
+  commercialAdjustmentINR Float?
+
+  clientReference String?
+  remarks         String?
+
+  status    String @default("Draft")
+  createdBy String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([quantityItemId])
+  @@index([invoiceNo])
 }
 
 // =============================================================================
