@@ -13,7 +13,6 @@ import {
   createProjectGeneralInfo,
   updateProjectGeneralInfo,
 } from "../../../services/projectService";
-import { refreshTimesheetImportsFromBackend } from "../../../services/timesheetService";
 import { syncQuantityItemsWithApi } from "../../../services/quantityService";
 import { syncMilestonesWithApi } from "../../../services/paymentMilestoneService";
 import { syncExpensesWithApi } from "../../../services/otherProjectExpenseService";
@@ -70,15 +69,7 @@ const FormButtons = ({
         projectToSave = { ...project, id: created.id };
         setProject(projectToSave);
       } else {
-        const { timesheetCleanup } = await updateProjectGeneralInfo(existing.id, project);
-        if (timesheetCleanup) {
-          // Best-effort — the Timesheets page also refreshes on its own
-          // mount, this just makes any other already-open view (another
-          // tab, Team Assigned) reflect the removal immediately.
-          void refreshTimesheetImportsFromBackend().catch((refreshErr) =>
-            console.warn("Could not refresh Timesheet Records after project completion cleanup:", refreshErr)
-          );
-        }
+        await updateProjectGeneralInfo(existing.id, project);
       }
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "Failed to save General Information. Please try again.");

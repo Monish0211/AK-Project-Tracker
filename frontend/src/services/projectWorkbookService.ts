@@ -7,6 +7,7 @@ import { getProjectCommercialSummary } from "./invoiceProgressService";
 import { getEmployees } from "./employeeService";
 import { getPmoCoordinators } from "./pmoCoordinatorService";
 import { UOM_OPTIONS } from "../utils/quantityCalculations";
+import { PROJECT_STATUS_OPTIONS, WORK_ORDER_STATUS_OPTIONS } from "../constants/projectStatus";
 
 // ─────────────────────────────────────────────────────────────────────────
 // SINGLE SOURCE OF TRUTH: sheet names + column schema.
@@ -102,8 +103,10 @@ const DEFAULT_DEPARTMENTS = ["Design Engineering Services", "Environment", "Risk
 const PR_CATEGORIES = ["India", "Malaysia", "Oman", "Abu Dhabi", "Qatar", "Elixir Qatar", "FZI"];
 const CURRENCIES = ["INR", "USD", "EUR", "AED", "OMR", "QAR"];
 const CONTRACT_TYPES = ["LUMP SUM", "UNIT RATE", "MAN-HOUR", "RATE CONTRACT"];
-const PROJECT_STATUSES = ["Not Started", "Ongoing", "Active", "On Hold", "Completed", "Cancelled"];
-const WORK_ORDER_STATUSES = ["Yet to Receive", "Received", "Closed", "Cancelled"];
+// Sourced from the shared constants/projectStatus.ts (single source of
+// truth also used by GeneralInfoCard.tsx's dropdowns) — this only drives the
+// Lookup sheet's dropdown list for NEW manual entries, never the free-text
+// import-parsing logic below, which must keep accepting legacy values.
 const PAYMENT_TERMS = [
   "100% After Completion",
   "100% Advance",
@@ -144,8 +147,8 @@ export function getLookupLists(projects: Project[]): LookupLists {
     prCategories: PR_CATEGORIES,
     currencies: CURRENCIES,
     contractTypes: CONTRACT_TYPES,
-    projectStatuses: PROJECT_STATUSES,
-    workOrderStatuses: WORK_ORDER_STATUSES,
+    projectStatuses: [...PROJECT_STATUS_OPTIONS],
+    workOrderStatuses: [...WORK_ORDER_STATUS_OPTIONS],
     paymentTerms: PAYMENT_TERMS,
     gst: GST_OPTIONS,
     uom: [...UOM_OPTIONS],
