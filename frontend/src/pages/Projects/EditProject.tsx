@@ -4,6 +4,7 @@ import type { Project } from "../../types/Project";
 import { getProjectById, normalizeProject, fetchProjectByIdFromApi } from "../../services/projectService";
 import { loadQuantityForProject } from "../../services/quantityService";
 import { loadMilestonesForProject } from "../../services/paymentMilestoneService";
+import { loadInvoiceForProject } from "../../services/invoiceService";
 import { loadExpensesForProject } from "../../services/otherProjectExpenseService";
 import { createEmptyProject } from "../../utils/createEmptyProject";
 import ProjectForm from "./components/ProjectForm";
@@ -84,8 +85,28 @@ const EditProject = () => {
             // Fall through with nextProject as already set above.
           }
 
+          // Invoice data loads the same way, immediately after Payment
+          // Milestones (Invoice pricing can reference a milestone's
+          // percentage, so both Quantity and Milestones are already loaded
+          // by this point) — isolated the same way: a failure here never
+          // discards General Information/Quantity/Milestones already loaded
+          // above, it simply falls back to whatever the local mirror already
+          // had for this session. normalizeProject() still re-derives each
+          // InvoiceItem's description/qty/uom/unitPrice/totalPrice from
+          // `nextProject`'s own quantityItems either way (see
+          // invoiceSyncService.ts's syncInvoiceItemsWithQuantity()) — this
+          // load's job is only to bring in the backend's InvoiceLine history
+          // (`.invoices[]`), which that sync already preserves by id.
+          try {
+            const invoiceItems = await loadInvoiceForProject(id);
+            if (!isMounted) return;
+            nextProject = normalizeProject({ ...nextProject, invoiceItems });
+          } catch {
+            // Fall through with nextProject as already set above.
+          }
+
           // Other Project Expenses load the same way, immediately after
-          // Payment Milestones — isolated the same way: a failure here never
+          // Invoice — isolated the same way: a failure here never
           // discards General Information/Quantity/Milestones already
           // loaded above, it simply falls back to whatever the local mirror
           // already had for this session.
