@@ -40,7 +40,7 @@ import { getEmployees } from "../../services/employeeService";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import { getTotalProjectCost, getGrossProfit } from "../../services/expenseService";
 import { getAllTimesheetImports } from "../../services/timesheetService";
-import { getProcessedEmployeeTotalHours } from "../../services/timesheetProcessingService";
+import { getProcessedEmployeeTotalHours, getProcessedLifetimeActualHours } from "../../services/timesheetProcessingService";
 import { EmptyStateRow } from "../../components/ui/EmptyStateRow";
 import { normalizeProjectCode } from "../../utils/projectMatching";
 
@@ -302,6 +302,11 @@ const Reports = () => {
   }, [projects, invoices, deptFilter, clientFilter, statusFilter, commFilter, categoryFilter, calculatedDateBounds]);
 
   // Compute live KPI values for the active filter set
+  // Loaded once per `projects` refresh, reused by both the "resource" tab's
+  // per-row hours (already reconciled below) and its "Total Billable Hours"
+  // KPI tile — avoids re-reading localStorage once per project in that tile.
+  const resourceTabImports = useMemo(() => getAllTimesheetImports(), [projects]);
+
   const pmoKPIs = useMemo(() => {
     const prList = filteredData.projects;
     const invList = filteredData.invoices;
@@ -1127,10 +1132,14 @@ const Reports = () => {
                   <div>
                     <div className="ml text-[9px] font-bold text-slate-400 uppercase tracking-wider">Total Billable Hours</div>
                     <div className="mv text-base font-black text-emerald-650 dark:text-emerald-400 leading-none mt-1">
-                      {filteredData.projects.reduce(
-                        (sum, p) => sum + (p.resources?.reduce((acc, r) => acc + (r.totalHours || 0), 0) || 0),
-                        0
-                      ).toLocaleString()}{" "}
+                      {/* Actual TimesheetEntry-derived hours, not the
+                          project.resources roster snapshot — matches the
+                          per-row hours in this same table (see the
+                          "resource" case above) and the Dashboard's Hours
+                          Overrun widget. */}
+                      {filteredData.projects
+                        .reduce((sum, p) => sum + getProcessedLifetimeActualHours(p.prNo, resourceTabImports), 0)
+                        .toLocaleString()}{" "}
                       Hrs
                     </div>
                   </div>

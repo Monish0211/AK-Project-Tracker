@@ -4,24 +4,37 @@ import { getProcessedTeamMembers } from "../services/timesheetProcessingService"
 import { getAllTimesheetImports } from "../services/timesheetService";
 
 /**
- * Calculates the dynamic Team Members KPI count for a project.
- * Counts assigned team resources from project.resources and processed timesheets.
+ * Assigned/Roster Team — how many ProjectResource rows exist for this
+ * project. This is a staffing/allocation concept: it does NOT mean any of
+ * these employees have actually logged hours yet. Use this for
+ * capacity/workload-planning contexts (e.g. the Dashboard's Department
+ * Command Center), never as a stand-in for actual timesheet activity.
  */
-export function getProjectTeamCount(project: Project): number {
+export function getAssignedTeamCount(project: Project): number {
+  if (!project) return 0;
+  return Array.isArray(project.resources) ? project.resources.length : 0;
+}
+
+/**
+ * Actual Timesheet Employees — the count of DISTINCT employees with real,
+ * TimesheetEntry-derived activity on this project, across its entire
+ * lifetime (never scoped to a single month — matches
+ * getProcessedLifetimeActualHours' own "lifetime, not month-filtered"
+ * convention). Sourced from the same TimesheetProcessingService engine that
+ * already backs the Team Assigned tab, so this can never disagree with what
+ * a user sees there. Use this wherever a metric is specifically describing
+ * who actually worked, not who is merely assigned.
+ */
+export function getActualTimesheetEmployeeCount(project: Project): number {
   if (!project) return 0;
 
-  const directResourcesCount = Array.isArray(project.resources) ? project.resources.length : 0;
-
-  let processedCount = 0;
   try {
     const allImports = getAllTimesheetImports();
     const processedMembers = getProcessedTeamMembers(project.prNo || "", allImports);
-    processedCount = Array.isArray(processedMembers) ? processedMembers.length : 0;
+    return Array.isArray(processedMembers) ? processedMembers.length : 0;
   } catch {
-    processedCount = 0;
+    return 0;
   }
-
-  return Math.max(directResourcesCount, processedCount);
 }
 
 /**

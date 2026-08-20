@@ -12,7 +12,7 @@ import {
   getTotalProjectCost,
 } from "../../services/expenseService";
 import { getProjectActivityTimeline } from "../../services/projectActivityService";
-import { calculateProjectCompletionPercentage, getProjectTeamCount } from "../../utils/projectMetrics";
+import { calculateProjectCompletionPercentage, getActualTimesheetEmployeeCount } from "../../utils/projectMetrics";
 import { Button } from "../../components/ui/Button";
 
 import GeneralView from "./components/GeneralView";
@@ -150,7 +150,10 @@ const ViewProject = () => {
 
   const budget = (project.manhourBudgetAmount || 0) + (project.nonManhourBudgetAmount || 0);
   const milestoneCount = project.paymentMilestones?.length || 0;
-  const teamCount = getProjectTeamCount(project);
+  // Matches the Team Assigned tab below exactly — both read the same
+  // actual-timesheet-activity engine, so this header stat and that tab can
+  // never disagree.
+  const teamCount = getActualTimesheetEmployeeCount(project);
   const activityEvents = getProjectActivityTimeline(project);
 
   // ── Tab navigation helpers ─────────────────────────────────────────────────

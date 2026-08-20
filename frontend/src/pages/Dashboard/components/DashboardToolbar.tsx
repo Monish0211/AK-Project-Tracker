@@ -6,6 +6,8 @@ import {
   Search,
 } from "lucide-react";
 import { getProjects } from "../../../services/projectService";
+import { refreshTimesheetImportsFromBackend } from "../../../services/timesheetService";
+import { ApiError } from "../../../services/apiClient";
 import { Badge } from "../../../components/ui/Badge";
 import { statusTone } from "../../../components/ui/statusTone";
 
@@ -56,10 +58,35 @@ const DashboardToolbar = ({ onRefresh }: Props) => {
       .slice(0, 6);
   }, [query]);
 
-  const handleRefreshClick = () => {
+  // Also pulls the latest backend-synced Timesheet data (KEKA's 10 PM sync
+  // → PostgreSQL → GET /timesheets/entries) into the same localStorage
+  // cache Team Assigned already reads — see refreshTimesheetImportsFromBackend()
+  // in timesheetService.ts. Team Assigned needs no extra wiring to notice
+  // the update: it already polls that same cache every 3 seconds and
+  // re-reads it on its own mount. This does not grant Timesheets module
+  // access — it calls the same GET /timesheets/entries endpoint the
+  // Timesheets page itself already uses, subject to the exact same backend
+  // requireModuleAccess("Timesheets") gate; Administrators and users with
+  // the Timesheets module already have it, so the request simply succeeds
+  // for them and 403s (silently, non-fatally) for users without it.
+  const handleRefreshClick = async () => {
+    if (isRefreshing) return; // prevent duplicate simultaneous refresh requests
     setIsRefreshing(true);
-    onRefresh();
-    window.setTimeout(() => setIsRefreshing(false), 600);
+    try {
+      await refreshTimesheetImportsFromBackend();
+    } catch (err) {
+      // Non-fatal — refreshTimesheetImportsFromBackend() throws before ever
+      // writing to localStorage on failure, so existing cached Timesheet
+      // data is left completely intact. A user without Timesheets module
+      // access gets a 403 here, which is expected and not surfaced as an
+      // error — only a genuine failure (network/server) is shown.
+      if (!(err instanceof ApiError && err.status === 403)) {
+        alert(err instanceof ApiError ? err.message : "Failed to refresh timesheet data. Please try again.");
+      }
+    } finally {
+      onRefresh();
+      setIsRefreshing(false);
+    }
   };
 
   const handleSelectResult = (id: string) => {

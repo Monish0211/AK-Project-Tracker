@@ -10,6 +10,7 @@ import Dashboard from "../pages/Dashboard/Dashboard";
 /* Projects */
 import Projects from "../pages/Projects/Projects";
 import CompletedProjects from "../pages/Projects/CompletedProjects";
+import ArchivedProjects from "../pages/Projects/ArchivedProjects";
 import FinancialLossProjects from "../pages/Projects/FinancialLossProjects";
 import TimelineAlertProjects from "../pages/Projects/TimelineAlertProjects";
 import TimesheetPendingProjects from "../pages/Projects/TimesheetPendingProjects";
@@ -86,6 +87,11 @@ const MainLayout = () => {
               <Route
                 path="/projects/completed"
                 element={<ModuleRoute module="Projects"><CompletedProjects /></ModuleRoute>}
+              />
+
+              <Route
+                path="/projects/archived"
+                element={<ModuleRoute module="Projects"><ArchivedProjects /></ModuleRoute>}
               />
 
               <Route

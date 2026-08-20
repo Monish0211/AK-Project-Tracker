@@ -173,6 +173,17 @@ export interface Project {
   createdAt?: string;
   updatedAt?: string;
 
+  // Archive (soft-delete) — populated from the backend for the Archived
+  // Projects page; absent/false for every normal (non-archived) project.
+  isDeleted?: boolean;
+  deletedAt?: string | null;
+
+  // Project-ownership authorization — null for every project created before
+  // this field existed (treated as accessible to every normal user) or for
+  // any project created by someone else once role-based UI ever needs to
+  // distinguish that. Never sent by the client; set server-side only.
+  createdByUserId?: string | null;
+
   notes?: ProjectNote[];
   invoiceDocumentDetailsMap?: Record<string, InvoiceDocumentDetails>;
 }

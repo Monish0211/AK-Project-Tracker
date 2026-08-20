@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Building2,
   ArrowRight,
@@ -20,9 +20,9 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardHeader } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { getProjects } from "../../../services/projectService";
-import { calculateProjectCompletionPercentage, getProjectTeamCount } from "../../../utils/projectMetrics";
-import { getProjectCommercialSummary } from "../../../services/invoiceProgressService";
+import { calculateProjectCompletionPercentage, getAssignedTeamCount } from "../../../utils/projectMetrics";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { fetchTimesheetPendingProjects } from "../../../services/timesheetPendingService";
 
 // Helper for department icon selection
 const getDeptIcon = (deptName: string) => {
@@ -119,6 +119,25 @@ export interface DepartmentOpsMetrics {
 
 const DepartmentSummary: React.FC = () => {
   const navigate = useNavigate();
+  const [pendingByDepartment, setPendingByDepartment] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchTimesheetPendingProjects()
+      .then((items) => {
+        if (!isMounted) return;
+        const counts: Record<string, number> = {};
+        for (const row of items) {
+          const dept = row.department?.trim() || "Design Engineering";
+          counts[dept] = (counts[dept] ?? 0) + 1;
+        }
+        setPendingByDepartment(counts);
+      })
+      .catch((err) => console.warn("Failed to load Timesheet Pending counts:", err));
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Calculate live operational metrics per department
   const { deptList, healthCounts, totals, upcomingActions } = useMemo(() => {
@@ -165,17 +184,20 @@ const DepartmentSummary: React.FC = () => {
 
       let teamMembers = 0;
       let pendingInvoices = 0;
-      let timesheetPending = 0;
+      const timesheetPending = pendingByDepartment[deptName] ?? 0;
       let upcomingDeliveries = 0;
       let compSum = 0;
       let workOrderValue = 0;
       let delayedProjects = 0;
 
       deptProjects.forEach((p) => {
-        teamMembers += getProjectTeamCount(p);
+        // Assigned/Roster count — fits this widget's "resource allocation &
+        // workload analytics" framing and the workload-capacity formula
+        // below, which plans around who is staffed, not who has already
+        // logged hours.
+        teamMembers += getAssignedTeamCount(p);
         workOrderValue += (p.workOrderValueINR || p.workOrderValue || 0);
 
-        const comm = getProjectCommercialSummary(p);
         (p.invoiceItems || []).forEach((item: any) => {
           (item.invoices || []).forEach((line: any) => {
             if (line.status === "Raised" || line.status === "PartiallyPaid" || line.status === "Draft") {
@@ -183,10 +205,6 @@ const DepartmentSummary: React.FC = () => {
             }
           });
         });
-
-        if (comm.outstandingCollection > 0) {
-          timesheetPending += 1;
-        }
 
         const milestones = p.paymentMilestones || [];
         upcomingDeliveries += milestones.length;
@@ -266,7 +284,7 @@ const DepartmentSummary: React.FC = () => {
         overdue,
       },
     };
-  }, []);
+  }, [pendingByDepartment]);
 
   return (
     <Card padded={false} elevated className="transition-all duration-200 overflow-hidden">

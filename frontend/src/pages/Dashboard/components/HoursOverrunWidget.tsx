@@ -2,6 +2,8 @@ import React, { useMemo } from "react";
 import { ArrowRight, FolderKanban, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getProjects } from "../../../services/projectService";
+import { getAllTimesheetImports } from "../../../services/timesheetService";
+import { getProcessedLifetimeActualHours } from "../../../services/timesheetProcessingService";
 
 export interface OverrunProjectItem {
   id: string;
@@ -50,17 +52,18 @@ const HoursOverrunWidget: React.FC = () => {
   const dynamicOverrunProjects = useMemo(() => {
     try {
       const allProjects = getProjects();
+      const allImports = getAllTimesheetImports();
       const overrunList: OverrunProjectItem[] = [];
 
       allProjects.forEach((p) => {
         // Budget Hours from Expense Budget -> Budget Hours
         const budget = p.manhourBudgetHours || p.totalHoursBudget || 0;
 
-        // Actual Hours from Team Assigned -> Total Hours
-        const actual = (p.resources || []).reduce(
-          (sum, r) => sum + (r.totalHours || 0),
-          0
-        );
+        // Actual Hours — the same TimesheetProcessingService engine that
+        // backs Team Assigned/Reports, not the project.resources roster
+        // snapshot (which can be a stale/manually-entered value that
+        // disagrees with real TimesheetEntry data).
+        const actual = getProcessedLifetimeActualHours(p.prNo || "", allImports);
 
         if (budget > 0 && actual > budget) {
           const overrun = actual - budget;

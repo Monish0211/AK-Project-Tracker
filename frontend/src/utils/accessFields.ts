@@ -43,6 +43,7 @@ export const APPROVAL_FIELDS: { key: keyof UserApprovalRights; label: string }[]
   { key: "approveProjectCreation", label: "Approve Project Creation" },
   { key: "approveReminders", label: "Approve Reminders" },
   { key: "archiveProjects", label: "Archive Projects" },
+  { key: "deleteProjectPermanently", label: "Delete Project Permanently" },
 ];
 
 /** Names present (from the backend) -> the boolean-flag object the UI renders. */
