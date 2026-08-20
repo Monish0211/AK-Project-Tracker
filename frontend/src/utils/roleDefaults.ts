@@ -87,6 +87,7 @@ const NO_APPROVALS: UserApprovalRights = {
   approveProjectCreation: false,
   approveReminders: false,
   archiveProjects: false,
+  deleteProjectPermanently: false,
 };
 
 const ALL_APPROVALS: UserApprovalRights = {
@@ -98,6 +99,7 @@ const ALL_APPROVALS: UserApprovalRights = {
   approveProjectCreation: true,
   approveReminders: true,
   archiveProjects: true,
+  deleteProjectPermanently: true,
 };
 
 function approvals(...keys: (keyof UserApprovalRights)[]): UserApprovalRights {

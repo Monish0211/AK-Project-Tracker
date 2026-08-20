@@ -324,6 +324,8 @@ interface BackendProjectDto {
   projectCoordinator: string | null;
   clientCoordinator: string | null;
   isDeleted: boolean;
+  deletedAt: string | null;
+  createdByUserId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -487,6 +489,9 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     clientCoordinator: dto.clientCoordinator || "",
     createdAt: dto.createdAt,
     updatedAt: dto.updatedAt,
+    isDeleted: dto.isDeleted,
+    deletedAt: dto.deletedAt,
+    createdByUserId: dto.createdByUserId,
   });
 }
 
@@ -540,6 +545,32 @@ export async function fetchProjectsFromApi(params: ProjectListParams = {}): Prom
   // second parameter (explicitBase?: Project), which is never the intent.
   const items = result.items.map((dto) => mergeBackendGeneralInfoIntoLocalProject(dto));
   writeThroughProjectsMirror(items);
+
+  return { items, total: result.total, page: result.page, pageSize: result.pageSize };
+}
+
+/**
+ * The Archived Projects list — GET /projects?isDeleted=true. Deliberately
+ * does NOT call writeThroughProjectsMirror: archived rows must never enter
+ * the localStorage mirror that Project Repository/Completed Projects read
+ * from first, or an archived project would flicker back into those lists
+ * until the next background sync corrects it.
+ */
+export async function fetchArchivedProjectsFromApi(params: ProjectListParams = {}): Promise<ProjectListResult> {
+  const query = new URLSearchParams();
+  if (params.search) query.set("search", params.search);
+  query.set("page", String(params.page ?? 1));
+  query.set("pageSize", String(params.pageSize ?? 10));
+  if (params.sortField) query.set("sortField", params.sortField);
+  if (params.sortDirection) query.set("sortDirection", params.sortDirection);
+  if (params.department) query.set("department", params.department);
+  if (params.client) query.set("client", params.client);
+  if (params.region) query.set("region", params.region);
+  if (params.prCategory) query.set("prCategory", params.prCategory);
+  query.set("isDeleted", "true");
+
+  const result = await apiClient.get<BackendPaginatedProjectList>(`/projects?${query.toString()}`);
+  const items = result.items.map((dto) => mergeBackendGeneralInfoIntoLocalProject(dto));
 
   return { items, total: result.total, page: result.page, pageSize: result.pageSize };
 }
@@ -644,25 +675,26 @@ export async function archiveProjectViaApi(id: string): Promise<void> {
   saveProjects(getProjects().filter((p) => p.id !== id));
 }
 
+/** Recover — the exact inverse of archiveProjectViaApi. PATCH /projects/:id/restore clears isDeleted/deletedAt server-side; no local mirror write here since the restored project's re-entry into the mirror happens naturally the next time fetchProjectsFromApi runs. */
+export async function restoreProjectViaApi(id: string): Promise<void> {
+  await apiClient.patch(`/projects/${id}/restore`);
+}
+
 /**
- * Permanent Delete — irreversible, Administrator-only (enforced server-side
- * via authorize("Administrator") on DELETE /projects/:id/permanent; this
- * function does not itself check the caller's role — the UI is expected to
- * only ever surface this action to an Administrator, and the backend
- * enforces it regardless).
- *
- * `hasInvoiceHistory` must be computed by the caller (see Projects.tsx,
- * which reuses invoiceProgressService.ts's getInvoiceCount() — the same
- * definition of "has invoice history" already used everywhere else in the
- * app) and is asserted to the backend, which cannot verify it independently:
- * Invoices/InvoiceLines are still localStorage-only, no Postgres table
- * exists for them yet. A true value gets a 409 back from the backend before
- * anything is removed; a false value proceeds to a real, cascading delete of
- * the Project row and every QuantityItem/PaymentMilestone/ProjectExpense row
- * that references it.
+ * Permanent Delete — irreversible, gated server-side by the "Delete Project
+ * Permanently" approval permission (requireApprovalPermission middleware on
+ * DELETE /projects/:id/permanent — a 403 comes back if the caller lacks it).
+ * This function does not itself check the caller's permission — the UI is
+ * expected to only surface this action when hasApprovalPermission(user,
+ * "Delete Project Permanently") is true, and the backend enforces it
+ * regardless. No request body: the backend performs one transactional
+ * cascading delete of the Project row and project-owned
+ * QuantityItem/PaymentMilestone/ProjectExpense/ProjectResource/InvoiceLine
+ * rows. TimesheetEntry history is preserved (projectId SetNull;
+ * rawProjectCode unchanged).
  */
-export async function permanentlyDeleteProjectViaApi(id: string, hasInvoiceHistory: boolean): Promise<void> {
-  await apiClient.delete(`/projects/${id}/permanent`, { hasInvoiceHistory });
+export async function permanentlyDeleteProjectViaApi(id: string): Promise<void> {
+  await apiClient.delete(`/projects/${id}/permanent`);
   saveProjects(getProjects().filter((p) => p.id !== id));
 }
 

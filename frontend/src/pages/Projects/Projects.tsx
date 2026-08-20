@@ -30,8 +30,9 @@ import {
   bulkImportProjectGeneralInfo,
 } from "../../services/projectService";
 import { ApiError } from "../../services/apiClient";
-import { getProjectCommercialSummary, getInvoiceCount } from "../../services/invoiceProgressService";
+import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import { useAuth } from "../../auth/authContext";
+import { hasApprovalPermission } from "../../auth/permissions";
 
 /** Sort fields the backend's GET /projects can order by — see listProjectsQuerySchema. Anything else (Team/Commercial/Invoice columns, not modeled server-side yet) is synced with the default sort instead and left to this page's own client-side sort exactly as before. */
 const BACKEND_SORTABLE_FIELDS = new Set([
@@ -67,10 +68,11 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const statusParam = searchParams.get("status") || "All";
   const { user } = useAuth();
-  // Delete Permanently is Administrator-only — the backend enforces this
-  // independently (authorize("Administrator") on DELETE /projects/:id/permanent),
-  // this only controls whether the action is even offered in the UI.
-  const canPermanentlyDelete = user?.role === "Administrator";
+  // Delete Permanently requires the "Delete Project Permanently" approval
+  // permission — the backend enforces this independently
+  // (requireApprovalPermission on DELETE /projects/:id/permanent), this only
+  // controls whether the action is even offered in the UI.
+  const canPermanentlyDelete = hasApprovalPermission(user, "Delete Project Permanently");
 
   const pageTitle = mode === "completed" ? "Completed Projects" : "Projects";
   const repoCardTitle = mode === "completed" ? "Completed Projects" : "Project Repository";
@@ -218,19 +220,15 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     setProjects(scopeProjectsByMode(getProjects(), mode));
   };
 
-  // Permanent Delete — irreversible, Administrator-only (see
-  // canPermanentlyDelete above; the backend independently enforces this via
-  // authorize("Administrator")). Always calls the backend, which is the
-  // single source of truth for the Invoice Protection block below — this
-  // component never pre-empts that decision, it only computes the
-  // `hasInvoiceHistory` flag the backend has no Postgres data of its own to
-  // verify (Invoices/InvoiceLines are still localStorage-only) and displays
-  // whatever message the backend actually returns.
+  // Permanent Delete — irreversible, gated by the "Delete Project
+  // Permanently" approval permission (see canPermanentlyDelete above; the
+  // backend independently enforces this via requireApprovalPermission).
+  // There is no financial-record exception — the backend deletes the
+  // project and every record that belongs to it regardless of invoice/
+  // expense/timesheet history.
   const handlePermanentDelete = async (project: Project) => {
-    const hasInvoiceHistory = getInvoiceCount(project.invoiceItems) > 0;
-
     try {
-      await permanentlyDeleteProjectViaApi(project.id, hasInvoiceHistory);
+      await permanentlyDeleteProjectViaApi(project.id);
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "Failed to permanently delete project. Please try again.");
       return;

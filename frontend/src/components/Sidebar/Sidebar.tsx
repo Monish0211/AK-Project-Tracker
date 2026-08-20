@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import {
+  Archive,
   BarChart3,
   Building2,
   CheckCircle2,
@@ -51,6 +52,7 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: "Project Repository", to: "/projects", icon: FolderKanban },
       { label: "Completed Projects", to: "/projects/completed", icon: CheckCircle2 },
+      { label: "Archived Projects", to: "/projects/archived", icon: Archive },
     ],
   },
   { label: "Customer Master", to: "/customers", icon: Building2 },
@@ -102,18 +104,21 @@ const Sidebar = () => {
   // that context, viewing a completed project would always (incorrectly)
   // light up Project Repository just because /projects/view/:id starts with
   // /projects/.
-  const routeState = location.state as { source?: "repository" | "completed" } | null;
+  const routeState = location.state as { source?: "repository" | "completed" | "archived" } | null;
   const isProjectDetailPath = /^\/projects\/(view|edit)\//.test(location.pathname);
   const cameFromCompleted = isProjectDetailPath && routeState?.source === "completed";
+  const cameFromArchived = isProjectDetailPath && routeState?.source === "archived";
 
   // "Project Repository" covers /projects itself plus its add/view/edit
-  // sub-routes, but NOT /projects/completed, and not a project opened from
-  // Completed Projects.
+  // sub-routes, but NOT /projects/completed, /projects/archived, and not a
+  // project opened from either of those.
   const isCompletedProjectsActive = location.pathname.startsWith("/projects/completed") || cameFromCompleted;
+  const isArchivedProjectsActive = location.pathname.startsWith("/projects/archived") || cameFromArchived;
   const isRepositoryActive =
     !isCompletedProjectsActive &&
+    !isArchivedProjectsActive &&
     (location.pathname === "/projects" || location.pathname.startsWith("/projects/"));
-  const isProjectsSectionActive = isRepositoryActive || isCompletedProjectsActive;
+  const isProjectsSectionActive = isRepositoryActive || isCompletedProjectsActive || isArchivedProjectsActive;
 
   // Dropdown starts expanded whenever a Projects sub-page is already active,
   // and otherwise toggles manually.
@@ -464,7 +469,11 @@ const Sidebar = () => {
                       {item.children.map((child) => {
                         const ChildIcon = child.icon;
                         const childActive =
-                          child.to === "/projects" ? isRepositoryActive : isCompletedProjectsActive;
+                          child.to === "/projects"
+                            ? isRepositoryActive
+                            : child.to === "/projects/completed"
+                              ? isCompletedProjectsActive
+                              : isArchivedProjectsActive;
                         return (
                           <li key={child.to}>
                             <NavLink

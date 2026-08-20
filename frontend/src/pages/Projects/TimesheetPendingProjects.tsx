@@ -2,59 +2,49 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ExcelJS from "exceljs";
 import { Search, Clock3 } from "lucide-react";
-import {
-  getMissingTimesheetProjects,
-  type MissingTimesheetProjectRow,
-  type MissingTimesheetStatus,
-} from "../../services/timesheetPendingService";
+import { fetchTimesheetPendingProjects, type TimesheetPendingProjectRow } from "../../services/timesheetPendingService";
+import { formatDisplayDate } from "../../services/timesheetService";
 import { downloadWorkbook } from "../../services/projectWorkbookService";
-
-const STATUS_FILTERS = ["All", "Pending", "No Timesheet"] as const;
-type StatusFilter = (typeof STATUS_FILTERS)[number];
-
-const STATUS_BADGE_CLASS: Record<MissingTimesheetStatus, string> = {
-  "No Timesheet": "bg-red-500 text-white",
-  Pending: "bg-orange-500 text-white",
-};
-
-const FILTER_CHIP_CLASS: Record<StatusFilter, { active: string; inactive: string }> = {
-  All: {
-    active: "bg-slate-800 border-slate-800 text-white dark:bg-slate-100 dark:border-slate-100 dark:text-slate-900",
-    inactive: "bg-white border-slate-200 text-slate-700 hover:bg-slate-100 dark:bg-slate-950 dark:border-slate-800 dark:text-slate-300",
-  },
-  Pending: {
-    active: "bg-orange-500 border-orange-500 text-white",
-    inactive: "bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 dark:bg-orange-950/30 dark:border-orange-900/60 dark:text-orange-300",
-  },
-  "No Timesheet": {
-    active: "bg-red-500 border-red-500 text-white",
-    inactive: "bg-red-50 border-red-200 text-red-700 hover:bg-red-100 dark:bg-red-950/30 dark:border-red-900/60 dark:text-red-300",
-  },
-};
 
 /**
  * Project Timesheet Pending Repository — the "View All" destination for the
- * dashboard's Project Timesheet Pending widget. Same underlying
- * getMissingTimesheetProjects() compliance data (current reporting month
- * submitted or not — never "last submission is old"), with full search,
- * filtering, pagination, and export.
+ * Dashboard's Project Timesheet Pending widget. Same backend source of
+ * truth (GET /timesheets/pending-projects — see
+ * Backend/src/modules/timesheets/services/timesheetPending.service.ts for
+ * the confirmed rule), with search, filtering, pagination, and export.
+ * Every row returned is already PENDING (a compliant project is simply
+ * absent) — there is no separate status filter to apply here, since there
+ * is nothing to distinguish between rows on that axis.
  */
 export default function TimesheetPendingProjects() {
   const navigate = useNavigate();
 
-  const [rows, setRows] = useState<MissingTimesheetProjectRow[]>(() => getMissingTimesheetProjects());
+  const [rows, setRows] = useState<TimesheetPendingProjectRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
   const [departmentFilter, setDepartmentFilter] = useState("All");
   const [managerFilter, setManagerFilter] = useState("All");
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
+  const load = () => {
+    setLoadError(false);
+    fetchTimesheetPendingProjects()
+      .then(setRows)
+      .catch((err) => {
+        console.warn("Failed to load Timesheet Pending projects:", err);
+        setRows([]);
+        setLoadError(true);
+      })
+      .finally(() => setIsLoading(false));
+  };
+
   useEffect(() => {
-    const handleDataChange = () => setRows(getMissingTimesheetProjects());
-    window.addEventListener("pmo:data-changed", handleDataChange);
-    return () => window.removeEventListener("pmo:data-changed", handleDataChange);
+    load();
+    window.addEventListener("pmo:data-changed", load);
+    return () => window.removeEventListener("pmo:data-changed", load);
   }, []);
 
   const departments = useMemo(() => {
@@ -63,34 +53,24 @@ export default function TimesheetPendingProjects() {
   }, [rows]);
 
   const managers = useMemo(() => {
-    const set = new Set(rows.map((r) => r.projectManager).filter((m) => m && m !== "—"));
+    const set = new Set(rows.map((r) => r.projectManager).filter((m): m is string => !!m));
     return ["All", ...Array.from(set).sort()];
   }, [rows]);
 
-  const statusCounts = useMemo(
-    () => ({
-      All: rows.length,
-      Pending: rows.filter((r) => r.status === "Pending").length,
-      "No Timesheet": rows.filter((r) => r.status === "No Timesheet").length,
-    }),
-    [rows]
-  );
-
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
-      if (statusFilter !== "All" && row.status !== statusFilter) return false;
       if (departmentFilter !== "All" && row.department !== departmentFilter) return false;
       if (managerFilter !== "All" && row.projectManager !== managerFilter) return false;
       if (!search) return true;
       const q = search.toLowerCase();
       return (
         row.prNo.toLowerCase().includes(q) ||
-        row.projectName.toLowerCase().includes(q) ||
+        row.projectTitle.toLowerCase().includes(q) ||
         row.department.toLowerCase().includes(q) ||
-        row.projectManager.toLowerCase().includes(q)
+        (row.projectManager ?? "").toLowerCase().includes(q)
       );
     });
-  }, [rows, search, statusFilter, departmentFilter, managerFilter]);
+  }, [rows, search, departmentFilter, managerFilter]);
 
   const paginatedRows = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -109,15 +89,22 @@ export default function TimesheetPendingProjects() {
     const sheet = workbook.addWorksheet("Timesheet Pending");
     sheet.columns = [
       { header: "PR Number", key: "prNo", width: 16 },
-      { header: "Project Name", key: "projectName", width: 28 },
+      { header: "Project Name", key: "projectTitle", width: 28 },
       { header: "Department", key: "department", width: 22 },
       { header: "Project Manager", key: "projectManager", width: 20 },
-      { header: "Missing Timesheet Month", key: "missingMonthLabel", width: 20 },
-      { header: "Overdue Since (Days)", key: "overdueSinceDays", width: 16 },
+      { header: "Last Timesheet Date", key: "latestTimesheetDate", width: 18 },
+      { header: "Tracking Since", key: "trackingStartDate", width: 18 },
+      { header: "Days Pending", key: "daysSinceLatestTimesheet", width: 14 },
       { header: "Status", key: "status", width: 14 },
     ];
     sheet.getRow(1).font = { bold: true };
-    filteredRows.forEach((row) => sheet.addRow(row));
+    filteredRows.forEach((row) =>
+      sheet.addRow({
+        ...row,
+        latestTimesheetDate: row.latestTimesheetDate ? formatDisplayDate(row.latestTimesheetDate) : "No Timesheet",
+        trackingStartDate: row.trackingStartDate ? formatDisplayDate(row.trackingStartDate) : "—",
+      })
+    );
 
     await downloadWorkbook(workbook, "project_timesheet_pending_export.xlsx");
   };
@@ -134,7 +121,7 @@ export default function TimesheetPendingProjects() {
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Project Timesheet Pending Repository</h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-xl">
-              Active projects that have not submitted the current reporting month's timesheet.
+              Active projects with no timesheet entry logged in the last 7 days.
             </p>
           </div>
 
@@ -147,7 +134,7 @@ export default function TimesheetPendingProjects() {
               Export to Excel
             </button>
             <div className="bg-red-950/80 border border-red-800/60 rounded-xl px-3.5 py-2 text-right">
-              <p className="text-[10px] uppercase font-bold text-red-300">Missing Timesheets</p>
+              <p className="text-[10px] uppercase font-bold text-red-300">Pending Timesheets</p>
               <p className="text-xl font-black text-white">{rows.length}</p>
             </div>
           </div>
@@ -164,11 +151,11 @@ export default function TimesheetPendingProjects() {
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">Timesheet Pending Repository</h2>
-              <p className="text-xs text-slate-400">Ordered by Overdue Since — highest (most overdue) first.</p>
+              <p className="text-xs text-slate-400">Ordered by days since last timesheet — highest (most overdue) first.</p>
             </div>
           </div>
           <span className="text-xs font-bold px-3 py-1 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 rounded-full border border-red-200 dark:border-red-900/50">
-            Showing {filteredRows.length} of {rows.length} Missing
+            Showing {filteredRows.length} of {rows.length} Pending
           </span>
         </div>
 
@@ -213,26 +200,10 @@ export default function TimesheetPendingProjects() {
                 <option key={m} value={m}>{m === "All" ? "All Project Managers" : m}</option>
               ))}
             </select>
-
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 max-w-full" aria-label="Status filters">
-              {STATUS_FILTERS.map((filter) => (
-                <button
-                  key={filter}
-                  type="button"
-                  onClick={() => { setStatusFilter(filter); setCurrentPage(1); }}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-bold transition-colors whitespace-nowrap ${
-                    statusFilter === filter ? FILTER_CHIP_CLASS[filter].active : FILTER_CHIP_CLASS[filter].inactive
-                  }`}
-                  aria-pressed={statusFilter === filter}
-                >
-                  {filter} ({statusCounts[filter]})
-                </button>
-              ))}
-            </div>
           </div>
 
           <button
-            onClick={() => setRows(getMissingTimesheetProjects())}
+            onClick={load}
             className="text-xs font-semibold text-red-600 hover:text-red-700 dark:text-red-400 hover:underline cursor-pointer"
           >
             Refresh Data
@@ -248,13 +219,24 @@ export default function TimesheetPendingProjects() {
                 <th className="py-3 px-4">PROJECT NAME</th>
                 <th className="py-3 px-4">DEPARTMENT</th>
                 <th className="py-3 px-4">PROJECT MANAGER</th>
-                <th className="py-3 px-4">MISSING TIMESHEET MONTH</th>
-                <th className="py-3 px-4 text-right">OVERDUE SINCE</th>
-                <th className="py-3 px-4 text-right">STATUS</th>
+                <th className="py-3 px-4">LAST TIMESHEET</th>
+                <th className="py-3 px-4 text-right">DAYS PENDING</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-              {paginatedRows.length > 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                    Loading…
+                  </td>
+                </tr>
+              ) : loadError ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                    Timesheet Pending could not be loaded from the server. Use Refresh Data to try again.
+                  </td>
+                </tr>
+              ) : paginatedRows.length > 0 ? (
                 paginatedRows.map((row) => (
                   <tr key={row.projectId} className="hover:bg-red-50/40 dark:hover:bg-slate-800/50 transition-colors group">
                     <td
@@ -264,16 +246,29 @@ export default function TimesheetPendingProjects() {
                       {row.prNo}
                     </td>
                     <td className="py-3 px-4">
-                      <span className="font-semibold text-slate-900 dark:text-slate-100 truncate max-w-[220px] block" title={row.projectName}>
-                        {row.projectName}
+                      <span className="font-semibold text-slate-900 dark:text-slate-100 truncate max-w-[220px] block" title={row.projectTitle}>
+                        {row.projectTitle}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">{row.department}</td>
-                    <td className="py-3 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">{row.projectManager}</td>
-                    <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">{row.missingMonthLabel}</td>
-                    <td className="py-3 px-4 text-right font-extrabold text-slate-900 dark:text-slate-100 whitespace-nowrap">{row.overdueSinceDays} Days</td>
+                    <td className="py-3 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">{row.projectManager ?? "—"}</td>
+                    <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">
+                      {row.latestTimesheetDate ? (
+                        formatDisplayDate(row.latestTimesheetDate)
+                      ) : (
+                        <span>
+                          No Timesheet
+                          {row.trackingStartDate && (
+                            <span className="block text-[10px] text-slate-400 dark:text-slate-500">
+                              Since {formatDisplayDate(row.trackingStartDate)}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </td>
                     <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold shadow-xs ${STATUS_BADGE_CLASS[row.status]}`}>
+                      <span className="font-extrabold text-slate-900 dark:text-slate-100">{row.daysSinceLatestTimesheet} Days</span>
+                      <span className="inline-flex items-center px-2.5 py-0.5 ml-2 rounded-full text-[10px] font-bold shadow-xs bg-orange-500 text-white">
                         {row.status}
                       </span>
                     </td>
@@ -281,8 +276,8 @@ export default function TimesheetPendingProjects() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
-                    No projects missing this reporting month's timesheet matching your filters.
+                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                    No projects with a pending timesheet match your filters.
                   </td>
                 </tr>
               )}

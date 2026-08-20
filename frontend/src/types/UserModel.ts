@@ -69,6 +69,7 @@ export interface UserApprovalRights {
   approveProjectCreation: boolean;
   approveReminders: boolean;
   archiveProjects: boolean;
+  deleteProjectPermanently: boolean;
 }
 
 export interface UserAccountSecurity {
