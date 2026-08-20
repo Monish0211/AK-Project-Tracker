@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
+import { EmptyState } from "../Shared/EmptyState";
 
 interface Props {
   projects: any[];
@@ -10,25 +11,23 @@ export function BillableChart({ projects }: Props) {
     let totalBillable = 0;
     let totalNonBillable = 0;
 
+    // ManhourExpense's real logged-hours field is bookedHours (types/ManhourExpense.ts).
     projects.forEach((p) => {
       const mh = Array.isArray(p.manhourExpenses) ? p.manhourExpenses : [];
       mh.forEach((item: any) => {
-        const hrs = item.hours || item.quantity || 160;
+        const hrs = item.bookedHours || 0;
         totalBillable += hrs;
         totalNonBillable += Math.round(hrs * 0.15);
       });
     });
-
-    if (totalBillable === 0) {
-      totalBillable = 7600;
-      totalNonBillable = 1140;
-    }
 
     return [
       { name: "Billable Hours", value: totalBillable, color: "#10b981" },
       { name: "Non-Billable Overhead", value: totalNonBillable, color: "#64748b" },
     ];
   }, [projects]);
+
+  const hasData = pieData.some((d) => d.value > 0);
 
   return (
     <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] p-4 rounded-2xl space-y-3">
@@ -39,6 +38,9 @@ export function BillableChart({ projects }: Props) {
         <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">Billable vs Overhead</span>
       </div>
 
+      {!hasData ? (
+        <EmptyState title="No Manhour Data" description="No Manhour Expense entries found for the selected filter parameters." />
+      ) : (
       <div className="h-64 w-full flex items-center justify-center">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -61,6 +63,7 @@ export function BillableChart({ projects }: Props) {
           </PieChart>
         </ResponsiveContainer>
       </div>
+      )}
     </div>
   );
 }

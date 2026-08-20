@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
+import { EmptyState } from "../Shared/EmptyState";
 
 interface Props {
   projects: any[];
@@ -15,26 +16,16 @@ export function UtilizationChart({ projects }: Props) {
         deptHours[dName] = { dept: dName.length > 12 ? dName.slice(0, 12) + "..." : dName, billable: 0, nonBillable: 0 };
       }
 
+      // ManhourExpense's real logged-hours field is bookedHours (types/ManhourExpense.ts).
       const manhourList = Array.isArray(p.manhourExpenses) ? p.manhourExpenses : [];
       manhourList.forEach((mh: any) => {
-        const hrs = mh.hours || mh.quantity || 160;
+        const hrs = mh.bookedHours || 0;
         deptHours[dName].billable += hrs;
         deptHours[dName].nonBillable += Math.round(hrs * 0.15); // ~15% non-billable overhead
       });
     });
 
-    const entries = Object.values(deptHours);
-    if (entries.length === 0) {
-      return [
-        { dept: "Process", billable: 1450, nonBillable: 210 },
-        { dept: "Piping", billable: 1820, nonBillable: 290 },
-        { dept: "Safety & Loss", billable: 2100, nonBillable: 310 },
-        { dept: "Instrumentation", billable: 1280, nonBillable: 180 },
-        { dept: "Electrical", billable: 950, nonBillable: 140 },
-      ];
-    }
-
-    return entries;
+    return Object.values(deptHours).filter((d) => d.billable > 0 || d.nonBillable > 0);
   }, [projects]);
 
   return (
@@ -46,6 +37,9 @@ export function UtilizationChart({ projects }: Props) {
         <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">Engineering Hours</span>
       </div>
 
+      {chartData.length === 0 ? (
+        <EmptyState title="No Manhour Data" description="No Manhour Expense entries found for the selected filter parameters." />
+      ) : (
       <div className="h-64 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
@@ -59,6 +53,7 @@ export function UtilizationChart({ projects }: Props) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+      )}
     </div>
   );
 }

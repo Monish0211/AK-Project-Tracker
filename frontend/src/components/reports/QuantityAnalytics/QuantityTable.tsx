@@ -22,7 +22,8 @@ export function QuantityTable({ projects }: Props) {
           if (line.status !== "Cancelled") billed += line.quantityBilled || 0;
         });
 
-        const totalQty = item.totalQuantity || 0;
+        // InvoiceItem's real ordered-quantity field is `qty` (types/InvoiceItem.ts).
+        const totalQty = item.qty || 0;
         const remaining = Math.max(0, totalQty - billed);
         const completionPct = totalQty > 0 ? (billed / totalQty) * 100 : 0;
 

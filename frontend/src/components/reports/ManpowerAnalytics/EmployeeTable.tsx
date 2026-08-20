@@ -14,14 +14,16 @@ export function EmployeeTable({ projects }: Props) {
   const employeeRows = useMemo(() => {
     const empMap: Record<string, { empName: string; role: string; dept: string; billableHrs: number; costINR: number }> = {};
 
+    // ManhourExpense's real fields are employeeName/department/bookedHours/
+    // totalCost (types/ManhourExpense.ts) — no role/designation field exists.
     projects.forEach((p) => {
       const mhList = Array.isArray(p.manhourExpenses) ? p.manhourExpenses : [];
       mhList.forEach((mh: any) => {
-        const empName = mh.employeeName || mh.personnelName || p.primaryProjectManager || "Engineering Specialist";
-        const role = mh.role || mh.designation || "Lead Engineer";
-        const dept = p.department || "Engineering";
-        const hrs = mh.hours || mh.quantity || 160;
-        const cost = mh.totalCost || mh.amount || hrs * 1200;
+        const empName = mh.employeeName || "Unnamed Employee";
+        const role = "-";
+        const dept = mh.department || p.department || "Engineering";
+        const hrs = mh.bookedHours || 0;
+        const cost = mh.totalCost || 0;
 
         if (!empMap[empName]) {
           empMap[empName] = { empName, role, dept, billableHrs: 0, costINR: 0 };
@@ -31,17 +33,7 @@ export function EmployeeTable({ projects }: Props) {
       });
     });
 
-    const entries = Object.values(empMap);
-    if (entries.length === 0) {
-      return [
-        { empName: "Anand K.", role: "Principal PM", dept: "Process", billableHrs: 480, costINR: 720000 },
-        { empName: "Siddharth V.", role: "Lead Engineer", dept: "Safety & Loss", billableHrs: 520, costINR: 624000 },
-        { empName: "Priya S.", role: "Piping Lead", dept: "Piping", billableHrs: 410, costINR: 492000 },
-        { empName: "Rajesh M.", role: "Senior Specialist", dept: "Instrumentation", billableHrs: 380, costINR: 456000 },
-      ];
-    }
-
-    return entries;
+    return Object.values(empMap);
   }, [projects]);
 
   const filtered = useMemo(() => {

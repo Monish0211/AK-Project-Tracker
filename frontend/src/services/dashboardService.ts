@@ -31,15 +31,22 @@ export const getDashboardMetrics = (): DashboardMetrics => {
   );
 
   let totalInvoiceRaised = 0;
-  let totalOutstanding = 0;
   let totalPaymentReceived = 0;
 
   projects.forEach((project) => {
     const summary = getProjectCommercialSummary(project);
     totalInvoiceRaised += summary.totalInvoiceRaised;
-    totalOutstanding += summary.outstandingCollection;
     totalPaymentReceived += summary.totalPaymentReceived;
   });
+
+  // Outstanding — Dashboard's management-level KPI: Total Work Order Value
+  // minus Payment Received, summed across every included project. This is
+  // deliberately NOT the same figure as summary.outstandingCollection
+  // above (the Invoice module's own Outstanding — Invoice Raised minus
+  // Payment Received, used by the Invoice tab/View Project and left
+  // unchanged) — these are two separate business concepts that happen to
+  // share a name.
+  const totalOutstanding = Math.max(0, totalWOValue - totalPaymentReceived);
 
   const totalExpenses = projects.reduce(
     (sum, project) =>

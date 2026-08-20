@@ -4,6 +4,7 @@ import type { Customer } from "../../types/CustomerModel";
 import { getProjects } from "../../services/projectService";
 import { getCustomers } from "../../services/customerService";
 import { getTotalNonManhourCost, getTotalManhourCost } from "../../services/expenseService";
+import { getTotalPaymentReceived } from "../../services/invoiceProgressService";
 
 export interface ReportFilterState {
   dateRange: { start: string; end: string };
@@ -189,13 +190,17 @@ export function useReportsData() {
       let projectInvoiceRaised = 0;
 
       items.forEach((item: any) => {
-        totalOrderedQty += item.totalQuantity || item.orderedQuantity || item.quantity || 0;
+        // InvoiceItem's real ordered-quantity field is `qty` (types/InvoiceItem.ts)
+        // — there is no totalQuantity/orderedQuantity/quantity field on it.
+        totalOrderedQty += item.qty || 0;
 
         (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
           const statusStr = String(line.status || "");
           if (statusStr !== "Cancelled") {
             const amt = line.invoiceAmountINR || 0;
             projectInvoiceRaised += amt;
+            // Invoiced Quantity — same rule as QuantityTable.tsx/QuantityProgress.tsx: every non-Cancelled line's billed qty.
+            totalInvoicedQty += line.quantityBilled || 0;
 
             if (statusStr === "Paid") {
               paidInvoiceVal += amt;
@@ -228,7 +233,15 @@ export function useReportsData() {
 
       totalInvoiceRaised += projectInvoiceRaised;
 
-      const pReceived = p.paymentReceivedINR ?? p.paymentReceived ?? 0;
+      // Payment Received — delegates to the same canonical
+      // invoiceProgressService.ts function Dashboard/View Project use
+      // (getTotalPaymentReceived), rather than re-deriving the status rule
+      // here a second time. Under the current business rule, a line counts
+      // as received once it reaches Raised / Submitted, PartiallyPaid, or
+      // Paid — never the legacy Excel-import-only project.paymentReceivedINR
+      // field, which is frozen at import time and never updated by the
+      // Invoice module.
+      const pReceived = Math.min(getTotalPaymentReceived(items), projectInvoiceRaised);
       totalPaymentReceived += pReceived;
 
       // Customer map aggregation
@@ -240,7 +253,12 @@ export function useReportsData() {
       customerMap[clientName].woValue += woVal;
       customerMap[clientName].raised += projectInvoiceRaised;
       customerMap[clientName].received += pReceived;
-      customerMap[clientName].outstanding += Math.max(0, projectInvoiceRaised - pReceived);
+      // Outstanding — Reports' management-level KPI: Work Order Value
+      // minus Payment Received. Deliberately NOT Invoice Raised minus
+      // Payment Received (that's the Invoice module's own, separate
+      // Outstanding concept, computed in invoiceProgressService.ts's
+      // getProjectCommercialSummary and left unchanged there).
+      customerMap[clientName].outstanding += Math.max(0, woVal - pReceived);
 
       // Dept map aggregation
       const deptName = p.department || "General Engineering";
@@ -254,7 +272,13 @@ export function useReportsData() {
       deptMap[deptName].expenses += pExpenses;
     });
 
-    const totalOutstanding = Math.max(0, totalInvoiceRaised - totalPaymentReceived);
+    // Outstanding — Reports' management-level KPI: Total Work Order Value
+    // minus Payment Received across all included projects. Deliberately
+    // NOT Invoice Raised minus Payment Received — that's the Invoice
+    // module's own, separate Outstanding concept (getProjectCommercialSummary's
+    // outstandingCollection), which stays unchanged. Also never the same
+    // as Balance to Invoice below.
+    const totalOutstanding = Math.max(0, totalWOValue - totalPaymentReceived);
     const balanceToInvoice = Math.max(0, totalWOValue - totalInvoiceRaised);
     const grossProfit = totalInvoiceRaised - totalExpenses;
     const profitMarginPercent = totalInvoiceRaised > 0 ? (grossProfit / totalInvoiceRaised) * 100 : 0;

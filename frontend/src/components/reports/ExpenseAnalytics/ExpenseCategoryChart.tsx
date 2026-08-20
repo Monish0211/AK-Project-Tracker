@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { EmptyState } from "../Shared/EmptyState";
 
 interface Props {
   projects: any[];
@@ -32,15 +33,6 @@ export function ExpenseCategoryChart({ projects }: Props) {
       color: COLORS[idx % COLORS.length],
     }));
 
-    if (entries.length === 0) {
-      return [
-        { name: "Flight Tickets", value: 450000, color: "#ef4444" },
-        { name: "Site Lodging", value: 380000, color: "#3b82f6" },
-        { name: "Software Licenses", value: 620000, color: "#f59e0b" },
-        { name: "Manhour Costs", value: 1250000, color: "#10b981" },
-      ];
-    }
-
     return entries;
   }, [projects]);
 
@@ -53,6 +45,9 @@ export function ExpenseCategoryChart({ projects }: Props) {
         <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">By Category</span>
       </div>
 
+      {categoryData.length === 0 ? (
+        <EmptyState title="No Expenses Recorded" description="No Other Project Expenses or Manhour costs found for the selected filter parameters." />
+      ) : (
       <div className="h-64 w-full flex items-center justify-center">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -75,6 +70,7 @@ export function ExpenseCategoryChart({ projects }: Props) {
           </PieChart>
         </ResponsiveContainer>
       </div>
+      )}
     </div>
   );
 }

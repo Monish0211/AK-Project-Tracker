@@ -249,7 +249,7 @@ const DepartmentSummary: React.FC = () => {
       delayed: list.filter((d) => d.health === "Delayed").length,
     };
 
-    const avgComp = deptCountWithProjects > 0 ? Math.round(totalCompletionSum / deptCountWithProjects) : 68;
+    const avgComp = deptCountWithProjects > 0 ? Math.round(totalCompletionSum / deptCountWithProjects) : 0;
 
     return {
       deptList: list,
@@ -257,13 +257,13 @@ const DepartmentSummary: React.FC = () => {
       totals: {
         departments: list.length,
         totalProjects: totalProjectsCount || projects.length,
-        teamMembers: totalTeamCount || 74,
+        teamMembers: totalTeamCount,
         averageCompletion: avgComp,
       },
       upcomingActions: {
-        dueToday: dueToday || 2,
-        dueThisWeek: dueThisWeek || 7,
-        overdue: overdue || 1,
+        dueToday,
+        dueThisWeek,
+        overdue,
       },
     };
   }, []);

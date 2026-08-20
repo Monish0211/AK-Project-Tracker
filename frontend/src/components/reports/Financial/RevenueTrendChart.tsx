@@ -10,6 +10,7 @@ import {
   Legend,
 } from "recharts";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { EmptyState } from "../Shared/EmptyState";
 
 interface Props {
   projects: any[];
@@ -32,7 +33,10 @@ export function RevenueTrendChart({ projects }: Props) {
             }
             const amt = line.invoiceAmountINR || 0;
             monthMap[mKey].raised += amt;
-            if (line.status === "Paid") {
+            // Payment Received — matches invoiceProgressService.ts's rule:
+            // Raised / Submitted, PartiallyPaid, and Paid all count as
+            // received; only Draft (not yet submitted) and Cancelled don't.
+            if (line.status === "Raised" || line.status === "PartiallyPaid" || line.status === "Paid") {
               monthMap[mKey].received += amt;
             }
           }
@@ -41,16 +45,6 @@ export function RevenueTrendChart({ projects }: Props) {
     });
 
     const sortedKeys = Object.keys(monthMap).sort();
-    if (sortedKeys.length === 0) {
-      return [
-        { month: "Jan 26", raised: 4500000, received: 3800000 },
-        { month: "Feb 26", raised: 5200000, received: 4900000 },
-        { month: "Mar 26", raised: 6100000, received: 5800000 },
-        { month: "Apr 26", raised: 4800000, received: 4200000 },
-        { month: "May 26", raised: 7300000, received: 6900000 },
-      ];
-    }
-
     return sortedKeys.map((k) => monthMap[k]);
   }, [projects]);
 
@@ -63,6 +57,9 @@ export function RevenueTrendChart({ projects }: Props) {
         <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">INR Trend</span>
       </div>
 
+      {trendData.length === 0 ? (
+        <EmptyState title="No Invoice Activity" description="No dated invoice lines found for the selected filter parameters." />
+      ) : (
       <div className="h-64 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={trendData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
@@ -86,6 +83,7 @@ export function RevenueTrendChart({ projects }: Props) {
           </AreaChart>
         </ResponsiveContainer>
       </div>
+      )}
     </div>
   );
 }
