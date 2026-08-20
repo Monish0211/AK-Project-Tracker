@@ -1,4 +1,6 @@
 import { AppError } from "../../../shared/utils/AppError.js";
+import { assertProjectAccess } from "../../../shared/utils/projectAccess.js";
+import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type {
   ImportProjectsResultDto,
   PaginatedProjectListDto,
@@ -15,6 +17,7 @@ import {
   findProjectByIdAny,
   findProjectsPage,
   hardDeleteProject as hardDeleteProjectInRepository,
+  restoreProject as restoreProjectInRepository,
   updateProject as updateProjectInRepository,
 } from "../repository/project.repository.js";
 import type {
@@ -67,6 +70,8 @@ function toProjectDto(project: Awaited<ReturnType<typeof findProjectById>>): Pro
     projectCoordinator: project.projectCoordinator,
     clientCoordinator: project.clientCoordinator,
     isDeleted: project.isDeleted,
+    deletedAt: project.deletedAt,
+    createdByUserId: project.createdByUserId,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
   };
@@ -137,10 +142,16 @@ function toGeneralInfoData(input: GeneralInfoInput): ProjectGeneralInfoData {
   };
 }
 
-export async function createProject(input: CreateProjectInput): Promise<ProjectDto> {
+/**
+ * The creator identity comes from the authenticated caller's own JWT
+ * (`req.user.sub`), never from the request body — there is no
+ * `createdByUserId`/similar field in `createProjectSchema` to trust from the
+ * client, so there is nothing to strip or validate against spoofing.
+ */
+export async function createProject(input: CreateProjectInput, creatorUserId: string): Promise<ProjectDto> {
   await assertPrNoAvailable(input.prNo);
 
-  const created = await createProjectInRepository(toGeneralInfoData(input));
+  const created = await createProjectInRepository({ ...toGeneralInfoData(input), createdByUserId: creatorUserId });
 
   return toProjectDto(created);
 }
@@ -155,7 +166,10 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectD
  * prNo — already confirmed unique within the batch below — rather than
  * assumed from DB insert order).
  */
-export async function bulkImportProjects(input: ImportProjectsInput): Promise<ImportProjectsResultDto> {
+export async function bulkImportProjects(
+  input: ImportProjectsInput,
+  creatorUserId: string
+): Promise<ImportProjectsResultDto> {
   const prNos = input.projects.map((p) => p.prNo);
 
   const seen = new Set<string>();
@@ -173,7 +187,9 @@ export async function bulkImportProjects(input: ImportProjectsInput): Promise<Im
     throw new AppError(`The following PR Numbers already exist: ${names}.`, 409);
   }
 
-  const created = await createProjectsBulk(input.projects.map(toGeneralInfoData));
+  const created = await createProjectsBulk(
+    input.projects.map((p) => ({ ...toGeneralInfoData(p), createdByUserId: creatorUserId }))
+  );
   const createdByPrNo = new Map(created.map((row) => [row.prNo, row]));
 
   const items = input.projects.map((p) => {
@@ -189,8 +205,22 @@ export async function bulkImportProjects(input: ImportProjectsInput): Promise<Im
   return { items };
 }
 
-export async function getProjectById(id: string): Promise<ProjectDto> {
-  const project = await findProjectById(id);
+/**
+ * Uses findProjectByIdAny (not findProjectById) so an archived project's
+ * detail page is still reachable — needed by the Archived Projects page's
+ * View action. Every existing caller already treats any 404 uniformly as
+ * "not found," so widening this doesn't change behavior for active projects.
+ *
+ * This is the single project-ownership checkpoint every child-resource
+ * module's own assertProjectExists() ultimately calls through — access is
+ * checked BEFORE any project data is mapped/returned, never after.
+ */
+export async function getProjectById(id: string, user: AccessTokenPayload): Promise<ProjectDto> {
+  const project = await findProjectByIdAny(id);
+  if (!project) {
+    throw new AppError("Project not found.", 404);
+  }
+  assertProjectAccess(user, project);
   return toProjectDto(project);
 }
 
@@ -247,11 +277,12 @@ function toUpdateData(input: UpdateProjectInput): Partial<ProjectGeneralInfoData
  * full manpower/timesheet history intact, so nothing about that status
  * value triggers a side effect on this path at all.
  */
-export async function updateProject(id: string, input: UpdateProjectInput): Promise<ProjectDto> {
+export async function updateProject(id: string, input: UpdateProjectInput, user: AccessTokenPayload): Promise<ProjectDto> {
   const existing = await findProjectById(id);
   if (!existing) {
     throw new AppError("Project not found.", 404);
   }
+  assertProjectAccess(user, existing);
 
   if (input.prNo && input.prNo !== existing.prNo) {
     await assertPrNoAvailable(input.prNo, id);
@@ -267,56 +298,89 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
  * 3.1. Sets isDeleted/deletedAt only; the row itself, and every child row
  * (QuantityItem/PaymentMilestone/ProjectExpense), are left completely
  * untouched. This is NOT the same operation as permanentlyDeleteProject()
- * below — the two coexist, and this one's behavior does not change.
+ * below — the two coexist, and this one's behavior does not change. No
+ * special approval permission is required (the dormant "Archive Projects"
+ * ApprovalType is deliberately left unused) — only project-ownership access,
+ * same as View/Edit.
  */
-export async function archiveProject(id: string): Promise<void> {
+export async function archiveProject(id: string, user: AccessTokenPayload): Promise<void> {
   const existing = await findProjectById(id);
   if (!existing) {
     throw new AppError("Project not found.", 404);
   }
+  assertProjectAccess(user, existing);
 
   await archiveProjectInRepository(id);
 }
 
 /**
- * Permanent Delete — irreversible, Administrator-only (enforced at the route
- * layer via authorize("Administrator")). A real row delete: PostgreSQL
- * removes every QuantityItem/PaymentMilestone/ProjectExpense row for this
- * project automatically via their onDelete: Cascade foreign keys (see
- * schema.prisma) — nothing here or in any other module's repository ever
- * deletes those rows directly.
+ * Recover — the exact inverse of archiveProject. No special permission
+ * (any user with normal Project access may recover), matching Archive's own
+ * gate — only project-ownership access is checked. Looks the project up via
+ * findProjectByIdAny() since the whole point is finding an archived
+ * (isDeleted: true) row that findProjectById would never see.
+ */
+export async function restoreProject(id: string, user: AccessTokenPayload): Promise<void> {
+  const existing = await findProjectByIdAny(id);
+  if (!existing) {
+    throw new AppError("Project not found.", 404);
+  }
+  assertProjectAccess(user, existing);
+
+  if (!existing.isDeleted) {
+    throw new AppError("This project is not archived.", 409);
+  }
+
+  await restoreProjectInRepository(id);
+}
+
+/**
+ * Permanent Delete — irreversible, gated by BOTH the global "Delete Project
+ * Permanently" approval permission (enforced at the route layer via
+ * requireApprovalPermission — does the caller hold this grant at all) AND
+ * project-ownership access (checked here — may the caller touch THIS
+ * project). Holding the permission alone is not sufficient to delete every
+ * project in the company; it must also be one the caller is authorized for
+ * (their own creation, an unclaimed legacy project, or any project if
+ * Administrator). A full cascade of project-owned operational/commercial
+ * rows: PostgreSQL removes every QuantityItem/PaymentMilestone/
+ * ProjectExpense/ProjectResource via onDelete: Cascade, and
+ * hardDeleteProjectInRepository() deletes InvoiceLine rows first (Restrict
+ * FK — see that function's comment). TimesheetEntry / TimesheetImport /
+ * TimesheetImportRowLog are preserved: deleting the Project only SetNulls
+ * TimesheetEntry.projectId.
  *
  * Looks the project up via findProjectByIdAny() (not findProjectById), since
  * this must also work on a project that's already archived — Archive first,
  * Permanent Delete later is the expected, recommended path.
  *
- * `hasInvoiceHistory` is asserted by the caller (see
- * permanentDeleteProjectSchema in project.validators.ts for why this can't
- * be independently verified here yet — Invoices/InvoiceLines have no
- * Postgres table today). A true value blocks the delete with a 409,
- * preserving financial history exactly as Archive already does.
+ * There is no financial-record protection here — the permission gate itself
+ * is the protection. A project with invoices/expenses is deleted exactly the
+ * same as one without, as long as the caller holds the permission and is
+ * authorized for this specific project. Historical timesheet evidence
+ * always survives.
  */
-export async function permanentlyDeleteProject(id: string, hasInvoiceHistory: boolean): Promise<void> {
+export async function permanentlyDeleteProject(id: string, user: AccessTokenPayload): Promise<void> {
   const existing = await findProjectByIdAny(id);
   if (!existing) {
     throw new AppError("Project not found.", 404);
   }
-
-  if (hasInvoiceHistory) {
-    throw new AppError(
-      "This project contains financial records and cannot be permanently deleted. Archive the project instead.",
-      409
-    );
-  }
+  assertProjectAccess(user, existing);
 
   await hardDeleteProjectInRepository(id);
 }
 
-export async function listProjects(query: ListProjectsQuery): Promise<PaginatedProjectListDto> {
+export async function listProjects(query: ListProjectsQuery, user: AccessTokenPayload): Promise<PaginatedProjectListDto> {
   // region is an alias for prCategory (see schema.prisma) — prCategory
   // takes precedence if both were somehow sent, since it's the field's
   // real name.
   const prCategory = query.prCategory || query.region;
+
+  // Administrator sees everything (callerUserId: undefined ⇒ no ownership
+  // restriction in buildWhereClause); every other role only ever sees
+  // projects they created plus unclaimed legacy projects (createdByUserId:
+  // null) — never a second, list-specific authorization concept.
+  const callerUserId = user.roleName === "Administrator" ? undefined : user.sub;
 
   const { items, total } = await findProjectsPage(
     {
@@ -325,6 +389,8 @@ export async function listProjects(query: ListProjectsQuery): Promise<PaginatedP
       department: query.department,
       client: query.client,
       prCategory,
+      isDeleted: query.isDeleted,
+      callerUserId,
     },
     query.sortField,
     query.sortDirection,

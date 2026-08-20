@@ -156,6 +156,14 @@ export const listProjectsQuerySchema = z.object({
   // "Region" filter doesn't need to know it's the same underlying column.
   region: z.string().trim().optional(),
   prCategory: z.string().trim().optional(),
+  // Defaults to undefined (repository treats that as false / active-only) —
+  // pass true only for the Archived Projects list. z.coerce.boolean() is
+  // deliberately NOT used here — it does a plain JS Boolean(value) cast, so
+  // the literal query string "false" would coerce to true.
+  isDeleted: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "true")),
 });
 
 export type ListProjectsQuery = z.infer<typeof listProjectsQuerySchema>;
@@ -185,19 +193,3 @@ export const importProjectsSchema = z.object({
 });
 
 export type ImportProjectsInput = z.infer<typeof importProjectsSchema>;
-
-/**
- * DELETE /projects/:id/permanent — Permanent Delete's Invoice Protection gate
- * (see project.service.ts's permanentlyDeleteProject()). `hasInvoiceHistory`
- * is asserted by the client, not independently verified server-side:
- * Invoices/InvoiceLines are still `localStorage`-only (no Postgres table
- * exists for them yet — see docs/PMO_PORTAL_TECHNICAL_DOCUMENTATION.md's
- * Project Delete Flow analysis), so the backend has no data of its own to
- * check this against. Required (no default) so a caller that forgets to
- * compute it gets a clear 400 rather than an assumed "no invoices."
- */
-export const permanentDeleteProjectSchema = z.object({
-  hasInvoiceHistory: z.boolean(),
-});
-
-export type PermanentDeleteProjectInput = z.infer<typeof permanentDeleteProjectSchema>;

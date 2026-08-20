@@ -1,5 +1,6 @@
 import { AppError } from "../../../shared/utils/AppError.js";
-import { getProjectById } from "../../projects/services/project.service.js";
+import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type { ExpenseDto, ExpenseListDto } from "../dto/expense.dto.js";
 import {
   createExpense as createExpenseInRepository,
@@ -30,13 +31,17 @@ function toExpenseDto(row: Awaited<ReturnType<typeof getExpenseById>>): ExpenseD
   };
 }
 
-/** Throws AppError(404) via getProjectById() if the project doesn't exist or is soft-deleted. */
-async function assertProjectExists(projectId: string): Promise<void> {
-  await getProjectById(projectId);
+/** Throws AppError(404) if the project doesn't exist, or 403 if the caller isn't authorized for it — see shared/utils/projectAccess.ts. */
+async function assertProjectExists(projectId: string, user: AccessTokenPayload): Promise<void> {
+  await assertProjectAccessById(projectId, user);
 }
 
-export async function createExpenseForProject(projectId: string, input: CreateExpenseInput): Promise<ExpenseDto> {
-  await assertProjectExists(projectId);
+export async function createExpenseForProject(
+  projectId: string,
+  input: CreateExpenseInput,
+  user: AccessTokenPayload
+): Promise<ExpenseDto> {
+  await assertProjectExists(projectId, user);
 
   const data: ProjectExpenseData = {
     category: input.category,
@@ -51,18 +56,23 @@ export async function createExpenseForProject(projectId: string, input: CreateEx
   return toExpenseDto(created);
 }
 
-export async function listExpensesForProject(projectId: string): Promise<ExpenseListDto> {
-  await assertProjectExists(projectId);
+export async function listExpensesForProject(projectId: string, user: AccessTokenPayload): Promise<ExpenseListDto> {
+  await assertProjectExists(projectId, user);
 
   const rows = await getExpensesByProjectId(projectId);
   return { items: rows.map((row) => toExpenseDto(row)) };
 }
 
-export async function updateExpenseItem(id: string, input: UpdateExpenseInput): Promise<ExpenseDto> {
+export async function updateExpenseItem(
+  id: string,
+  input: UpdateExpenseInput,
+  user: AccessTokenPayload
+): Promise<ExpenseDto> {
   const existing = await getExpenseById(id);
   if (!existing) {
     throw new AppError("Expense item not found.", 404);
   }
+  await assertProjectAccessById(existing.projectId, user);
 
   const quantity = input.quantity ?? existing.quantity;
   const unitCost = input.unitCost ?? existing.unitCost;
@@ -79,11 +89,12 @@ export async function updateExpenseItem(id: string, input: UpdateExpenseInput): 
   return toExpenseDto(updated);
 }
 
-export async function deleteExpenseItem(id: string): Promise<void> {
+export async function deleteExpenseItem(id: string, user: AccessTokenPayload): Promise<void> {
   const existing = await getExpenseById(id);
   if (!existing) {
     throw new AppError("Expense item not found.", 404);
   }
+  await assertProjectAccessById(existing.projectId, user);
 
   await deleteExpenseInRepository(id);
 }

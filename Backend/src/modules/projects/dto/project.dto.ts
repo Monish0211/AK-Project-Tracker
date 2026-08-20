@@ -56,6 +56,8 @@ export interface ProjectDto {
   clientCoordinator: string | null;
 
   isDeleted: boolean;
+  deletedAt: Date | null;
+  createdByUserId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

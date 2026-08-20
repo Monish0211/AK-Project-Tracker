@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
+import { requireUser } from "../../../shared/utils/requireUser.js";
 import { parseTimesheetWorkbook, validateAttachment } from "../services/excelParser.service.js";
 import {
   deleteAllTimesheetEntries,
@@ -89,10 +90,12 @@ export const getImportRows = asyncHandler(async (req: Request, res: Response) =>
 });
 
 export const getEntries = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const parsed = findEntriesQuerySchema.safeParse(req.query);
   if (!parsed.success) throw new AppError("Invalid query parameters.", 400);
 
-  const items = await timesheetRepo.findEntries(parsed.data);
+  const callerUserId = user.roleName === "Administrator" ? undefined : user.sub;
+  const items = await timesheetRepo.findEntries(parsed.data, callerUserId);
   res.status(200).json({ success: true, data: { items } });
 });
 
