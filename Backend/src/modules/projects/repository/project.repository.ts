@@ -52,6 +52,11 @@ export interface ProjectGeneralInfoData {
   projectEngineer?: string | null;
   projectCoordinator?: string | null;
   clientCoordinator?: string | null;
+
+  // Project-ownership authorization — see shared/utils/projectAccess.ts.
+  // Set once at creation, from the authenticated caller's own JWT; never
+  // accepted from the request body.
+  createdByUserId?: string | null;
 }
 
 export function createProject(data: ProjectGeneralInfoData) {
@@ -117,14 +122,34 @@ export function archiveProject(id: string) {
   });
 }
 
+/** Recover — the exact inverse of archiveProject. Row and every child row are left completely untouched; only the archive markers are cleared. */
+export function restoreProject(id: string) {
+  return prisma.project.update({
+    where: { id },
+    data: { isDeleted: false, deletedAt: null },
+  });
+}
+
 /**
- * Permanent Delete — irreversible. A real row delete; QuantityItem/
- * PaymentMilestone/ProjectExpense are removed automatically by Postgres via
- * their `onDelete: Cascade` foreign keys (see schema.prisma) — never deleted
- * manually here or anywhere in the service layer above this function.
+ * Permanent Delete — irreversible. One atomic transaction:
+ *  1. InvoiceLine rows under this project's QuantityItems are deleted
+ *     explicitly first — InvoiceLine.quantityItemId is `onDelete: Restrict`,
+ *     so Postgres would otherwise reject the QuantityItem cascade below the
+ *     moment a non-deleted InvoiceLine still referenced it.
+ *  2. The Project row itself is deleted — QuantityItem/PaymentMilestone/
+ *     ProjectExpense/ProjectResource are removed automatically by Postgres
+ *     via their `onDelete: Cascade` foreign keys (see schema.prisma).
+ * TimesheetEntry rows are NEVER deleted here: TimesheetEntry.projectId is
+ * `onDelete: SetNull`, so Postgres nulls the FK and leaves every entry
+ * (plus TimesheetImport / TimesheetImportRowLog) intact for audit. Historical
+ * PR identity survives on TimesheetEntry.rawProjectCode.
+ * Both steps run in one $transaction — any failure rolls back everything.
  */
 export function hardDeleteProject(id: string) {
-  return prisma.project.delete({ where: { id } });
+  return prisma.$transaction([
+    prisma.invoiceLine.deleteMany({ where: { quantityItem: { projectId: id } } }),
+    prisma.project.delete({ where: { id } }),
+  ]);
 }
 
 export interface ProjectListFilters {
@@ -133,10 +158,14 @@ export interface ProjectListFilters {
   department?: string | undefined;
   client?: string | undefined;
   prCategory?: string | undefined;
+  /** Defaults to false (active-only) everywhere — pass true only for the Archived Projects list. */
+  isDeleted?: boolean | undefined;
+  /** Undefined ⇒ no ownership restriction (Administrator). Otherwise scopes results to this caller's own projects plus unclaimed legacy projects — see buildWhereClause. */
+  callerUserId?: string | undefined;
 }
 
 function buildWhereClause(filters: ProjectListFilters): Prisma.ProjectWhereInput {
-  const where: Prisma.ProjectWhereInput = { isDeleted: false };
+  const where: Prisma.ProjectWhereInput = { isDeleted: filters.isDeleted ?? false };
 
   if (filters.projectStatus) where.projectStatus = filters.projectStatus;
   if (filters.department) where.department = filters.department;
@@ -149,6 +178,15 @@ function buildWhereClause(filters: ProjectListFilters): Prisma.ProjectWhereInput
       { client: { contains: filters.search, mode: "insensitive" } },
       { projectTitle: { contains: filters.search, mode: "insensitive" } },
     ];
+  }
+
+  // Project-ownership scoping — composed via a separate AND'd OR-group (not
+  // the `where.OR` key above, already used for search) so the two
+  // independent OR-conditions can never collide. A null createdByUserId
+  // (every project that existed before ownership was introduced) is always
+  // visible; otherwise only the caller's own projects are.
+  if (filters.callerUserId) {
+    where.AND = [{ OR: [{ createdByUserId: null }, { createdByUserId: filters.callerUserId }] }];
   }
 
   return where;

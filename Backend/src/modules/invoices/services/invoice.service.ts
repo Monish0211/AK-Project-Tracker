@@ -1,7 +1,8 @@
 import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
+import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { getMilestonePercentageById } from "../../milestones/services/milestone.service.js";
-import { getProjectById } from "../../projects/services/project.service.js";
 import { getQuantityItemById, listQuantityForProject } from "../../quantity/services/quantity.service.js";
 import type { IngestInvoiceLinesResultDto, InvoiceItemDto, InvoiceItemListDto, InvoiceLineDto } from "../dto/invoice.dto.js";
 import type { InvoiceLineData } from "../invoice.types.js";
@@ -160,9 +161,11 @@ async function assertNoDuplicateMilestoneBilling(params: {
 
 export async function createInvoiceLineForQuantityItem(
   quantityItemId: string,
-  input: CreateInvoiceLineInput
+  input: CreateInvoiceLineInput,
+  user: AccessTokenPayload
 ): Promise<InvoiceLineDto> {
   const quantityItem = await getQuantityItemById(quantityItemId);
+  await assertProjectAccessById(quantityItem.projectId, user);
   const milestonePercent = await resolveMilestonePercent(input.milestoneId);
 
   if (input.milestoneId && input.quantityBilled === 0) {
@@ -213,11 +216,21 @@ export async function createInvoiceLineForQuantityItem(
  * Draft -> Paid from Invoice History) must not silently rewrite historical
  * amounts using today's Quantity rate.
  */
-export async function updateInvoiceLine(id: string, input: UpdateInvoiceLineInput): Promise<InvoiceLineDto> {
+export async function updateInvoiceLine(
+  id: string,
+  input: UpdateInvoiceLineInput,
+  user: AccessTokenPayload
+): Promise<InvoiceLineDto> {
   const existing = await getLineById(id);
   if (!existing) {
     throw new AppError("Invoice line not found.", 404);
   }
+  // Unconditional (not gated by needsRecompute below) — an authorization
+  // check must run on every mutation, not only the ones that happen to also
+  // recompute pricing. Reused by the recompute branch further down so this
+  // never fetches the QuantityItem twice.
+  const parentQuantityItem = await getQuantityItemById(existing.quantityItemId);
+  await assertProjectAccessById(parentQuantityItem.projectId, user);
 
   const needsRecompute =
     input.quantityBilled !== undefined || input.invoiceAmountINR !== undefined || input.milestoneId !== undefined;
@@ -252,10 +265,9 @@ export async function updateInvoiceLine(id: string, input: UpdateInvoiceLineInpu
     const invoiceAmountINR = input.invoiceAmountINR ?? existing.invoiceAmountINR;
     const milestoneId = input.milestoneId !== undefined ? input.milestoneId : existing.milestoneId;
 
-    const quantityItem = await getQuantityItemById(existing.quantityItemId);
     const milestonePercent = await resolveMilestonePercent(milestoneId);
 
-    unitPriceINR = quantityItem.unitRateINR;
+    unitPriceINR = parentQuantityItem.unitRateINR;
     ({ calculatedAmountINR, commercialAdjustmentINR } = computeAmounts({
       quantityBilled,
       unitPriceINR,
@@ -292,11 +304,13 @@ export async function updateInvoiceLine(id: string, input: UpdateInvoiceLineInpu
  * "Cancelled" via PATCH (see updateInvoiceLine()), which preserves history
  * instead of erasing it.
  */
-export async function deleteInvoiceLine(id: string): Promise<void> {
+export async function deleteInvoiceLine(id: string, user: AccessTokenPayload): Promise<void> {
   const existing = await getLineById(id);
   if (!existing) {
     throw new AppError("Invoice line not found.", 404);
   }
+  const parentQuantityItem = await getQuantityItemById(existing.quantityItemId);
+  await assertProjectAccessById(parentQuantityItem.projectId, user);
 
   await deleteLineInRepository(id);
 }
@@ -308,8 +322,11 @@ export async function deleteInvoiceLine(id: string): Promise<void> {
  * listQuantityForProject() (which itself validates the project exists) is
  * the source of the id/description/qty/uom/unitPrice/totalPrice fields.
  */
-export async function listInvoiceItemsForProject(projectId: string): Promise<InvoiceItemListDto> {
-  const quantityResult = await listQuantityForProject(projectId);
+export async function listInvoiceItemsForProject(
+  projectId: string,
+  user: AccessTokenPayload
+): Promise<InvoiceItemListDto> {
+  const quantityResult = await listQuantityForProject(projectId, user);
   const quantityItems = quantityResult.items;
 
   const lines = await getLinesByQuantityItemIds(quantityItems.map((q) => q.id));
@@ -420,11 +437,12 @@ async function createLinesWithIdsSafely(
  */
 export async function ingestInvoiceLinesForProject(
   projectId: string,
-  input: IngestInvoiceLinesInput
+  input: IngestInvoiceLinesInput,
+  user: AccessTokenPayload
 ): Promise<IngestInvoiceLinesResultDto> {
-  await getProjectById(projectId);
+  await assertProjectAccessById(projectId, user);
 
-  const quantityResult = await listQuantityForProject(projectId);
+  const quantityResult = await listQuantityForProject(projectId, user);
   const validQuantityItemIds = new Set(quantityResult.items.map((q) => q.id));
 
   const foreignQuantityItem = input.lines.find((line) => !validQuantityItemIds.has(line.quantityItemId));

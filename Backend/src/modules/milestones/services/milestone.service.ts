@@ -1,7 +1,8 @@
 import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
+import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { countNonCancelledLinesForMilestone } from "../../invoices/repository/invoice.repository.js";
-import { getProjectById } from "../../projects/services/project.service.js";
 import { getWorkOrderValueForProject } from "../../quantity/services/quantity.service.js";
 import type { IngestMilestonesResultDto, MilestoneDto, MilestoneListDto } from "../dto/milestone.dto.js";
 import {
@@ -62,16 +63,17 @@ function toMilestoneDto(row: MilestoneRow, workOrderValueINR: number): Milestone
   };
 }
 
-/** Throws AppError(404) via getProjectById() if the project doesn't exist or is soft-deleted. */
-async function assertProjectExists(projectId: string): Promise<void> {
-  await getProjectById(projectId);
+/** Throws AppError(404) if the project doesn't exist, or 403 if the caller isn't authorized for it — see shared/utils/projectAccess.ts. */
+async function assertProjectExists(projectId: string, user: AccessTokenPayload): Promise<void> {
+  await assertProjectAccessById(projectId, user);
 }
 
 export async function createMilestoneForProject(
   projectId: string,
-  input: CreateMilestoneInput
+  input: CreateMilestoneInput,
+  user: AccessTokenPayload
 ): Promise<MilestoneDto> {
-  await assertProjectExists(projectId);
+  await assertProjectExists(projectId, user);
 
   const created = await createMilestoneInRepository(projectId, {
     milestoneName: input.milestoneName,
@@ -83,8 +85,8 @@ export async function createMilestoneForProject(
   return toMilestoneDto(created, workOrderValueINR);
 }
 
-export async function listMilestonesForProject(projectId: string): Promise<MilestoneListDto> {
-  await assertProjectExists(projectId);
+export async function listMilestonesForProject(projectId: string, user: AccessTokenPayload): Promise<MilestoneListDto> {
+  await assertProjectExists(projectId, user);
 
   const [rows, workOrderValueINR] = await Promise.all([
     getMilestonesByProjectId(projectId),
@@ -94,11 +96,16 @@ export async function listMilestonesForProject(projectId: string): Promise<Miles
   return { items: rows.map((row) => toMilestoneDto(row, workOrderValueINR)) };
 }
 
-export async function updateMilestoneItem(id: string, input: UpdateMilestoneInput): Promise<MilestoneDto> {
+export async function updateMilestoneItem(
+  id: string,
+  input: UpdateMilestoneInput,
+  user: AccessTokenPayload
+): Promise<MilestoneDto> {
   const existing = await getMilestoneById(id);
   if (!existing) {
     throw new AppError("Milestone not found.", 404);
   }
+  await assertProjectAccessById(existing.projectId, user);
 
   const updated = await updateMilestoneInRepository(id, {
     ...(input.milestoneName !== undefined && { milestoneName: input.milestoneName }),
@@ -126,11 +133,12 @@ export async function getMilestonePercentageById(milestoneId: string): Promise<n
   return milestone ? milestone.paymentPercentage : null;
 }
 
-export async function deleteMilestoneItem(id: string): Promise<void> {
+export async function deleteMilestoneItem(id: string, user: AccessTokenPayload): Promise<void> {
   const existing = await getMilestoneById(id);
   if (!existing) {
     throw new AppError("Milestone not found.", 404);
   }
+  await assertProjectAccessById(existing.projectId, user);
 
   const invoiceLineCount = await countNonCancelledLinesForMilestone(id);
   if (invoiceLineCount > 0) {
@@ -248,9 +256,10 @@ async function createMilestonesWithIdsSafely(
  */
 export async function ingestMilestonesForProject(
   projectId: string,
-  input: IngestMilestonesInput
+  input: IngestMilestonesInput,
+  user: AccessTokenPayload
 ): Promise<IngestMilestonesResultDto> {
-  await assertProjectExists(projectId);
+  await assertProjectExists(projectId, user);
 
   const ids = input.milestones.map((m) => m.id);
 

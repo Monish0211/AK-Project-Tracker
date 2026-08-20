@@ -53,6 +53,7 @@ export const APPROVAL_TYPES = [
   "Approve Project Creation",
   "Approve Reminders",
   "Archive Projects",
+  "Delete Project Permanently",
 ] as const;
 
 /**

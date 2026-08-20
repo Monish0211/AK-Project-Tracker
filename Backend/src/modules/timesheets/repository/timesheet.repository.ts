@@ -1,5 +1,6 @@
 import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
+import { projectOwnershipWhereOr } from "../../../shared/utils/projectAccess.js";
 
 /**
  * All Prisma access for TimesheetEntry lives here — the service layer never
@@ -72,13 +73,22 @@ export interface FindEntriesFilters {
   task?: string | undefined;
 }
 
-export function findEntries(filters: FindEntriesFilters) {
+/**
+ * `callerUserId` (undefined for Administrator) scopes results to entries
+ * with no project at all (the "Unassigned" import case — not attributable
+ * to any project, so there's nothing to restrict) plus entries whose
+ * project the caller is authorized for — same project-ownership rule as
+ * GET /projects, never a second concept.
+ */
+export function findEntries(filters: FindEntriesFilters, callerUserId?: string) {
+  const ownershipOr = projectOwnershipWhereOr(callerUserId);
   return prisma.timesheetEntry.findMany({
     where: {
       ...(filters.employeeNo && { employeeNo: filters.employeeNo }),
       ...(filters.projectId && { projectId: filters.projectId }),
       ...(filters.workDate && { workDate: filters.workDate }),
       ...(filters.task !== undefined && { task: filters.task }),
+      ...(ownershipOr && { OR: [{ projectId: null }, { project: { OR: ownershipOr } }] }),
     },
     orderBy: { workDate: "asc" },
   });

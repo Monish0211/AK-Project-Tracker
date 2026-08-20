@@ -1,9 +1,10 @@
 import { AppError } from "../../../shared/utils/AppError.js";
+import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import {
   countNonCancelledLinesForQuantityItem,
   deleteCancelledLinesForQuantityItem,
 } from "../../invoices/repository/invoice.repository.js";
-import { getProjectById } from "../../projects/services/project.service.js";
 import type { QuantityDto, QuantityListDto } from "../dto/quantity.dto.js";
 import {
   createQuantity as createQuantityInRepository,
@@ -72,13 +73,17 @@ function computeDerivedFields(fields: {
   return { unitRateINR, woValue, pendingQty, pendingAmount };
 }
 
-/** Throws AppError(404) via getProjectById() if the project doesn't exist or is soft-deleted. */
-async function assertProjectExists(projectId: string): Promise<void> {
-  await getProjectById(projectId);
+/** Throws AppError(404) if the project doesn't exist, or 403 if the caller isn't authorized for it — see shared/utils/projectAccess.ts. */
+async function assertProjectExists(projectId: string, user: AccessTokenPayload): Promise<void> {
+  await assertProjectAccessById(projectId, user);
 }
 
-export async function createQuantityForProject(projectId: string, input: CreateQuantityInput): Promise<QuantityDto> {
-  await assertProjectExists(projectId);
+export async function createQuantityForProject(
+  projectId: string,
+  input: CreateQuantityInput,
+  user: AccessTokenPayload
+): Promise<QuantityDto> {
+  await assertProjectExists(projectId, user);
 
   const derived = computeDerivedFields({
     woQty: input.woQty,
@@ -105,18 +110,23 @@ export async function createQuantityForProject(projectId: string, input: CreateQ
   return toQuantityDto(created);
 }
 
-export async function listQuantityForProject(projectId: string): Promise<QuantityListDto> {
-  await assertProjectExists(projectId);
+export async function listQuantityForProject(projectId: string, user: AccessTokenPayload): Promise<QuantityListDto> {
+  await assertProjectExists(projectId, user);
 
   const rows = await getQuantityByProjectId(projectId);
   return { items: rows.map((row) => toQuantityDto(row)) };
 }
 
-export async function updateQuantityItem(id: string, input: UpdateQuantityInput): Promise<QuantityDto> {
+export async function updateQuantityItem(
+  id: string,
+  input: UpdateQuantityInput,
+  user: AccessTokenPayload
+): Promise<QuantityDto> {
   const existing = await getQuantityById(id);
   if (!existing) {
     throw new AppError("Quantity item not found.", 404);
   }
+  await assertProjectAccessById(existing.projectId, user);
 
   const merged = {
     woQty: input.woQty ?? existing.woQty,
@@ -139,11 +149,12 @@ export async function updateQuantityItem(id: string, input: UpdateQuantityInput)
   return toQuantityDto(updated);
 }
 
-export async function deleteQuantityItem(id: string): Promise<void> {
+export async function deleteQuantityItem(id: string, user: AccessTokenPayload): Promise<void> {
   const existing = await getQuantityById(id);
   if (!existing) {
     throw new AppError("Quantity item not found.", 404);
   }
+  await assertProjectAccessById(existing.projectId, user);
 
   const invoiceLineCount = await countNonCancelledLinesForQuantityItem(id);
   if (invoiceLineCount > 0) {

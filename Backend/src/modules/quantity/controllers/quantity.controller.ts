@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
+import { requireUser } from "../../../shared/utils/requireUser.js";
 import * as quantityService from "../services/quantity.service.js";
 import { projectIdParamSchema, quantityIdParamSchema } from "../validators/quantity.validators.js";
 import type { CreateQuantityInput, UpdateQuantityInput } from "../validators/quantity.validators.js";
@@ -25,25 +26,29 @@ function parseQuantityIdParam(req: Request): string {
 }
 
 export const createQuantity = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const projectId = parseProjectIdParam(req);
-  const quantity = await quantityService.createQuantityForProject(projectId, req.body as CreateQuantityInput);
+  const quantity = await quantityService.createQuantityForProject(projectId, req.body as CreateQuantityInput, user);
   res.status(201).json({ success: true, data: quantity, message: "Quantity item created successfully." });
 });
 
 export const getQuantityByProject = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const projectId = parseProjectIdParam(req);
-  const result = await quantityService.listQuantityForProject(projectId);
+  const result = await quantityService.listQuantityForProject(projectId, user);
   res.status(200).json({ success: true, data: result });
 });
 
 export const updateQuantity = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const id = parseQuantityIdParam(req);
-  const quantity = await quantityService.updateQuantityItem(id, req.body as UpdateQuantityInput);
+  const quantity = await quantityService.updateQuantityItem(id, req.body as UpdateQuantityInput, user);
   res.status(200).json({ success: true, data: quantity, message: "Quantity item updated successfully." });
 });
 
 export const deleteQuantity = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const id = parseQuantityIdParam(req);
-  await quantityService.deleteQuantityItem(id);
+  await quantityService.deleteQuantityItem(id, user);
   res.status(200).json({ success: true, data: null, message: "Quantity item deleted successfully." });
 });

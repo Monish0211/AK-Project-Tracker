@@ -90,6 +90,12 @@ model PortalUser {
   passwordResetTokens PasswordResetToken[]
   authAuditLogs       AuthAuditLog[]
 
+  // Project-ownership authorization — see Project.createdByUserId. A user
+  // who is later deleted has their created projects fall back to
+  // "unclaimed" (createdByUserId: null, accessible to every normal user)
+  // via onDelete: SetNull declared on that relation, never orphaned.
+  createdProjects Project[] @relation("ProjectCreator")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -280,8 +286,12 @@ model UserApprovalPermission {
 // already seeded into the Region lookup table for Auth's module/region
 // access grants. There is no separate region field to invent.
 //
-// Soft delete only: isDeleted/deletedAt. No hard delete anywhere — every
-// list/detail read must filter isDeleted: false.
+// Soft delete: isDeleted/deletedAt (Archive/Recover — every list read
+// defaults to filtering isDeleted: false unless explicitly asked for
+// archived rows, e.g. the Archived Projects list). A real hard delete also
+// exists (Permanent Delete) — see hardDeleteProject() in
+// project.repository.ts. Project-owned children cascade-delete;
+// TimesheetEntry rows are preserved via onDelete: SetNull on their projectId.
 model Project {
   id String @id @default(dbgenerated("gen_random_uuid()"))
 
@@ -378,8 +388,34 @@ model Project {
   // to aggregate once its Project is gone.
   timesheetEntries TimesheetEntry[]
 
+  /**
+   * Timesheet Pending tracking — set exactly once, the first time the
+   * Timesheet Pending calculation (timesheetPending.service.ts) evaluates
+   * this project and finds zero TimesheetEntry rows. The 7-day grace
+   * period for a brand-new project is measured from THIS date, never from
+   * projectStartDate/createdAt (which would make an old project with no
+   * timesheets retroactively, incorrectly overdue) and never from
+   * `new Date()` recomputed on every request (which would mean the grace
+   * period never actually expires). Once a real TimesheetEntry exists for
+   * this project, the calculation switches to using its workDate instead
+   * — this field is simply never read again, and is intentionally never
+   * cleared.
+   */
+  timesheetPendingTrackingStartedAt DateTime?
+
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
+
+  // Project-ownership authorization. Null means "unclaimed" — every project
+  // that existed before this field was introduced has no creator recorded
+  // (the concept didn't exist yet), so null is deliberately treated as
+  // accessible to every normal user, not locked to Administrator-only. Only
+  // projects created going forward get a real owner and real per-user
+  // restriction. See shared/utils/projectAccess.ts's canAccessProject().
+  // onDelete: SetNull (not Cascade) — a deleted PortalUser's projects
+  // become unclaimed, never orphaned/inaccessible.
+  createdByUserId String?
+  createdByUser   PortalUser? @relation("ProjectCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -388,6 +424,7 @@ model Project {
   @@index([projectStatus])
   @@index([department])
   @@index([client])
+  @@index([createdByUserId])
   @@index([prCategory])
 }
 
@@ -684,15 +721,14 @@ model ProjectResource {
 // loop is already closed by existing, unmodified Phase 3.7 code.
 //
 // projectId IS a real, nullable FK, with onDelete: SetNull — deliberately
-// different from ProjectResource's onDelete: Cascade above. If a Project
-// this row currently points to is ever permanently deleted (Phase 3.6),
-// Postgres nulls this FK out automatically; rawProjectCode (plain text,
-// never touched by that cascade) keeps the historical fact readable even
-// though there is no longer a live Project to relate to. Team Assigned/
-// ProjectResource correctly show nothing for a permanently-deleted
-// project's assignments (there is no ProjectResource left to read, since
-// that table WAS cascade-deleted) — this table alone preserves the raw
-// historical record for audit purposes.
+// different from ProjectResource's onDelete: Cascade above. When a Project
+// is permanently deleted, Postgres nulls this FK automatically; the
+// TimesheetEntry row itself is preserved for audit/reporting, and
+// rawProjectCode (plain text, never touched by that cascade) keeps the
+// historical PR readable even though there is no longer a live Project to
+// relate to. ProjectResource correctly shows nothing after Permanent Delete
+// (that table IS cascade-deleted). Archive (isDeleted soft-delete) and
+// Completed/Active status transitions never touch a TimesheetEntry row.
 model TimesheetEntry {
   id String @id @default(dbgenerated("gen_random_uuid()"))
 

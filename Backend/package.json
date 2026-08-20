@@ -8,7 +8,7 @@
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "seed": "tsx prisma/seed.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "tsx --test src/modules/timesheets/services/timesheetPending.rules.test.ts"
   },
   "keywords": [],
   "author": "",

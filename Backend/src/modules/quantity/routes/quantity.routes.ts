@@ -1,17 +1,25 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
+import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import { createQuantity, deleteQuantity, getQuantityByProject, updateQuantity } from "../controllers/quantity.controller.js";
 import { createQuantitySchema, updateQuantitySchema } from "../validators/quantity.validators.js";
 
 const router = Router();
 
-// Same access rule as Projects — every logged-in Portal User, no
-// authorize(...roles) narrowing (module/region-level checks are not yet
-// enforced at the route layer, matching project.routes.ts's note).
-router.get("/projects/:projectId/quantity", authenticate, getQuantityByProject);
-router.post("/projects/:projectId/quantity", authenticate, validate(createQuantitySchema), createQuantity);
-router.patch("/quantity/:id", authenticate, validate(updateQuantitySchema), updateQuantity);
-router.delete("/quantity/:id", authenticate, deleteQuantity);
+// Same access rule as Projects — every logged-in Portal User with the
+// "Projects" module grant (Quantity is a project sub-resource, not its own
+// module). Project-ownership authorization (may THIS caller touch THIS
+// project) is checked one layer deeper, inside each service function.
+router.get("/projects/:projectId/quantity", authenticate, requireModuleAccess("Projects"), getQuantityByProject);
+router.post(
+  "/projects/:projectId/quantity",
+  authenticate,
+  requireModuleAccess("Projects"),
+  validate(createQuantitySchema),
+  createQuantity
+);
+router.patch("/quantity/:id", authenticate, requireModuleAccess("Projects"), validate(updateQuantitySchema), updateQuantity);
+router.delete("/quantity/:id", authenticate, requireModuleAccess("Projects"), deleteQuantity);
 
 export default router;

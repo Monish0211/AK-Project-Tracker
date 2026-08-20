@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
+import { requireUser } from "../../../shared/utils/requireUser.js";
 import * as expenseService from "../services/expense.service.js";
 import { projectIdParamSchema, expenseIdParamSchema } from "../validators/expense.validators.js";
 import type { CreateExpenseInput, UpdateExpenseInput } from "../validators/expense.validators.js";
@@ -24,25 +25,29 @@ function parseExpenseIdParam(req: Request): string {
 }
 
 export const createExpense = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const projectId = parseProjectIdParam(req);
-  const expense = await expenseService.createExpenseForProject(projectId, req.body as CreateExpenseInput);
+  const expense = await expenseService.createExpenseForProject(projectId, req.body as CreateExpenseInput, user);
   res.status(201).json({ success: true, data: expense, message: "Expense item created successfully." });
 });
 
 export const getExpensesByProject = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const projectId = parseProjectIdParam(req);
-  const result = await expenseService.listExpensesForProject(projectId);
+  const result = await expenseService.listExpensesForProject(projectId, user);
   res.status(200).json({ success: true, data: result });
 });
 
 export const updateExpense = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const id = parseExpenseIdParam(req);
-  const expense = await expenseService.updateExpenseItem(id, req.body as UpdateExpenseInput);
+  const expense = await expenseService.updateExpenseItem(id, req.body as UpdateExpenseInput, user);
   res.status(200).json({ success: true, data: expense, message: "Expense item updated successfully." });
 });
 
 export const deleteExpense = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const id = parseExpenseIdParam(req);
-  await expenseService.deleteExpenseItem(id);
+  await expenseService.deleteExpenseItem(id, user);
   res.status(200).json({ success: true, data: null, message: "Expense item deleted successfully." });
 });
