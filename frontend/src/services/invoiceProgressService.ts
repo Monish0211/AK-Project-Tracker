@@ -65,12 +65,22 @@ export function getTotalInvoiceRaised(items: InvoiceItem[]): number {
   );
 }
 
-/** Sums a line's billed amount across only its Paid lines — the "payment recorded" signal in this ledger (there is no separate payment-entry object; marking a line Paid via Edit Invoice IS recording the payment). */
+/**
+ * Business rule confirmed for this PMO's summary/KPI purposes: a line
+ * counts as received the moment it leaves Draft. Raised / Submitted,
+ * PartiallyPaid, and Paid all qualify; Draft (still being prepared, never
+ * sent) and Cancelled (voided) never do.
+ */
+function isReceivedInvoiceLineStatus(status: string): boolean {
+  return status === "Raised" || status === "PartiallyPaid" || status === "Paid";
+}
+
+/** Sum of a line's billed amount across every line that counts as received under the rule above — Raised / Submitted, PartiallyPaid, and Paid. Excludes Draft (not yet submitted) and Cancelled (voided). */
 export function getPaymentReceivedAmount(item: InvoiceItem): number {
   const invoices = Array.isArray(item.invoices) ? item.invoices : [];
 
   return invoices
-    .filter((invoice) => invoice.status === "Paid")
+    .filter((invoice) => isReceivedInvoiceLineStatus(invoice.status))
     .reduce((sum, invoice) => sum + invoice.invoiceAmountINR, 0);
 }
 
@@ -139,11 +149,21 @@ export interface ProjectCommercialSummary {
   /** Total work-package value, derived from Invoice History (mirrors Quantity Details). */
   projectValueINR: number;
   totalInvoiceRaised: number;
-  /** Balance not yet invoiced (Contract Value − Invoice Raised, "Balance to Invoice"). Never negative. */
+  /** Balance not yet invoiced (Contract Value − Invoice Raised, "Balance to Invoice"). Never negative. Based purely on invoiced value, never payment status. */
   pendingDue: number;
-  /** Sum of every invoice line marked Paid — recording a payment. */
+  /** Sum of every invoice line that has reached Raised / Submitted, PartiallyPaid, or Paid — this PMO's confirmed rule treats Raised / Submitted as collected, same as Paid. */
   totalPaymentReceived: number;
-  /** Invoice Raised − Payment Received ("Outstanding" — invoiced but not yet collected). Never negative. */
+  /**
+   * Invoice Raised (includes Draft, excludes Cancelled) − Payment Received
+   * (Raised/PartiallyPaid/Paid only). Never negative. This is the invoiced
+   * amount that hasn't yet been counted as received — e.g. a Draft-only
+   * invoice is fully Outstanding (raised, but Draft never counts as
+   * received); a project with a Draft ₹3,000 line and a Paid ₹2,000 line
+   * shows Outstanding = ₹3,000, not 0 and not the full contract value.
+   * Deliberately NOT Work Order Value − Payment Received, and NOT the
+   * same figure as "Balance to Invoice" (pendingDue below) — those are
+   * separate concepts.
+   */
   outstandingCollection: number;
   invoiceCompletionPercent: number;
   invoiceStatus: ProjectInvoiceStatus;
@@ -165,10 +185,26 @@ export interface ProjectCommercialSummary {
  * per-activity billing ledger. A payment milestone is only ever an optional
  * reference label on a line (see types/InvoiceItem.ts's InvoiceLine.milestoneId)
  * — never a second, independently-tracked billing total. Payment Received is
- * likewise derived from this same ledger (every line marked Paid) rather
- * than the legacy, Excel-import-only project.paymentReceivedINR field, so
- * it updates the instant a line's status changes — no separate payment
- * record to keep in sync.
+ * likewise derived from this same ledger rather than the legacy,
+ * Excel-import-only project.paymentReceivedINR field, so it updates the
+ * instant a line's status changes — no separate payment record to keep in
+ * sync.
+ *
+ * Business rule: Payment Received counts every line that has reached
+ * Raised / Submitted, PartiallyPaid, or Paid (i.e. everything actually
+ * submitted to the client) — Draft and Cancelled never count; once an
+ * invoice is raised to the client, it is treated as collected for this
+ * PMO's summary purposes, same as Paid always has been.
+ *
+ * Outstanding = Invoice Raised − Payment Received — the invoiced amount
+ * that has NOT yet been counted as received. A Draft line counts toward
+ * Invoice Raised but not Payment Received, so it stays fully Outstanding
+ * until it reaches Raised / Submitted or Paid; a Cancelled line drops out
+ * of both, so it contributes nothing (not even to Outstanding). This is
+ * a distinct concept from "Balance to Invoice" (pendingDue) — Contract
+ * Value minus Invoice Raised, i.e. the part of the contract not yet
+ * invoiced at all — and from Work Order Value, which this function never
+ * reads for either figure.
  *
  * Deliberately never reads project.workOrderValue(INR) or the standalone
  * Invoices module — those are a different concept (operational Project
@@ -199,6 +235,10 @@ export function getProjectCommercialSummary(
     getTotalPaymentReceived(invoiceItems),
     totalInvoiceRaised
   );
+  // Outstanding — invoiced amount not yet counted as received. See this
+  // function's own doc comment for why this is Invoice Raised minus
+  // Payment Received, never Work Order Value minus Payment Received, and
+  // never the same as Balance to Invoice (pendingDue above).
   const outstandingCollection = Math.max(totalInvoiceRaised - totalPaymentReceived, 0);
   const invoiceCompletionPercent = Math.min(
     Math.max(

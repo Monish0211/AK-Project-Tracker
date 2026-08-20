@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { EmptyState } from "../Shared/EmptyState";
 
 interface Props {
   projects: any[];
@@ -28,16 +29,6 @@ export function CollectionTrend({ projects }: Props) {
     });
 
     const sortedKeys = Object.keys(monthMap).sort();
-    if (sortedKeys.length === 0) {
-      return [
-        { month: "Jan 26", collection: 3800000 },
-        { month: "Feb 26", collection: 4900000 },
-        { month: "Mar 26", collection: 5800000 },
-        { month: "Apr 26", collection: 4200000 },
-        { month: "May 26", collection: 6900000 },
-      ];
-    }
-
     return sortedKeys.map((k) => monthMap[k]);
   }, [projects]);
 
@@ -50,6 +41,9 @@ export function CollectionTrend({ projects }: Props) {
         <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">Realized Cashflow</span>
       </div>
 
+      {collectionTrendData.length === 0 ? (
+        <EmptyState title="No Payments Recorded" description="No Paid invoice lines with an invoice date found for the selected filter parameters." />
+      ) : (
       <div className="h-64 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={collectionTrendData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
@@ -68,6 +62,7 @@ export function CollectionTrend({ projects }: Props) {
           </AreaChart>
         </ResponsiveContainer>
       </div>
+      )}
     </div>
   );
 }

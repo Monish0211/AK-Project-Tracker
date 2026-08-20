@@ -3,6 +3,7 @@ import { Search, ChevronDown, ChevronUp } from "lucide-react";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
+import { getTotalInvoiceRaised, getTotalPaymentReceived } from "../../../services/invoiceProgressService";
 
 interface Props {
   projects: any[];
@@ -18,15 +19,18 @@ export function ExecutiveSummaryTable({ projects }: Props) {
   const tableData = useMemo(() => {
     return projects.map((p) => {
       const woVal = p.workOrderValueINR ?? p.workOrderValue ?? 0;
+      // Delegates to the same canonical invoiceProgressService.ts functions
+      // Dashboard/View Project use, rather than re-deriving the status rule
+      // here a second time — never the legacy project.paymentReceivedINR field.
       const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      let raised = 0;
-      items.forEach((item: any) => {
-        (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
-          if (line.status !== "Cancelled") raised += line.invoiceAmountINR || 0;
-        });
-      });
-      const received = p.paymentReceivedINR ?? p.paymentReceived ?? 0;
-      const outstanding = Math.max(0, raised - received);
+      const raised = getTotalInvoiceRaised(items);
+      const received = Math.min(getTotalPaymentReceived(items), raised);
+      // Outstanding — Executive Summary's management-level KPI: Work Order
+      // Value minus Payment Received. Deliberately NOT Invoice Raised
+      // minus Payment Received (that's the Invoice module's own, separate
+      // Outstanding concept, left unchanged in invoiceProgressService.ts),
+      // and never the same as Balance to Invoice.
+      const outstanding = Math.max(0, woVal - received);
       const nonManhour = (p.nonManhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
       const manhour = (p.manhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
       const expenses = nonManhour + manhour;

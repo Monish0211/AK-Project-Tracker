@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { EmptyState } from "../Shared/EmptyState";
 
 interface Props {
   projects: any[];
@@ -29,16 +30,6 @@ export function MonthlyBillingChart({ projects }: Props) {
     });
 
     const sortedKeys = Object.keys(monthMap).sort();
-    if (sortedKeys.length === 0) {
-      return [
-        { month: "Jan 26", amount: 4500000, count: 4 },
-        { month: "Feb 26", amount: 5200000, count: 6 },
-        { month: "Mar 26", amount: 6100000, count: 8 },
-        { month: "Apr 26", amount: 4800000, count: 5 },
-        { month: "May 26", amount: 7300000, count: 9 },
-      ];
-    }
-
     return sortedKeys.map((k) => monthMap[k]);
   }, [projects]);
 
@@ -51,6 +42,9 @@ export function MonthlyBillingChart({ projects }: Props) {
         <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">INR Billing</span>
       </div>
 
+      {billingData.length === 0 ? (
+        <EmptyState title="No Billing Activity" description="No dated invoice lines found for the selected filter parameters." />
+      ) : (
       <div className="h-64 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={billingData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
@@ -63,6 +57,7 @@ export function MonthlyBillingChart({ projects }: Props) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+      )}
     </div>
   );
 }

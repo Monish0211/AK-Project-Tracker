@@ -13,7 +13,8 @@ export function QuantityProgress({ projects }: Props) {
       let ordered = 0;
       let invoiced = 0;
       items.forEach((item: any) => {
-        ordered += item.totalQuantity || 0;
+        // InvoiceItem's real ordered-quantity field is `qty` (types/InvoiceItem.ts).
+        ordered += item.qty || 0;
         (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
           if (line.status !== "Cancelled") invoiced += line.quantityBilled || 0;
         });

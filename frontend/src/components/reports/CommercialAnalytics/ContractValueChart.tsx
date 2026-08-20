@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { EmptyState } from "../Shared/EmptyState";
 
 interface Props {
   projects: any[];
@@ -24,13 +25,6 @@ export function ContractValueChart({ projects }: Props) {
       color: COLORS[idx % COLORS.length],
     }));
 
-    if (entries.length === 0) {
-      return [
-        { name: "Domestic", value: 12500000, color: "#3b82f6" },
-        { name: "Foreign", value: 4500000, color: "#10b981" },
-      ];
-    }
-
     return entries;
   }, [projects]);
 
@@ -43,6 +37,9 @@ export function ContractValueChart({ projects }: Props) {
         <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">Regional Contract Mix</span>
       </div>
 
+      {pieData.length === 0 ? (
+        <EmptyState title="No Contract Value" description="No Work Order Value found for the selected filter parameters." />
+      ) : (
       <div className="h-64 w-full flex items-center justify-center">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -65,6 +62,7 @@ export function ContractValueChart({ projects }: Props) {
           </PieChart>
         </ResponsiveContainer>
       </div>
+      )}
     </div>
   );
 }
