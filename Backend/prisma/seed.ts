@@ -1,3 +1,6 @@
+import { readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 import {
   APPROVAL_TYPES,
   MODULES,
@@ -21,6 +24,46 @@ async function seedLookupTable<T extends string>(
     await upsert(name);
   }
   console.log(`Seeded ${names.length} ${label}.`);
+}
+
+/**
+ * Deterministic Customer Master seed from the extracted frontend name list
+ * (prisma/customerMasterSeedNames.json). Only populates customerName +
+ * status=Active — never fabricates company/contact/email. Skips names that
+ * already exist (case-insensitive) so re-running seed is safe and never
+ * overwrites edits.
+ */
+async function seedCustomersFromBuiltInList() {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const raw = readFileSync(join(here, "customerMasterSeedNames.json"), "utf8");
+  const names = JSON.parse(raw) as string[];
+
+  let created = 0;
+  let skipped = 0;
+
+  for (const customerName of names) {
+    const trimmed = customerName.trim();
+    if (!trimmed) {
+      skipped += 1;
+      continue;
+    }
+
+    const existing = await prisma.customer.findFirst({
+      where: { customerName: { equals: trimmed, mode: "insensitive" } },
+    });
+
+    if (existing) {
+      skipped += 1;
+      continue;
+    }
+
+    await prisma.customer.create({
+      data: { customerName: trimmed, status: "Active" },
+    });
+    created += 1;
+  }
+
+  console.log(`Customer Master seed: created ${created}, skipped ${skipped} (of ${names.length} names).`);
 }
 
 async function main() {
@@ -76,7 +119,11 @@ async function main() {
   });
 
   console.log(`Bootstrap Administrator ready: ${admin.email}`);
-  console.log(`Bootstrap password: ${BOOTSTRAP_ADMIN_PASSWORD} (forcePasswordChange is ON — change it on first login).`);
+  console.log(
+    `Bootstrap password: ${BOOTSTRAP_ADMIN_PASSWORD} (forcePasswordChange is ON — change it on first login).`
+  );
+
+  await seedCustomersFromBuiltInList();
 }
 
 main()
