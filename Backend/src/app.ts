@@ -8,6 +8,7 @@ import { milestoneRoutes } from "./modules/milestones/index.js";
 import { invoiceRoutes } from "./modules/invoices/index.js";
 import { expenseRoutes } from "./modules/expenses/index.js";
 import { employeeRoutes } from "./modules/employees/index.js";
+import { customerRoutes } from "./modules/customers/index.js";
 import { resourceRoutes } from "./modules/resources/index.js";
 import { timesheetRoutes } from "./modules/timesheets/index.js";
 import { mailIngestionRoutes } from "./modules/mailIngestion/index.js";
@@ -15,6 +16,7 @@ import { pdfImportRoutes } from "./modules/pdfImport/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { AppError } from "./shared/utils/AppError.js";
 import { env } from "./shared/utils/env.js";
+import projectNoteRoutes from "./modules/projects/routes/projectNote.routes.js";
 
 const app = express();
 
@@ -40,6 +42,7 @@ app.get("/health", (_req, res) => {
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
 app.use("/projects", projectRoutes);
+app.use("/projects", projectNoteRoutes);
 // quantity.routes.ts already declares its own full paths
 // (/projects/:projectId/quantity, /quantity/:id) — mounted at root rather
 // than under a prefix, same as the two routers above share the /projects
@@ -64,6 +67,10 @@ app.use(expenseRoutes);
 // (/, /:id, /import), same convention as /users and the base /projects
 // routes above, so it's mounted under its own prefix rather than at root.
 app.use("/employees", employeeRoutes);
+// Customer Master — global directory (same architectural role as Employee
+// Master / Manpower). Declares only relative paths; mounted under /customers.
+// Project.client remains plain text — this module never owns project rows.
+app.use("/customers", customerRoutes);
 // Project Resource ("Team Assigned") — Phase 3.7, backend-only (see
 // resource.routes.ts's own note: no frontend code calls these routes yet).
 // Declares its own full paths (/projects/:projectId/resources,

@@ -379,6 +379,9 @@ model Project {
   // to cascade from.
   projectResources ProjectResource[]
 
+  // Project Notes — Phase 3.9. 1:Many append-only activity & notes ledger.
+  projectNotes ProjectNote[]
+
   // Timesheet raw rows — Phase 3.8. onDelete: SetNull is declared on
   // TimesheetEntry.project, not here — included on this side only so that
   // behavior has something to relate from. See TimesheetEntry's own comment
@@ -597,6 +600,26 @@ model ProjectExpense {
   updatedAt DateTime @updatedAt
 
   @@index([projectId])
+}
+
+// =============================================================================
+// PROJECT NOTE — "Project Workspace Notes", Phase 3.9. 1:Many child table
+// storing immutable project notes & activity history logs per project.
+// =============================================================================
+model ProjectNote {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  message   String
+  createdBy String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([createdAt])
 }
 
 // =============================================================================
@@ -880,4 +903,41 @@ model TimesheetImportRowLog {
 
   @@index([importId])
   @@index([entryId])
+}
+
+// =============================================================================
+// CUSTOMER — "Customer Master." Global directory of customer organizations
+// (same architectural role as Employee Master for manpower). Not owned by a
+// Project: Project.client remains a plain-text required field and is filled
+// from this directory by name autocomplete only — there is deliberately no
+// Project.customerId FK in this phase.
+// =============================================================================
+// customerName uniqueness is case-insensitive at the application layer (see
+// customer.service.ts) AND enforced in Postgres via a unique index on
+// lower("customerName") added in the migration SQL — Prisma's @@unique is
+// case-sensitive on Postgres, which would not match the existing frontend
+// rule (customerService.ts's addCustomer/updateCustomer).
+// =============================================================================
+model Customer {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  // Maps the frontend's optional `customerId` (organization-assigned code).
+  // Named customerCode here so it is never confused with the surrogate `id`.
+  customerCode String?
+
+  customerName  String
+  companyName   String?
+  country       String?
+  contactPerson String?
+  email         String?
+  phone         String?
+
+  status String @default("Active")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([customerCode])
+  @@index([customerName])
 }
