@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
+import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import { createQuantity, deleteQuantity, getQuantityByProject, updateQuantity } from "../controllers/quantity.controller.js";
@@ -15,11 +16,19 @@ router.get("/projects/:projectId/quantity", authenticate, requireModuleAccess("P
 router.post(
   "/projects/:projectId/quantity",
   authenticate,
+  denyReadOnlyWrites,
   requireModuleAccess("Projects"),
   validate(createQuantitySchema),
   createQuantity
 );
-router.patch("/quantity/:id", authenticate, requireModuleAccess("Projects"), validate(updateQuantitySchema), updateQuantity);
-router.delete("/quantity/:id", authenticate, requireModuleAccess("Projects"), deleteQuantity);
+router.patch(
+  "/quantity/:id",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Projects"),
+  validate(updateQuantitySchema),
+  updateQuantity
+);
+router.delete("/quantity/:id", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), deleteQuantity);
 
 export default router;

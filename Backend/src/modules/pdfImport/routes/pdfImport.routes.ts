@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
+import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { env } from "../../../shared/utils/env.js";
 import { extractWithClaude } from "../controllers/pdfImport.controller.js";
 import { pdfImportRateLimit } from "../middleware/pdfImportRateLimit.js";
@@ -31,6 +32,7 @@ const upload = multer({
 router.post(
   "/pdf-import/ai-extract",
   authenticate,
+  denyReadOnlyWrites,
   pdfImportRateLimit,
   upload.array("files", env.PDF_IMPORT_AI_MAX_DOCUMENTS_PER_SET),
   extractWithClaude

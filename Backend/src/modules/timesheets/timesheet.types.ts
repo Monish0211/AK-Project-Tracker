@@ -9,6 +9,8 @@ export interface ParsedTimesheetRow {
   /** Audit/reference only — never used to enrich a row that fails Employee validation. */
   employeeName: string;
   rawProjectCode: string;
+  /** The KEKA Excel's own "Project Name" column — a source value, independent of any Portal Project.projectTitle. "" when the source column is absent or blank. */
+  rawProjectName: string;
   workDate: Date;
   task: string;
   hours: number;

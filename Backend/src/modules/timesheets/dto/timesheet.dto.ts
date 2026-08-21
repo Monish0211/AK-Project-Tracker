@@ -50,8 +50,13 @@ export interface TimesheetImportRowLogListDto {
 export interface TimesheetEntryDto {
   id: string;
   employeeNo: string;
+  rawEmployeeName: string | null;
   projectId: string | null;
+  /** Present (non-null) only when projectId resolves to a real, non-deleted-select Project — see findEntries()'s include. Association/ownership info only — NEVER the source of the Timesheets "Project Name" column, which is rawProjectName below. */
+  project: { prNo: string; projectTitle: string } | null;
   rawProjectCode: string;
+  /** The KEKA Excel's own Project Name column — the authoritative source for the Timesheets "Project Name" display column. Independent of project.projectTitle. */
+  rawProjectName: string | null;
   workDate: Date;
   task: string;
   hours: number;

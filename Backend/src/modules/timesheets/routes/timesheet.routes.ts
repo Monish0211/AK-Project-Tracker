@@ -2,6 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
 import { authorize } from "../../../shared/middleware/authorize.js";
+import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import {
@@ -32,6 +33,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 router.post(
   "/timesheets/import",
   authenticate,
+  denyReadOnlyWrites,
   requireModuleAccess("Timesheets"),
   authorize("Administrator"),
   upload.single("file"),
@@ -59,7 +61,14 @@ router.get("/timesheets/pending-projects", authenticate, requireModuleAccess("Ti
 // Timesheets access, matching the Resources module's PATCH /resources/:id
 // precedent (no role gate; this only ever touches one already-existing
 // row's mutable fields).
-router.patch("/timesheets/entries/:id", authenticate, requireModuleAccess("Timesheets"), validate(editEntryBodySchema), editEntry);
+router.patch(
+  "/timesheets/entries/:id",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Timesheets"),
+  validate(editEntryBodySchema),
+  editEntry
+);
 
 // Destructive — Administrator-only, matching the "Delete Permanently"/
 // manual-import precedent (see importTimesheet above and
@@ -69,6 +78,7 @@ router.patch("/timesheets/entries/:id", authenticate, requireModuleAccess("Times
 router.delete(
   "/timesheets/entries/:id",
   authenticate,
+  denyReadOnlyWrites,
   requireModuleAccess("Timesheets"),
   authorize("Administrator"),
   deleteEntry
@@ -81,6 +91,7 @@ router.delete(
 router.delete(
   "/timesheets/entries",
   authenticate,
+  denyReadOnlyWrites,
   requireModuleAccess("Timesheets"),
   authorize("Administrator"),
   deleteAllEntries

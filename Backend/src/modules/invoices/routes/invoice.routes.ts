@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
+import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import {
@@ -24,6 +25,7 @@ router.get("/projects/:projectId/invoice-items", authenticate, requireModuleAcce
 router.post(
   "/projects/:projectId/invoice-items/ingest",
   authenticate,
+  denyReadOnlyWrites,
   requireModuleAccess("Invoices"),
   validate(ingestInvoiceLinesSchema),
   ingestInvoiceLines
@@ -33,6 +35,7 @@ router.post(
 router.post(
   "/quantity/:quantityItemId/invoice-lines",
   authenticate,
+  denyReadOnlyWrites,
   requireModuleAccess("Invoices"),
   validate(createInvoiceLineSchema),
   createInvoiceLine
@@ -40,6 +43,7 @@ router.post(
 router.patch(
   "/invoice-lines/:id",
   authenticate,
+  denyReadOnlyWrites,
   requireModuleAccess("Invoices"),
   validate(updateInvoiceLineSchema),
   updateInvoiceLine
@@ -47,6 +51,12 @@ router.patch(
 // Hard delete — only for a line the UI itself is removing before it was ever
 // really "raised" (see invoice.service.ts's deleteInvoiceLine()). Undoing an
 // already-raised invoice is a status PATCH to "Cancelled", not this.
-router.delete("/invoice-lines/:id", authenticate, requireModuleAccess("Invoices"), deleteInvoiceLine);
+router.delete(
+  "/invoice-lines/:id",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Invoices"),
+  deleteInvoiceLine
+);
 
 export default router;

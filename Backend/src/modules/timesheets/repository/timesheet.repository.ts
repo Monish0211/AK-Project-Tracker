@@ -21,9 +21,13 @@ import { projectOwnershipWhereOr } from "../../../shared/utils/projectAccess.js"
 
 export interface TimesheetEntryCreateData {
   employeeNo: string;
+  /** As received from KEKA, preserved regardless of whether employeeNo resolves in Employee Master. */
+  rawEmployeeName: string | null;
   /** null = "Unassigned" — Employee matched, Project did not (per the PR-optional-for-display decision). */
   projectId: string | null;
   rawProjectCode: string;
+  /** The KEKA Excel's own Project Name column — independent of the linked Project's projectTitle, if any. */
+  rawProjectName: string | null;
   workDate: Date;
   task: string;
   hours: number;
@@ -79,6 +83,14 @@ export interface FindEntriesFilters {
  * to any project, so there's nothing to restrict) plus entries whose
  * project the caller is authorized for — same project-ownership rule as
  * GET /projects, never a second concept.
+ *
+ * Includes the linked Project's prNo/projectTitle directly (a mapped row
+ * has projectId but no other Project fields of its own) so the frontend
+ * Timesheets page can display the real Project Name without depending on
+ * its separate, browser-local Projects mirror already being populated —
+ * that mirror is only ever filled by visiting the Projects/Manpower pages,
+ * so relying on it here silently showed every mapped row as unresolved on
+ * a fresh session that went straight to Timesheets.
  */
 export function findEntries(filters: FindEntriesFilters, callerUserId?: string) {
   const ownershipOr = projectOwnershipWhereOr(callerUserId);
@@ -91,6 +103,7 @@ export function findEntries(filters: FindEntriesFilters, callerUserId?: string) 
       ...(ownershipOr && { OR: [{ projectId: null }, { project: { OR: ownershipOr } }] }),
     },
     orderBy: { workDate: "asc" },
+    include: { project: { select: { prNo: true, projectTitle: true } } },
   });
 }
 
@@ -151,5 +164,26 @@ export function findDistinctMappedPairs() {
 /** Backs Delete-All — every TimesheetEntry row, unconditionally. Projects/Employees/TimesheetImport history are untouched (see timesheet.service.ts's deleteAllTimesheetEntries). */
 export function deleteAllEntries() {
   return prisma.timesheetEntry.deleteMany({});
+}
+
+/**
+ * Every currently-"Unassigned" (projectId: null) row, minimal columns —
+ * used only by the Project-creation/PR-Number-edit reconciliation path
+ * (timesheet.service.ts's reconcileUnassignedEntriesForProject) to find
+ * rows whose rawProjectCode might now match a Project. Matching itself
+ * happens in application code via the shared normalizeProjectCode(), not
+ * here — this is a plain read, same "no business logic in the repository"
+ * rule as every other function above.
+ */
+export function findUnassignedEntries() {
+  return prisma.timesheetEntry.findMany({
+    where: { projectId: null },
+    select: { id: true, employeeNo: true, rawProjectCode: true },
+  });
+}
+
+/** Assigns a resolved Project to previously-Unassigned rows — only projectId is written; every other field (employeeNo/rawEmployeeName/rawProjectCode/workDate/task/hours) is left exactly as originally imported. */
+export function reassignEntriesToProject(ids: string[], projectId: string) {
+  return prisma.timesheetEntry.updateMany({ where: { id: { in: ids } }, data: { projectId } });
 }
 

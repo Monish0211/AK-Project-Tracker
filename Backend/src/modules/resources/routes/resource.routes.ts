@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
+import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import {
@@ -27,12 +28,20 @@ router.get("/projects/:projectId/resources", authenticate, requireModuleAccess("
 router.post(
   "/projects/:projectId/resources",
   authenticate,
+  denyReadOnlyWrites,
   requireModuleAccess("Projects"),
   validate(createResourceSchema),
   createResource
 );
 router.get("/employees/:employeeNo/assignments", authenticate, requireModuleAccess("Projects"), getAssignmentsByEmployee);
-router.patch("/resources/:id", authenticate, requireModuleAccess("Projects"), validate(updateResourceSchema), updateResource);
-router.delete("/resources/:id", authenticate, requireModuleAccess("Projects"), deleteResource);
+router.patch(
+  "/resources/:id",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Projects"),
+  validate(updateResourceSchema),
+  updateResource
+);
+router.delete("/resources/:id", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), deleteResource);
 
 export default router;

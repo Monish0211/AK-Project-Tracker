@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
+import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import { createExpense, deleteExpense, getExpensesByProject, updateExpense } from "../controllers/expense.controller.js";
@@ -15,11 +16,19 @@ router.get("/projects/:projectId/expenses", authenticate, requireModuleAccess("P
 router.post(
   "/projects/:projectId/expenses",
   authenticate,
+  denyReadOnlyWrites,
   requireModuleAccess("Projects"),
   validate(createExpenseSchema),
   createExpense
 );
-router.patch("/expenses/:id", authenticate, requireModuleAccess("Projects"), validate(updateExpenseSchema), updateExpense);
-router.delete("/expenses/:id", authenticate, requireModuleAccess("Projects"), deleteExpense);
+router.patch(
+  "/expenses/:id",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Projects"),
+  validate(updateExpenseSchema),
+  updateExpense
+);
+router.delete("/expenses/:id", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), deleteExpense);
 
 export default router;
