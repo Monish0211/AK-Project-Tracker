@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
+import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import {
@@ -20,11 +21,32 @@ const router = Router();
 // Manpower by Sidebar convention).
 router.get("/", authenticate, requireModuleAccess("Manpower"), getEmployees);
 router.get("/:id", authenticate, requireModuleAccess("Manpower"), getEmployee);
-router.post("/", authenticate, requireModuleAccess("Manpower"), validate(createEmployeeSchema), createEmployee);
+router.post(
+  "/",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Manpower"),
+  validate(createEmployeeSchema),
+  createEmployee
+);
 // Excel import — parsed client-side, sent as JSON, same all-rows-attempted
 // (never all-or-nothing) semantics the existing frontend import already has.
-router.post("/import", authenticate, requireModuleAccess("Manpower"), validate(importEmployeesSchema), importEmployees);
-router.patch("/:id", authenticate, requireModuleAccess("Manpower"), validate(updateEmployeeSchema), updateEmployee);
-router.delete("/:id", authenticate, requireModuleAccess("Manpower"), deleteEmployee);
+router.post(
+  "/import",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Manpower"),
+  validate(importEmployeesSchema),
+  importEmployees
+);
+router.patch(
+  "/:id",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Manpower"),
+  validate(updateEmployeeSchema),
+  updateEmployee
+);
+router.delete("/:id", authenticate, denyReadOnlyWrites, requireModuleAccess("Manpower"), deleteEmployee);
 
 export default router;

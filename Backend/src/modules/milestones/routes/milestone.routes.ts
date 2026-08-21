@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
+import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import {
@@ -21,6 +22,7 @@ router.get("/projects/:projectId/milestones", authenticate, requireModuleAccess(
 router.post(
   "/projects/:projectId/milestones",
   authenticate,
+  denyReadOnlyWrites,
   requireModuleAccess("Projects"),
   validate(createMilestoneSchema),
   createMilestone
@@ -30,6 +32,7 @@ router.post(
 router.post(
   "/projects/:projectId/milestones/ingest",
   authenticate,
+  denyReadOnlyWrites,
   requireModuleAccess("Projects"),
   validate(ingestMilestonesSchema),
   ingestMilestones
@@ -37,10 +40,11 @@ router.post(
 router.patch(
   "/milestones/:id",
   authenticate,
+  denyReadOnlyWrites,
   requireModuleAccess("Projects"),
   validate(updateMilestoneSchema),
   updateMilestone
 );
-router.delete("/milestones/:id", authenticate, requireModuleAccess("Projects"), deleteMilestone);
+router.delete("/milestones/:id", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), deleteMilestone);
 
 export default router;

@@ -110,19 +110,24 @@ export async function processTimesheetImport(
     const projectKey = normalizeProjectCode(row.rawProjectCode);
     const project = projectKey ? projectMap.get(projectKey) : undefined;
 
-    // A missing Project is deliberately NOT a failure — the row is still
-    // retained as a real TimesheetEntry with projectId: null ("Unassigned"),
-    // per the approved PR-optional-for-display integration decision. Only a
-    // missing Employee remains a hard failure (unchanged). rawProjectCode is
-    // always preserved on the entry itself, so an unmatched PR is never lost
-    // and can be assigned later once the matching Project is created — the
-    // existing normalizeProjectCode()/matching rules are entirely unchanged;
-    // this only changes what happens AFTER a match attempt comes back empty.
-    const failureReason: string | null = !employee ? `Employee No "${row.employeeNo}" not found in Employee Master.` : null;
-
+    // Neither a missing Project nor a missing Employee is a failure — the
+    // row is always retained as a real TimesheetEntry, with projectId: null
+    // ("Unassigned") and/or employeeNo/rawEmployeeName preserved verbatim
+    // from KEKA whenever the corresponding master record doesn't exist. The
+    // KEKA Excel is the source of truth for timesheet activity; master-data
+    // matching only decides what gets LINKED, never whether the row is
+    // SAVED. This is unrelated to genuinely malformed source rows (missing/
+    // unreadable employeeNo, PR code, date, or hours), which are filtered
+    // out upstream in excelParser.service.ts before ever reaching this
+    // function, and are unaffected by this change. rawProjectCode/employeeNo
+    // are always preserved on the entry, so an unmatched PR/employee is
+    // never lost and can be assigned/resolved later once the matching
+    // master record is created — the existing normalizeProjectCode()/
+    // matching rules are entirely unchanged; this only changes what happens
+    // AFTER a match attempt comes back empty.
     if (project) resolvedProjectIds.add(project.id);
 
-    return { row, employee, projectId: project?.id ?? null, failureReason };
+    return { row, employee, projectId: project?.id ?? null };
   });
 
   // Includes existing "Unassigned" (projectId: null) entries too — not just
@@ -154,26 +159,15 @@ export async function processTimesheetImport(
       const existingMap = new Map(initialExisting);
       const rowLogs: RowLogEntry[] = [];
 
-      for (const { row, employee, projectId, failureReason } of resolutions) {
-        if (failureReason || !employee) {
-          failedCount++;
-          rowLogs.push({
-            entryId: null,
-            rawEmployeeNo: row.employeeNo,
-            rawProjectCode: row.rawProjectCode,
-            workDate: row.workDate,
-            task: row.task,
-            previousHours: null,
-            newHours: row.hours,
-            outcome: "Failed",
-            failureReason: failureReason ?? "Unknown validation failure.",
-          });
-          continue;
-        }
-
-        // projectId may legitimately be null here (Project not found) — the
-        // row is still created/reconciled as an "Unassigned" entry below.
-        const canonicalEmployeeNo = employee.employeeNo;
+      for (const { row, employee, projectId } of resolutions) {
+        // projectId may legitimately be null here (Project not found), and
+        // employee may legitimately be undefined (Employee No not found) —
+        // the row is still created/reconciled as a real entry below either
+        // way. canonicalEmployeeNo aligns to Employee Master's own casing
+        // when matched (so repeat imports/manual edits key consistently);
+        // when unmatched, the raw KEKA value is used as-is since there is
+        // no canonical form to align to.
+        const canonicalEmployeeNo = employee?.employeeNo ?? row.employeeNo;
         const key = identityKey(canonicalEmployeeNo, projectId, row.workDate, row.task);
         const existing = existingMap.get(key);
         // ProjectResource is inherently project-scoped — never recompute it
@@ -204,8 +198,10 @@ export async function processTimesheetImport(
 
           const created = await timesheetRepo.createEntry(tx, {
             employeeNo: canonicalEmployeeNo,
+            rawEmployeeName: row.employeeName || null,
             projectId,
             rawProjectCode: row.rawProjectCode,
+            rawProjectName: row.rawProjectName || null,
             workDate: row.workDate,
             task: row.task,
             hours: row.hours,
@@ -344,6 +340,40 @@ export async function processTimesheetImport(
     failedCount,
     errorSummary: finalized.errorSummary,
   };
+}
+
+/**
+ * Called from project.service.ts whenever a Project is created, or an
+ * existing Project's prNo is changed — never called from
+ * processTimesheetImport() itself. Finds every currently-"Unassigned"
+ * (projectId: null) TimesheetEntry whose rawProjectCode normalizes to the
+ * same value as the given prNo (via the SAME normalizeProjectCode() the
+ * import engine already uses — no second matching implementation), and
+ * links it to this Project. Only projectId is written; employeeNo/
+ * rawEmployeeName/rawProjectCode/workDate/task/hours are left exactly as
+ * originally imported. ProjectResource is recomputed for each newly-linked
+ * (employeeNo, projectId) pair via the existing, unmodified
+ * recomputeProjectResource() — the same call the import engine itself makes
+ * for a pair that resolves a Project at import time — so a row that
+ * couldn't be linked until today ends up in exactly the state it would
+ * have been in had the Project already existed when it was imported.
+ */
+export async function reconcileUnassignedEntriesForProject(projectId: string, prNo: string): Promise<number> {
+  const key = normalizeProjectCode(prNo);
+  if (!key) return 0;
+
+  const unassigned = await timesheetRepo.findUnassignedEntries();
+  const matching = unassigned.filter((entry) => normalizeProjectCode(entry.rawProjectCode) === key);
+  if (matching.length === 0) return 0;
+
+  await timesheetRepo.reassignEntriesToProject(matching.map((entry) => entry.id), projectId);
+
+  const distinctEmployeeNos = new Set(matching.map((entry) => entry.employeeNo));
+  for (const employeeNo of distinctEmployeeNos) {
+    await recomputeProjectResource(employeeNo, projectId);
+  }
+
+  return matching.length;
 }
 
 /**

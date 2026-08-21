@@ -1,5 +1,6 @@
 import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccess } from "../../../shared/utils/projectAccess.js";
+import { reconcileUnassignedEntriesForProject } from "../../timesheets/services/timesheet.service.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type {
   ImportProjectsResultDto,
@@ -153,6 +154,12 @@ export async function createProject(input: CreateProjectInput, creatorUserId: st
 
   const created = await createProjectInRepository({ ...toGeneralInfoData(input), createdByUserId: creatorUserId });
 
+  // Previously-imported KEKA timesheet rows whose PR code didn't match any
+  // Project at import time are stored as "Unassigned" (projectId: null),
+  // never rejected — see timesheet.service.ts's processTimesheetImport().
+  // Now that a Project with this prNo exists, link any of those rows to it.
+  await reconcileUnassignedEntriesForProject(created.id, created.prNo);
+
   return toProjectDto(created);
 }
 
@@ -284,12 +291,22 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
   }
   assertProjectAccess(user, existing);
 
-  if (input.prNo && input.prNo !== existing.prNo) {
-    await assertPrNoAvailable(input.prNo, id);
+  const prNoChanged = Boolean(input.prNo && input.prNo !== existing.prNo);
+  if (prNoChanged) {
+    await assertPrNoAvailable(input.prNo!, id);
   }
 
   const updateData = toUpdateData(input);
   const updated = await updateProjectInRepository(id, updateData);
+
+  // Same reconciliation as createProject() above — a PR Number edit can
+  // newly match previously-Unassigned timesheet rows just as a brand-new
+  // Project can. Only fires when prNo actually changed; other field edits
+  // never touch Timesheet data.
+  if (prNoChanged) {
+    await reconcileUnassignedEntriesForProject(updated.id, updated.prNo);
+  }
+
   return toProjectDto(updated);
 }
 
@@ -298,10 +315,12 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
  * 3.1. Sets isDeleted/deletedAt only; the row itself, and every child row
  * (QuantityItem/PaymentMilestone/ProjectExpense), are left completely
  * untouched. This is NOT the same operation as permanentlyDeleteProject()
- * below — the two coexist, and this one's behavior does not change. No
- * special approval permission is required (the dormant "Archive Projects"
- * ApprovalType is deliberately left unused) — only project-ownership access,
- * same as View/Edit.
+ * below — the two coexist, and this one's behavior does not change. Gated by
+ * the "Archive Projects" approval permission at the route layer (see
+ * project.routes.ts's requireApprovalPermission) AND project-ownership
+ * access (checked here) — same two-layer pattern as permanentlyDeleteProject.
+ * Administrator does not automatically bypass the approval permission (must
+ * hold the grant like anyone else), matching Permanent Delete's own rule.
  */
 export async function archiveProject(id: string, user: AccessTokenPayload): Promise<void> {
   const existing = await findProjectById(id);
@@ -314,11 +333,12 @@ export async function archiveProject(id: string, user: AccessTokenPayload): Prom
 }
 
 /**
- * Recover — the exact inverse of archiveProject. No special permission
- * (any user with normal Project access may recover), matching Archive's own
- * gate — only project-ownership access is checked. Looks the project up via
- * findProjectByIdAny() since the whole point is finding an archived
- * (isDeleted: true) row that findProjectById would never see.
+ * Recover — the exact inverse of archiveProject. Deliberately NOT gated by
+ * "Archive Projects" or any approval permission (any user with normal
+ * Project access may recover) — only project-ownership access is checked.
+ * Looks the project up via findProjectByIdAny() since the whole point is
+ * finding an archived (isDeleted: true) row that findProjectById would
+ * never see.
  */
 export async function restoreProject(id: string, user: AccessTokenPayload): Promise<void> {
   const existing = await findProjectByIdAny(id);

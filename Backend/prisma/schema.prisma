@@ -734,9 +734,23 @@ model TimesheetEntry {
 
   employeeNo String
 
+  // Preserved exactly as received from KEKA, independent of whether
+  // employeeNo resolves in Employee Master — populated at creation time
+  // only (never re-derived/overwritten later), mirroring rawProjectCode's
+  // own "always the original source value" role below. Null for any entry
+  // created before this field existed.
+  rawEmployeeName String?
+
   projectId      String?
   project        Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   rawProjectCode String
+  // The KEKA Excel's own "Project Name" column — a source-data value,
+  // completely independent of the Portal's Project.projectTitle. Never
+  // synchronized with, derived from, or used as a fallback for the linked
+  // Project's title (see project.prNo above, which is the only field the
+  // Project relation is matched on). Null for rows imported before this
+  // field existed, and for rows whose source Excel had no such column.
+  rawProjectName String?
 
   workDate DateTime
 

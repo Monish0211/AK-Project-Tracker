@@ -21,12 +21,21 @@ import type { ParsedTimesheetRow } from "../timesheet.types.js";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB — generous for a timesheet export; real KEKA file size unverified (Stage 4 §7 open question)
 const MAX_HEADER_SCAN_ROWS = 10;
 
-type FieldKey = "employeeNo" | "employeeName" | "projectCode" | "date" | "task" | "totalHours" | "status";
+type FieldKey = "employeeNo" | "employeeName" | "projectCode" | "projectName" | "date" | "task" | "totalHours" | "status";
 
 const COLUMN_SYNONYMS: Record<FieldKey, string[]> = {
   employeeNo: ["employee number", "employee no", "employee code", "emp no", "emp code"],
   employeeName: ["employee name", "full name", "name", "employee"],
   projectCode: ["project code", "pr number", "pr no", "project no", "project identifier"],
+  // The KEKA Excel's own "Project Name" column — a distinct column from
+  // Project Code/PR Number (confirmed against the real KEKA export
+  // structure: "Employee_Number | Employee Name | Client Name |
+  // PROJECT NAME | PR Number | Task | date | Total Hours | Comments").
+  // Optional, same treatment as task/status below — its absence never
+  // fails header detection or rejects a row; it only means rawProjectName
+  // ends up "" for that import, same as an optional Task column being
+  // missing leaves task as "".
+  projectName: ["project name", "project title", "project description"],
   date: ["date", "working date", "entry date"],
   task: ["task"],
   totalHours: ["total hours", "hours", "hours worked", "time spent"],
@@ -172,6 +181,7 @@ export function parseTimesheetWorkbook(bytes: Buffer): ParsedWorkbookResult {
         employeeNo: findColumnIndex(normalized, COLUMN_SYNONYMS.employeeNo),
         employeeName: findColumnIndex(normalized, COLUMN_SYNONYMS.employeeName),
         projectCode: findColumnIndex(normalized, COLUMN_SYNONYMS.projectCode),
+        projectName: findColumnIndex(normalized, COLUMN_SYNONYMS.projectName),
         date: findColumnIndex(normalized, COLUMN_SYNONYMS.date),
         task: findColumnIndex(normalized, COLUMN_SYNONYMS.task),
         totalHours: findColumnIndex(normalized, COLUMN_SYNONYMS.totalHours),
@@ -185,6 +195,7 @@ export function parseTimesheetWorkbook(bytes: Buffer): ParsedWorkbookResult {
         const employeeNo = getCellText(row, indices.employeeNo);
         const employeeName = getCellText(row, indices.employeeName);
         const rawProjectCode = getCellText(row, indices.projectCode);
+        const rawProjectName = indices.projectName !== -1 ? getCellText(row, indices.projectName) : "";
         const workDate = parseWorkDate(row[indices.date]);
         const hours = Number(getCellText(row, indices.totalHours));
         const task = indices.task !== -1 ? getCellText(row, indices.task) : "";
@@ -195,13 +206,16 @@ export function parseTimesheetWorkbook(bytes: Buffer): ParsedWorkbookResult {
         // parsing-level skip, distinct from a reconciliation-level Failed
         // outcome, since there is no employeeNo/date identity to even log
         // against. Matches the existing frontend parser's own precedent of
-        // silently ignoring genuinely blank/malformed trailing rows.
+        // silently ignoring genuinely blank/malformed trailing rows. Project
+        // Name is deliberately NOT part of this check (same as Task/Status)
+        // — its absence never makes an otherwise-valid row malformed.
         if (!employeeNo || !rawProjectCode || !workDate || isNaN(hours)) continue;
 
         rows.push({
           employeeNo,
           employeeName,
           rawProjectCode,
+          rawProjectName,
           workDate,
           task,
           hours,
