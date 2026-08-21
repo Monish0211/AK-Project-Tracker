@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { Building2 } from "lucide-react";
 import "./customer-master-theme.css";
@@ -6,11 +6,15 @@ import "./customer-master-theme.css";
 import type { Customer } from "../../types/CustomerModel";
 import {
   getCustomers,
+  loadCustomersForApp,
   deleteCustomer,
   importCustomersFromFile,
   downloadCustomerTemplate,
   exportCustomers,
 } from "../../services/customerService";
+import { ApiError } from "../../services/apiClient";
+import { useAuth } from "../../auth/authContext";
+import { canMutateData } from "../../auth/permissions";
 import { useLiveRefresh } from "../../hooks/useLiveRefresh";
 import { Card, CardHeader } from "../../components/ui/Card";
 
@@ -29,18 +33,53 @@ interface FormModalState {
 
 const CustomerMaster = () => {
   const { refreshKey } = useLiveRefresh();
+  const { user } = useAuth();
+  const canMutate = canMutateData(user);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
 
   const [formModal, setFormModal] = useState<FormModalState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  // Re-reads on every refresh tick — own saves and any other tab's saves alike.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const customers = useMemo(() => getCustomers(), [refreshKey]);
+  // Initial load once — do NOT depend on refreshKey here. loadCustomersForApp
+  // used to dispatch pmo:data-changed, which bumped refreshKey and re-ran this
+  // effect with setLoading(true), causing an infinite Loading… flicker.
+  useEffect(() => {
+    let isMounted = true;
+    setLoading(true);
+    setLoadError(null);
+    loadCustomersForApp()
+      .then((items) => {
+        if (!isMounted) return;
+        setCustomers(items);
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        console.error("Failed to load Customer Master from backend:", err);
+        setLoadError("Unable to load customers. Please try again.");
+        setCustomers([]);
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Mutations (add/edit/delete/import) notify via pmo:data-changed → refreshKey.
+  // Cache is already updated; sync local state without a loading flash.
+  useEffect(() => {
+    if (refreshKey === 0) return;
+    setCustomers(getCustomers());
+  }, [refreshKey]);
 
   const stats = useMemo(() => {
     const today = new Date().toDateString();
@@ -109,22 +148,31 @@ const CustomerMaster = () => {
       }
 
       alert(`Imported ${result.imported} customer(s).\nSkipped ${result.skipped} duplicate(s).`);
-    } catch {
-      alert("Failed to read the file. Please check the file format and try again.");
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to read the file. Please check the file format and try again.";
+      alert(message);
     }
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
-    deleteCustomer(deleteTarget.id);
-    setDeleteTarget(null);
+    setDeleting(true);
+    try {
+      await deleteCustomer(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Unable to delete customer.";
+      alert(message);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
     <div className="customer-master-shell -m-6">
       <input ref={fileInputRef} type="file" accept=".xlsx,.csv" className="hidden" onChange={handleFileChange} />
 
-      <div key={refreshKey} className="p-4 space-y-3.5 nu-fade-in">
+      <div className="p-4 space-y-3.5 nu-fade-in">
         <CustomerHero
           total={stats.total}
           active={stats.active}
@@ -152,12 +200,24 @@ const CustomerMaster = () => {
                 onExport={(format) => exportCustomers(visibleCustomers, format)}
                 onReset={handleReset}
                 onAddCustomer={() => setFormModal({ mode: "add" })}
+                canMutate={canMutate}
               />
-              <CustomerTable
-                customers={visibleCustomers}
-                onEdit={(customer) => setFormModal({ mode: "edit", customer })}
-                onDelete={(customer) => setDeleteTarget(customer)}
-              />
+              {loading ? (
+                <div className="flex-1 flex items-center justify-center py-16 text-[13px] text-[var(--nu-text-muted)]">
+                  Loading customers...
+                </div>
+              ) : loadError ? (
+                <div className="flex-1 flex items-center justify-center py-16 text-[13px] text-red-600 dark:text-red-400 px-4 text-center">
+                  {loadError}
+                </div>
+              ) : (
+                <CustomerTable
+                  customers={visibleCustomers}
+                  onEdit={(customer) => setFormModal({ mode: "edit", customer })}
+                  onDelete={(customer) => setDeleteTarget(customer)}
+                  canMutate={canMutate}
+                />
+              )}
             </Card>
           </div>
 
@@ -172,7 +232,7 @@ const CustomerMaster = () => {
       {deleteTarget && (
         <ConfirmDeleteDialog
           customerName={deleteTarget.customerName}
-          onCancel={() => setDeleteTarget(null)}
+          onCancel={() => !deleting && setDeleteTarget(null)}
           onConfirm={handleDeleteConfirm}
         />
       )}

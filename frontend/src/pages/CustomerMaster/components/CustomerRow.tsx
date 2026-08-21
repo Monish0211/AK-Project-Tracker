@@ -7,9 +7,10 @@ interface Props {
   index: number;
   onEdit: (customer: Customer) => void;
   onDelete: (customer: Customer) => void;
+  canMutate?: boolean;
 }
 
-const CustomerRow = ({ customer, index, onEdit, onDelete }: Props) => {
+const CustomerRow = ({ customer, index, onEdit, onDelete, canMutate = true }: Props) => {
   return (
     <tr
       className={`border-b border-[var(--nu-border)] last:border-none hover:bg-[var(--nu-accent-soft)] transition-colors ${
@@ -31,24 +32,26 @@ const CustomerRow = ({ customer, index, onEdit, onDelete }: Props) => {
       <td className="px-4 py-3 text-center text-[12px] text-[var(--nu-text-secondary)]">
         {new Date(customer.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
       </td>
-      <td className="px-4 py-3">
-        <div className="flex items-center justify-center gap-2">
-          <button
-            title="Edit Customer"
-            onClick={() => onEdit(customer)}
-            className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150"
-          >
-            <Pencil size={15} />
-          </button>
-          <button
-            title="Delete Customer"
-            onClick={() => onDelete(customer)}
-            className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-danger-soft)] text-[var(--nu-danger)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150"
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
-      </td>
+      {canMutate && (
+        <td className="px-4 py-3">
+          <div className="flex items-center justify-center gap-2">
+            <button
+              title="Edit Customer"
+              onClick={() => onEdit(customer)}
+              className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150"
+            >
+              <Pencil size={15} />
+            </button>
+            <button
+              title="Delete Customer"
+              onClick={() => onDelete(customer)}
+              className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-danger-soft)] text-[var(--nu-danger)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150"
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+        </td>
+      )}
     </tr>
   );
 };

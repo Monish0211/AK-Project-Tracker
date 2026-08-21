@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { Building2, CalendarCheck, CalendarRange, Clock, FileSignature, FileText, Hash, LayoutGrid, Timer } from "lucide-react";
 import type { Project } from "../../../types/Project";
-import { getCustomers } from "../../../services/customerService";
+import { getCustomers, loadCustomersForApp } from "../../../services/customerService";
+import type { Customer } from "../../../types/CustomerModel";
 import { getPmoCoordinators } from "../../../services/pmoCoordinatorService";
 import { getApproxWorkingDays, getPlannedCompletionDate } from "../../../utils/projectScheduling";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
@@ -226,7 +227,21 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
     Boolean(project.department && !departmentOptions.includes(project.department))
   );
 
-  const customers = useMemo(() => getCustomers(), []);
+  const [customers, setCustomers] = useState<Customer[]>(() => getCustomers());
+
+  useEffect(() => {
+    let isMounted = true;
+    loadCustomersForApp()
+      .then((items) => {
+        if (isMounted) setCustomers(items);
+      })
+      .catch((err) => {
+        console.warn("Failed to load Customer Master for client autocomplete:", err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const filteredCustomers = useMemo(() => {
     const input = project.client || "";
@@ -236,8 +251,10 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
     }
 
     return customers
-      .filter((customer) =>
-        customer.customerName.toLowerCase().includes(input.toLowerCase())
+      .filter(
+        (customer) =>
+          customer.status === "Active" &&
+          customer.customerName.toLowerCase().includes(input.toLowerCase())
       )
       .slice(0, 8);
   }, [customers, project.client]);

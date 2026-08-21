@@ -190,6 +190,7 @@ export const authService = {
       // Logout is a client-side guarantee: forget the token even if the
       // network call itself fails.
       persistToken(null);
+      sessionStorage.removeItem("pmo-greeting-shown-session");
     }
   },
 

@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
 import { X, BookOpen, MessageSquarePlus, Bell, Plus } from "lucide-react";
 import type { Project } from "../../types/Project";
-import type { ProjectNote } from "../../types/ProjectNote";
 import type { ProjectReminder } from "../../types/ProjectReminder";
 import { ProjectNoteCard } from "../Cards/ProjectNoteCard";
-import { groupNotesByDate } from "../../services/ProjectNotesService";
-import { updateProject, getProjectById } from "../../services/projectService";
+import { groupNotesByDate, fetchProjectNotes, addProjectNote } from "../../services/ProjectNotesService";
+import { getProjectById } from "../../services/projectService";
+import { useAuth } from "../../auth/authContext";
 import { reminderService } from "../../services/reminders/ReminderService";
 import { ReminderCard } from "../Cards/ReminderCard";
 import { ReminderForm } from "../../pages/Projects/components/workspace/ReminderForm";
 import { EmptyState } from "../ui/EmptyState";
-import { Button } from "../ui/Button";
 
 interface Props {
   isOpen: boolean;
@@ -22,10 +21,12 @@ interface Props {
 
 export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, readOnly = false }: Props) => {
   const [activeTab, setActiveTab] = useState<"notes" | "reminders">("notes");
+  const { user } = useAuth();
   
   // Notes State
   const [noteText, setNoteText] = useState("");
   const [characterCount, setCharacterCount] = useState(0);
+  const [isSavingNote, setIsSavingNote] = useState(false);
   
   // Reminders State
   const [reminders, setReminders] = useState<ProjectReminder[]>([]);
@@ -34,6 +35,21 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
 
   const [animateShow, setAnimateShow] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load live notes from backend API when drawer opens
+  useEffect(() => {
+    if (isOpen && project.id) {
+      fetchProjectNotes(project.id).then((apiNotes) => {
+        if (apiNotes && apiNotes.length >= 0) {
+          // Merge API notes with existing project notes, avoiding duplicate IDs
+          const existingIds = new Set(apiNotes.map((n) => n.id));
+          const legacyNotes = (project.notes || []).filter((n) => !existingIds.has(n.id));
+          const combined = [...apiNotes, ...legacyNotes];
+          setProject({ ...project, notes: combined });
+        }
+      });
+    }
+  }, [isOpen, project.id]);
 
   // Synchronize internal state with drawer opening animation
   useEffect(() => {
@@ -45,14 +61,15 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
       setIsEditingReminder(false);
       setEditingReminder(null);
     }
-  }, [isOpen, project.id]);
+  }, [isOpen]);
 
   useEffect(() => {
     const handleDataChange = () => {
       loadReminders();
       const latest = getProjectById(project.id);
       if (latest) {
-        setProject(latest);
+        // Preserve live API-backed notes so legacy localStorage project sync never overwrites live notes
+        setProject({ ...latest, notes: project.notes });
       }
     };
     window.addEventListener("pmo:reminders-changed", handleDataChange);
@@ -63,7 +80,7 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
       window.removeEventListener("pmo:data-changed", handleDataChange);
       window.removeEventListener("pmo:project-completed", handleDataChange);
     };
-  }, [project.id, setProject]);
+  }, [project.id, project.notes, setProject]);
 
   const loadReminders = () => {
     setReminders(reminderService.getRemindersByProject(project.id));
@@ -75,29 +92,31 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
     setCharacterCount(val.length);
   };
 
-  const handleSaveNote = () => {
-    if (noteText.trim() === "") return;
+  const handleSaveNote = async () => {
+    if (noteText.trim() === "" || isSavingNote || readOnly) return;
 
-    const newNote: ProjectNote = {
-      id: Math.random().toString(36).substr(2, 9),
-      projectId: project.id,
-      message: noteText.trim(),
-      createdBy: "Administrator",
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      setIsSavingNote(true);
+      const authorName = user?.name ? user.name.trim().split(" ")[0] : user?.email ? user.email.split("@")[0] : "Administrator";
+      
+      const createdNote = await addProjectNote(project.id, noteText.trim(), authorName);
 
-    const updatedNotes = [newNote, ...(project.notes || [])];
-    const updatedProject = { ...project, notes: updatedNotes };
+      if (createdNote) {
+        const updatedNotes = [createdNote, ...(project.notes || [])];
+        const updatedProject = { ...project, notes: updatedNotes };
 
-    // Update state instantly
-    setProject(updatedProject);
+        // Update state instantly with server note
+        setProject(updatedProject);
 
-    // Persist to localStorage directly
-    updateProject(updatedProject);
-
-    // Reset composer input
-    setNoteText("");
-    setCharacterCount(0);
+        // Reset composer input
+        setNoteText("");
+        setCharacterCount(0);
+      }
+    } catch (err) {
+      console.error("Failed to save project note:", err);
+    } finally {
+      setIsSavingNote(false);
+    }
   };
 
   const handleSaveReminder = (reminderData: Partial<ProjectReminder>) => {
@@ -225,17 +244,19 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
                           value={noteText}
                           onChange={handleTextChange}
                           placeholder="Type a new project note here..."
-                          className="w-full bg-slate-50 dark:bg-[#0F172A] border border-gray-200 dark:border-slate-700 rounded-xl p-3 pr-10 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[90px] custom-scrollbar transition-all shadow-sm"
+                          className="w-full bg-slate-50 dark:bg-[#0F172A] border border-gray-200 dark:border-slate-700 rounded-xl p-3 pr-14 pb-10 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[100px] custom-scrollbar transition-all shadow-sm"
                         />
-                        <Button
-                          variant="primary"
-                          size="icon"
-                          onClick={handleSaveNote}
-                          disabled={noteText.trim() === ""}
-                          title="Save Note"
-                          className="absolute bottom-3 right-3 !bg-blue-600 hover:!bg-blue-700 active:!bg-blue-800 !text-white disabled:!bg-blue-400/50 disabled:dark:!bg-blue-900/40 disabled:!text-white/60 disabled:cursor-not-allowed shadow-sm transition-all rounded-lg"
-                          icon={<MessageSquarePlus size={16} />}
-                        />
+                        <div className="absolute bottom-2.5 right-2.5 z-30 pointer-events-auto">
+                          <button
+                            type="button"
+                            onClick={handleSaveNote}
+                            disabled={noteText.trim() === "" || isSavingNote}
+                            title="Save Note"
+                            className="w-10 h-10 min-w-[40px] min-h-[40px] rounded-xl flex items-center justify-center bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white disabled:bg-blue-400/50 disabled:dark:bg-blue-900/40 disabled:text-white/60 disabled:cursor-not-allowed cursor-pointer shadow-md transition-all duration-150 select-none"
+                          >
+                            <MessageSquarePlus size={18} className="pointer-events-none shrink-0" />
+                          </button>
+                        </div>
                       </div>
                       <div className="flex justify-between items-center mt-2 px-1">
                         <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500">

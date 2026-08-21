@@ -542,10 +542,12 @@ const Sidebar = () => {
         </ul>
       </nav>
 
+      <hr className="pmo-divider shrink-0 mx-3 min-[1440px]:mx-6 my-1" />
+
       {/* Bottom Summary — shrink-0 so it always renders at its natural
           height and stays anchored to the bottom, right after Navigation's
           flexible space, never compressed or pushed below the viewport. */}
-      <div className="shrink-0 hidden min-[1440px]:block p-4">
+      <div className="shrink-0 hidden min-[1440px]:block p-4 pt-1">
         <div className="pmo-qs-card rounded-2xl border border-white/10 bg-white/[0.06] backdrop-blur-sm p-4 shadow-xl">
           <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-slate-400">
             Quick Summary

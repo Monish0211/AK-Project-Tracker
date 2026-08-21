@@ -36,13 +36,14 @@ const CustomerModal = ({ mode, customer, onClose }: Props) => {
     status: customer?.status || "Active",
   });
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const update = (field: keyof CustomerInput, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     setError("");
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.customerName.trim()) {
       setError("Customer Name is required.");
       return;
@@ -53,17 +54,20 @@ const CustomerModal = ({ mode, customer, onClose }: Props) => {
       return;
     }
 
-    const result =
-      mode === "edit" && customer
-        ? updateCustomer(customer.id, form)
-        : addCustomer(form);
+    setSaving(true);
+    try {
+      const result =
+        mode === "edit" && customer ? await updateCustomer(customer.id, form) : await addCustomer(form);
 
-    if (!result.success) {
-      setError(result.message || "Unable to save customer.");
-      return;
+      if (!result.success) {
+        setError(result.message || "Unable to save customer.");
+        return;
+      }
+
+      onClose();
+    } finally {
+      setSaving(false);
     }
-
-    onClose();
   };
 
   return (
@@ -180,12 +184,12 @@ const CustomerModal = ({ mode, customer, onClose }: Props) => {
 
         {/* Footer */}
         <div className="shrink-0 sticky bottom-0 z-10 flex items-center justify-end gap-3 border-t border-gray-100 dark:border-slate-700 p-4 sm:p-5 bg-white dark:bg-[#161d2c]">
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
 
-          <Button variant="primary" onClick={handleSave}>
-            {mode === "add" ? "Save Customer" : "Update Customer"}
+          <Button variant="primary" onClick={handleSave} disabled={saving}>
+            {saving ? "Saving..." : mode === "add" ? "Save Customer" : "Update Customer"}
           </Button>
         </div>
       </div>

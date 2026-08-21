@@ -4,6 +4,7 @@ import Sidebar from "../components/Sidebar/Sidebar";
 import Navbar from "../components/Navbar/Navbar";
 import { GlobalReminderProvider } from "../notifications/GlobalReminderProvider";
 import { ModuleRoute } from "../auth/ModuleRoute";
+import { PmoAssistant } from "../components/PmoAssistant/PmoAssistant";
 
 import Dashboard from "../pages/Dashboard/Dashboard";
 
@@ -167,7 +168,7 @@ const MainLayout = () => {
         </main>
 
       </div>
-
+      <PmoAssistant />
     </div>
     </GlobalReminderProvider>
   );
