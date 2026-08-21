@@ -12,7 +12,7 @@ import { buildExportWorkbook, downloadWorkbook } from "../../services/projectWor
 import { getDepartmentOptions } from "../../services/departmentDirectoryService";
 import { ApiError } from "../../services/apiClient";
 import { useAuth } from "../../auth/authContext";
-import { hasApprovalPermission } from "../../auth/permissions";
+import { canMutateData, hasApprovalPermission } from "../../auth/permissions";
 
 /** Sort fields the backend's GET /projects can order by — see listProjectsQuerySchema. */
 const BACKEND_SORTABLE_FIELDS = new Set(["prNo", "client", "projectTitle", "department", "projectStartDate", "createdAt"]);
@@ -49,7 +49,8 @@ const formatArchivedOn = (iso?: string | null): string => {
 export default function ArchivedProjects() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const canPermanentlyDelete = hasApprovalPermission(user, "Delete Project Permanently");
+  const canMutate = canMutateData(user);
+  const canPermanentlyDelete = canMutate && hasApprovalPermission(user, "Delete Project Permanently");
 
   const [rows, setRows] = useState<Project[]>([]);
   const [total, setTotal] = useState(0);
@@ -322,13 +323,15 @@ export default function ArchivedProjects() {
                         >
                           <Eye size={15} />
                         </button>
-                        <button
-                          onClick={() => setRecoverTarget(p)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:bg-emerald-100/40 hover:text-emerald-600 dark:text-slate-400 dark:hover:bg-emerald-950/40"
-                          aria-label="Recover Project"
-                        >
-                          <RotateCcw size={15} />
-                        </button>
+                        {canMutate && (
+                          <button
+                            onClick={() => setRecoverTarget(p)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:bg-emerald-100/40 hover:text-emerald-600 dark:text-slate-400 dark:hover:bg-emerald-950/40"
+                            aria-label="Recover Project"
+                          >
+                            <RotateCcw size={15} />
+                          </button>
+                        )}
                         {canPermanentlyDelete && (
                           <button
                             onClick={() => setPermanentDeleteTarget(p)}
@@ -401,7 +404,7 @@ export default function ArchivedProjects() {
         open={permanentDeleteTarget !== null}
         title="Delete Project Permanently?"
         message={
-          "This will permanently remove this archived project and its project-owned records. This action cannot be undone.\n\nHistorical timesheet entries for this PR are preserved for audit and will remain visible on Timesheets (Project Not Mapped)."
+          "This will permanently remove this archived project and its project-owned records. This action cannot be undone.\n\nHistorical timesheet entries for this PR are preserved for audit and will remain visible on Timesheets, with Project Name shown as —."
         }
         confirmLabel="Delete Permanently"
         cancelLabel="Cancel"

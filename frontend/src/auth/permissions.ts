@@ -21,3 +21,13 @@ export function hasRegionAccess(user: UserSession | null, regionName: string): b
 export function hasApprovalPermission(user: UserSession | null, approvalName: string): boolean {
   return !!user && user.approvalPermissions.includes(approvalName);
 }
+
+/**
+ * Business-data mutations (create/update/delete/archive/restore).
+ * "Read Only" may view data allowed by Module Access + ownership, but must
+ * not mutate. Backend enforces this via denyReadOnlyWrites; this helper is
+ * the matching UI supplement so Edit/Add/Archive controls stay hidden.
+ */
+export function canMutateData(user: UserSession | null): boolean {
+  return !!user && user.role !== "Read Only";
+}

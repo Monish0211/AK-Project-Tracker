@@ -79,25 +79,11 @@ export function regions(...keys: (keyof UserProjectRegionAccess)[]): UserProject
 }
 
 const NO_APPROVALS: UserApprovalRights = {
-  approveTimesheets: false,
-  approveExpenses: false,
-  approveInvoices: false,
-  approveCustomers: false,
-  approveBudgetChanges: false,
-  approveProjectCreation: false,
-  approveReminders: false,
   archiveProjects: false,
   deleteProjectPermanently: false,
 };
 
 const ALL_APPROVALS: UserApprovalRights = {
-  approveTimesheets: true,
-  approveExpenses: true,
-  approveInvoices: true,
-  approveCustomers: true,
-  approveBudgetChanges: true,
-  approveProjectCreation: true,
-  approveReminders: true,
   archiveProjects: true,
   deleteProjectPermanently: true,
 };
@@ -134,16 +120,13 @@ export const ROLE_MODULE_DEFAULTS: Record<SystemRole, UserModuleAccess> = {
 
 export const ROLE_APPROVAL_DEFAULTS: Record<SystemRole, UserApprovalRights> = {
   Administrator: ALL_APPROVALS,
-  "PMO Manager": approvals(
-    "approveTimesheets", "approveExpenses", "approveProjectCreation",
-    "approveReminders", "archiveProjects"
-  ),
-  "Project Manager": approvals("approveTimesheets", "approveExpenses", "approveProjectCreation"),
+  "PMO Manager": approvals("archiveProjects"),
+  "Project Manager": NO_APPROVALS,
   "Project Coordinator": NO_APPROVALS,
-  "Department Head": approvals("approveTimesheets", "approveBudgetChanges", "archiveProjects"),
+  "Department Head": approvals("archiveProjects"),
   Engineer: NO_APPROVALS,
-  Finance: approvals("approveInvoices", "approveExpenses", "approveBudgetChanges"),
-  Accounts: approvals("approveInvoices", "approveExpenses"),
+  Finance: NO_APPROVALS,
+  Accounts: NO_APPROVALS,
   "Management Viewer": NO_APPROVALS,
   "Read Only": NO_APPROVALS,
 };

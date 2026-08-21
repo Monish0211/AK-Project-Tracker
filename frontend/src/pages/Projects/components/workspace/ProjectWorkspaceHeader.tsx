@@ -19,7 +19,7 @@ interface Props {
   outstanding: number;
   notesCount: number;
   onOpenNotes: () => void;
-  onEdit: () => void;
+  onEdit?: () => void;
 }
 
 import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
@@ -126,9 +126,11 @@ const ProjectWorkspaceHeader = ({
           </Button>
 
           <div className="flex items-center gap-2">
-            <Button variant="primary" size="sm" icon={<Pencil size={13} />} onClick={onEdit}>
-              Edit Project
-            </Button>
+            {onEdit && (
+              <Button variant="primary" size="sm" icon={<Pencil size={13} />} onClick={onEdit}>
+                Edit Project
+              </Button>
+            )}
             <Button variant="secondary" size="sm" icon={<FileText size={13} />} onClick={() => handleComingSoon("Documents")}>
               Documents
             </Button>
