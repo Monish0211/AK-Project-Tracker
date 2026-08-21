@@ -36,13 +36,6 @@ const REGION_FIELDS: { key: keyof UserProjectRegionAccess; label: string }[] = [
 ];
 
 const APPROVAL_FIELDS: { key: keyof UserApprovalRights; label: string }[] = [
-  { key: "approveTimesheets", label: "Approve Timesheets" },
-  { key: "approveExpenses", label: "Approve Expenses" },
-  { key: "approveInvoices", label: "Approve Invoices" },
-  { key: "approveCustomers", label: "Approve Customers" },
-  { key: "approveBudgetChanges", label: "Approve Budget Changes" },
-  { key: "approveProjectCreation", label: "Approve Project Creation" },
-  { key: "approveReminders", label: "Approve Reminders" },
   { key: "archiveProjects", label: "Archive Projects" },
   { key: "deleteProjectPermanently", label: "Delete Project Permanently" },
 ];

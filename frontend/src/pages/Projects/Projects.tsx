@@ -32,7 +32,7 @@ import {
 import { ApiError } from "../../services/apiClient";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import { useAuth } from "../../auth/authContext";
-import { hasApprovalPermission } from "../../auth/permissions";
+import { canMutateData, hasApprovalPermission } from "../../auth/permissions";
 
 /** Sort fields the backend's GET /projects can order by — see listProjectsQuerySchema. Anything else (Team/Commercial/Invoice columns, not modeled server-side yet) is synced with the default sort instead and left to this page's own client-side sort exactly as before. */
 const BACKEND_SORTABLE_FIELDS = new Set([
@@ -70,9 +70,11 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const { user } = useAuth();
   // Delete Permanently requires the "Delete Project Permanently" approval
   // permission — the backend enforces this independently
+  const canMutate = canMutateData(user);
   // (requireApprovalPermission on DELETE /projects/:id/permanent), this only
-  // controls whether the action is even offered in the UI.
-  const canPermanentlyDelete = hasApprovalPermission(user, "Delete Project Permanently");
+  // controls whether the action is even offered in the UI. Read Only cannot
+  // mutate even if they somehow hold the approval grant.
+  const canPermanentlyDelete = canMutate && hasApprovalPermission(user, "Delete Project Permanently");
 
   const pageTitle = mode === "completed" ? "Completed Projects" : "Projects";
   const repoCardTitle = mode === "completed" ? "Completed Projects" : "Project Repository";
@@ -560,7 +562,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                 <Download size={14} />
                 Export Archive
               </button>
-            ) : (
+            ) : canMutate ? (
               <Button
                 variant="hero"
                 onClick={() => navigate("/projects/add")}
@@ -569,7 +571,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
               >
                 Add Project
               </Button>
-            )}
+            ) : null}
             <div className="flex items-center gap-1.5 text-xs text-slate-300/90 font-medium">
               <FolderKanban size={13} className="text-slate-400" />
               Total Projects &nbsp;
@@ -908,20 +910,24 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                           >
                             <Eye />
                           </button>
-                          <button
-                            onClick={() => navigate(`/projects/edit/${p.id}`, { state: { source: mode } })}
-                            className="pmo-act-btn act-e hover:bg-slate-100/50 hover:text-slate-600"
-                            aria-label="Edit Project Details"
-                          >
-                            <Pencil />
-                          </button>
-                          <button
-                            onClick={() => setArchiveTargetId(p.id)}
-                            className="pmo-act-btn act-d hover:bg-red-100/40 hover:text-red-600"
-                            aria-label="Archive Project"
-                          >
-                            <Trash2 />
-                          </button>
+                          {canMutate && (
+                            <button
+                              onClick={() => navigate(`/projects/edit/${p.id}`, { state: { source: mode } })}
+                              className="pmo-act-btn act-e hover:bg-slate-100/50 hover:text-slate-600"
+                              aria-label="Edit Project Details"
+                            >
+                              <Pencil />
+                            </button>
+                          )}
+                          {canMutate && (
+                            <button
+                              onClick={() => setArchiveTargetId(p.id)}
+                              className="pmo-act-btn act-d hover:bg-red-100/40 hover:text-red-600"
+                              aria-label="Archive Project"
+                            >
+                              <Trash2 />
+                            </button>
+                          )}
                           {canPermanentlyDelete && (
                             <button
                               onClick={() => setPermanentDeleteTarget(p)}

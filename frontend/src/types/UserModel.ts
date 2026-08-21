@@ -61,13 +61,6 @@ export interface UserProjectRegionAccess {
 }
 
 export interface UserApprovalRights {
-  approveTimesheets: boolean;
-  approveExpenses: boolean;
-  approveInvoices: boolean;
-  approveCustomers: boolean;
-  approveBudgetChanges: boolean;
-  approveProjectCreation: boolean;
-  approveReminders: boolean;
   archiveProjects: boolean;
   deleteProjectPermanently: boolean;
 }

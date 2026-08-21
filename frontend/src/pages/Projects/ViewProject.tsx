@@ -13,6 +13,8 @@ import {
 } from "../../services/expenseService";
 import { getProjectActivityTimeline } from "../../services/projectActivityService";
 import { calculateProjectCompletionPercentage, getActualTimesheetEmployeeCount } from "../../utils/projectMetrics";
+import { useAuth } from "../../auth/authContext";
+import { canMutateData } from "../../auth/permissions";
 import { Button } from "../../components/ui/Button";
 
 import GeneralView from "./components/GeneralView";
@@ -51,6 +53,8 @@ const ViewProject = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
+  const canMutate = canMutateData(user);
   const [activeTab, setActiveTab] = useState<TabKey>(TABS[0].key);
   const [isNotesOpen, setIsNotesOpen] = useState(false);
 
@@ -190,7 +194,7 @@ const ViewProject = () => {
         outstanding={commercialSummary.outstandingCollection}
         notesCount={project.notes?.length || 0}
         onOpenNotes={() => setIsNotesOpen(true)}
-        onEdit={goEdit}
+        onEdit={canMutate ? goEdit : undefined}
       />
 
       <ProjectSummaryStrip
@@ -235,9 +239,11 @@ const ViewProject = () => {
             </Button>
           )}
 
-          <Button variant="primary" size="sm" onClick={goEdit}>
-            Edit Project
-          </Button>
+          {canMutate && (
+            <Button variant="primary" size="sm" onClick={goEdit}>
+              Edit Project
+            </Button>
+          )}
         </div>
       </div>
 
@@ -247,7 +253,7 @@ const ViewProject = () => {
         onClose={() => setIsNotesOpen(false)}
         project={project}
         setProject={() => {}} // State updates triggered via pmo:data-changed
-        readOnly={false}
+        readOnly={!canMutate}
       />
     </div>
   );

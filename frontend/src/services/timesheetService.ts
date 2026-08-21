@@ -3,7 +3,6 @@ import type { ProjectResource } from "../types/Project";
 import { getCellText, parseExcelDateKey } from "./timesheetImportService";
 import { apiClient } from "./apiClient";
 import { getEmployees } from "./employeeService";
-import { getProjects } from "./projectService";
 
 const TIMESHEET_STORAGE_KEY = "timesheets_imports";
 
@@ -28,8 +27,13 @@ export function saveAllTimesheetImports(months: TimesheetImportMonth[]): void {
 interface BackendTimesheetEntryDto {
   id: string;
   employeeNo: string;
+  rawEmployeeName: string | null;
   projectId: string | null;
+  /** Present (non-null) only when projectId resolves to a real Project — see Backend's findEntries(). Association info only — NEVER used for the Timesheets Project Name column, which comes from rawProjectName below. */
+  project: { prNo: string; projectTitle: string } | null;
   rawProjectCode: string;
+  /** The KEKA Excel's own Project Name column — the ONLY source for the Timesheets Project Name display. Independent of project.projectTitle (the Portal Project's own title). */
+  rawProjectName: string | null;
   workDate: string;
   task: string;
   hours: number;
@@ -57,27 +61,35 @@ interface BackendTimesheetEntryDto {
 export async function refreshTimesheetImportsFromBackend(): Promise<void> {
   const result = await apiClient.get<{ items: BackendTimesheetEntryDto[] }>("/timesheets/entries");
   const employees = getEmployees();
-  const projects = getProjects();
 
   const entriesByMonth = new Map<string, TimesheetEntry[]>();
 
   for (const dto of result.items) {
     const empMaster = employees.find((e) => e.employeeNo.trim().toLowerCase() === dto.employeeNo.trim().toLowerCase());
-    const project = dto.projectId ? projects.find((p) => p.id === dto.projectId) : undefined;
     const dateKey = dto.workDate.slice(0, 10);
 
-    // projectId is null whenever the Project didn't exist at import time
-    // (Employee still matched) — the row is retained regardless, with the
-    // raw KEKA Project Code preserved and shown as "Project Not Mapped"
-    // rather than hidden. Display label only — the underlying null
-    // projectId/database value is unchanged. See
-    // Backend/.../timesheet.service.ts's identical decision.
+    // Neither employeeNo nor projectId is required to resolve — the row is
+    // retained and displayed regardless, with the raw KEKA values preserved.
+    // Employee Name prefers Employee Master (kept current if it changes
+    // there), then falls back to the raw KEKA name captured at import time,
+    // then the employee number itself as the last-resort fallback.
+    //
+    // Project Name is the KEKA Excel's OWN "Project Name" column
+    // (dto.rawProjectName) — a source-data value, completely independent of
+    // the Portal Project's own projectTitle (dto.project?.projectTitle).
+    // These are two different concepts and must never be conflated: a
+    // matching Portal Project only ever supplies `projectId`/`project` for
+    // association purposes (Team Assigned, ownership) — it must NEVER
+    // supply or override the displayed Project Name. Falls back to "—" only
+    // when the source genuinely had no Project Name value — never falls
+    // back to project.projectTitle. The raw Project Code (projectCode) is
+    // always shown regardless, from rawProjectCode.
     const entry: TimesheetEntry = {
       id: dto.id,
       employeeNo: dto.employeeNo,
-      employeeName: empMaster?.employeeName || dto.employeeNo,
+      employeeName: empMaster?.employeeName || dto.rawEmployeeName || dto.employeeNo,
       projectCode: dto.rawProjectCode,
-      projectName: dto.projectId ? project?.projectTitle || "" : "Project Not Mapped",
+      projectName: dto.rawProjectName || "—",
       date: dateKey,
       hours: dto.hours,
       status: (dto.sourceStatus === "Released" ? "Released" : "Active") as "Active" | "Released",
