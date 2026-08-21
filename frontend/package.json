@@ -13,6 +13,7 @@
     "@supabase/supabase-js": "^2.110.8",
     "@tailwindcss/vite": "^4.3.1",
     "@tanstack/react-virtual": "^3.14.9",
+    "@types/three": "^0.185.4",
     "exceljs": "^4.4.0",
     "lucide-react": "^1.22.0",
     "pdfjs-dist": "^6.2.108",
@@ -23,6 +24,7 @@
     "recharts": "^3.9.0",
     "tailwindcss": "^4.3.1",
     "tesseract.js": "^7.0.0",
+    "three": "^0.185.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

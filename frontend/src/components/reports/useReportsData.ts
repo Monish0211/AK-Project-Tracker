@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import type { Project } from "../../types/Project";
 import type { Customer } from "../../types/CustomerModel";
 import { getProjects } from "../../services/projectService";
-import { getCustomers } from "../../services/customerService";
+import { getCustomers, loadCustomersForApp } from "../../services/customerService";
 import { getTotalNonManhourCost, getTotalManhourCost } from "../../services/expenseService";
 import { getTotalPaymentReceived } from "../../services/invoiceProgressService";
 
@@ -39,16 +39,19 @@ export function useReportsData() {
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [filters, setFilters] = useState<ReportFilterState>(INITIAL_REPORT_FILTERS);
 
-  // Load live data from services
   const loadData = () => {
-    const p = getProjects();
-    const c = getCustomers();
-    setAllProjects(p);
-    setAllCustomers(c);
+    setAllProjects(getProjects());
+    setAllCustomers(getCustomers());
   };
 
   useEffect(() => {
     loadData();
+    loadCustomersForApp()
+      .then((items) => setAllCustomers(items))
+      .catch((err) => {
+        console.warn("Failed to load Customer Master for reports:", err);
+      });
+
     const handleDataChanged = () => loadData();
     window.addEventListener("pmo:data-changed", handleDataChanged);
     window.addEventListener("storage", handleDataChanged);

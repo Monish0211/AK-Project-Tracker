@@ -18,6 +18,7 @@ interface Props {
   onExport: (format: "xlsx" | "csv") => void;
   onReset: () => void;
   onAddCustomer: () => void;
+  canMutate?: boolean;
 }
 
 const controlClass =
@@ -35,6 +36,7 @@ const CustomerToolbar = ({
   onExport,
   onReset,
   onAddCustomer,
+  canMutate = true,
 }: Props) => {
   return (
     <div className="flex flex-wrap items-center gap-2.5 px-4 py-3 border-b border-[var(--nu-border)]">
@@ -71,16 +73,18 @@ const CustomerToolbar = ({
 
       <div className="w-px h-6 bg-[var(--nu-border)] mx-0.5 shrink-0" />
 
-      <CustomerImportMenu onUploadClick={onUploadClick} onDownloadTemplate={onDownloadTemplate} />
+      {canMutate && <CustomerImportMenu onUploadClick={onUploadClick} onDownloadTemplate={onDownloadTemplate} />}
       <CustomerExportMenu onExport={onExport} />
 
       <Button variant="ghost" size="sm" icon={<RotateCcw size={13} />} onClick={onReset} className="h-9 shrink-0">
         Reset
       </Button>
 
-      <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={onAddCustomer} className="h-9 shrink-0">
-        Add Customer
-      </Button>
+      {canMutate && (
+        <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={onAddCustomer} className="h-9 shrink-0">
+          Add Customer
+        </Button>
+      )}
     </div>
   );
 };

@@ -1,37 +1,18 @@
-// src/services/customerService.ts
+/**
+ * Customer Master — PostgreSQL / backend API is the sole authoritative source.
+ *
+ * Pattern mirrors employeeService's API-backed methods (apiClient + DTO mapping).
+ * An in-memory cache backs synchronous getCustomers() for callers that still
+ * expect a sync read (Reports, Project Client Name autocomplete). That cache
+ * is filled only from GET /customers — never from localStorage or the legacy
+ * frontend seed file. Old localStorage["customers"] is intentionally left
+ * untouched and unread so we neither overwrite backend data nor discard
+ * browser-side history without an explicit migration.
+ */
 import * as XLSX from "xlsx";
 
 import type { Customer } from "../types/CustomerModel";
-import { customerMasterData } from "../data/CustomerMasterData";
-
-const STORAGE_KEY = "customers";
-
-export function getCustomers(): Customer[] {
-  const stored = localStorage.getItem(STORAGE_KEY);
-
-  if (stored) {
-    return JSON.parse(stored);
-  }
-
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify(customerMasterData)
-  );
-
-  return customerMasterData;
-}
-
-export function saveCustomers(customers: Customer[]) {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify(customers)
-  );
-
-  // Lets the Customer Master page (and any other live view) know customer
-  // data changed, without introducing a new store or altering any calculation.
-  // Reuses the same event the Dashboard already listens for.
-  window.dispatchEvent(new Event("pmo:data-changed"));
-}
+import { apiClient, ApiError } from "./apiClient";
 
 export interface CustomerInput {
   customerId?: string;
@@ -47,83 +28,190 @@ export interface CustomerInput {
 export interface SaveCustomerResult {
   success: boolean;
   message?: string;
+  customer?: Customer;
 }
 
-export function addCustomer(input: CustomerInput): SaveCustomerResult {
-  const customers = getCustomers();
+export interface CustomerListParams {
+  search?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+  sortField?: "customerName" | "status" | "createdAt" | "companyName";
+  sortDirection?: "asc" | "desc";
+}
 
-  const exists = customers.some(
-    (c) =>
-      c.customerName.trim().toLowerCase() ===
-      input.customerName.trim().toLowerCase()
-  );
+export interface CustomerListResult {
+  items: Customer[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
 
-  if (exists) {
-    return { success: false, message: "Customer already exists." };
+interface BackendCustomerDto {
+  id: string;
+  customerCode: string | null;
+  customerName: string;
+  companyName: string | null;
+  country: string | null;
+  contactPerson: string | null;
+  email: string | null;
+  phone: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface BackendPaginatedCustomerList {
+  items: BackendCustomerDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+interface CustomerPayload {
+  customerCode: string | null;
+  customerName: string;
+  companyName: string | null;
+  country: string | null;
+  contactPerson: string | null;
+  email: string | null;
+  phone: string | null;
+  status: "Active" | "Inactive";
+}
+
+/** In-memory only — never written to localStorage as authoritative storage. */
+let customersCache: Customer[] = [];
+
+function notifyCustomersChanged(): void {
+  window.dispatchEvent(new Event("pmo:data-changed"));
+}
+
+/**
+ * Updates the in-memory cache. Notifications are for mutations only —
+ * a plain GET must NOT dispatch "pmo:data-changed", or any page that
+ * re-fetches on that event (Customer Master + useLiveRefresh) will loop
+ * forever: fetch → notify → refreshKey++ → fetch → …
+ */
+function setCustomersCache(customers: Customer[], options?: { notify?: boolean }): void {
+  customersCache = customers;
+  if (options?.notify !== false) {
+    notifyCustomersChanged();
   }
+}
 
-  const timestamp = new Date().toISOString();
+function upsertCustomersCache(customers: Customer[]): void {
+  const byId = new Map(customersCache.map((c) => [c.id, c]));
+  customers.forEach((c) => byId.set(c.id, c));
+  setCustomersCache(Array.from(byId.values()), { notify: true });
+}
 
-  customers.push({
-    id: crypto.randomUUID(),
-    customerId: input.customerId?.trim() || undefined,
+function removeFromCustomersCache(id: string): void {
+  setCustomersCache(
+    customersCache.filter((c) => c.id !== id),
+    { notify: true }
+  );
+}
+
+function toCustomer(dto: BackendCustomerDto): Customer {
+  return {
+    id: dto.id,
+    customerId: dto.customerCode || undefined,
+    customerName: dto.customerName,
+    companyName: dto.companyName || undefined,
+    country: dto.country || undefined,
+    contactPerson: dto.contactPerson || undefined,
+    email: dto.email || undefined,
+    phone: dto.phone || undefined,
+    status: (dto.status === "Inactive" ? "Inactive" : "Active") as Customer["status"],
+    createdAt: dto.createdAt,
+    updatedAt: dto.updatedAt,
+  };
+}
+
+function toCustomerPayload(input: CustomerInput): CustomerPayload {
+  const emptyToNull = (value?: string) => {
+    const trimmed = value?.trim() ?? "";
+    return trimmed === "" ? null : trimmed;
+  };
+
+  return {
+    customerCode: emptyToNull(input.customerId),
     customerName: input.customerName.trim(),
-    companyName: input.companyName?.trim() || undefined,
-    country: input.country?.trim() || undefined,
-    contactPerson: input.contactPerson?.trim() || undefined,
-    email: input.email?.trim() || undefined,
-    phone: input.phone?.trim() || undefined,
+    companyName: emptyToNull(input.companyName),
+    country: emptyToNull(input.country),
+    contactPerson: emptyToNull(input.contactPerson),
+    email: emptyToNull(input.email),
+    phone: emptyToNull(input.phone),
     status: input.status,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  });
-
-  saveCustomers(customers);
-
-  return { success: true };
+  };
 }
 
-export function updateCustomer(id: string, input: CustomerInput): SaveCustomerResult {
-  const customers = getCustomers();
+/**
+ * Synchronous read of the in-memory cache (filled by fetchCustomersFromApi).
+ * Returns [] until the first successful API load — never seeds from
+ * localStorage or the legacy frontend seed file.
+ */
+export function getCustomers(): Customer[] {
+  return customersCache;
+}
 
-  const duplicate = customers.some(
-    (c) =>
-      c.id !== id &&
-      c.customerName.trim().toLowerCase() === input.customerName.trim().toLowerCase()
-  );
+/** GET /customers — authoritative list; refreshes the in-memory cache. */
+export async function fetchCustomersFromApi(params: CustomerListParams = {}): Promise<CustomerListResult> {
+  const query = new URLSearchParams();
+  if (params.search) query.set("search", params.search);
+  if (params.status) query.set("status", params.status);
+  query.set("page", String(params.page ?? 1));
+  query.set("pageSize", String(params.pageSize ?? 1000));
+  query.set("sortField", params.sortField ?? "createdAt");
+  query.set("sortDirection", params.sortDirection ?? "desc");
 
-  if (duplicate) {
-    return { success: false, message: "Another customer already uses this name." };
+  const result = await apiClient.get<BackendPaginatedCustomerList>(`/customers?${query.toString()}`);
+  const items = result.items.map(toCustomer);
+  // Silent: list GETs must not broadcast pmo:data-changed (see setCustomersCache).
+  setCustomersCache(items, { notify: false });
+  return { items, total: result.total, page: result.page, pageSize: result.pageSize };
+}
+
+/** Convenience: load the full directory for autocomplete / Customer Master page. */
+export async function loadCustomersForApp(): Promise<Customer[]> {
+  const { items } = await fetchCustomersFromApi({ page: 1, pageSize: 1000, sortField: "customerName", sortDirection: "asc" });
+  return items;
+}
+
+export async function fetchCustomerByIdFromApi(id: string): Promise<Customer> {
+  const dto = await apiClient.get<BackendCustomerDto>(`/customers/${id}`);
+  const customer = toCustomer(dto);
+  upsertCustomersCache([customer]);
+  return customer;
+}
+
+export async function addCustomer(input: CustomerInput): Promise<SaveCustomerResult> {
+  try {
+    const dto = await apiClient.post<BackendCustomerDto>("/customers", toCustomerPayload(input));
+    const customer = toCustomer(dto);
+    upsertCustomersCache([customer]);
+    return { success: true, customer };
+  } catch (err) {
+    const message = err instanceof ApiError ? err.message : "Unable to save customer.";
+    return { success: false, message };
   }
-
-  const updated = customers.map((c) =>
-    c.id === id
-      ? {
-          ...c,
-          customerId: input.customerId?.trim() || undefined,
-          customerName: input.customerName.trim(),
-          companyName: input.companyName?.trim() || undefined,
-          country: input.country?.trim() || undefined,
-          contactPerson: input.contactPerson?.trim() || undefined,
-          email: input.email?.trim() || undefined,
-          phone: input.phone?.trim() || undefined,
-          status: input.status,
-          updatedAt: new Date().toISOString(),
-        }
-      : c
-  );
-
-  saveCustomers(updated);
-
-  return { success: true };
 }
 
-export function deleteCustomer(id: string) {
-  const customers = getCustomers().filter(
-    (c) => c.id !== id
-  );
+export async function updateCustomer(id: string, input: CustomerInput): Promise<SaveCustomerResult> {
+  try {
+    const dto = await apiClient.patch<BackendCustomerDto>(`/customers/${id}`, toCustomerPayload(input));
+    const customer = toCustomer(dto);
+    upsertCustomersCache([customer]);
+    return { success: true, customer };
+  } catch (err) {
+    const message = err instanceof ApiError ? err.message : "Unable to save customer.";
+    return { success: false, message };
+  }
+}
 
-  saveCustomers(customers);
+export async function deleteCustomer(id: string): Promise<void> {
+  await apiClient.delete(`/customers/${id}`);
+  removeFromCustomersCache(id);
 }
 
 export interface ImportResult {
@@ -131,68 +219,17 @@ export interface ImportResult {
   skipped: number;
 }
 
-export function bulkAddCustomers(inputs: CustomerInput[]): ImportResult {
-  const customers = getCustomers();
-
-  const existingNames = new Set(
-    customers.map((c) => c.customerName.trim().toLowerCase())
-  );
-
-  let imported = 0;
-  let skipped = 0;
-
-  inputs.forEach((input) => {
-    const name = input.customerName.trim();
-
-    if (!name) {
-      skipped += 1;
-      return;
-    }
-
-    const key = name.toLowerCase();
-
-    if (existingNames.has(key)) {
-      skipped += 1;
-      return;
-    }
-
-    existingNames.add(key);
-
-    const timestamp = new Date().toISOString();
-
-    customers.push({
-      id: crypto.randomUUID(),
-      customerId: input.customerId?.trim() || undefined,
-      customerName: name,
-      companyName: input.companyName?.trim() || undefined,
-      country: input.country?.trim() || undefined,
-      contactPerson: input.contactPerson?.trim() || undefined,
-      email: input.email?.trim() || undefined,
-      phone: input.phone?.trim() || undefined,
-      status: input.status || "Active",
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
-
-    imported += 1;
-  });
-
-  saveCustomers(customers);
-
-  return { imported, skipped };
+export interface FileImportResult extends ImportResult {
+  errors: string[];
 }
 
 const REQUIRED_HEADERS = ["Customer Name"];
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export interface FileImportResult extends ImportResult {
-  errors: string[];
-}
-
 /**
- * Accepts .xlsx or .csv. Mirrors the exact validation/abort pattern used by
- * the Projects import (required-header check, per-row duplicate/empty/format
- * checks, all-or-nothing abort with a capped error list on any failure).
+ * Parses .xlsx/.csv client-side (unchanged UI contract), then POSTs the batch
+ * to /customers/import. Backend all-or-nothing: on rejection, nothing is
+ * written locally or remotely.
  */
 export async function importCustomersFromFile(file: File): Promise<FileImportResult> {
   const name = file.name.toLowerCase();
@@ -242,17 +279,16 @@ export async function importCustomersFromFile(file: File): Promise<FileImportRes
   const idxPhone = getColIndex("Phone");
   const idxStatus = getColIndex("Status");
 
-  const existing = getCustomers();
   const seenNames = new Set<string>();
   const validationErrors: string[] = [];
   const validatedInputs: CustomerInput[] = [];
 
   dataRows.forEach((row, i) => {
     if (!row || row.every((cell) => String(cell ?? "").trim() === "")) {
-      return; // skip blank rows
+      return;
     }
 
-    const rowNum = i + 2; // account for header row + 1-index
+    const rowNum = i + 2;
     const customerName = String(row[idxName] ?? "").trim();
     const email = idxEmail >= 0 ? String(row[idxEmail] ?? "").trim() : "";
 
@@ -265,11 +301,6 @@ export async function importCustomersFromFile(file: File): Promise<FileImportRes
 
     if (seenNames.has(key)) {
       validationErrors.push(`Row ${rowNum}: Duplicate Customer Name "${customerName}" inside the file.`);
-      return;
-    }
-
-    if (existing.some((c) => c.customerName.trim().toLowerCase() === key)) {
-      validationErrors.push(`Row ${rowNum}: Customer "${customerName}" already exists.`);
       return;
     }
 
@@ -302,20 +333,24 @@ export async function importCustomersFromFile(file: File): Promise<FileImportRes
     return { imported: 0, skipped: 0, errors: ["No valid customer rows found to import."] };
   }
 
-  const result = bulkAddCustomers(validatedInputs);
-
-  return { ...result, errors: [] };
+  try {
+    const result = await apiClient.post<{ imported: number; skipped: number }>("/customers/import", {
+      customers: validatedInputs.map((input) => toCustomerPayload(input)),
+    });
+    await fetchCustomersFromApi({ page: 1, pageSize: 1000, sortField: "customerName", sortDirection: "asc" });
+    notifyCustomersChanged();
+    return { imported: result.imported, skipped: result.skipped, errors: [] };
+  } catch (err) {
+    const message = err instanceof ApiError ? err.message : "Import failed. Please try again.";
+    return { imported: 0, skipped: 0, errors: [message] };
+  }
 }
 
 export function downloadCustomerTemplate(): void {
-  // Matches the columns actually shown in the Customer Repository table.
   const headers = ["Customer Name", "Status"];
-
   const worksheet = XLSX.utils.aoa_to_sheet([headers]);
   const workbook = XLSX.utils.book_new();
-
   XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
-
   XLSX.writeFile(workbook, "Customer_Master_Template.xlsx");
 }
 

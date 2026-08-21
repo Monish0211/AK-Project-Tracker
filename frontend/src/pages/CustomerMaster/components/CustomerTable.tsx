@@ -7,9 +7,10 @@ interface Props {
   customers: Customer[];
   onEdit: (customer: Customer) => void;
   onDelete: (customer: Customer) => void;
+  canMutate?: boolean;
 }
 
-const CustomerTable = ({ customers, onEdit, onDelete }: Props) => {
+const CustomerTable = ({ customers, onEdit, onDelete, canMutate = true }: Props) => {
   return (
     <div className="flex-1 min-h-[500px] max-h-[calc(100vh-270px)] overflow-auto nu-scrollbar">
       {customers.length === 0 ? (
@@ -26,12 +27,19 @@ const CustomerTable = ({ customers, onEdit, onDelete }: Props) => {
               <th className="px-4 py-2.5 text-left font-medium">Customer Name</th>
               <th className="px-4 py-2.5 text-center font-medium w-32">Status</th>
               <th className="px-4 py-2.5 text-center font-medium w-32">Created On</th>
-              <th className="px-4 py-2.5 text-center font-medium w-28">Actions</th>
+              {canMutate && <th className="px-4 py-2.5 text-center font-medium w-28">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {customers.map((customer, index) => (
-              <CustomerRow key={customer.id} customer={customer} index={index} onEdit={onEdit} onDelete={onDelete} />
+              <CustomerRow
+                key={customer.id}
+                customer={customer}
+                index={index}
+                onEdit={onEdit}
+                onDelete={onDelete}
+                canMutate={canMutate}
+              />
             ))}
           </tbody>
         </table>
