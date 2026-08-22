@@ -8,14 +8,16 @@ import type {
   TimelineAlertProjectDto,
 } from "../dto/dashboard.dto.js";
 import {
+  actualProjectCost,
   calculateCompletionPercentage,
+  calculateDepartmentCompletion,
   calculateTimelineAlert,
   classifyHealth,
   DEFAULT_DEPARTMENTS,
-  departmentHealth,
   departmentWorkloadPercent,
   formatCurrencyCompact,
   formatHoursOverrun,
+  grossProfit,
   isUsableManagerName,
   pendingInvoicePercentage,
   projectCommercialTotals,
@@ -46,6 +48,7 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
     quantityTotals,
     invoiceLines,
     expenseTotals,
+    manhourTotals,
     timesheetHours,
     resources,
     notes,
@@ -55,6 +58,7 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
     dashboardRepo.groupQuantityTotals(projectIds),
     dashboardRepo.findInvoiceLinesForProjects(projectIds),
     dashboardRepo.groupExpenseTotals(projectIds),
+    dashboardRepo.groupManhourCostTotals(projectIds),
     dashboardRepo.groupTimesheetHours(projectIds),
     dashboardRepo.findResourcesForProjects(projectIds),
     dashboardRepo.findNotesForProjects(projectIds),
@@ -89,7 +93,7 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
   let totalInvoiceRaised = 0;
   let totalPaymentReceived = 0;
   let totalExpenses = 0;
-  let totalProfit = 0;
+  let totalActualProjectCost = 0;
 
   const woByProject = new Map<string, number>();
   const raisedByProject = new Map<string, number>();
@@ -104,6 +108,7 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
     const lines = invoiceByProject.get(project.id) ?? [];
     const commercial = projectCommercialTotals(woValue, lines);
     const expenses = expenseTotals.get(project.id) ?? 0;
+    const manhourCost = manhourTotals.get(project.id) ?? 0;
 
     woByProject.set(project.id, woValue);
     raisedByProject.set(project.id, commercial.totalInvoiceRaised);
@@ -133,8 +138,10 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
     totalInvoiceRaised += commercial.totalInvoiceRaised;
     totalPaymentReceived += commercial.totalPaymentReceived;
     totalExpenses += expenses;
-    totalProfit += woValue - expenses;
+    totalActualProjectCost += actualProjectCost(manhourCost, expenses);
   }
+
+  const totalProfit = grossProfit(totalWOValue, totalActualProjectCost);
 
   const kpis = {
     totalProjects: projects.length,
@@ -143,6 +150,7 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
     totalPaymentReceived,
     totalOutstanding: Math.max(0, totalWOValue - totalPaymentReceived),
     totalExpenses,
+    totalActualProjectCost,
     totalProfit,
     totalProfitPercentage: profitPercentage(totalWOValue, totalProfit),
   };
@@ -421,6 +429,7 @@ function buildHealth(
   let atRisk = 0;
   let delayed = 0;
   let notStarted = 0;
+  let scheduleNotSet = 0;
   let total = 0;
 
   for (const project of projects) {
@@ -436,10 +445,11 @@ function buildHealth(
     if (bucket === "onTrack") onTrack += 1;
     else if (bucket === "atRisk") atRisk += 1;
     else if (bucket === "delayed") delayed += 1;
-    else notStarted += 1;
+    else if (bucket === "notStarted") notStarted += 1;
+    else if (bucket === "scheduleNotSet") scheduleNotSet += 1;
   }
 
-  return { onTrack, atRisk, delayed, notStarted, total };
+  return { onTrack, atRisk, delayed, notStarted, scheduleNotSet, total };
 }
 
 function buildRecentProjects(projects: DashboardProjectRow[], woByProject: Map<string, number>) {
@@ -496,9 +506,9 @@ function buildDepartments(
     let pendingInvoices = 0;
     const timesheetPending = pendingByDepartment[deptName] ?? 0;
     let upcomingDeliveries = 0;
-    let compSum = 0;
     let workOrderValue = 0;
     let delayedProjects = 0;
+    const deptProjectCompletions: { projectStatus: string; completion: number }[] = [];
 
     for (const p of deptProjects) {
       teamMembers += (resourcesByProject.get(p.id) ?? []).length;
@@ -512,20 +522,19 @@ function buildDepartments(
 
       upcomingDeliveries += (milestonesByProject.get(p.id) ?? []).length;
       const comp = completionByProject.get(p.id) ?? 0;
-      compSum += comp;
+      deptProjectCompletions.push({ projectStatus: p.projectStatus, completion: comp });
       if (p.projectStatus === "Delayed" || (p.projectStatus === "Active" && comp < 30)) {
         delayedProjects += 1;
       }
     }
 
-    const completion = deptProjects.length > 0 ? Math.round(compSum / deptProjects.length) : 0;
+    const completion = calculateDepartmentCompletion(deptProjectCompletions);
     if (deptProjects.length > 0) {
       totalTeamCount += teamMembers;
       totalCompletionSum += completion;
       deptCountWithProjects += 1;
     }
 
-    const health = departmentHealth({ completion, pendingInvoices, delayedProjects, onHoldProjects });
     const workloadPercent = departmentWorkloadPercent(activeProjects, teamMembers, pendingInvoices);
 
     return {
@@ -540,24 +549,16 @@ function buildDepartments(
       upcomingDeliveries,
       completion,
       workOrderValue,
-      health,
       workloadPercent,
     };
   });
 
   list.sort((a, b) => b.workloadPercent - a.workloadPercent);
 
-  const healthCounts = {
-    healthy: list.filter((d) => d.health === "Healthy").length,
-    atRisk: list.filter((d) => d.health === "At Risk").length,
-    delayed: list.filter((d) => d.health === "Delayed").length,
-  };
-
   const avgComp = deptCountWithProjects > 0 ? Math.round(totalCompletionSum / deptCountWithProjects) : 0;
 
   return {
     list,
-    healthCounts,
     totals: {
       departments: list.length,
       totalProjects: totalProjectsCount || projects.length,

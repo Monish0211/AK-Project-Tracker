@@ -12,9 +12,11 @@ export interface DashboardKpisDto {
   totalPaymentReceived: number;
   totalOutstanding: number;
   totalExpenses: number;
+  totalActualProjectCost: number;
   totalProfit: number;
   totalProfitPercentage: number;
 }
+
 
 export interface HoursOverrunProjectDto {
   id: string;
@@ -106,6 +108,7 @@ export interface ProjectHealthDto {
   atRisk: number;
   delayed: number;
   notStarted: number;
+  scheduleNotSet: number;
   total: number;
 }
 
@@ -130,13 +133,11 @@ export interface DepartmentOpsDto {
   upcomingDeliveries: number;
   completion: number;
   workOrderValue: number;
-  health: "Healthy" | "At Risk" | "Delayed";
   workloadPercent: number;
 }
 
 export interface DepartmentsDto {
   list: DepartmentOpsDto[];
-  healthCounts: { healthy: number; atRisk: number; delayed: number };
   totals: {
     departments: number;
     totalProjects: number;
