@@ -23,7 +23,7 @@ export function InvoiceStatusCards({ analytics }: Props) {
       <KPIReportCard
         title="Raised / Submitted"
         value={formatBusinessINR(vals.raised)}
-        subtitle={`${counts.raised} pending payment`}
+        subtitle={`${counts.raised} pending payment (incl. partial)`}
         trend="Submitted"
         trendType="neutral"
         icon={<Send size={16} />}

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { getTotalNonManhourCost } from "../../../services/expenseService";
 import { EmptyState } from "../Shared/EmptyState";
 
 interface Props {
@@ -17,7 +18,7 @@ export function ExpenseCategoryChart({ projects }: Props) {
       const nonManhour = Array.isArray(p.nonManhourExpenses) ? p.nonManhourExpenses : [];
       nonManhour.forEach((e: any) => {
         const categoryName = e.category || e.expenseCategory || "Other Expenses";
-        const cost = e.totalCost || e.amount || (e.quantity || 1) * (e.unitCost || 0);
+        const cost = getTotalNonManhourCost([e]);
         catMap[categoryName] = (catMap[categoryName] || 0) + cost;
       });
 

@@ -70,7 +70,7 @@ export function getTotalInvoiceRaised(items: InvoiceItem[]): number {
  * counts ONLY invoices with status "Paid". Raised and PartiallyPaid are NOT
  * treated as realized cash. Cancelled and Draft are excluded.
  */
-function isReceivedInvoiceLineStatus(status: string): boolean {
+export function isReceivedInvoiceLineStatus(status: string): boolean {
   return status === "Paid";
 }
 

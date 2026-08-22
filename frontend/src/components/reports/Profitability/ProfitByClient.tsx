@@ -10,8 +10,8 @@ export function ProfitByClient({ customerList }: Props) {
   const clientProfitData = useMemo(() => {
     return customerList.slice(0, 6).map((c) => ({
       client: c.client.length > 12 ? c.client.slice(0, 12) + "..." : c.client,
-      Revenue: c.raised,
-      "Net Profit": c.raised - (c.expenses || 0),
+      Revenue: c.woValue,
+      "Net Profit": c.woValue - (c.expenses || 0),
     }));
   }, [customerList]);
 

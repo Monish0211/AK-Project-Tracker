@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Search } from "lucide-react";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { getTotalNonManhourCost } from "../../../services/expenseService";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
 
@@ -13,18 +14,12 @@ export function ProfitTable({ projects }: Props) {
 
   const tableData = useMemo(() => {
     return projects.map((p) => {
-      const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      let raised = 0;
-      items.forEach((item: any) => {
-        (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
-          if (line.status !== "Cancelled") raised += line.invoiceAmountINR || 0;
-        });
-      });
-      const nonManhour = (p.nonManhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
+      const woValue = p.workOrderValueINR ?? p.workOrderValue ?? 0;
+      const nonManhour = getTotalNonManhourCost(p.nonManhourExpenses || []);
       const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
       const totalExpenses = nonManhour + manhour;
-      const profit = raised - totalExpenses;
-      const marginPct = raised > 0 ? (profit / raised) * 100 : 0;
+      const profit = woValue - totalExpenses;
+      const marginPct = woValue === 0 ? 0 : (profit / woValue) * 100;
 
       return {
         id: p.id,
@@ -32,7 +27,7 @@ export function ProfitTable({ projects }: Props) {
         client: p.client || "-",
         projectTitle: p.projectTitle || "-",
         department: p.department || "-",
-        raised,
+        woValue,
         manhour,
         nonManhour,
         totalExpenses,
@@ -62,7 +57,7 @@ export function ProfitTable({ projects }: Props) {
             Contract Profitability & Margin Ledger
           </h3>
           <p className="text-[11px] text-[var(--nu-text-muted)] mt-0.5">
-            Full audit of invoiced revenue, manhour cost, non-manhour expenses, net profit, and profit margin %.
+            Full audit of contract work order values, manhour cost, non-manhour expenses, net profit, and profit margin %.
           </p>
         </div>
 
@@ -93,7 +88,7 @@ export function ProfitTable({ projects }: Props) {
                 <th className="p-2.5">Client</th>
                 <th className="p-2.5">Project Title</th>
                 <th className="p-2.5">Department</th>
-                <th className="p-2.5 text-right">Invoiced Revenue</th>
+                <th className="p-2.5 text-right">WO Value</th>
                 <th className="p-2.5 text-right">Manhour Cost</th>
                 <th className="p-2.5 text-right">Non-MH Cost</th>
                 <th className="p-2.5 text-right">Total Expenses</th>
@@ -108,7 +103,7 @@ export function ProfitTable({ projects }: Props) {
                   <td className="p-2.5 font-semibold text-[var(--nu-text)] max-w-[130px] truncate">{row.client}</td>
                   <td className="p-2.5 font-medium text-[var(--nu-text)] max-w-[180px] truncate">{row.projectTitle}</td>
                   <td className="p-2.5 text-[var(--nu-text-muted)]">{row.department}</td>
-                  <td className="p-2.5 text-right font-mono font-bold text-blue-600 dark:text-blue-400">{formatBusinessINR(row.raised)}</td>
+                  <td className="p-2.5 text-right font-mono font-bold text-blue-600 dark:text-blue-400">{formatBusinessINR(row.woValue)}</td>
                   <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">{formatBusinessINR(row.manhour)}</td>
                   <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">{formatBusinessINR(row.nonManhour)}</td>
                   <td className="p-2.5 text-right font-mono text-rose-600 dark:text-rose-400">{formatBusinessINR(row.totalExpenses)}</td>

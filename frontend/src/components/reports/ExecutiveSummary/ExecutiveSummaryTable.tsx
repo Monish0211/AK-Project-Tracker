@@ -3,6 +3,7 @@ import { Search, ChevronDown, ChevronUp } from "lucide-react";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { getTotalInvoiceRaised, getTotalPaymentReceived } from "../../../services/invoiceProgressService";
+import { getTotalNonManhourCost } from "../../../services/expenseService";
 
 interface Props {
   projects: any[];
@@ -13,7 +14,7 @@ export function ExecutiveSummaryTable({ projects }: Props) {
   const [sortField, setSortField] = useState("prNo");
   const [sortAsc, setSortAsc] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 8;
+  const pageSize = 10;
 
   const tableData = useMemo(() => {
     return projects.map((p) => {
@@ -30,11 +31,11 @@ export function ExecutiveSummaryTable({ projects }: Props) {
       // Outstanding concept, left unchanged in invoiceProgressService.ts),
       // and never the same as Balance to Invoice.
       const outstanding = Math.max(0, woVal - received);
-      const nonManhour = (p.nonManhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
+      const nonManhour = getTotalNonManhourCost(p.nonManhourExpenses || []);
       const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
       const expenses = nonManhour + manhour;
-      const profit = raised - expenses;
-      const profitPct = raised > 0 ? (profit / raised) * 100 : 0;
+      const profit = woVal - expenses;
+      const profitPct = woVal === 0 ? 0 : (profit / woVal) * 100;
 
       return {
         id: p.id,
@@ -183,7 +184,7 @@ export function ExecutiveSummaryTable({ projects }: Props) {
                     {formatBusinessINR(row.profit)}
                   </td>
                   <td className="p-3.5 px-4 text-right font-mono font-extrabold">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] ${row.profitPct >= 20 ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300" : "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300"}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] ${row.profitPct >= 20 ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300" : row.profitPct >= 0 ? "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300" : "bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300"}`}>
                       {row.profitPct.toFixed(1)}%
                     </span>
                   </td>

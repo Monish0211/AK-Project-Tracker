@@ -13,6 +13,7 @@ import {
   Legend,
 } from "recharts";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { getTotalNonManhourCost } from "../../../services/expenseService";
 
 interface Props {
   projects: any[];
@@ -22,26 +23,29 @@ interface Props {
 export function ExecutiveSummaryCharts({ projects, analytics }: Props) {
   // Chart 1: Top 6 Projects Revenue vs Expense
   const topProjectsData = useMemo(() => {
-    return projects.slice(0, 6).map((p) => {
-      const woVal = p.workOrderValueINR ?? p.workOrderValue ?? 0;
-      const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      let raised = 0;
-      items.forEach((item: any) => {
-        (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
-          if (line.status !== "Cancelled") raised += line.invoiceAmountINR || 0;
+    return projects
+      .map((p) => {
+        const woVal = p.workOrderValueINR ?? p.workOrderValue ?? 0;
+        const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
+        let raised = 0;
+        items.forEach((item: any) => {
+          (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
+            if (line.status !== "Cancelled") raised += line.invoiceAmountINR || 0;
+          });
         });
-      });
-      const nonManhour = (p.nonManhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
-      const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
-      const expenses = nonManhour + manhour;
+        const nonManhour = getTotalNonManhourCost(p.nonManhourExpenses || []);
+        const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
+        const expenses = nonManhour + manhour;
 
-      return {
-        name: p.prNo || p.client?.slice(0, 10) || "Project",
-        "WO Value": woVal,
-        "Invoice Raised": raised,
-        Expenses: expenses,
-      };
-    });
+        return {
+          name: p.prNo || p.client?.slice(0, 10) || "Project",
+          "WO Value": woVal,
+          "Invoice Raised": raised,
+          Expenses: expenses,
+        };
+      })
+      .sort((a, b) => b["WO Value"] - a["WO Value"])
+      .slice(0, 6);
   }, [projects]);
 
   // Chart 2: Project Status Distribution

@@ -10,6 +10,7 @@ import {
   Legend,
 } from "recharts";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { isReceivedInvoiceLineStatus } from "../../../services/invoiceProgressService";
 import { EmptyState } from "../Shared/EmptyState";
 
 interface Props {
@@ -27,16 +28,16 @@ export function RevenueTrendChart({ projects }: Props) {
           if (line.status !== "Cancelled" && line.invoiceDate) {
             const mKey = line.invoiceDate.slice(0, 7); // YYYY-MM
             if (!monthMap[mKey]) {
-              const d = new Date(line.invoiceDate);
-              const mLabel = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
-              monthMap[mKey] = { month: mLabel, raised: 0, received: 0 };
+               const d = new Date(line.invoiceDate);
+               const mLabel = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+               monthMap[mKey] = { month: mLabel, raised: 0, received: 0 };
             }
             const amt = line.invoiceAmountINR || 0;
             monthMap[mKey].raised += amt;
             // Payment Received — matches invoiceProgressService.ts's rule:
-            // Raised / Submitted, PartiallyPaid, and Paid all count as
-            // received; only Draft (not yet submitted) and Cancelled don't.
-            if (line.status === "Raised" || line.status === "PartiallyPaid" || line.status === "Paid") {
+            // Only Paid invoices count as cash realized. Draft, Cancelled,
+            // Raised, and PartiallyPaid do not count.
+            if (isReceivedInvoiceLineStatus(line.status)) {
               monthMap[mKey].received += amt;
             }
           }

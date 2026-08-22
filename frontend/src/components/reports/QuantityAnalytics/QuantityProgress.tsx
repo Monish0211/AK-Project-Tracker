@@ -8,25 +8,28 @@ interface Props {
 
 export function QuantityProgress({ projects }: Props) {
   const chartData = useMemo(() => {
-    return projects.slice(0, 6).map((p) => {
-      const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      let ordered = 0;
-      let invoiced = 0;
-      items.forEach((item: any) => {
-        // InvoiceItem's real ordered-quantity field is `qty` (types/InvoiceItem.ts).
-        ordered += item.qty || 0;
-        (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
-          if (line.status !== "Cancelled") invoiced += line.quantityBilled || 0;
+    return projects
+      .map((p) => {
+        const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
+        let ordered = 0;
+        let invoiced = 0;
+        items.forEach((item: any) => {
+          // InvoiceItem's real ordered-quantity field is `qty` (types/InvoiceItem.ts).
+          ordered += item.qty || 0;
+          (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
+            if (line.status !== "Cancelled") invoiced += line.quantityBilled || 0;
+          });
         });
-      });
 
-      return {
-        name: p.prNo || p.client?.slice(0, 10) || "Project",
-        "Ordered Qty": ordered,
-        "Invoiced Qty": invoiced,
-        "Remaining Qty": Math.max(0, ordered - invoiced),
-      };
-    });
+        return {
+          name: p.prNo || p.client?.slice(0, 10) || "Project",
+          "Ordered Qty": ordered,
+          "Invoiced Qty": invoiced,
+          "Remaining Qty": Math.max(0, ordered - invoiced),
+        };
+      })
+      .sort((a, b) => b["Ordered Qty"] - a["Ordered Qty"])
+      .slice(0, 6);
   }, [projects]);
 
   return (

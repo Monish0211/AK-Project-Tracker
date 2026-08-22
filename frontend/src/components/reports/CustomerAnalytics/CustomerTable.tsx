@@ -24,7 +24,7 @@ export function CustomerTable({ customerList }: Props) {
             Customer Account Portfolio Ledger
           </h3>
           <p className="text-[11px] text-[var(--nu-text-muted)] mt-0.5">
-            Full summary of contract count, total WO value, raised revenue, payment received, and outstanding balance per customer.
+            Full summary of contract count, total WO value, raised revenue, payment received, and contract outstanding balance per customer.
           </p>
         </div>
 
@@ -56,7 +56,7 @@ export function CustomerTable({ customerList }: Props) {
                 <th className="p-2.5 text-right">Work Order Value</th>
                 <th className="p-2.5 text-right">Invoiced Revenue</th>
                 <th className="p-2.5 text-right">Payment Realized</th>
-                <th className="p-2.5 text-right">Outstanding Balance</th>
+                <th className="p-2.5 text-right">Contract Outstanding</th>
                 <th className="p-2.5 text-right">Collection Rate</th>
               </tr>
             </thead>

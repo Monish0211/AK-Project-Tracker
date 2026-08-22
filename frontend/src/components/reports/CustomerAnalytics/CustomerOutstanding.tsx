@@ -21,15 +21,15 @@ export function CustomerOutstanding({ customerList }: Props) {
     <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] p-4 rounded-2xl space-y-3">
       <div className="flex items-center justify-between border-b border-[var(--nu-border)] pb-2">
         <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--nu-text)]">
-          Outstanding Receivables Exposure by Client
+          Contract Outstanding Exposure by Client
         </h4>
-        <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">Receivable Exposure</span>
+        <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">Contract Balance Exposure</span>
       </div>
 
       <div className="h-64 w-full">
         {chartData.length === 0 ? (
           <div className="h-full flex items-center justify-center text-xs text-[var(--nu-text-muted)] italic">
-            Zero outstanding balance across all active customer accounts.
+            Zero contract outstanding balance across all active customer accounts.
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">

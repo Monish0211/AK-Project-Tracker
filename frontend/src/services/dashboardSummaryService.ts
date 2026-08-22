@@ -12,9 +12,11 @@ export interface DashboardKpis {
   totalPaymentReceived: number;
   totalOutstanding: number;
   totalExpenses: number;
+  totalActualProjectCost: number;
   totalProfit: number;
   totalProfitPercentage: number;
 }
+
 
 export interface HoursOverrunProject {
   id: string;
@@ -106,6 +108,7 @@ export interface ProjectHealth {
   atRisk: number;
   delayed: number;
   notStarted: number;
+  scheduleNotSet: number;
   total: number;
 }
 
@@ -130,13 +133,11 @@ export interface DepartmentOps {
   upcomingDeliveries: number;
   completion: number;
   workOrderValue: number;
-  health: "Healthy" | "At Risk" | "Delayed";
   workloadPercent: number;
 }
 
 export interface Departments {
   list: DepartmentOps[];
-  healthCounts: { healthy: number; atRisk: number; delayed: number };
   totals: {
     departments: number;
     totalProjects: number;

@@ -14,8 +14,16 @@ const ProjectHealthSummary: React.FC = () => {
     { emoji: "🟡", label: "At Risk", count: health.atRisk, barColor: "bg-amber-500" },
     { emoji: "🔴", label: "Delayed", count: health.delayed, barColor: "bg-red-500" },
     { emoji: "⚪", label: "Not Started", count: health.notStarted, barColor: "bg-slate-400" },
+    { emoji: "⏳", label: "Schedule Not Set", count: health.scheduleNotSet ?? 0, barColor: "bg-purple-500" },
   ];
-  const max = Math.max(health.onTrack, health.atRisk, health.delayed, health.notStarted, 1);
+  const max = Math.max(
+    health.onTrack,
+    health.atRisk,
+    health.delayed,
+    health.notStarted,
+    health.scheduleNotSet ?? 0,
+    1
+  );
 
   return (
     <Card padded={false} elevated className="h-[325px] flex flex-col justify-between transition-all duration-200">

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from "recharts";
+import { getTotalNonManhourCost } from "../../../services/expenseService";
 
 interface Props {
   projects: any[];
@@ -7,24 +8,23 @@ interface Props {
 
 export function MarginChart({ projects }: Props) {
   const marginData = useMemo(() => {
-    return projects.slice(0, 6).map((p) => {
-      const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      let raised = 0;
-      items.forEach((item: any) => {
-        (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
-          if (line.status !== "Cancelled") raised += line.invoiceAmountINR || 0;
-        });
-      });
-      const nonManhour = (p.nonManhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
-      const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
-      const profit = raised - (nonManhour + manhour);
-      const marginPct = raised > 0 ? (profit / raised) * 100 : 0;
+    return projects
+      .map((p) => {
+        const woVal = p.workOrderValueINR ?? p.workOrderValue ?? 0;
+        const nonManhour = getTotalNonManhourCost(p.nonManhourExpenses || []);
+        const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
+        const actualCost = nonManhour + manhour;
+        const profit = woVal - actualCost;
+        const marginPct = woVal === 0 ? 0 : (profit / woVal) * 100;
 
-      return {
-        name: p.prNo || p.client?.slice(0, 10) || "Project",
-        marginPct: Number(marginPct.toFixed(1)),
-      };
-    });
+        return {
+          name: p.prNo || p.client?.slice(0, 10) || "Project",
+          woVal,
+          marginPct: Number(marginPct.toFixed(1)),
+        };
+      })
+      .sort((a, b) => b.marginPct - a.marginPct)
+      .slice(0, 6);
   }, [projects]);
 
   return (

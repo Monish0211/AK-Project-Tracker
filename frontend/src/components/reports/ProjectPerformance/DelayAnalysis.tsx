@@ -7,18 +7,17 @@ interface Props {
 
 export function DelayAnalysis({ projects }: Props) {
   const deptProgressData = useMemo(() => {
-    const deptMap: Record<string, { dept: string; total: number; completed: number; avgDuration: number }> = {};
+    const deptMap: Record<string, { dept: string; total: number; completed: number }> = {};
 
     projects.forEach((p) => {
       const dName = p.department || "General Engineering";
       if (!deptMap[dName]) {
-        deptMap[dName] = { dept: dName.length > 12 ? dName.slice(0, 12) + "..." : dName, total: 0, completed: 0, avgDuration: 0 };
+        deptMap[dName] = { dept: dName.length > 12 ? dName.slice(0, 12) + "..." : dName, total: 0, completed: 0 };
       }
       deptMap[dName].total += 1;
       if ((p.projectStatus || "").toLowerCase().includes("completed")) {
         deptMap[dName].completed += 1;
       }
-      deptMap[dName].avgDuration += p.estimatedDuration || 30;
     });
 
     return Object.values(deptMap);

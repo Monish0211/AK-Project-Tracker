@@ -1,6 +1,7 @@
 import { DollarSign, Percent, TrendingUp, TrendingDown } from "lucide-react";
 import { KPIReportCard } from "../Shared/KPIReportCard";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { getTotalNonManhourCost } from "../../../services/expenseService";
 
 interface Props {
   projects: any[];
@@ -16,16 +17,11 @@ export function ProfitCards({ projects, analytics }: Props) {
 
   if (projects.length > 0) {
     const list = projects.map((p) => {
-      const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      let raised = 0;
-      items.forEach((item: any) => {
-        (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
-          if (line.status !== "Cancelled") raised += line.invoiceAmountINR || 0;
-        });
-      });
-      const nonManhour = (p.nonManhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
+      const woVal = p.workOrderValueINR ?? p.workOrderValue ?? 0;
+      const nonManhour = getTotalNonManhourCost(p.nonManhourExpenses || []);
       const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
-      const profit = raised - (nonManhour + manhour);
+      const actualCost = nonManhour + manhour;
+      const profit = woVal - actualCost;
       return { title: p.prNo || p.projectTitle || "Project", profit };
     });
 
@@ -39,7 +35,7 @@ export function ProfitCards({ projects, analytics }: Props) {
       <KPIReportCard
         title="Gross Net Profit"
         value={formatBusinessINR(a.grossProfit)}
-        subtitle="Raised Invoices - Total Expenses"
+        subtitle="Work Order Value - Actual Cost"
         icon={<DollarSign size={18} />}
         tone="emerald"
       />
