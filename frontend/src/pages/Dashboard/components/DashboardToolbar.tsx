@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Plus,
   RefreshCw,
   Search,
 } from "lucide-react";
-import { getProjects } from "../../../services/projectService";
+import { queryProjectsFromApi } from "../../../services/projectService";
 import { refreshTimesheetImportsFromBackend } from "../../../services/timesheetService";
 import { ApiError } from "../../../services/apiClient";
 import { Badge } from "../../../components/ui/Badge";
@@ -17,16 +17,13 @@ interface Props {
 
 type MenuKey = "search" | null;
 
-const SEARCHABLE_FIELDS = [
-  "prNo",
-  "client",
-  "projectTitle",
-  "department",
-  "primaryProjectManager",
-  "projectEngineer",
-  "projectCoordinator",
-  "pmoCoordinator",
-] as const;
+interface SearchHit {
+  id: string;
+  prNo: string;
+  projectTitle: string;
+  client: string;
+  projectStatus: string;
+}
 
 const DashboardToolbar = ({ onRefresh }: Props) => {
   const navigate = useNavigate();
@@ -34,6 +31,8 @@ const DashboardToolbar = ({ onRefresh }: Props) => {
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
   const [query, setQuery] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchHit[]>([]);
+  const [searchStatus, setSearchStatus] = useState<"idle" | "loading" | "ready" | "forbidden">("idle");
 
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -47,39 +46,52 @@ const DashboardToolbar = ({ onRefresh }: Props) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const searchResults = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setSearchResults([]);
+      setSearchStatus("idle");
+      return;
+    }
 
-    return getProjects()
-      .filter((project) =>
-        SEARCHABLE_FIELDS.some((field) => (project[field] || "").toString().toLowerCase().includes(q))
-      )
-      .slice(0, 6);
+    let cancelled = false;
+    setSearchStatus("loading");
+    const timer = window.setTimeout(() => {
+      queryProjectsFromApi({ search: q, page: 1, pageSize: 6 })
+        .then((result) => {
+          if (cancelled) return;
+          setSearchResults(
+            result.items.map((project) => ({
+              id: project.id,
+              prNo: project.prNo,
+              projectTitle: project.projectTitle,
+              client: project.client,
+              projectStatus: project.projectStatus,
+            }))
+          );
+          setSearchStatus("ready");
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setSearchResults([]);
+          setSearchStatus(err instanceof ApiError && err.status === 403 ? "forbidden" : "ready");
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [query]);
 
-  // Also pulls the latest backend-synced Timesheet data (KEKA's 10 PM sync
-  // → PostgreSQL → GET /timesheets/entries) into the same localStorage
-  // cache Team Assigned already reads — see refreshTimesheetImportsFromBackend()
-  // in timesheetService.ts. Team Assigned needs no extra wiring to notice
-  // the update: it already polls that same cache every 3 seconds and
-  // re-reads it on its own mount. This does not grant Timesheets module
-  // access — it calls the same GET /timesheets/entries endpoint the
-  // Timesheets page itself already uses, subject to the exact same backend
-  // requireModuleAccess("Timesheets") gate; Administrators and users with
-  // the Timesheets module already have it, so the request simply succeeds
-  // for them and 403s (silently, non-fatally) for users without it.
+  // Timesheet cache refresh is Team Assigned / Timesheets-page support, not
+  // Dashboard KPIs. Portfolio figures refresh via onRefresh → GET /dashboard/summary.
   const handleRefreshClick = async () => {
-    if (isRefreshing) return; // prevent duplicate simultaneous refresh requests
+    if (isRefreshing) return;
     setIsRefreshing(true);
     try {
       await refreshTimesheetImportsFromBackend();
     } catch (err) {
-      // Non-fatal — refreshTimesheetImportsFromBackend() throws before ever
-      // writing to localStorage on failure, so existing cached Timesheet
-      // data is left completely intact. A user without Timesheets module
-      // access gets a 403 here, which is expected and not surfaced as an
-      // error — only a genuine failure (network/server) is shown.
       if (!(err instanceof ApiError && err.status === 403)) {
         alert(err instanceof ApiError ? err.message : "Failed to refresh timesheet data. Please try again.");
       }
@@ -106,7 +118,6 @@ const DashboardToolbar = ({ onRefresh }: Props) => {
       </div>
 
       <div className="flex items-center gap-2.5 shrink-0" ref={menuRef}>
-        {/* Search */}
         <div className="relative">
           <div className="flex items-center gap-2 bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] px-2.5 py-1.5 w-32 sm:w-48 md:w-60 lg:w-72 transition-all duration-300">
             <Search size={13} className="text-[var(--nu-text-muted)] shrink-0" />
@@ -124,7 +135,13 @@ const DashboardToolbar = ({ onRefresh }: Props) => {
 
           {openMenu === "search" && query.trim() !== "" && (
             <div className="absolute left-0 mt-2 w-[380px] bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-[var(--nu-shadow-md)] z-50 nu-fade-in overflow-hidden">
-              {searchResults.length === 0 ? (
+              {searchStatus === "loading" ? (
+                <p className="px-3.5 py-4 text-[12px] text-[var(--nu-text-muted)] text-center">Searching…</p>
+              ) : searchStatus === "forbidden" ? (
+                <p className="px-3.5 py-4 text-[12px] text-[var(--nu-text-muted)] text-center">
+                  Project search needs Projects module access. Dashboard totals still come from the Dashboard API.
+                </p>
+              ) : searchResults.length === 0 ? (
                 <p className="px-3.5 py-4 text-[12px] text-[var(--nu-text-muted)] text-center">No matching projects found.</p>
               ) : (
                 <div className="max-h-72 overflow-y-auto nu-scrollbar">
@@ -160,7 +177,7 @@ const DashboardToolbar = ({ onRefresh }: Props) => {
 
         <button
           onClick={handleRefreshClick}
-          title="Refresh Dashboard data"
+          title="Refresh Dashboard portfolio from the server"
           className="w-8 h-8 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] flex items-center justify-center text-[var(--nu-text-secondary)] hover:bg-[var(--nu-surface-alt)] transition-colors"
         >
           <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />

@@ -57,7 +57,7 @@ export function ContractValueChart({ projects }: Props) {
                 <Cell key={`cell-${index}`} fill={entry.color} />
               ))}
             </Pie>
-            <Tooltip formatter={(val: any) => [`₹ ${formatBusinessINR(Number(val))}`, "Contract Value"]} />
+            <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), "Contract Value"]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
           </PieChart>
         </ResponsiveContainer>

@@ -21,7 +21,7 @@ export function ExpenseCategoryChart({ projects }: Props) {
         catMap[categoryName] = (catMap[categoryName] || 0) + cost;
       });
 
-      const manhour = (p.manhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
+      const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
       if (manhour > 0) {
         catMap["Manhour Costs"] = (catMap["Manhour Costs"] || 0) + manhour;
       }
@@ -59,13 +59,13 @@ export function ExpenseCategoryChart({ projects }: Props) {
               outerRadius={80}
               paddingAngle={4}
               dataKey="value"
-              label={({ name, value }) => `${name}: ₹${formatBusinessINR(value)}`}
+              label={({ name, value }) => `${name}: ${formatBusinessINR(value)}`}
             >
               {categoryData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.color} />
               ))}
             </Pie>
-            <Tooltip formatter={(val: any) => [`₹ ${formatBusinessINR(Number(val))}`, "Cost"]} />
+            <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), "Cost"]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
           </PieChart>
         </ResponsiveContainer>

@@ -36,8 +36,8 @@ export function CustomerOutstanding({ customerList }: Props) {
             <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
               <XAxis dataKey="client" tick={{ fontSize: 10 }} />
-              <YAxis tickFormatter={(v) => `₹${(v / 100000).toFixed(0)}L`} tick={{ fontSize: 10 }} />
-              <Tooltip formatter={(val: any) => [`₹ ${formatBusinessINR(Number(val))}`, "Outstanding"]} />
+              <YAxis tickFormatter={(v) => formatBusinessINR(v)} tick={{ fontSize: 10 }} />
+              <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), "Outstanding"]} />
               <Bar dataKey="Outstanding" fill="#f59e0b" radius={[4, 4, 0, 0]}>
                 {chartData.map((_, index) => (
                   <Cell key={`cell-${index}`} fill={index % 2 === 0 ? "#f59e0b" : "#ef4444"} />

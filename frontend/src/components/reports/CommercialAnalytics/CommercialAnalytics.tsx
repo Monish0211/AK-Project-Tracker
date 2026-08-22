@@ -18,7 +18,7 @@ export function CommercialAnalytics({ projects, analytics }: Props) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <KPIReportCard
           title="Total Contract Value"
-          value={`₹ ${formatBusinessINR(a.totalWOValue)}`}
+          value={formatBusinessINR(a.totalWOValue)}
           subtitle="Signed Work Order Master Value"
           icon={<FileCheck size={18} />}
           tone="blue"
@@ -26,7 +26,7 @@ export function CommercialAnalytics({ projects, analytics }: Props) {
 
         <KPIReportCard
           title="Invoiced Revenue"
-          value={`₹ ${formatBusinessINR(a.totalInvoiceRaised)}`}
+          value={formatBusinessINR(a.totalInvoiceRaised)}
           subtitle="Realized commercial billing"
           icon={<Receipt size={18} />}
           tone="emerald"
@@ -34,7 +34,7 @@ export function CommercialAnalytics({ projects, analytics }: Props) {
 
         <KPIReportCard
           title="Unbilled Commercial Balance"
-          value={`₹ ${formatBusinessINR(a.balanceToInvoice)}`}
+          value={formatBusinessINR(a.balanceToInvoice)}
           subtitle="Remaining contract billing"
           icon={<DollarSign size={18} />}
           tone="amber"

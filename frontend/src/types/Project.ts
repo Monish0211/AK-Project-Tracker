@@ -197,8 +197,10 @@ export interface ProjectResource {
   designation: string;
   startDate: string;
   endDate: string;
+  hourlyRateSnapshot?: number;
   workingDays: number;
   totalHours: number;
+  manhourCost?: number;
   status: "Active" | "Released";
   location?: string;
 }

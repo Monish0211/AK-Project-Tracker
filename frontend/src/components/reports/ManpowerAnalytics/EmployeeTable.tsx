@@ -12,23 +12,26 @@ export function EmployeeTable({ projects }: Props) {
   const [search, setSearch] = useState("");
 
   const employeeRows = useMemo(() => {
-    const empMap: Record<string, { empName: string; role: string; dept: string; billableHrs: number; costINR: number }> = {};
+    const empMap: Record<
+      string,
+      { empName: string; role: string; dept: string; billableHrs: number; workingDays: number; costINR: number }
+    > = {};
 
-    // ManhourExpense's real fields are employeeName/department/bookedHours/
-    // totalCost (types/ManhourExpense.ts) — no role/designation field exists.
     projects.forEach((p) => {
-      const mhList = Array.isArray(p.manhourExpenses) ? p.manhourExpenses : [];
-      mhList.forEach((mh: any) => {
-        const empName = mh.employeeName || "Unnamed Employee";
-        const role = "-";
-        const dept = mh.department || p.department || "Engineering";
-        const hrs = mh.bookedHours || 0;
-        const cost = mh.totalCost || 0;
+      const resources = Array.isArray(p.resources) ? p.resources : [];
+      resources.forEach((r: any) => {
+        const empName = r.employeeName || r.employeeNo || "Unnamed Employee";
+        const role = r.designation || "-";
+        const dept = r.department || p.department || "Engineering";
+        const hrs = r.totalHours || 0;
+        const days = r.workingDays || 0;
+        const cost = r.manhourCost || 0;
 
         if (!empMap[empName]) {
-          empMap[empName] = { empName, role, dept, billableHrs: 0, costINR: 0 };
+          empMap[empName] = { empName, role, dept, billableHrs: 0, workingDays: 0, costINR: 0 };
         }
         empMap[empName].billableHrs += hrs;
+        empMap[empName].workingDays += days;
         empMap[empName].costINR += cost;
       });
     });
@@ -55,7 +58,7 @@ export function EmployeeTable({ projects }: Props) {
             Employee Resource Utilization & Timesheet Cost Ledger
           </h3>
           <p className="text-[11px] text-[var(--nu-text-muted)] mt-0.5">
-            Individual engineering specialist hours logged, billable utilization, and project manhour costs.
+            Individual engineering specialist hours logged, billable workload, and timesheet manhour costs.
           </p>
         </div>
 
@@ -83,40 +86,26 @@ export function EmployeeTable({ projects }: Props) {
             <thead>
               <tr className="border-b border-[var(--nu-border)] bg-[var(--nu-surface-alt)] font-extrabold text-[var(--nu-text-muted)] uppercase tracking-wider">
                 <th className="p-2.5">Employee Specialist</th>
-                <th className="p-2.5">Engineering Role</th>
+                <th className="p-2.5">Designation</th>
                 <th className="p-2.5">Department</th>
-                <th className="p-2.5 text-center">Billable Hours Logged</th>
+                <th className="p-2.5 text-center">Working Days</th>
+                <th className="p-2.5 text-center">Hours Logged</th>
                 <th className="p-2.5 text-right">Total Manhour Cost</th>
-                <th className="p-2.5 text-right">Utilization %</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--nu-border)]">
-              {filtered.map((row) => {
-                const utilPct = Math.min(100, Math.round((row.billableHrs / 480) * 100));
-
-                return (
-                  <tr key={row.empName} className="hover:bg-[var(--nu-surface-alt)]/50 transition">
-                    <td className="p-2.5 font-extrabold text-[var(--nu-text)]">{row.empName}</td>
-                    <td className="p-2.5 font-semibold text-[var(--nu-text-muted)]">{row.role}</td>
-                    <td className="p-2.5 text-[var(--nu-text-muted)]">{row.dept}</td>
-                    <td className="p-2.5 text-center font-mono font-bold">{row.billableHrs} hrs</td>
-                    <td className="p-2.5 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                      ₹{formatBusinessINR(row.costINR)}
-                    </td>
-                    <td className="p-2.5 text-right font-mono font-extrabold">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] ${
-                          utilPct >= 85
-                            ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300"
-                            : "bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300"
-                        }`}
-                      >
-                        {utilPct}%
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {filtered.map((row) => (
+                <tr key={row.empName} className="hover:bg-[var(--nu-surface-alt)]/50 transition">
+                  <td className="p-2.5 font-extrabold text-[var(--nu-text)]">{row.empName}</td>
+                  <td className="p-2.5 font-semibold text-[var(--nu-text-muted)]">{row.role}</td>
+                  <td className="p-2.5 text-[var(--nu-text-muted)]">{row.dept}</td>
+                  <td className="p-2.5 text-center font-mono font-bold">{row.workingDays} days</td>
+                  <td className="p-2.5 text-center font-mono font-bold text-[var(--nu-accent)]">{row.billableHrs} hrs</td>
+                  <td className="p-2.5 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                    {formatBusinessINR(row.costINR)}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

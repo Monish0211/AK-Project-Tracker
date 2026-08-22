@@ -18,7 +18,7 @@ export function OverdueTable({ projects }: Props) {
       const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
       items.forEach((item: any) => {
         (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
-          if (line.status === "Raised" || line.status === "Submitted") {
+          if (line.status === "Raised" || line.status === "Submitted" || line.status === "PartiallyPaid") {
             let ageDays = 0;
             if (line.invoiceDate) {
               ageDays = Math.floor((new Date().getTime() - new Date(line.invoiceDate).getTime()) / (1000 * 3600 * 24));
@@ -27,6 +27,8 @@ export function OverdueTable({ projects }: Props) {
               id: line.id,
               invoiceNo: line.invoiceNo,
               invoiceDate: line.invoiceDate || "-",
+              status: line.status === "PartiallyPaid" ? "Partially Paid" : "Raised",
+              statusCode: line.status,
               prNo: p.prNo || "-",
               client: p.client || "-",
               projectTitle: p.projectTitle || "-",
@@ -48,7 +50,8 @@ export function OverdueTable({ projects }: Props) {
       (l) =>
         l.invoiceNo.toLowerCase().includes(term) ||
         l.client.toLowerCase().includes(term) ||
-        l.prNo.toLowerCase().includes(term)
+        l.prNo.toLowerCase().includes(term) ||
+        l.status.toLowerCase().includes(term)
     );
   }, [pendingLines, search]);
 
@@ -88,6 +91,7 @@ export function OverdueTable({ projects }: Props) {
             <thead>
               <tr className="border-b border-[var(--nu-border)] bg-[var(--nu-surface-alt)] font-extrabold text-[var(--nu-text-muted)] uppercase tracking-wider">
                 <th className="p-2.5">Invoice No</th>
+                <th className="p-2.5 text-center">Status</th>
                 <th className="p-2.5">Invoice Date</th>
                 <th className="p-2.5">PR No</th>
                 <th className="p-2.5">Client</th>
@@ -111,12 +115,23 @@ export function OverdueTable({ projects }: Props) {
                 return (
                   <tr key={row.id} className="hover:bg-[var(--nu-surface-alt)]/50 transition">
                     <td className="p-2.5 font-bold font-mono text-[var(--nu-accent)]">{row.invoiceNo}</td>
+                    <td className="p-2.5 text-center">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                          row.statusCode === "PartiallyPaid"
+                            ? "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300"
+                            : "bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300"
+                        }`}
+                      >
+                        {row.status}
+                      </span>
+                    </td>
                     <td className="p-2.5 font-mono text-[var(--nu-text-muted)]">{row.invoiceDate}</td>
                     <td className="p-2.5 font-mono font-semibold">{row.prNo}</td>
                     <td className="p-2.5 font-semibold text-[var(--nu-text)] max-w-[130px] truncate">{row.client}</td>
                     <td className="p-2.5 font-medium text-[var(--nu-text)] max-w-[180px] truncate">{row.projectTitle}</td>
                     <td className="p-2.5 text-right font-mono font-extrabold text-amber-600 dark:text-amber-400">
-                      ₹{formatBusinessINR(row.amountINR)}
+                      {formatBusinessINR(row.amountINR)}
                     </td>
                     <td className="p-2.5 text-center font-mono font-bold">{row.ageDays}</td>
                     <td className="p-2.5 text-center">

@@ -24,7 +24,7 @@ export function ProfitCards({ projects, analytics }: Props) {
         });
       });
       const nonManhour = (p.nonManhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
-      const manhour = (p.manhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
+      const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
       const profit = raised - (nonManhour + manhour);
       return { title: p.prNo || p.projectTitle || "Project", profit };
     });
@@ -38,7 +38,7 @@ export function ProfitCards({ projects, analytics }: Props) {
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       <KPIReportCard
         title="Gross Net Profit"
-        value={`₹ ${formatBusinessINR(a.grossProfit)}`}
+        value={formatBusinessINR(a.grossProfit)}
         subtitle="Raised Invoices - Total Expenses"
         icon={<DollarSign size={18} />}
         tone="emerald"
@@ -56,7 +56,7 @@ export function ProfitCards({ projects, analytics }: Props) {
 
       <KPIReportCard
         title="Highest Profit Contract"
-        value={`₹ ${formatBusinessINR(highestProj.profit)}`}
+        value={formatBusinessINR(highestProj.profit)}
         subtitle={highestProj.title}
         trend="Top Performer"
         trendType="positive"
@@ -66,7 +66,7 @@ export function ProfitCards({ projects, analytics }: Props) {
 
       <KPIReportCard
         title="Lowest Profit Contract"
-        value={`₹ ${formatBusinessINR(lowestProj.profit)}`}
+        value={formatBusinessINR(lowestProj.profit)}
         subtitle={lowestProj.title}
         trend={lowestProj.profit < 0 ? "Loss Making" : "Lowest"}
         trendType={lowestProj.profit < 0 ? "negative" : "neutral"}

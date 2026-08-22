@@ -50,8 +50,8 @@ export function MonthlyBillingChart({ projects }: Props) {
           <BarChart data={billingData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
             <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-            <YAxis tickFormatter={(v) => `₹${(v / 100000).toFixed(0)}L`} tick={{ fontSize: 10 }} />
-            <Tooltip formatter={(val: any) => [`₹ ${formatBusinessINR(Number(val))}`, "Billed Amount"]} />
+            <YAxis tickFormatter={(v) => formatBusinessINR(v)} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), "Billed Amount"]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="amount" name="Invoiced Amount" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
           </BarChart>

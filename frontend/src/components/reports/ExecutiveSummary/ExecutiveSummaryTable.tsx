@@ -2,7 +2,6 @@ import { useState, useMemo } from "react";
 import { Search, ChevronDown, ChevronUp } from "lucide-react";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
-import { EmptyState } from "../Shared/EmptyState";
 import { getTotalInvoiceRaised, getTotalPaymentReceived } from "../../../services/invoiceProgressService";
 
 interface Props {
@@ -32,7 +31,7 @@ export function ExecutiveSummaryTable({ projects }: Props) {
       // and never the same as Balance to Invoice.
       const outstanding = Math.max(0, woVal - received);
       const nonManhour = (p.nonManhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
-      const manhour = (p.manhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
+      const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
       const expenses = nonManhour + manhour;
       const profit = raised - expenses;
       const profitPct = raised > 0 ? (profit / raised) * 100 : 0;
@@ -86,7 +85,7 @@ export function ExecutiveSummaryTable({ projects }: Props) {
   const paginatedData = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return sortedData.slice(start, start + pageSize);
-  }, [sortedData, currentPage]);
+  }, [sortedData, currentPage, pageSize]);
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortAsc(!sortAsc);
@@ -97,44 +96,43 @@ export function ExecutiveSummaryTable({ projects }: Props) {
   };
 
   return (
-    <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-2xl space-y-4 p-5 shadow-xs">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--nu-border)] pb-3.5">
+    <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] p-4 sm:p-5 rounded-2xl space-y-4 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--nu-border)] pb-4">
         <div>
-          <h3 className="text-xs font-extrabold uppercase tracking-wider text-[var(--nu-text)]">
-            Executive Project Portfolio Ledger
-          </h3>
-          <p className="text-[11px] text-[var(--nu-text-muted)] mt-0.5">
-            Complete financial, invoice, expense, and profitability breakdown per project contract.
+          <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--nu-text)]">
+            Project Commercial Registry & Financial Performance
+          </h4>
+          <p className="text-[11px] text-[var(--nu-text-muted)] pt-0.5">
+            Audit-ready project balance sheet with live work order values, invoicing, and margins.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Instant Search input */}
-          <div className="relative w-64">
-            <Search size={14} className="absolute left-3 top-2.5 text-[var(--nu-text-muted)]" />
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--nu-text-muted)]" />
             <input
               type="text"
+              placeholder="Search contracts..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-              placeholder="Search PR, Client, Project..."
-              className="w-full pl-8 pr-3 py-1.5 bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-xl text-xs text-[var(--nu-text)] focus:outline-none focus:ring-2 focus:ring-[var(--nu-accent)]"
+              className="pl-8 pr-3 py-1.5 rounded-xl border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] text-xs text-[var(--nu-text)] placeholder-[var(--nu-text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--nu-accent)] w-44 sm:w-56"
             />
           </div>
 
-          <ReportExportButtons data={sortedData} filename="Executive_Project_Summary" />
+          <ReportExportButtons data={sortedData} filename="PMO_Executive_Summary_Report" />
         </div>
       </div>
 
       {paginatedData.length === 0 ? (
-        <EmptyState title="No Executive Records" description="No projects match the current search term or filter criteria." />
+        <div className="py-12 text-center text-xs text-[var(--nu-text-muted)]">No matching projects found.</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left border-collapse">
+        <div className="overflow-x-auto nu-scrollbar">
+          <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="border-b border-[var(--nu-border)] bg-[var(--nu-surface-alt)] font-extrabold text-[var(--nu-text-muted)] uppercase tracking-wider">
+              <tr className="border-b border-[var(--nu-border)] text-[11px] font-extrabold uppercase text-[var(--nu-text-muted)] select-none">
                 <th className="p-3.5 px-4 cursor-pointer" onClick={() => handleSort("prNo")}>
                   <div className="flex items-center gap-1">
                     <span>PR No</span>
@@ -176,13 +174,13 @@ export function ExecutiveSummaryTable({ projects }: Props) {
                   <td className="p-3.5 px-4 font-bold font-mono text-[var(--nu-accent)]">{row.prNo}</td>
                   <td className="p-3.5 px-4 font-semibold text-[var(--nu-text)] max-w-[140px] truncate">{row.client}</td>
                   <td className="p-3.5 px-4 font-medium text-[var(--nu-text)] max-w-[200px] truncate">{row.projectTitle}</td>
-                  <td className="p-3.5 px-4 text-right font-mono font-bold">₹{formatBusinessINR(row.woValue)}</td>
-                  <td className="p-3.5 px-4 text-right font-mono text-blue-600 dark:text-blue-400 font-bold">₹{formatBusinessINR(row.raised)}</td>
-                  <td className="p-3.5 px-4 text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">₹{formatBusinessINR(row.received)}</td>
-                  <td className="p-3.5 px-4 text-right font-mono text-amber-600 dark:text-amber-400 font-bold">₹{formatBusinessINR(row.outstanding)}</td>
-                  <td className="p-3.5 px-4 text-right font-mono text-rose-600 dark:text-rose-400">₹{formatBusinessINR(row.expenses)}</td>
+                  <td className="p-3.5 px-4 text-right font-mono font-bold">{formatBusinessINR(row.woValue)}</td>
+                  <td className="p-3.5 px-4 text-right font-mono text-blue-600 dark:text-blue-400 font-bold">{formatBusinessINR(row.raised)}</td>
+                  <td className="p-3.5 px-4 text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">{formatBusinessINR(row.received)}</td>
+                  <td className="p-3.5 px-4 text-right font-mono text-amber-600 dark:text-amber-400 font-bold">{formatBusinessINR(row.outstanding)}</td>
+                  <td className="p-3.5 px-4 text-right font-mono text-rose-600 dark:text-rose-400">{formatBusinessINR(row.expenses)}</td>
                   <td className={`p-3.5 px-4 text-right font-mono font-bold ${row.profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600"}`}>
-                    ₹{formatBusinessINR(row.profit)}
+                    {formatBusinessINR(row.profit)}
                   </td>
                   <td className="p-3.5 px-4 text-right font-mono font-extrabold">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] ${row.profitPct >= 20 ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300" : "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300"}`}>

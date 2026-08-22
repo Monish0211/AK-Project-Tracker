@@ -5,12 +5,12 @@ import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { statusTone } from "../../../components/ui/statusTone";
-import { getRecentProjects } from "../../../services/dashboardService";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useDashboardSummary } from "../DashboardSummaryContext";
 
 const RecentProjects: React.FC = () => {
   const navigate = useNavigate();
-  const projects = getRecentProjects().slice(0, 5); // Limit to top 5 recent projects
+  const projects = useDashboardSummary().recentProjects;
 
   return (
     <Card padded={false} elevated className="h-[325px] flex flex-col justify-between transition-all duration-200">

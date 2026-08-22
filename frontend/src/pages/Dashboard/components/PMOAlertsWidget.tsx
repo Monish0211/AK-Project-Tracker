@@ -79,7 +79,7 @@ const PMOAlertsWidget: React.FC = () => {
       <CardHeader
         icon={<BellRing size={14} className="text-indigo-600 dark:text-indigo-400" />}
         title="PMO ALERTS"
-        subtitle="Live operational notifications"
+        subtitle="App notifications — not Dashboard portfolio totals"
         iconTint="accent"
       />
 
@@ -127,7 +127,7 @@ const PMOAlertsWidget: React.FC = () => {
       <div className="shrink-0 bg-slate-50/80 dark:bg-slate-800/40 border-t border-slate-200/60 dark:border-slate-800/60 p-2 px-3 sm:px-4 rounded-b-[var(--nu-radius-lg)] flex items-center justify-between flex-wrap gap-1.5 text-[11px] font-semibold text-slate-650 dark:text-slate-400">
         <div className="flex items-center gap-1.5 truncate">
           <Info size={13} className="text-slate-450 shrink-0" />
-          <span className="truncate">Live from Projects, Invoices, Timesheets &amp; Reminders.</span>
+          <span className="truncate">Notification engine (separate from GET /dashboard/summary).</span>
         </div>
         <button
           type="button"

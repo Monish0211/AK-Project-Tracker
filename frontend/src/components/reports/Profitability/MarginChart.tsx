@@ -16,7 +16,7 @@ export function MarginChart({ projects }: Props) {
         });
       });
       const nonManhour = (p.nonManhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
-      const manhour = (p.manhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
+      const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
       const profit = raised - (nonManhour + manhour);
       const marginPct = raised > 0 ? (profit / raised) * 100 : 0;
 

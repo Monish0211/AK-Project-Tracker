@@ -102,13 +102,15 @@ export function InvoiceLedger({ projects }: Props) {
                   <td className="p-2.5 font-medium text-[var(--nu-text)] max-w-[180px] truncate">{row.activityName}</td>
                   <td className="p-2.5 text-center font-mono font-bold">{row.quantityBilled}</td>
                   <td className="p-2.5 text-right font-mono font-extrabold text-blue-600 dark:text-blue-400">
-                    ₹{formatBusinessINR(row.amountINR)}
+                    {formatBusinessINR(row.amountINR)}
                   </td>
                   <td className="p-2.5 text-center">
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                         row.status === "Paid"
                           ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300"
+                          : row.status === "PartiallyPaid"
+                          ? "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300"
                           : row.status === "Raised" || row.status === "Submitted"
                           ? "bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300"
                           : row.status === "Cancelled"

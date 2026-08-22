@@ -13,7 +13,7 @@ export function ExpenseCards({ analytics }: Props) {
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       <KPIReportCard
         title="Total Approved Budget"
-        value={`₹ ${formatBusinessINR(a.totalBudget)}`}
+        value={formatBusinessINR(a.totalBudget)}
         subtitle="Manhour + Non-manhour allocation"
         icon={<DollarSign size={18} />}
         tone="blue"
@@ -21,15 +21,15 @@ export function ExpenseCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Actual Total Expenses"
-        value={`₹ ${formatBusinessINR(a.totalExpenses)}`}
-        subtitle={`Manhour: ₹${formatBusinessINR(a.totalManhourExpenses)} | Non-MH: ₹${formatBusinessINR(a.totalNonManhourExpenses)}`}
+        value={formatBusinessINR(a.totalExpenses)}
+        subtitle={`Manhour: ${formatBusinessINR(a.totalManhourExpenses)} | Non-MH: ${formatBusinessINR(a.totalNonManhourExpenses)}`}
         icon={<Wallet size={18} />}
         tone="rose"
       />
 
       <KPIReportCard
         title="Remaining Budget"
-        value={`₹ ${formatBusinessINR(a.remainingBudget)}`}
+        value={formatBusinessINR(a.remainingBudget)}
         subtitle="Available budget pool"
         trend={a.remainingBudget >= 0 ? "Under Budget" : "Overrun"}
         trendType={a.remainingBudget >= 0 ? "positive" : "negative"}

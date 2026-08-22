@@ -3,12 +3,12 @@ import { Trophy, ArrowRight, Info } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { EmptyState } from "../../../components/ui/EmptyState";
-import { getTopClients } from "../../../services/dashboardService";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useDashboardSummary } from "../DashboardSummaryContext";
 
 const TopClients: React.FC = () => {
   const navigate = useNavigate();
-  const clients = getTopClients();
+  const clients = useDashboardSummary().topClients;
 
   return (
     <Card padded={false} className="h-[325px] flex flex-col justify-between bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-md rounded-[var(--nu-radius-lg)] hover:shadow-lg transition-all duration-200">

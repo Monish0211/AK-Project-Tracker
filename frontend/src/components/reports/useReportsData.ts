@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
 import type { Project } from "../../types/Project";
 import type { Customer } from "../../types/CustomerModel";
-import { getProjects } from "../../services/projectService";
+import { getProjects, fetchAllProjectsFromApi } from "../../services/projectService";
 import { getCustomers, loadCustomersForApp } from "../../services/customerService";
-import { getTotalNonManhourCost, getTotalManhourCost } from "../../services/expenseService";
+import { getTotalNonManhourCost } from "../../services/expenseService";
 import { getTotalPaymentReceived } from "../../services/invoiceProgressService";
 
 export interface ReportFilterState {
@@ -46,6 +46,17 @@ export function useReportsData() {
 
   useEffect(() => {
     loadData();
+
+    fetchAllProjectsFromApi()
+      .then((items) => {
+        if (Array.isArray(items) && items.length > 0) {
+          setAllProjects(items);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to fetch projects for reports:", err);
+      });
+
     loadCustomersForApp()
       .then((items) => setAllCustomers(items))
       .catch((err) => {
@@ -109,9 +120,11 @@ export function useReportsData() {
       ) {
         return false;
       }
-      if (filters.dateRange.start && p.projectStartDate && p.projectStartDate < filters.dateRange.start) return false;
+
+      // Date range filtering: lifecycle overlap
       const effectiveEndDate = p.actualCompletionDate || p.projectEndDate;
-      if (filters.dateRange.end && effectiveEndDate && effectiveEndDate > filters.dateRange.end) return false;
+      if (filters.dateRange.start && effectiveEndDate && effectiveEndDate < filters.dateRange.start) return false;
+      if (filters.dateRange.end && p.projectStartDate && p.projectStartDate > filters.dateRange.end) return false;
 
       return true;
     });
@@ -136,15 +149,17 @@ export function useReportsData() {
     let draftInvoiceVal = 0;
     let raisedInvoiceVal = 0;
     let submittedInvoiceVal = 0;
+    let partiallyPaidInvoiceVal = 0;
     let paidInvoiceVal = 0;
     let cancelledInvoiceVal = 0;
 
     let draftCount = 0;
     let raisedCount = 0;
     let submittedCount = 0;
+    let partiallyPaidCount = 0;
     let paidCount = 0;
 
-    // Ageing Buckets
+    // Ageing Buckets (for active open invoices)
     let ageing0to30 = 0;
     let ageing31to60 = 0;
     let ageing61to90 = 0;
@@ -157,7 +172,7 @@ export function useReportsData() {
     // Customer map for Customer Analytics
     const customerMap: Record<
       string,
-      { client: string; projectCount: number; woValue: number; raised: number; received: number; outstanding: number }
+      { client: string; projectCount: number; woValue: number; raised: number; received: number; outstanding: number; outstandingReceivable: number; expenses: number }
     > = {};
 
     // Department map for Financial / Performance Analytics
@@ -170,14 +185,21 @@ export function useReportsData() {
       const woVal = p.workOrderValueINR ?? p.workOrderValue ?? 0;
       totalWOValue += woVal;
 
+      // Authoritative Actual Costs:
+      // Non-manhour from ProjectExpense / nonManhourExpenses
       const nonManhour = getTotalNonManhourCost(p.nonManhourExpenses || []);
-      const manhour = getTotalManhourCost(p.manhourExpenses || []);
+      // Man-hour cost from authoritative ProjectResource.manhourCost
+      const manhour = (Array.isArray(p.resources) ? p.resources : []).reduce(
+        (sum, r) => sum + (r.manhourCost || 0),
+        0
+      );
       const pExpenses = nonManhour + manhour;
       totalManhourExpenses += manhour;
       totalNonManhourExpenses += nonManhour;
       totalExpenses += pExpenses;
 
-      const pBudget = (p.manhourBudgetAmount || 0) + (p.nonManhourBudgetAmount || 0) || (p.totalProjectBudget || woVal);
+      // Approved Budget: Man-Hour Budget + Non-Man-Hour Budget
+      const pBudget = (p.manhourBudgetAmount || 0) + (p.nonManhourBudgetAmount || 0);
       totalBudget += pBudget;
 
       // Status counters
@@ -193,8 +215,6 @@ export function useReportsData() {
       let projectInvoiceRaised = 0;
 
       items.forEach((item: any) => {
-        // InvoiceItem's real ordered-quantity field is `qty` (types/InvoiceItem.ts)
-        // — there is no totalQuantity/orderedQuantity/quantity field on it.
         totalOrderedQty += item.qty || 0;
 
         (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
@@ -202,7 +222,6 @@ export function useReportsData() {
           if (statusStr !== "Cancelled") {
             const amt = line.invoiceAmountINR || 0;
             projectInvoiceRaised += amt;
-            // Invoiced Quantity — same rule as QuantityTable.tsx/QuantityProgress.tsx: every non-Cancelled line's billed qty.
             totalInvoicedQty += line.quantityBilled || 0;
 
             if (statusStr === "Paid") {
@@ -214,7 +233,21 @@ export function useReportsData() {
               raisedCount++;
               submittedCount++;
 
-              // Calculate ageing based on line.invoiceDate
+              if (line.invoiceDate) {
+                const days = Math.floor((new Date().getTime() - new Date(line.invoiceDate).getTime()) / (1000 * 3600 * 24));
+                if (days <= 30) ageing0to30 += amt;
+                else if (days <= 60) ageing31to60 += amt;
+                else if (days <= 90) ageing61to90 += amt;
+                else ageing90Plus += amt;
+              } else {
+                ageing0to30 += amt;
+              }
+            } else if (statusStr === "PartiallyPaid") {
+              partiallyPaidInvoiceVal += amt;
+              partiallyPaidCount++;
+              raisedInvoiceVal += amt;
+              raisedCount++;
+
               if (line.invoiceDate) {
                 const days = Math.floor((new Date().getTime() - new Date(line.invoiceDate).getTime()) / (1000 * 3600 * 24));
                 if (days <= 30) ageing0to30 += amt;
@@ -236,32 +269,21 @@ export function useReportsData() {
 
       totalInvoiceRaised += projectInvoiceRaised;
 
-      // Payment Received — delegates to the same canonical
-      // invoiceProgressService.ts function Dashboard/View Project use
-      // (getTotalPaymentReceived), rather than re-deriving the status rule
-      // here a second time. Under the current business rule, a line counts
-      // as received once it reaches Raised / Submitted, PartiallyPaid, or
-      // Paid — never the legacy Excel-import-only project.paymentReceivedINR
-      // field, which is frozen at import time and never updated by the
-      // Invoice module.
       const pReceived = Math.min(getTotalPaymentReceived(items), projectInvoiceRaised);
       totalPaymentReceived += pReceived;
 
       // Customer map aggregation
       const clientName = p.client || "Other Clients";
       if (!customerMap[clientName]) {
-        customerMap[clientName] = { client: clientName, projectCount: 0, woValue: 0, raised: 0, received: 0, outstanding: 0 };
+        customerMap[clientName] = { client: clientName, projectCount: 0, woValue: 0, raised: 0, received: 0, outstanding: 0, outstandingReceivable: 0, expenses: 0 };
       }
       customerMap[clientName].projectCount += 1;
       customerMap[clientName].woValue += woVal;
       customerMap[clientName].raised += projectInvoiceRaised;
       customerMap[clientName].received += pReceived;
-      // Outstanding — Reports' management-level KPI: Work Order Value
-      // minus Payment Received. Deliberately NOT Invoice Raised minus
-      // Payment Received (that's the Invoice module's own, separate
-      // Outstanding concept, computed in invoiceProgressService.ts's
-      // getProjectCommercialSummary and left unchanged there).
       customerMap[clientName].outstanding += Math.max(0, woVal - pReceived);
+      customerMap[clientName].outstandingReceivable += Math.max(0, projectInvoiceRaised - pReceived);
+      customerMap[clientName].expenses += pExpenses;
 
       // Dept map aggregation
       const deptName = p.department || "General Engineering";
@@ -275,13 +297,8 @@ export function useReportsData() {
       deptMap[deptName].expenses += pExpenses;
     });
 
-    // Outstanding — Reports' management-level KPI: Total Work Order Value
-    // minus Payment Received across all included projects. Deliberately
-    // NOT Invoice Raised minus Payment Received — that's the Invoice
-    // module's own, separate Outstanding concept (getProjectCommercialSummary's
-    // outstandingCollection), which stays unchanged. Also never the same
-    // as Balance to Invoice below.
     const totalOutstanding = Math.max(0, totalWOValue - totalPaymentReceived);
+    const totalOutstandingReceivable = Math.max(0, totalInvoiceRaised - totalPaymentReceived);
     const balanceToInvoice = Math.max(0, totalWOValue - totalInvoiceRaised);
     const grossProfit = totalInvoiceRaised - totalExpenses;
     const profitMarginPercent = totalInvoiceRaised > 0 ? (grossProfit / totalInvoiceRaised) * 100 : 0;
@@ -294,6 +311,7 @@ export function useReportsData() {
       totalInvoiceRaised,
       totalPaymentReceived,
       totalOutstanding,
+      totalOutstandingReceivable,
       balanceToInvoice,
       totalExpenses,
       totalBudget,
@@ -321,12 +339,14 @@ export function useReportsData() {
         draft: draftCount,
         raised: raisedCount,
         submitted: submittedCount,
+        partiallyPaid: partiallyPaidCount,
         paid: paidCount,
       },
       invoiceStatusValues: {
         draft: draftInvoiceVal,
         raised: raisedInvoiceVal,
         submitted: submittedInvoiceVal,
+        partiallyPaid: partiallyPaidInvoiceVal,
         paid: paidInvoiceVal,
         cancelled: cancelledInvoiceVal,
       },

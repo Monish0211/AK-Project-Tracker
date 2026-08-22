@@ -6,6 +6,7 @@ import { validate } from "../../../shared/middleware/validate.js";
 import {
   createResource,
   deleteResource,
+  getAllAuthorizedResources,
   getAssignmentsByEmployee,
   getResourcesByProject,
   updateResource,
@@ -24,6 +25,7 @@ const router = Router();
 // Project-ownership authorization is checked one layer deeper, inside each
 // service function — except getAssignmentsByEmployee, which spans multiple
 // projects at once and is documented as a known gap (see security audit).
+router.get("/projects/resources", authenticate, requireModuleAccess("Projects"), getAllAuthorizedResources);
 router.get("/projects/:projectId/resources", authenticate, requireModuleAccess("Projects"), getResourcesByProject);
 router.post(
   "/projects/:projectId/resources",

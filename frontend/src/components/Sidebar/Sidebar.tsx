@@ -18,9 +18,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as XLSX from "xlsx";
-import { getProjects } from "../../services/projectService";
-import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
-import type { Project } from "../../types/Project";
+import { queryProjectsFromApi } from "../../services/projectService";
 import { useAuth } from "../../auth/authContext";
 import { hasModuleAccess } from "../../auth/permissions";
 
@@ -88,8 +86,12 @@ const Sidebar = () => {
   // separate label-to-module mapping table is needed.
   const visibleNavItems = NAV_ITEMS.filter((item) => hasModuleAccess(user, item.label));
 
-  // Live project state
-  const [projects, setProjects] = useState<Project[]>(getProjects());
+  const [statusCounts, setStatusCounts] = useState<Record<string, number | null>>({
+    Active: null,
+    "On Hold": null,
+    Completed: null,
+    Cancelled: null,
+  });
 
   // Context Menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -124,16 +126,46 @@ const Sidebar = () => {
   // and otherwise toggles manually.
   const [isProjectsOpen, setIsProjectsOpen] = useState(isProjectsSectionActive);
 
-  // Sync projects dynamically when data changes
   useEffect(() => {
-    const handleDataChange = () => {
-      setProjects(getProjects());
+    if (!hasModuleAccess(user, "Projects")) return;
+
+    let cancelled = false;
+    const loadCounts = () => {
+      Promise.all(
+        (["Active", "On Hold", "Completed", "Cancelled"] as const).map((status) =>
+          queryProjectsFromApi({ projectStatus: status, page: 1, pageSize: 1 }).then((result) => [status, result.total] as const)
+        )
+      )
+        .then((rows) => {
+          if (cancelled) return;
+          const next: Record<string, number | null> = {
+            Active: 0,
+            "On Hold": 0,
+            Completed: 0,
+            Cancelled: 0,
+          };
+          for (const [status, total] of rows) next[status] = total;
+          setStatusCounts(next);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setStatusCounts({
+              Active: null,
+              "On Hold": null,
+              Completed: null,
+              Cancelled: null,
+            });
+          }
+        });
     };
-    window.addEventListener("pmo:data-changed", handleDataChange);
+
+    loadCounts();
+    window.addEventListener("pmo:data-changed", loadCounts);
     return () => {
-      window.removeEventListener("pmo:data-changed", handleDataChange);
+      cancelled = true;
+      window.removeEventListener("pmo:data-changed", loadCounts);
     };
-  }, []);
+  }, [user]);
 
   // Close context menu on click or scroll
   useEffect(() => {
@@ -146,13 +178,7 @@ const Sidebar = () => {
     };
   }, []);
 
-  // Counts calculated live
-  const counts: Record<string, number> = {
-    Active: projects.filter((p) => p.projectStatus === "Active").length,
-    "On Hold": projects.filter((p) => p.projectStatus === "On Hold").length,
-    Completed: projects.filter((p) => p.projectStatus === "Completed").length,
-    Cancelled: projects.filter((p) => p.projectStatus === "Cancelled").length,
-  };
+  const counts: Record<string, number | null> = statusCounts;
 
   const handleRowClick = (statusKey: string) => {
     // Completed projects live on their own dedicated page now, since the
@@ -173,16 +199,15 @@ const Sidebar = () => {
     });
   };
 
-  const handleExportStatus = (statusKey: string) => {
-    const filtered = projects.filter((p) => p.projectStatus === statusKey);
-    if (filtered.length === 0) {
-      alert(`No project data available with status "${statusKey}" to export.`);
-      return;
-    }
+  const handleExportStatus = async (statusKey: string) => {
+    try {
+      const result = await queryProjectsFromApi({ projectStatus: statusKey, page: 1, pageSize: 200 });
+      if (result.total === 0 || result.items.length === 0) {
+        alert(`No project data available with status "${statusKey}" to export.`);
+        return;
+      }
 
-    const exportRows = filtered.map((p) => {
-      const comm = getProjectCommercialSummary(p);
-      return {
+      const exportRows = result.items.map((p) => ({
         "PR No": p.prNo || "",
         "PO Month": p.poMonth || "",
         "Client Name": p.client || "",
@@ -193,23 +218,18 @@ const Sidebar = () => {
         "Project Coordinator": p.projectCoordinator || "",
         "PMO Coordinator": p.pmoCoordinator || "",
         "Project Status": p.projectStatus || "",
-        "Contract Type": p.contractType || "",
-        "Work Order Value": p.workOrderValue || 0,
-        "Currency": p.currency || "INR",
-        "Exchange Rate": p.currentExchangeRate || 1,
-        "Invoice Raised": comm.totalInvoiceRaised || 0,
-        "Payment Received": p.paymentReceived || 0,
-        "Outstanding": comm.pendingDue || 0,
         "Start Date": p.projectStartDate || "",
         "End Date": p.projectEndDate || "",
         "Remarks": p.remarks || "",
-      };
-    });
+      }));
 
-    const worksheet = XLSX.utils.json_to_sheet(exportRows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Projects");
-    XLSX.writeFile(workbook, `projects_export_${statusKey.toLowerCase().replace(/\s+/g, "_")}.xlsx`);
+      const worksheet = XLSX.utils.json_to_sheet(exportRows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Projects");
+      XLSX.writeFile(workbook, `projects_export_${statusKey.toLowerCase().replace(/\s+/g, "_")}.xlsx`);
+    } catch {
+      alert("Unable to export projects from the server. Try again from the Projects module.");
+    }
   };
 
   // Determine if a status is currently active (path is /projects and param matches)
@@ -552,11 +572,14 @@ const Sidebar = () => {
           <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-slate-400">
             Quick Summary
           </h3>
+          <p className="mb-3 text-[10px] font-medium text-slate-500 leading-snug">
+            Project status counts from the Projects API (not Dashboard KPIs).
+          </p>
 
           <div className="space-y-2">
             {SUMMARY_ROWS.map(({ icon: Icon, color, label, statusKey }) => {
               const active = isStatusActive(statusKey);
-              const value = counts[statusKey] ?? 0;
+              const value = counts[statusKey];
               return (
                 <button
                   key={statusKey}
@@ -587,7 +610,7 @@ const Sidebar = () => {
 
                   {/* Count indicator */}
                   <span className="text-sm font-extrabold tracking-tight transition-transform duration-200 group-hover:scale-110">
-                    {value}
+                    {value === null ? "—" : value}
                   </span>
                 </button>
               );

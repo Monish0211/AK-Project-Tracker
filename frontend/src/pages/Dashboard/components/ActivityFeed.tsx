@@ -6,7 +6,8 @@ import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import type { CardTint } from "../../../components/ui/Card";
-import { getRecentActivity, type ActivityEvent } from "../../../services/dashboardService";
+import type { ActivityEvent } from "../../../services/dashboardSummaryService";
+import { useDashboardSummary } from "../DashboardSummaryContext";
 
 const CATEGORY_META: Record<
   ActivityEvent["category"],
@@ -44,7 +45,7 @@ const formatRelativeTime = (iso: string): string => {
 
 const ActivityFeed: React.FC = () => {
   const navigate = useNavigate();
-  const events = getRecentActivity(10);
+  const events = useDashboardSummary().activity.items;
 
   return (
     <Card padded={false} elevated className="h-[325px] flex flex-col justify-between transition-all duration-200">

@@ -3,11 +3,11 @@ import { HeartPulse, ArrowRight, Info } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { EmptyState } from "../../../components/ui/EmptyState";
-import { getProjectHealthSummary } from "../../../services/dashboardService";
+import { useDashboardSummary } from "../DashboardSummaryContext";
 
 const ProjectHealthSummary: React.FC = () => {
   const navigate = useNavigate();
-  const health = getProjectHealthSummary();
+  const health = useDashboardSummary().health;
 
   const rows = [
     { emoji: "🟢", label: "On Track", count: health.onTrack, barColor: "bg-emerald-500" },

@@ -1,3 +1,9 @@
+/**
+ * Local calculators used by unused/legacy Dashboard widgets and by
+ * Projects list pages (Financial Loss / Timeline Alerts). The live
+ * Dashboard page does not call these — it uses GET /dashboard/summary
+ * via dashboardSummaryService.ts.
+ */
 import { getProjects } from "./projectService";
 import { getGrossProfit, getTotalProjectCost } from "./expenseService";
 import { getProjectCommercialSummary } from "./invoiceProgressService";

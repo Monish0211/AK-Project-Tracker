@@ -1,4 +1,6 @@
+import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
+import { projectOwnershipWhereOr } from "../../../shared/utils/projectAccess.js";
 import type { ProjectResourceData } from "../resource.types.js";
 
 /**
@@ -7,6 +9,20 @@ import type { ProjectResourceData } from "../resource.types.js";
  * business logic, no calculations — manhourCost arrives already computed by
  * resource.service.ts.
  */
+
+export function getAllResourcesForAuthorizedProjects(callerUserId?: string) {
+  const projectWhere: Prisma.ProjectWhereInput = {
+    isDeleted: false,
+  };
+  const ownershipOr = projectOwnershipWhereOr(callerUserId);
+  if (ownershipOr) {
+    projectWhere.OR = ownershipOr;
+  }
+  return prisma.projectResource.findMany({
+    where: { project: projectWhere },
+    orderBy: { createdAt: "asc" },
+  });
+}
 
 export function createResource(projectId: string, data: ProjectResourceData) {
   return prisma.projectResource.create({ data: { ...data, projectId } });

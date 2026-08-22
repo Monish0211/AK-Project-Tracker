@@ -33,7 +33,7 @@ export function CustomerAnalytics({ analytics }: Props) {
 
         <KPIReportCard
           title="Total Client Revenue"
-          value={`₹ ${formatBusinessINR(a.totalInvoiceRaised)}`}
+          value={formatBusinessINR(a.totalInvoiceRaised)}
           subtitle="Total invoiced across clients"
           icon={<DollarSign size={18} />}
           tone="indigo"
@@ -41,7 +41,7 @@ export function CustomerAnalytics({ analytics }: Props) {
 
         <KPIReportCard
           title="Client Outstanding Exposure"
-          value={`₹ ${formatBusinessINR(a.totalOutstanding)}`}
+          value={formatBusinessINR(a.totalOutstanding)}
           subtitle="Uncollected client balances"
           icon={<AlertCircle size={18} />}
           tone="amber"

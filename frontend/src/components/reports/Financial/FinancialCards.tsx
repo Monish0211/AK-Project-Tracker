@@ -13,7 +13,7 @@ export function FinancialCards({ analytics }: Props) {
     <div className="grid gap-3.5 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
       <KPIReportCard
         title="Total Work Order"
-        value={`₹ ${formatBusinessINR(a.totalWOValue)}`}
+        value={formatBusinessINR(a.totalWOValue)}
         subtitle="Contracted project value"
         icon={<DollarSign size={16} />}
         tone="blue"
@@ -21,7 +21,7 @@ export function FinancialCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Invoice Raised"
-        value={`₹ ${formatBusinessINR(a.totalInvoiceRaised)}`}
+        value={formatBusinessINR(a.totalInvoiceRaised)}
         subtitle={`${((a.totalInvoiceRaised / (a.totalWOValue || 1)) * 100).toFixed(1)}% of total WO`}
         icon={<Receipt size={16} />}
         tone="indigo"
@@ -29,7 +29,7 @@ export function FinancialCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Payment Received"
-        value={`₹ ${formatBusinessINR(a.totalPaymentReceived)}`}
+        value={formatBusinessINR(a.totalPaymentReceived)}
         subtitle={`${a.collectionPercent.toFixed(1)}% collection rate`}
         trend={`${a.collectionPercent.toFixed(0)}% Collected`}
         trendType="positive"
@@ -38,9 +38,9 @@ export function FinancialCards({ analytics }: Props) {
       />
 
       <KPIReportCard
-        title="Outstanding Receivables"
-        value={`₹ ${formatBusinessINR(a.totalOutstanding)}`}
-        subtitle="Billed pending payment"
+        title="Contract Outstanding"
+        value={formatBusinessINR(a.totalOutstanding)}
+        subtitle="Contract balance uncollected"
         trend={a.totalOutstanding > 0 ? "Pending" : "Cleared"}
         trendType={a.totalOutstanding > 0 ? "negative" : "positive"}
         icon={<AlertCircle size={16} />}
@@ -49,7 +49,7 @@ export function FinancialCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Balance to Invoice"
-        value={`₹ ${formatBusinessINR(a.balanceToInvoice)}`}
+        value={formatBusinessINR(a.balanceToInvoice)}
         subtitle="Unbilled contract work"
         icon={<FileSpreadsheet size={16} />}
         tone="cyan"

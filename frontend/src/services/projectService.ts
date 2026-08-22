@@ -1,6 +1,7 @@
 import type { Project, ProjectResource } from "../types/Project";
 import type { ProjectNote } from "../types/ProjectNote";
 import type { InvoiceLine, InvoiceLineStatus } from "../types/InvoiceItem";
+import type { Employee } from "../types/EmployeeModel";
 import { createEmptyProject, inferPrCategory, inferDomesticForeign } from "../utils/createEmptyProject";
 import { calculateQuantity } from "../utils/quantityCalculations";
 import { syncInvoiceItemsWithQuantity } from "./invoiceSyncService";
@@ -524,8 +525,7 @@ export interface ProjectListResult {
   pageSize: number;
 }
 
-/** The real, paginated/searchable/sortable/filterable Project List — GET /projects. */
-export async function fetchProjectsFromApi(params: ProjectListParams = {}): Promise<ProjectListResult> {
+function buildProjectListQuery(params: ProjectListParams): URLSearchParams {
   const query = new URLSearchParams();
   if (params.search) query.set("search", params.search);
   query.set("page", String(params.page ?? 1));
@@ -537,16 +537,25 @@ export async function fetchProjectsFromApi(params: ProjectListParams = {}): Prom
   if (params.client) query.set("client", params.client);
   if (params.region) query.set("region", params.region);
   if (params.prCategory) query.set("prCategory", params.prCategory);
+  return query;
+}
 
-  const result = await apiClient.get<BackendPaginatedProjectList>(`/projects?${query.toString()}`);
-  // Wrapped in an arrow, not passed directly: Array.prototype.map() calls its
-  // callback as (value, index, array) — passed directly, the numeric index
-  // would flow into mergeBackendGeneralInfoIntoLocalProject's optional
-  // second parameter (explicitBase?: Project), which is never the intent.
+/**
+ * GET /projects without writing the localStorage mirror. Used by Dashboard
+ * search and sidebar Quick Summary so a single list page cannot replace the
+ * whole cache (and so those helpers never become KPI sources).
+ */
+export async function queryProjectsFromApi(params: ProjectListParams = {}): Promise<ProjectListResult> {
+  const result = await apiClient.get<BackendPaginatedProjectList>(`/projects?${buildProjectListQuery(params).toString()}`);
   const items = result.items.map((dto) => mergeBackendGeneralInfoIntoLocalProject(dto));
-  writeThroughProjectsMirror(items);
-
   return { items, total: result.total, page: result.page, pageSize: result.pageSize };
+}
+
+/** The real, paginated/searchable/sortable/filterable Project List — GET /projects. */
+export async function fetchProjectsFromApi(params: ProjectListParams = {}): Promise<ProjectListResult> {
+  const result = await queryProjectsFromApi(params);
+  writeThroughProjectsMirror(result.items);
+  return result;
 }
 
 /**
@@ -575,14 +584,85 @@ export async function fetchArchivedProjectsFromApi(params: ProjectListParams = {
   return { items, total: result.total, page: result.page, pageSize: result.pageSize };
 }
 
+/** Fetches all active projects across all pages for complete, un-truncated report analytics. */
 interface BackendResourceDto {
   id: string;
+  projectId: string;
   employeeNo: string;
   assignmentStartDate: string | null;
   assignmentEndDate: string | null;
   assignmentStatus: string;
+  hourlyRateSnapshot?: number;
   workingDays: number;
   totalHours: number;
+  manhourCost?: number;
+}
+
+function mapBackendResourceDto(r: BackendResourceDto, employees: Employee[]): ProjectResource {
+  const emp = employees.find((e) => e.employeeNo.trim().toLowerCase() === r.employeeNo.trim().toLowerCase());
+  const rate = typeof r.hourlyRateSnapshot === "number" ? r.hourlyRateSnapshot : (emp?.manhourExpenses || 0);
+  const cost = typeof r.manhourCost === "number" ? r.manhourCost : Math.round((r.totalHours || 0) * rate * 100) / 100;
+
+  return {
+    id: r.id,
+    employeeNo: r.employeeNo,
+    employeeName: emp?.employeeName || r.employeeNo,
+    reportingManager: emp?.reportingManager || "",
+    department: emp?.department || "",
+    designation: emp?.designation || "",
+    startDate: r.assignmentStartDate ? r.assignmentStartDate.slice(0, 10) : "",
+    endDate: r.assignmentEndDate ? r.assignmentEndDate.slice(0, 10) : "",
+    hourlyRateSnapshot: rate,
+    workingDays: r.workingDays,
+    totalHours: r.totalHours,
+    manhourCost: cost,
+    status: (r.assignmentStatus === "Released" ? "Released" : "Active") as "Active" | "Released",
+    location: emp?.location || "",
+  };
+}
+
+/** Fetches all active projects across all pages AND authoritative ProjectResources in 1 batch for complete report analytics. */
+export async function fetchAllProjectsFromApi(): Promise<Project[]> {
+  const all: Project[] = [];
+  let page = 1;
+  const pageSize = 200;
+  let total = 0;
+
+  do {
+    const res = await fetchProjectsFromApi({ page, pageSize });
+    all.push(...res.items);
+    total = res.total;
+    page += 1;
+  } while (all.length < total && page <= 50);
+
+  // Single surgical batch fetch for all authorized ProjectResource records (Zero N+1)
+  try {
+    const resourceRes = await apiClient.get<{ items: BackendResourceDto[] }>("/projects/resources");
+    const employees = getEmployees();
+    const resourcesByProjectId = new Map<string, ProjectResource[]>();
+
+    (resourceRes.items || []).forEach((r) => {
+      const mapped = mapBackendResourceDto(r, employees);
+      const list = resourcesByProjectId.get(r.projectId) || [];
+      list.push(mapped);
+      resourcesByProjectId.set(r.projectId, list);
+    });
+
+    all.forEach((project) => {
+      const backendResources = resourcesByProjectId.get(project.id) || [];
+      const existingResources = Array.isArray(project.resources) ? project.resources : [];
+      const byId = new Map(existingResources.map((res) => [res.id, res]));
+      backendResources.forEach((res) => byId.set(res.id, res));
+      project.resources = Array.from(byId.values());
+    });
+
+    writeThroughProjectsMirror(all);
+  } catch (err) {
+    console.error("Failed to load batch project resources for reports:", err);
+    throw err;
+  }
+
+  return all;
 }
 
 /**
@@ -600,24 +680,7 @@ async function refreshProjectResourcesFromBackend(project: Project): Promise<Pro
   try {
     const result = await apiClient.get<{ items: BackendResourceDto[] }>(`/projects/${project.id}/resources`);
     const employees = getEmployees();
-
-    const backendResources: ProjectResource[] = result.items.map((r) => {
-      const emp = employees.find((e) => e.employeeNo.trim().toLowerCase() === r.employeeNo.trim().toLowerCase());
-      return {
-        id: r.id,
-        employeeNo: r.employeeNo,
-        employeeName: emp?.employeeName || r.employeeNo,
-        reportingManager: emp?.reportingManager || "",
-        department: emp?.department || "",
-        designation: emp?.designation || "",
-        startDate: r.assignmentStartDate ? r.assignmentStartDate.slice(0, 10) : "",
-        endDate: r.assignmentEndDate ? r.assignmentEndDate.slice(0, 10) : "",
-        workingDays: r.workingDays,
-        totalHours: r.totalHours,
-        status: (r.assignmentStatus === "Released" ? "Released" : "Active") as "Active" | "Released",
-        location: emp?.location || "",
-      };
-    });
+    const backendResources: ProjectResource[] = result.items.map((r) => mapBackendResourceDto(r, employees));
 
     const existingResources = Array.isArray(project.resources) ? project.resources : [];
     const byId = new Map(existingResources.map((r) => [r.id, r]));

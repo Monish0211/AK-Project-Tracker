@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { CalendarDays, Clock3, FolderKanban } from "lucide-react";
-import { getDashboardMetrics } from "../../../services/dashboardService";
+import { useDashboardSummary } from "../DashboardSummaryContext";
 import { GlassReflectionOverlay } from "../../../components/ui/GlassReflectionOverlay";
 
 interface Props {
   lastUpdated: Date;
+  isStale?: boolean;
 }
 
 /* ─────────────────────────────────────────────────────────────────
    Main HeroBar
 ───────────────────────────────────────────────────────────────── */
-const HeroBar = ({ lastUpdated }: Props) => {
+const HeroBar = ({ lastUpdated, isStale = false }: Props) => {
   const [today, setToday] = useState(() => new Date());
-  const metrics = getDashboardMetrics();
+  const { kpis } = useDashboardSummary();
 
   const [clockTick, setClockTick] = useState(false);
   const [titleVisible, setTitleVisible] = useState(false);
@@ -390,9 +391,9 @@ const HeroBar = ({ lastUpdated }: Props) => {
               <div className="flex items-center gap-1.5 mt-[3px]">
                 <span className="pmo-live-pill">
                   <span className="pmo-live-dot" style={{ width: 5, height: 5, flexShrink: 0 }} />
-                  Live
+                  {isStale ? "Stale" : "Live"}
                 </span>
-                <span className="pmo-chip-value" style={{ marginTop: 0 }}>Online</span>
+                <span className="pmo-chip-value" style={{ marginTop: 0 }}>{isStale ? "Refresh failed" : "Online"}</span>
               </div>
             </div>
           </div>
@@ -439,7 +440,7 @@ const HeroBar = ({ lastUpdated }: Props) => {
               <p className="pmo-chip-label" style={{ color: "rgba(186,230,253,.72)" }}>
                 Total Projects
               </p>
-              <p className="pmo-chip-value">{metrics.totalProjects}</p>
+              <p className="pmo-chip-value">{kpis.totalProjects}</p>
               <p className="pmo-chip-sub">Engineering Portfolio</p>
             </div>
           </div>

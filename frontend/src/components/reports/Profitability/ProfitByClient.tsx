@@ -11,7 +11,7 @@ export function ProfitByClient({ customerList }: Props) {
     return customerList.slice(0, 6).map((c) => ({
       client: c.client.length > 12 ? c.client.slice(0, 12) + "..." : c.client,
       Revenue: c.raised,
-      "Estimated Profit": c.raised * 0.25, // 25% average profitability estimation
+      "Net Profit": c.raised - (c.expenses || 0),
     }));
   }, [customerList]);
 
@@ -29,11 +29,11 @@ export function ProfitByClient({ customerList }: Props) {
           <BarChart data={clientProfitData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
             <XAxis dataKey="client" tick={{ fontSize: 10 }} />
-            <YAxis tickFormatter={(v) => `₹${(v / 100000).toFixed(0)}L`} tick={{ fontSize: 10 }} />
-            <Tooltip formatter={(val: any) => [`₹ ${formatBusinessINR(Number(val))}`, ""]} />
+            <YAxis tickFormatter={(v) => formatBusinessINR(v)} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), ""]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="Revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="Estimated Profit" fill="#10b981" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="Net Profit" fill="#10b981" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
