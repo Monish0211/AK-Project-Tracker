@@ -14,8 +14,6 @@ export interface ReportFilterState {
   prNo: string;
   category: string;
   status: string;
-  invoiceStatus: string;
-  expenseCategory: string;
   projectManager: string;
   countryRegion: string;
 }
@@ -28,8 +26,6 @@ export const INITIAL_REPORT_FILTERS: ReportFilterState = {
   prNo: "ALL",
   category: "ALL",
   status: "ALL",
-  invoiceStatus: "ALL",
-  expenseCategory: "ALL",
   projectManager: "ALL",
   countryRegion: "ALL",
 };
@@ -172,7 +168,7 @@ export function useReportsData() {
     // Customer map for Customer Analytics
     const customerMap: Record<
       string,
-      { client: string; projectCount: number; woValue: number; raised: number; received: number; outstanding: number; outstandingReceivable: number; expenses: number }
+      { client: string; projectCount: number; activeProjectCount: number; woValue: number; raised: number; received: number; outstanding: number; outstandingReceivable: number; expenses: number }
     > = {};
 
     // Department map for Financial / Performance Analytics
@@ -204,6 +200,7 @@ export function useReportsData() {
 
       // Status counters
       const st = (p.projectStatus || "").toLowerCase();
+      const isActive = st.includes("active") || st.includes("in progress") || (!st.includes("completed") && !st.includes("closed") && !st.includes("hold") && !st.includes("cancelled") && !st.includes("deferred"));
       if (st.includes("active") || st.includes("in progress")) activeCount++;
       else if (st.includes("completed") || st.includes("closed")) completedCount++;
       else if (st.includes("hold") || st.includes("deferred")) holdCount++;
@@ -275,9 +272,12 @@ export function useReportsData() {
       // Customer map aggregation
       const clientName = p.client || "Other Clients";
       if (!customerMap[clientName]) {
-        customerMap[clientName] = { client: clientName, projectCount: 0, woValue: 0, raised: 0, received: 0, outstanding: 0, outstandingReceivable: 0, expenses: 0 };
+        customerMap[clientName] = { client: clientName, projectCount: 0, activeProjectCount: 0, woValue: 0, raised: 0, received: 0, outstanding: 0, outstandingReceivable: 0, expenses: 0 };
       }
       customerMap[clientName].projectCount += 1;
+      if (isActive) {
+        customerMap[clientName].activeProjectCount += 1;
+      }
       customerMap[clientName].woValue += woVal;
       customerMap[clientName].raised += projectInvoiceRaised;
       customerMap[clientName].received += pReceived;
@@ -300,8 +300,11 @@ export function useReportsData() {
     const totalOutstanding = Math.max(0, totalWOValue - totalPaymentReceived);
     const totalOutstandingReceivable = Math.max(0, totalInvoiceRaised - totalPaymentReceived);
     const balanceToInvoice = Math.max(0, totalWOValue - totalInvoiceRaised);
-    const grossProfit = totalInvoiceRaised - totalExpenses;
-    const profitMarginPercent = totalInvoiceRaised > 0 ? (grossProfit / totalInvoiceRaised) * 100 : 0;
+    const totalActualProjectCost = totalExpenses;
+    const totalProfit = totalWOValue - totalActualProjectCost;
+    const grossProfit = totalProfit;
+    const totalProfitPercentage = totalWOValue === 0 ? 0 : (totalProfit / totalWOValue) * 100;
+    const profitMarginPercent = totalProfitPercentage;
     const collectionPercent = totalInvoiceRaised > 0 ? (totalPaymentReceived / totalInvoiceRaised) * 100 : 0;
     const remainingBudget = totalBudget - totalExpenses;
     const budgetVariance = totalBudget - totalExpenses;
@@ -314,6 +317,9 @@ export function useReportsData() {
       totalOutstandingReceivable,
       balanceToInvoice,
       totalExpenses,
+      totalActualProjectCost,
+      totalProfit,
+      totalProfitPercentage,
       totalBudget,
       remainingBudget,
       budgetVariance,

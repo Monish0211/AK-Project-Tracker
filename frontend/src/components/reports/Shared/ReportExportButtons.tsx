@@ -1,4 +1,4 @@
-import { Download, FileSpreadsheet, Printer } from "lucide-react";
+import { Download, FileSpreadsheet } from "lucide-react";
 import * as XLSX from "xlsx";
 
 interface Props {
@@ -29,10 +29,6 @@ export function ReportExportButtons({ data, filename = "PMO_Report_Export" }: Pr
     URL.revokeObjectURL(url);
   };
 
-  const exportToPDF = () => {
-    window.print();
-  };
-
   return (
     <div className="flex items-center gap-1.5 no-print">
       <button
@@ -55,16 +51,6 @@ export function ReportExportButtons({ data, filename = "PMO_Report_Export" }: Pr
       >
         <Download size={14} />
         <span>Export CSV</span>
-      </button>
-
-      <button
-        type="button"
-        onClick={exportToPDF}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--nu-accent)] hover:opacity-90 text-white text-xs font-bold shadow-xs transition cursor-pointer"
-        title="Print or Save Report as PDF"
-      >
-        <Printer size={14} />
-        <span>Export PDF</span>
       </button>
     </div>
   );

@@ -24,7 +24,7 @@ const KPISection = () => {
       <StatTile label="Invoice Raised" value={formatBusinessINR(kpis.totalInvoiceRaised)} rawValue={kpis.totalInvoiceRaised} icon={<FileText size={16} />} tint="info" footnote="From Dashboard summary" />
       <StatTile label="Outstanding" value={formatBusinessINR(kpis.totalOutstanding)} rawValue={kpis.totalOutstanding} icon={<Wallet size={16} />} tint="danger" footnote="From Dashboard summary" />
       <StatTile label="Payment Received" value={formatBusinessINR(kpis.totalPaymentReceived)} rawValue={kpis.totalPaymentReceived} icon={<Landmark size={16} />} tint="accent" footnote="From Dashboard summary" />
-      <StatTile label="Expenses" value={formatBusinessINR(kpis.totalExpenses)} rawValue={kpis.totalExpenses} icon={<Receipt size={16} />} tint="warning" footnote="From Dashboard summary" />
+      <StatTile label="Actual Project Cost" value={formatBusinessINR(kpis.totalActualProjectCost)} rawValue={kpis.totalActualProjectCost} icon={<Receipt size={16} />} tint="warning" footnote="Manhour + Other Expenses" />
       <StatTile label="Profit %" value={`${kpis.totalProfitPercentage.toFixed(2)} %`} icon={<Percent size={16} />} tint="indigo" footnote="From Dashboard summary" />
     </div>
   );

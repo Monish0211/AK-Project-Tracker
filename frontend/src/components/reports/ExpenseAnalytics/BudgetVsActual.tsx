@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { getTotalNonManhourCost } from "../../../services/expenseService";
 
 interface Props {
   projects: any[];
@@ -8,18 +9,21 @@ interface Props {
 
 export function BudgetVsActual({ projects }: Props) {
   const chartData = useMemo(() => {
-    return projects.slice(0, 6).map((p) => {
-      const nonManhour = (p.nonManhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
-      const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
-      const actual = nonManhour + manhour;
-      const budget = (p.manhourBudgetAmount || 0) + (p.nonManhourBudgetAmount || 0);
+    return projects
+      .map((p) => {
+        const nonManhour = getTotalNonManhourCost(p.nonManhourExpenses || []);
+        const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
+        const actual = nonManhour + manhour;
+        const budget = (p.manhourBudgetAmount || 0) + (p.nonManhourBudgetAmount || 0);
 
-      return {
-        name: p.prNo || p.client?.slice(0, 10) || "Project",
-        Budget: budget,
-        "Actual Expense": actual,
-      };
-    });
+        return {
+          name: p.prNo || p.client?.slice(0, 10) || "Project",
+          Budget: budget,
+          "Actual Expense": actual,
+        };
+      })
+      .sort((a, b) => b["Actual Expense"] - a["Actual Expense"])
+      .slice(0, 6);
   }, [projects]);
 
   return (

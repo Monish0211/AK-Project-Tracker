@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Search } from "lucide-react";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { getTotalNonManhourCost } from "../../../services/expenseService";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
 
@@ -17,7 +18,7 @@ export function ExpenseLedger({ projects }: Props) {
     projects.forEach((p) => {
       // Non-manhour expenses
       (p.nonManhourExpenses || []).forEach((e: any, idx: number) => {
-        const cost = e.totalCost || e.amount || (e.quantity || 1) * (e.unitCost || 0);
+        const cost = getTotalNonManhourCost([e]);
         list.push({
           id: `nm-${p.id}-${idx}`,
           prNo: p.prNo || "-",

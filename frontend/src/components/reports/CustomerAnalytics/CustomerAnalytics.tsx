@@ -25,7 +25,7 @@ export function CustomerAnalytics({ analytics }: Props) {
 
         <KPIReportCard
           title="Active Accounts"
-          value={a.customerList.filter((c: any) => c.projectCount > 0).length}
+          value={a.customerList.filter((c: any) => (c.activeProjectCount || 0) > 0).length}
           subtitle="Clients with active contracts"
           icon={<UserCheck size={18} />}
           tone="emerald"
@@ -40,9 +40,9 @@ export function CustomerAnalytics({ analytics }: Props) {
         />
 
         <KPIReportCard
-          title="Client Outstanding Exposure"
+          title="Client Contract Outstanding"
           value={formatBusinessINR(a.totalOutstanding)}
-          subtitle="Uncollected client balances"
+          subtitle="Uncollected client contract balances"
           icon={<AlertCircle size={18} />}
           tone="amber"
         />

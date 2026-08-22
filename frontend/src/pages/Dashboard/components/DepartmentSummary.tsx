@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   Building2,
   ArrowRight,
@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardHeader } from "../../../components/ui/Card";
-import { Badge } from "../../../components/ui/Badge";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { useDashboardSummary } from "../DashboardSummaryContext";
 
@@ -34,93 +33,48 @@ const getDeptIcon = (deptName: string) => {
   return Building2;
 };
 
-// Custom SVG Donut Chart
-const DonutChart = ({ healthy, atRisk, delayed }: { healthy: number; atRisk: number; delayed: number }) => {
-  const total = healthy + atRisk + delayed;
-  const ring = total || 1;
-  const c = 238.76; // 2 * PI * 38
-
-  const healthyDash = (healthy / ring) * c;
-  const atRiskDash = (atRisk / ring) * c;
-  const delayedDash = (delayed / ring) * c;
-
-  const healthyOffset = 0;
-  const atRiskOffset = -healthyDash;
-  const delayedOffset = -(healthyDash + atRiskDash);
-
-  return (
-    <div className="relative flex items-center justify-center w-28 h-28 shrink-0">
-      <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-        <circle cx="50" cy="50" r="38" stroke="currentColor" strokeWidth="12" className="text-slate-100 dark:text-slate-800" fill="transparent" />
-        {healthy > 0 && (
-          <circle
-            cx="50"
-            cy="50"
-            r="38"
-            stroke="#10b981"
-            strokeWidth="12"
-            fill="transparent"
-            strokeDasharray={`${healthyDash} ${c - healthyDash}`}
-            strokeDashoffset={healthyOffset}
-            className="transition-all duration-500"
-          />
-        )}
-        {atRisk > 0 && (
-          <circle
-            cx="50"
-            cy="50"
-            r="38"
-            stroke="#f59e0b"
-            strokeWidth="12"
-            fill="transparent"
-            strokeDasharray={`${atRiskDash} ${c - atRiskDash}`}
-            strokeDashoffset={atRiskOffset}
-            className="transition-all duration-500"
-          />
-        )}
-        {delayed > 0 && (
-          <circle
-            cx="50"
-            cy="50"
-            r="38"
-            stroke="#ef4444"
-            strokeWidth="12"
-            fill="transparent"
-            strokeDasharray={`${delayedDash} ${c - delayedDash}`}
-            strokeDashoffset={delayedOffset}
-            className="transition-all duration-500"
-          />
-        )}
-      </svg>
-      <div className="absolute flex flex-col items-center justify-center text-center">
-        <span className="text-xl font-black text-slate-900 dark:text-white leading-none">{total}</span>
-        <span className="text-[9.5px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide mt-0.5">Depts</span>
-      </div>
-    </div>
-  );
-};
-
 const DepartmentSummary: React.FC = () => {
   const navigate = useNavigate();
   const { departments } = useDashboardSummary();
-  const deptList = departments.list.filter(
-    (dept) =>
-      dept.activeProjects > 0 ||
-      dept.completedProjects > 0 ||
-      dept.onHoldProjects > 0 ||
-      dept.delayedProjects > 0 ||
-      dept.teamMembers > 0 ||
-      dept.workOrderValue > 0
+  const deptList = useMemo(
+    () =>
+      departments.list.filter(
+        (dept) =>
+          dept.activeProjects > 0 ||
+          dept.completedProjects > 0 ||
+          dept.onHoldProjects > 0 ||
+          dept.delayedProjects > 0 ||
+          dept.teamMembers > 0 ||
+          dept.workOrderValue > 0
+      ),
+    [departments.list]
   );
-  const healthCounts = {
-    healthy: deptList.filter((d) => d.health === "Healthy").length,
-    atRisk: deptList.filter((d) => d.health === "At Risk").length,
-    delayed: deptList.filter((d) => d.health === "Delayed").length,
-  };
+
   const totals = {
     ...departments.totals,
     departments: deptList.length,
   };
+
+  // Quick Insights calculated dynamically from active department data
+  const highestWorkloadDept = useMemo(() => {
+    if (deptList.length === 0) return null;
+    return [...deptList].sort((a, b) => b.workloadPercent - a.workloadPercent)[0];
+  }, [deptList]);
+
+  const mostDelayedDept = useMemo(() => {
+    if (deptList.length === 0) return null;
+    return [...deptList].sort((a, b) => b.delayedProjects - a.delayedProjects)[0];
+  }, [deptList]);
+
+  const lowestCompletionDept = useMemo(() => {
+    if (deptList.length === 0) return null;
+    return [...deptList].sort((a, b) => a.completion - b.completion)[0];
+  }, [deptList]);
+
+  const highestWODept = useMemo(() => {
+    if (deptList.length === 0) return null;
+    return [...deptList].sort((a, b) => b.workOrderValue - a.workOrderValue)[0];
+  }, [deptList]);
 
   return (
     <Card padded={false} elevated className="transition-all duration-200 overflow-hidden">
@@ -168,88 +122,66 @@ const DepartmentSummary: React.FC = () => {
                   No departments with authorized projects. Empty baseline names are not shown.
                 </p>
               ) : (
-              deptList.map((dept) => {
-                const DeptIcon = getDeptIcon(dept.department);
+                deptList.map((dept) => {
+                  const DeptIcon = getDeptIcon(dept.department);
 
-                return (
-                  <div
-                    key={dept.department}
-                    className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800/90 rounded-xl p-2.5 px-3 shadow-xs hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-200 group"
-                  >
-                    {/* Card Header: Icon, Name, Health Badge */}
-                    <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-slate-100 dark:border-slate-800/60">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-blue-50 dark:bg-blue-950/70 border border-blue-200/60 dark:border-blue-800/60 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:scale-105 transition-transform shrink-0">
-                          <DeptIcon size={14} />
-                        </div>
-                        <div>
+                  return (
+                    <div
+                      key={dept.department}
+                      className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800/90 rounded-xl p-2.5 px-3 shadow-xs hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-200 group"
+                    >
+                      {/* Card Header: Icon & Name (No composite health/status badge) */}
+                      <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-slate-100 dark:border-slate-800/60">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-lg bg-blue-50 dark:bg-blue-950/70 border border-blue-200/60 dark:border-blue-800/60 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:scale-105 transition-transform shrink-0">
+                            <DeptIcon size={14} />
+                          </div>
                           <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                             {dept.department}
                           </h4>
                         </div>
                       </div>
 
-                      {/* Health Badge */}
-                      {dept.health === "Healthy" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          Healthy
-                        </span>
-                      )}
-                      {dept.health === "At Risk" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                          At Risk
-                        </span>
-                      )}
-                      {dept.health === "Delayed" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                          Delayed
-                        </span>
-                      )}
-                    </div>
+                      {/* Operational Metrics Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 text-[11px]">
+                        <div className="p-1 px-2 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
+                          <span className="text-slate-500 dark:text-slate-400 text-[10px]">Projects:</span>
+                          <span className="font-extrabold text-slate-800 dark:text-slate-200">{dept.activeProjects}</span>
+                        </div>
 
-                    {/* Operational Metrics Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 text-[11px]">
-                      <div className="p-1 px-2 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
-                        <span className="text-slate-500 dark:text-slate-400 text-[10px]">Projects:</span>
-                        <span className="font-extrabold text-slate-800 dark:text-slate-200">{dept.activeProjects}</span>
-                      </div>
+                        <div className="p-1 px-2 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
+                          <span className="text-slate-500 dark:text-slate-400 text-[10px]">Team:</span>
+                          <span className="font-extrabold text-slate-800 dark:text-slate-200">{dept.teamMembers}</span>
+                        </div>
 
-                      <div className="p-1 px-2 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
-                        <span className="text-slate-500 dark:text-slate-400 text-[10px]">Team:</span>
-                        <span className="font-extrabold text-slate-800 dark:text-slate-200">{dept.teamMembers}</span>
-                      </div>
+                        <div className="p-1 px-2 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
+                          <span className="text-slate-500 dark:text-slate-400 text-[10px]">Pending Inv:</span>
+                          <span className="font-extrabold text-slate-800 dark:text-slate-200">{dept.pendingInvoices}</span>
+                        </div>
 
-                      <div className="p-1 px-2 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
-                        <span className="text-slate-500 dark:text-slate-400 text-[10px]">Pending Inv:</span>
-                        <span className="font-extrabold text-slate-800 dark:text-slate-200">{dept.pendingInvoices}</span>
-                      </div>
+                        <div className="p-1 px-2 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
+                          <span className="text-slate-500 dark:text-slate-400 text-[10px]">Timesheet Due:</span>
+                          <span className="font-extrabold text-slate-800 dark:text-slate-200">{dept.timesheetPending}</span>
+                        </div>
 
-                      <div className="p-1 px-2 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
-                        <span className="text-slate-500 dark:text-slate-400 text-[10px]">Timesheet Due:</span>
-                        <span className="font-extrabold text-slate-800 dark:text-slate-200">{dept.timesheetPending}</span>
-                      </div>
+                        <div className="p-1 px-2 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
+                          <span className="text-slate-500 dark:text-slate-400 text-[10px]">Upcoming Del:</span>
+                          <span className="font-extrabold text-slate-800 dark:text-slate-200">{dept.upcomingDeliveries}</span>
+                        </div>
 
-                      <div className="p-1 px-2 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
-                        <span className="text-slate-500 dark:text-slate-400 text-[10px]">Upcoming Del:</span>
-                        <span className="font-extrabold text-slate-800 dark:text-slate-200">{dept.upcomingDeliveries}</span>
-                      </div>
-
-                      <div className="p-1 px-2 rounded-md bg-blue-50/60 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/40 flex items-center justify-between">
-                        <span className="text-blue-600 dark:text-blue-400 text-[10px] font-bold">Completion:</span>
-                        <span className="font-black text-blue-700 dark:text-blue-300">{dept.completion}%</span>
+                        <div className="p-1 px-2 rounded-md bg-blue-50/60 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/40 flex items-center justify-between">
+                          <span className="text-blue-600 dark:text-blue-400 text-[10px] font-bold">Completion:</span>
+                          <span className="font-black text-blue-700 dark:text-blue-300">{dept.completion}%</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })
+                  );
+                })
               )}
             </div>
           </div>
 
-          {/* Section 2: Department Performance Summary Table (FLEX-1 STRETCH TO ALIGN EXACTLY WITH RIGHT COLUMN) */}
+          {/* Section 2: Department Performance Summary Table */}
           <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800/90 rounded-xl overflow-hidden shadow-xs">
             <div className="p-2.5 px-3.5 bg-slate-50/80 dark:bg-slate-800/50 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
@@ -275,7 +207,7 @@ const DepartmentSummary: React.FC = () => {
                     <th className="p-2.5 text-center">Team</th>
                     <th className="p-2.5 text-center">Completion %</th>
                     <th className="p-2.5 text-right">WO Value</th>
-                    <th className="p-2.5 pr-3 text-center">Status</th>
+                    <th className="p-2.5 pr-3 text-center">Pending Inv</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium text-slate-700 dark:text-slate-300 text-[11.5px] flex-1">
@@ -298,22 +230,8 @@ const DepartmentSummary: React.FC = () => {
                       <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                         {formatBusinessINR(dept.workOrderValue)}
                       </td>
-                      <td className="p-2.5 pr-3 text-center">
-                        {dept.health === "Healthy" && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                            Healthy
-                          </span>
-                        )}
-                        {dept.health === "At Risk" && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                            At Risk
-                          </span>
-                        )}
-                        {dept.health === "Delayed" && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                            Delayed
-                          </span>
-                        )}
+                      <td className="p-2.5 pr-3 text-center font-bold text-slate-800 dark:text-slate-200">
+                        {dept.pendingInvoices}
                       </td>
                     </tr>
                   ))}
@@ -333,46 +251,75 @@ const DepartmentSummary: React.FC = () => {
             </h3>
           </div>
 
-          {/* CARD 1: Department Health Distribution (Donut Chart) */}
+          {/* CARD 1: Department Quick Insights (4 Dynamic Operational Highlights) */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800/90 rounded-xl p-3.5 shadow-xs space-y-2.5 shrink-0">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2">
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                Department Health Distribution
+                Department Quick Insights
               </h4>
-              <Badge tone="accent">Live Health</Badge>
+              <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 font-mono">
+                Key Operations
+              </span>
             </div>
 
-            <div className="flex items-center justify-around py-0.5">
-              <DonutChart
-                healthy={healthCounts.healthy}
-                atRisk={healthCounts.atRisk}
-                delayed={healthCounts.delayed}
-              />
-
-              {/* Legend Summary */}
-              <div className="space-y-1.5 text-xs">
-                <div className="flex items-center justify-between gap-4 p-1.5 px-2.5 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 min-w-[120px]">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                    <span className="font-semibold text-emerald-800 dark:text-emerald-300">Healthy</span>
-                  </div>
-                  <span className="font-black text-emerald-900 dark:text-emerald-200">{healthCounts.healthy}</span>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {/* Insight 1: Highest Workload */}
+              <div className="p-2 rounded-lg bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 flex flex-col justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300">
+                  Highest Workload
+                </span>
+                <div className="mt-1">
+                  <p className="font-bold text-slate-900 dark:text-slate-100 truncate text-[11.5px]" title={highestWorkloadDept?.department || "—"}>
+                    {highestWorkloadDept?.department || "—"}
+                  </p>
+                  <p className="text-sm font-black text-blue-600 dark:text-blue-400 mt-0.5">
+                    {highestWorkloadDept ? `${highestWorkloadDept.workloadPercent}%` : "—"}
+                  </p>
                 </div>
+              </div>
 
-                <div className="flex items-center justify-between gap-4 p-1.5 px-2.5 rounded-lg bg-amber-50/60 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40 min-w-[120px]">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                    <span className="font-semibold text-amber-800 dark:text-amber-300">At Risk</span>
-                  </div>
-                  <span className="font-black text-amber-900 dark:text-amber-200">{healthCounts.atRisk}</span>
+              {/* Insight 2: Most Delayed Projects */}
+              <div className="p-2 rounded-lg bg-rose-50/60 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/40 flex flex-col justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">
+                  Most Delayed Projects
+                </span>
+                <div className="mt-1">
+                  <p className="font-bold text-slate-900 dark:text-slate-100 truncate text-[11.5px]" title={mostDelayedDept?.department || "—"}>
+                    {mostDelayedDept?.department || "—"}
+                  </p>
+                  <p className="text-sm font-black text-rose-600 dark:text-rose-400 mt-0.5">
+                    {mostDelayedDept ? `${mostDelayedDept.delayedProjects} project${mostDelayedDept.delayedProjects === 1 ? "" : "s"}` : "—"}
+                  </p>
                 </div>
+              </div>
 
-                <div className="flex items-center justify-between gap-4 p-1.5 px-2.5 rounded-lg bg-rose-50/60 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/40 min-w-[120px]">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-                    <span className="font-semibold text-rose-800 dark:text-rose-300">Delayed</span>
-                  </div>
-                  <span className="font-black text-rose-900 dark:text-rose-200">{healthCounts.delayed}</span>
+              {/* Insight 3: Lowest Completion */}
+              <div className="p-2 rounded-lg bg-amber-50/60 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40 flex flex-col justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                  Lowest Completion
+                </span>
+                <div className="mt-1">
+                  <p className="font-bold text-slate-900 dark:text-slate-100 truncate text-[11.5px]" title={lowestCompletionDept?.department || "—"}>
+                    {lowestCompletionDept?.department || "—"}
+                  </p>
+                  <p className="text-sm font-black text-amber-600 dark:text-amber-400 mt-0.5">
+                    {lowestCompletionDept ? `${lowestCompletionDept.completion}%` : "—"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Insight 4: Highest WO Value */}
+              <div className="p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 flex flex-col justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                  Highest WO Value
+                </span>
+                <div className="mt-1">
+                  <p className="font-bold text-slate-900 dark:text-slate-100 truncate text-[11.5px]" title={highestWODept?.department || "—"}>
+                    {highestWODept?.department || "—"}
+                  </p>
+                  <p className="text-sm font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
+                    {highestWODept ? formatBusinessINR(highestWODept.workOrderValue) : "—"}
+                  </p>
                 </div>
               </div>
             </div>

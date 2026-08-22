@@ -24,7 +24,7 @@ export function ClientFinancialTable({ customerList }: Props) {
             Client Commercial & Financial Summary
           </h3>
           <p className="text-[11px] text-[var(--nu-text-muted)] mt-0.5">
-            Rollup of Work Order value, Raised Invoices, Payments Received, and Outstanding Receivables per client.
+            Rollup of Work Order value, Raised Invoices, Payments Received, and Contract Outstanding per client.
           </p>
         </div>
 
@@ -56,7 +56,7 @@ export function ClientFinancialTable({ customerList }: Props) {
                 <th className="p-2.5 text-right">WO Value</th>
                 <th className="p-2.5 text-right">Invoice Raised</th>
                 <th className="p-2.5 text-right">Payment Received</th>
-                <th className="p-2.5 text-right">Outstanding</th>
+                <th className="p-2.5 text-right">Contract Outstanding</th>
                 <th className="p-2.5 text-right">Collection %</th>
               </tr>
             </thead>

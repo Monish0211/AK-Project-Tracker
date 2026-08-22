@@ -42,10 +42,10 @@ export function ExecutiveSummaryCards({ analytics, onDrillDown }: Props) {
       />
 
       <KPIReportCard
-        title="Outstanding"
+        title="Contract Outstanding"
         value={formatBusinessINR(a.totalOutstanding)}
-        subtitle="Uncollected receivables"
-        trend={a.totalOutstanding > 0 ? "Receivable" : "Clear"}
+        subtitle="Uncollected contract balance"
+        trend={a.totalOutstanding > 0 ? "Contract Balance" : "Clear"}
         trendType={a.totalOutstanding > 0 ? "negative" : "positive"}
         icon={<AlertCircle size={16} />}
         tone="amber"
