@@ -145,6 +145,21 @@ export async function groupExpenseTotals(projectIds: string[]): Promise<Map<stri
   return map;
 }
 
+export async function groupManhourCostTotals(projectIds: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (projectIds.length === 0) return map;
+  const rows = await prisma.projectResource.groupBy({
+    by: ["projectId"],
+    where: { projectId: { in: projectIds } },
+    _sum: { manhourCost: true },
+  });
+  for (const row of rows) {
+    map.set(row.projectId, row._sum.manhourCost ?? 0);
+  }
+  return map;
+}
+
+
 export async function groupTimesheetHours(projectIds: string[]): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   if (projectIds.length === 0) return map;

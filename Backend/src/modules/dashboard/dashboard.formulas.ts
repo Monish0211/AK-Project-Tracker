@@ -20,8 +20,13 @@ export const DEFAULT_DEPARTMENTS = [
   "Instrumentation",
 ] as const;
 
+/**
+ * Canonical Business Definition: Payment Received / Cash Realized
+ * counts ONLY invoices with status "Paid". Raised and PartiallyPaid are NOT
+ * treated as realized cash. Cancelled and Draft are excluded.
+ */
 export function isReceivedInvoiceLineStatus(status: string): boolean {
-  return RECEIVED_STATUSES.has(status);
+  return status === "Paid";
 }
 
 /** Invoice Raised: every non-Cancelled line, including Draft. */
@@ -31,7 +36,7 @@ export function invoiceRaisedFromLines(lines: { status: string; invoiceAmountINR
     .reduce((sum, line) => sum + line.invoiceAmountINR, 0);
 }
 
-/** Payment Received: Raised / PartiallyPaid / Paid only. */
+/** Payment Received / Cash Realized: Paid lines only. */
 export function paymentReceivedFromLines(lines: { status: string; invoiceAmountINR: number }[]): number {
   return lines
     .filter((line) => isReceivedInvoiceLineStatus(line.status))
@@ -63,6 +68,12 @@ export function grossProfit(revenue: number, totalCost: number): number {
 export function profitPercentage(totalWOValue: number, totalProfit: number): number {
   return totalWOValue === 0 ? 0 : (totalProfit / totalWOValue) * 100;
 }
+
+/** Actual Project Cost = Manhour Cost + Other Project Expenses */
+export function actualProjectCost(manhourCost: number, otherExpenses: number): number {
+  return (manhourCost || 0) + (otherExpenses || 0);
+}
+
 
 export function toDateKey(value: Date | string): string {
   if (typeof value === "string") {
@@ -228,7 +239,7 @@ export function classifyHealth(input: {
   totalPendingQty: number;
   pendingInvoicePercentage: number;
   today?: Date;
-}): "skip" | "onTrack" | "atRisk" | "delayed" | "notStarted" {
+}): "skip" | "onTrack" | "atRisk" | "delayed" | "notStarted" | "scheduleNotSet" {
   if (input.projectStatus === "Completed" || input.projectStatus === "Cancelled") {
     return "skip";
   }
@@ -238,15 +249,17 @@ export function classifyHealth(input: {
   const end = input.endDateKey ? new Date(input.endDateKey) : null;
   const hasPendingWork = input.totalPendingQty > 0 || input.pendingInvoicePercentage > 0;
 
+  if (!end || Number.isNaN(end.getTime())) {
+    return "scheduleNotSet";
+  }
+
   if (start && !Number.isNaN(start.getTime()) && start.getTime() > today.getTime()) {
     return "notStarted";
   }
 
-  if (end && !Number.isNaN(end.getTime())) {
-    const daysToEnd = (end.getTime() - today.getTime()) / DAY_IN_MILLISECONDS;
-    if (daysToEnd < 0) return "delayed";
-    if (daysToEnd <= AT_RISK_WINDOW_DAYS && hasPendingWork) return "atRisk";
-  }
+  const daysToEnd = (end.getTime() - today.getTime()) / DAY_IN_MILLISECONDS;
+  if (daysToEnd < 0) return "delayed";
+  if (daysToEnd <= AT_RISK_WINDOW_DAYS && hasPendingWork) return "atRisk";
 
   return "onTrack";
 }
@@ -261,24 +274,25 @@ export function teamLeadStatus(activeProjectsCount: number): "High" | "Medium" |
   return "Normal";
 }
 
-export function departmentHealth(input: {
-  completion: number;
-  pendingInvoices: number;
-  delayedProjects: number;
-  onHoldProjects: number;
-}): "Healthy" | "At Risk" | "Delayed" {
-  if (input.completion < 35 || input.pendingInvoices > 4 || input.delayedProjects > 1) {
-    return "Delayed";
-  }
-  if (input.completion < 65 || input.pendingInvoices > 2 || input.onHoldProjects > 0) {
-    return "At Risk";
-  }
-  return "Healthy";
+/**
+ * Department completion average excludes Cancelled projects.
+ * Safe against empty/all-cancelled project lists (returns 0).
+ */
+export function calculateDepartmentCompletion(
+  projects: { projectStatus: string; completion: number }[]
+): number {
+  const eligible = projects.filter((p) => p.projectStatus !== "Cancelled");
+  if (eligible.length === 0) return 0;
+  const compSum = eligible.reduce((sum, p) => sum + (p.completion || 0), 0);
+  return Math.round(compSum / eligible.length);
 }
 
 export function departmentWorkloadPercent(activeProjects: number, teamMembers: number, pendingInvoices: number): number {
+  if (activeProjects === 0 && teamMembers === 0 && pendingInvoices === 0) {
+    return 0;
+  }
   const rawWorkload = activeProjects * 14 + teamMembers * 4 + pendingInvoices * 6;
-  return Math.min(98, Math.max(35, Math.round(rawWorkload || 50)));
+  return Math.min(98, Math.max(35, Math.round(rawWorkload || 35)));
 }
 
 export function isUsableManagerName(name: string): boolean {

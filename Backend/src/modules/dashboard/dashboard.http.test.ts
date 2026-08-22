@@ -159,6 +159,18 @@ test("GET /dashboard/summary auth, ownership, and KPI formulas", async () => {
       },
     });
 
+    await prisma.projectResource.create({
+      data: {
+        projectId: secretProject.id,
+        employeeNo: "0547",
+        assignmentStatus: "Assigned",
+        hourlyRateSnapshot: 500,
+        workingDays: 1,
+        totalHours: 8,
+        manhourCost: 4000,
+      },
+    });
+
     const qtyRow = await prisma.quantityItem.findFirstOrThrow({ where: { projectId: secretProject.id } });
     await prisma.invoiceLine.create({
       data: {
@@ -186,6 +198,7 @@ test("GET /dashboard/summary auth, ownership, and KPI formulas", async () => {
           totalPaymentReceived: number;
           totalOutstanding: number;
           totalExpenses: number;
+          totalActualProjectCost: number;
           totalProfit: number;
         };
       };
@@ -208,6 +221,7 @@ test("GET /dashboard/summary auth, ownership, and KPI formulas", async () => {
           totalPaymentReceived: number;
           totalOutstanding: number;
           totalExpenses: number;
+          totalActualProjectCost: number;
           totalProfit: number;
         };
         recentProjects: { prNo: string }[];
@@ -217,9 +231,9 @@ test("GET /dashboard/summary auth, ownership, and KPI formulas", async () => {
     assert.equal(ownerJson.data.kpis.totalWOValue, outsiderJson.data.kpis.totalWOValue + 50000);
     assert.equal(ownerJson.data.kpis.totalProjects, outsiderJson.data.kpis.totalProjects + 1);
     assert.equal(ownerJson.data.kpis.totalInvoiceRaised, outsiderJson.data.kpis.totalInvoiceRaised + 2000);
-    assert.equal(ownerJson.data.kpis.totalPaymentReceived, outsiderJson.data.kpis.totalPaymentReceived + 2000);
     assert.equal(ownerJson.data.kpis.totalExpenses, outsiderJson.data.kpis.totalExpenses + 1000);
-    assert.equal(ownerJson.data.kpis.totalProfit, outsiderJson.data.kpis.totalProfit + 49000);
+    assert.equal(ownerJson.data.kpis.totalActualProjectCost, outsiderJson.data.kpis.totalActualProjectCost + 5000);
+    assert.equal(ownerJson.data.kpis.totalProfit, outsiderJson.data.kpis.totalProfit + 45000);
     assert.equal(
       ownerJson.data.kpis.totalOutstanding,
       Math.max(0, ownerJson.data.kpis.totalWOValue - ownerJson.data.kpis.totalPaymentReceived)
@@ -237,16 +251,18 @@ test("GET /dashboard/summary auth, ownership, and KPI formulas", async () => {
     });
     assert.equal(adminRes.status, 200);
     const adminJson = (await adminRes.json()) as {
-      data: { kpis: { totalProjects: number }; recentProjects: { prNo: string }[] };
+      data: { kpis: { totalProjects: number; totalActualProjectCost: number }; recentProjects: { prNo: string }[] };
     };
     assert.equal(adminJson.data.recentProjects.some((p) => p.prNo === `${TAG}-SECRET`) || adminJson.data.kpis.totalProjects >= 1, true);
     assert.ok(adminJson.data.kpis.totalProjects >= ownerJson.data.kpis.totalProjects);
+    assert.ok(adminJson.data.kpis.totalActualProjectCost >= ownerJson.data.kpis.totalActualProjectCost);
   } finally {
     if (createdProjectIds.length > 0) {
       await prisma.invoiceLine.deleteMany({
         where: { quantityItem: { projectId: { in: createdProjectIds } } },
       });
       await prisma.projectExpense.deleteMany({ where: { projectId: { in: createdProjectIds } } });
+      await prisma.projectResource.deleteMany({ where: { projectId: { in: createdProjectIds } } });
       await prisma.quantityItem.deleteMany({ where: { projectId: { in: createdProjectIds } } });
       await prisma.project.deleteMany({ where: { id: { in: createdProjectIds } } });
     }
