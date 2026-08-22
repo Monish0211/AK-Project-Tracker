@@ -66,16 +66,15 @@ export function getTotalInvoiceRaised(items: InvoiceItem[]): number {
 }
 
 /**
- * Business rule confirmed for this PMO's summary/KPI purposes: a line
- * counts as received the moment it leaves Draft. Raised / Submitted,
- * PartiallyPaid, and Paid all qualify; Draft (still being prepared, never
- * sent) and Cancelled (voided) never do.
+ * Reports Phase 2 Business Definition: Cash Realized / Payment Received
+ * counts ONLY invoices with status "Paid". Raised and PartiallyPaid are NOT
+ * treated as realized cash. Cancelled and Draft are excluded.
  */
 function isReceivedInvoiceLineStatus(status: string): boolean {
-  return status === "Raised" || status === "PartiallyPaid" || status === "Paid";
+  return status === "Paid";
 }
 
-/** Sum of a line's billed amount across every line that counts as received under the rule above — Raised / Submitted, PartiallyPaid, and Paid. Excludes Draft (not yet submitted) and Cancelled (voided). */
+/** Sum of a line's billed amount across every line that counts as received under the rule above — ONLY Paid invoices. Excludes Draft, Cancelled, Raised, and PartiallyPaid. */
 export function getPaymentReceivedAmount(item: InvoiceItem): number {
   const invoices = Array.isArray(item.invoices) ? item.invoices : [];
 

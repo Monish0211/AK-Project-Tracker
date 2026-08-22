@@ -32,7 +32,7 @@ export function ExecutiveSummaryCharts({ projects, analytics }: Props) {
         });
       });
       const nonManhour = (p.nonManhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
-      const manhour = (p.manhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
+      const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
       const expenses = nonManhour + manhour;
 
       return {
@@ -71,8 +71,8 @@ export function ExecutiveSummaryCharts({ projects, analytics }: Props) {
             <BarChart data={topProjectsData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
               <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-              <YAxis tickFormatter={(v) => `₹${(v / 100000).toFixed(0)}L`} tick={{ fontSize: 10 }} />
-              <Tooltip formatter={(value: any) => [`₹ ${formatBusinessINR(Number(value))}`, ""]} />
+              <YAxis tickFormatter={(v) => formatBusinessINR(v)} tick={{ fontSize: 10 }} />
+              <Tooltip formatter={(value: any) => [formatBusinessINR(Number(value)), ""]} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar dataKey="WO Value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               <Bar dataKey="Invoice Raised" fill="#10b981" radius={[4, 4, 0, 0]} />

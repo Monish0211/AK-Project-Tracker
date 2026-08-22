@@ -26,6 +26,8 @@ interface StatTileProps {
   tintValue?: boolean;
   /** Sets a title attribute on the card wrapper (shown on hover anywhere except over the value itself). */
   tooltip?: string;
+  /** Footer line under the value. Defaults to the historical "Updated from Projects" copy. */
+  footnote?: string;
 }
 
 const VALUE_TONE: Record<StatTileTint, string> = {
@@ -64,7 +66,7 @@ const ACCENT_BAR: Record<StatTileTint, string> = {
   indigo: "bg-indigo-500",
 };
 
-export const StatTile = ({ label, value, icon, tint = "accent", trend, rawValue, percent, tintValue, tooltip }: StatTileProps) => {
+export const StatTile = ({ label, value, icon, tint = "accent", trend, rawValue, percent, tintValue, tooltip, footnote }: StatTileProps) => {
   const isPrimary = true; // Make all tiles primary emphasis for equal uniform layout
 
   return (
@@ -112,7 +114,7 @@ export const StatTile = ({ label, value, icon, tint = "accent", trend, rawValue,
             {trend.label}
           </span>
         ) : (
-          <span className="text-[var(--nu-text-muted)]">Updated from Projects</span>
+          <span className="text-[var(--nu-text-muted)]">{footnote ?? "Updated from Projects"}</span>
         )}
       </div>
     </div>

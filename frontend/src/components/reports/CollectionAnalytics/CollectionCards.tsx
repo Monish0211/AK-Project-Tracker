@@ -12,24 +12,24 @@ export function CollectionCards({ analytics }: Props) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       <KPIReportCard
-        title="Total Collection Received"
-        value={`₹ ${formatBusinessINR(a.totalPaymentReceived)}`}
-        subtitle="Realized bank collection"
+        title="Cash Realized"
+        value={formatBusinessINR(a.totalPaymentReceived)}
+        subtitle="Realized bank collection (Paid)"
         icon={<Wallet size={18} />}
         tone="emerald"
       />
 
       <KPIReportCard
-        title="Pending Receivables"
-        value={`₹ ${formatBusinessINR(a.totalOutstanding)}`}
-        subtitle="Billed pending payment"
+        title="Outstanding Receivable"
+        value={formatBusinessINR(a.totalOutstandingReceivable ?? Math.max(0, a.totalInvoiceRaised - a.totalPaymentReceived))}
+        subtitle="Uncollected billed invoices"
         icon={<Clock size={18} />}
         tone="amber"
       />
 
       <KPIReportCard
         title="Overdue (60+ Days)"
-        value={`₹ ${formatBusinessINR(a.ageing["61-90 Days"] + a.ageing["90+ Days"])}`}
+        value={formatBusinessINR(a.ageing["61-90 Days"] + a.ageing["90+ Days"])}
         subtitle="Delayed customer payments"
         trend={a.ageing["90+ Days"] > 0 ? "High Risk" : "Low Risk"}
         trendType={a.ageing["90+ Days"] > 0 ? "negative" : "positive"}

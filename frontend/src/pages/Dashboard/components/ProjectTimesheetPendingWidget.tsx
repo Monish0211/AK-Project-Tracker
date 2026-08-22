@@ -1,55 +1,20 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { ArrowRight, Clock3, Info, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { fetchTimesheetPendingProjects, type TimesheetPendingProjectRow } from "../../../services/timesheetPendingService";
 import { formatDisplayDate } from "../../../services/timesheetService";
+import { useDashboardSummary } from "../DashboardSummaryContext";
 
 const VISIBLE_ROWS = 5;
 
 /**
- * Project Timesheet Pending — PMO compliance monitor: Active projects whose
- * latest TimesheetEntry (from any employee, project-wide — never compared
- * against Team Assigned headcount) is more than 7 days old, or that have
- * never had one at all (tracked from the date this widget first noticed
- * the gap, not the project's creation/start date). See
- * Backend/src/modules/timesheets/services/timesheetPending.service.ts for
- * the full rule. A project disappears from this list the instant a new
- * TimesheetEntry lands for it, regardless of how overdue it just was.
+ * Project Timesheet Pending — rows come from GET /dashboard/summary
+ * (backend reuses getTimesheetPendingProjects; this widget does not
+ * recalculate or call GET /timesheets/pending-projects).
  */
 const ProjectTimesheetPendingWidget: React.FC = () => {
   const navigate = useNavigate();
-  const [rows, setRows] = useState<TimesheetPendingProjectRow[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const load = () => {
-      setLoadError(false);
-      fetchTimesheetPendingProjects()
-        .then((items) => {
-          if (isMounted) setRows(items);
-        })
-        .catch((err) => {
-          console.warn("Failed to load Timesheet Pending projects:", err);
-          if (isMounted) {
-            setRows([]);
-            setLoadError(true);
-          }
-        })
-        .finally(() => {
-          if (isMounted) setIsLoading(false);
-        });
-    };
-
-    load();
-    window.addEventListener("pmo:data-changed", load);
-    return () => {
-      isMounted = false;
-      window.removeEventListener("pmo:data-changed", load);
-    };
-  }, []);
+  const { timesheetPending } = useDashboardSummary();
+  const rows = timesheetPending.items;
 
   const visibleRows = rows.slice(0, VISIBLE_ROWS);
   const hasPending = rows.length > 0;
@@ -88,17 +53,7 @@ const ProjectTimesheetPendingWidget: React.FC = () => {
         </p>
       </div>
 
-      {/* Scrollable List */}
-      {isLoading ? (
-        <div className="flex-1 flex items-center justify-center text-xs text-slate-400 dark:text-slate-500">Loading…</div>
-      ) : loadError ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-center p-3">
-          <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">Unable to load</h4>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 max-w-sm">
-            Timesheet Pending could not be loaded from the server. Refresh and try again.
-          </p>
-        </div>
-      ) : hasPending ? (
+      {hasPending ? (
         <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar my-1 pr-0.5">
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 z-10 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs">
@@ -149,7 +104,6 @@ const ProjectTimesheetPendingWidget: React.FC = () => {
           </table>
         </div>
       ) : (
-        /* Empty State */
         <div className="flex-1 flex flex-col items-center justify-center text-center p-3">
           <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300/50 dark:border-emerald-800/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-1.5 shadow-xs">
             <CheckCircle2 size={20} />
@@ -161,7 +115,6 @@ const ProjectTimesheetPendingWidget: React.FC = () => {
         </div>
       )}
 
-      {/* Bottom Summary Strip (Fixed) */}
       <div className="shrink-0 bg-red-50/80 dark:bg-red-950/30 border-t border-red-100 dark:border-red-900/40 -mx-3 sm:-mx-3.5 -mb-3 sm:-mb-3.5 p-2 px-3 sm:px-4 rounded-b-2xl flex items-center justify-between flex-wrap gap-1.5 text-[11px] font-semibold text-red-800 dark:text-red-300">
         <div className="flex items-center gap-1.5 truncate">
           <Clock3 size={13} className="text-red-600 shrink-0" />

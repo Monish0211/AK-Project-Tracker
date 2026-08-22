@@ -1,25 +1,22 @@
 import React from "react";
 import { ArrowRight, FolderKanban, Info, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { getProjectTimelineAlerts, type TimelineAlertPriority } from "../../../services/dashboardService";
+import type { TimelineAlertPriority } from "../../../services/dashboardSummaryService";
+import { useDashboardSummary } from "../DashboardSummaryContext";
 
 const ProjectsInLossTimeWidget: React.FC = () => {
   const navigate = useNavigate();
 
-  // Retrieve proactive timeline alert data from Dashboard Service
+  const { timelineAlerts } = useDashboardSummary();
   const {
     totalMatchingProjects,
-    allAlertProjects,
     dueSoonCount,
     upcomingCount,
     dueTodayCount,
     overdueCount,
     onTrackCount,
-  } = getProjectTimelineAlerts();
-
-  // The Dashboard stays lightweight by rendering only the first ten projects
-  // from the existing urgency-ordered timeline dataset. Counts remain global.
-  const displayedProjects = allAlertProjects.slice(0, 10);
+  } = timelineAlerts;
+  const displayedProjects = timelineAlerts.top10;
 
   const handleNavigateToProjects = (projectId?: string) => {
     if (projectId) {

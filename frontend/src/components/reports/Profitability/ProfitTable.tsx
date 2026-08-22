@@ -21,7 +21,7 @@ export function ProfitTable({ projects }: Props) {
         });
       });
       const nonManhour = (p.nonManhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
-      const manhour = (p.manhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
+      const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
       const totalExpenses = nonManhour + manhour;
       const profit = raised - totalExpenses;
       const marginPct = raised > 0 ? (profit / raised) * 100 : 0;
@@ -108,12 +108,12 @@ export function ProfitTable({ projects }: Props) {
                   <td className="p-2.5 font-semibold text-[var(--nu-text)] max-w-[130px] truncate">{row.client}</td>
                   <td className="p-2.5 font-medium text-[var(--nu-text)] max-w-[180px] truncate">{row.projectTitle}</td>
                   <td className="p-2.5 text-[var(--nu-text-muted)]">{row.department}</td>
-                  <td className="p-2.5 text-right font-mono font-bold text-blue-600 dark:text-blue-400">₹{formatBusinessINR(row.raised)}</td>
-                  <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">₹{formatBusinessINR(row.manhour)}</td>
-                  <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">₹{formatBusinessINR(row.nonManhour)}</td>
-                  <td className="p-2.5 text-right font-mono text-rose-600 dark:text-rose-400">₹{formatBusinessINR(row.totalExpenses)}</td>
+                  <td className="p-2.5 text-right font-mono font-bold text-blue-600 dark:text-blue-400">{formatBusinessINR(row.raised)}</td>
+                  <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">{formatBusinessINR(row.manhour)}</td>
+                  <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">{formatBusinessINR(row.nonManhour)}</td>
+                  <td className="p-2.5 text-right font-mono text-rose-600 dark:text-rose-400">{formatBusinessINR(row.totalExpenses)}</td>
                   <td className={`p-2.5 text-right font-mono font-extrabold ${row.profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600"}`}>
-                    ₹{formatBusinessINR(row.profit)}
+                    {formatBusinessINR(row.profit)}
                   </td>
                   <td className="p-2.5 text-right font-mono font-extrabold">
                     <span

@@ -55,8 +55,8 @@ export function CollectionTrend({ projects }: Props) {
             </defs>
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
             <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-            <YAxis tickFormatter={(v) => `₹${(v / 100000).toFixed(0)}L`} tick={{ fontSize: 10 }} />
-            <Tooltip formatter={(val: any) => [`₹ ${formatBusinessINR(Number(val))}`, "Collected"]} />
+            <YAxis tickFormatter={(v) => formatBusinessINR(v)} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), "Collected"]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Area type="monotone" dataKey="collection" name="Cash Realized" stroke="#10b981" fillOpacity={1} fill="url(#colorCol)" />
           </AreaChart>

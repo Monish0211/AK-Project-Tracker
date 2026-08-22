@@ -106,12 +106,12 @@ export function CommercialTable({ projects }: Props) {
                   <td className="p-2.5 font-medium text-[var(--nu-text)]">{row.category}</td>
                   <td className="p-2.5 text-[var(--nu-text-muted)]">{row.paymentTerms}</td>
                   <td className="p-2.5 text-center font-extrabold text-[var(--nu-text-muted)]">{row.region}</td>
-                  <td className="p-2.5 text-right font-mono font-bold">₹{formatBusinessINR(row.woVal)}</td>
+                  <td className="p-2.5 text-right font-mono font-bold">{formatBusinessINR(row.woVal)}</td>
                   <td className="p-2.5 text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                    ₹{formatBusinessINR(row.raised)}
+                    {formatBusinessINR(row.raised)}
                   </td>
                   <td className="p-2.5 text-right font-mono text-amber-600 dark:text-amber-400 font-bold">
-                    ₹{formatBusinessINR(row.balanceBilling)}
+                    {formatBusinessINR(row.balanceBilling)}
                   </td>
                   <td className="p-2.5 text-right font-mono font-extrabold">
                     <span

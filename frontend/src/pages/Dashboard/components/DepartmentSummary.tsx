@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React from "react";
 import {
   Building2,
   ArrowRight,
@@ -19,10 +19,8 @@ import {
 import { useNavigate } from "react-router-dom";
 import { Card, CardHeader } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
-import { getProjects } from "../../../services/projectService";
-import { calculateProjectCompletionPercentage, getAssignedTeamCount } from "../../../utils/projectMetrics";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
-import { fetchTimesheetPendingProjects } from "../../../services/timesheetPendingService";
+import { useDashboardSummary } from "../DashboardSummaryContext";
 
 // Helper for department icon selection
 const getDeptIcon = (deptName: string) => {
@@ -38,12 +36,13 @@ const getDeptIcon = (deptName: string) => {
 
 // Custom SVG Donut Chart
 const DonutChart = ({ healthy, atRisk, delayed }: { healthy: number; atRisk: number; delayed: number }) => {
-  const total = healthy + atRisk + delayed || 1;
+  const total = healthy + atRisk + delayed;
+  const ring = total || 1;
   const c = 238.76; // 2 * PI * 38
 
-  const healthyDash = (healthy / total) * c;
-  const atRiskDash = (atRisk / total) * c;
-  const delayedDash = (delayed / total) * c;
+  const healthyDash = (healthy / ring) * c;
+  const atRiskDash = (atRisk / ring) * c;
+  const delayedDash = (delayed / ring) * c;
 
   const healthyOffset = 0;
   const atRiskOffset = -healthyDash;
@@ -101,190 +100,27 @@ const DonutChart = ({ healthy, atRisk, delayed }: { healthy: number; atRisk: num
   );
 };
 
-export interface DepartmentOpsMetrics {
-  department: string;
-  activeProjects: number;
-  completedProjects: number;
-  onHoldProjects: number;
-  delayedProjects: number;
-  teamMembers: number;
-  pendingInvoices: number;
-  timesheetPending: number;
-  upcomingDeliveries: number;
-  completion: number;
-  workOrderValue: number;
-  health: "Healthy" | "At Risk" | "Delayed";
-  workloadPercent: number;
-}
-
 const DepartmentSummary: React.FC = () => {
   const navigate = useNavigate();
-  const [pendingByDepartment, setPendingByDepartment] = useState<Record<string, number>>({});
-
-  useEffect(() => {
-    let isMounted = true;
-    fetchTimesheetPendingProjects()
-      .then((items) => {
-        if (!isMounted) return;
-        const counts: Record<string, number> = {};
-        for (const row of items) {
-          const dept = row.department?.trim() || "Design Engineering";
-          counts[dept] = (counts[dept] ?? 0) + 1;
-        }
-        setPendingByDepartment(counts);
-      })
-      .catch((err) => console.warn("Failed to load Timesheet Pending counts:", err));
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  // Calculate live operational metrics per department
-  const { deptList, healthCounts, totals, upcomingActions } = useMemo(() => {
-    const projects = getProjects();
-    const deptMap: Record<string, { projects: any[] }> = {};
-
-    // Standard baseline departments if none present, otherwise dynamically populated
-    const defaultDepts = [
-      "Risk Management",
-      "Design Engineering",
-      "Mechanical",
-      "Process",
-      "Electrical",
-      "Instrumentation",
-    ];
-
-    defaultDepts.forEach((d) => {
-      deptMap[d] = { projects: [] };
-    });
-
-    projects.forEach((p) => {
-      const deptName = p.department?.trim() || "Design Engineering";
-      if (!deptMap[deptName]) {
-        deptMap[deptName] = { projects: [] };
-      }
-      deptMap[deptName].projects.push(p);
-    });
-
-    let totalProjectsCount = 0;
-    let totalTeamCount = 0;
-    let totalCompletionSum = 0;
-    let deptCountWithProjects = 0;
-
-    let dueToday = 0;
-    let dueThisWeek = 0;
-    let overdue = 0;
-
-    const list: DepartmentOpsMetrics[] = Object.entries(deptMap).map(([deptName, { projects: deptProjects }]) => {
-      const activeProjects = deptProjects.filter((p) => p.projectStatus !== "Cancelled").length;
-      const completedProjects = deptProjects.filter((p) => p.projectStatus === "Completed").length;
-      const onHoldProjects = deptProjects.filter((p) => p.projectStatus === "On Hold").length;
-
-      totalProjectsCount += activeProjects;
-
-      let teamMembers = 0;
-      let pendingInvoices = 0;
-      const timesheetPending = pendingByDepartment[deptName] ?? 0;
-      let upcomingDeliveries = 0;
-      let compSum = 0;
-      let workOrderValue = 0;
-      let delayedProjects = 0;
-
-      deptProjects.forEach((p) => {
-        // Assigned/Roster count — fits this widget's "resource allocation &
-        // workload analytics" framing and the workload-capacity formula
-        // below, which plans around who is staffed, not who has already
-        // logged hours.
-        teamMembers += getAssignedTeamCount(p);
-        workOrderValue += (p.workOrderValueINR || p.workOrderValue || 0);
-
-        (p.invoiceItems || []).forEach((item: any) => {
-          (item.invoices || []).forEach((line: any) => {
-            if (line.status === "Raised" || line.status === "PartiallyPaid" || line.status === "Draft") {
-              pendingInvoices++;
-            }
-          });
-        });
-
-        const milestones = p.paymentMilestones || [];
-        upcomingDeliveries += milestones.length;
-
-        const comp = calculateProjectCompletionPercentage(p);
-        compSum += comp;
-
-        if (p.projectStatus === "Delayed" || (p.projectStatus === "Active" && comp < 30)) {
-          delayedProjects += 1;
-        }
-      });
-
-      const completion = deptProjects.length > 0 ? Math.round(compSum / deptProjects.length) : 0;
-      if (deptProjects.length > 0) {
-        totalTeamCount += teamMembers;
-        totalCompletionSum += completion;
-        deptCountWithProjects++;
-      }
-
-      // Determine Health
-      let health: "Healthy" | "At Risk" | "Delayed" = "Healthy";
-      if (completion < 35 || pendingInvoices > 4 || delayedProjects > 1) {
-        health = "Delayed";
-      } else if (completion < 65 || pendingInvoices > 2 || onHoldProjects > 0) {
-        health = "At Risk";
-      }
-
-      // Action deadlines counts
-      if (health === "Delayed") overdue += 1;
-      else if (health === "At Risk") dueThisWeek += 2;
-      else dueToday += 1;
-
-      // Derived workload
-      const rawWorkload = activeProjects * 14 + teamMembers * 4 + pendingInvoices * 6;
-      const workloadPercent = Math.min(98, Math.max(35, Math.round(rawWorkload || 50)));
-
-      return {
-        department: deptName,
-        activeProjects,
-        completedProjects,
-        onHoldProjects,
-        delayedProjects,
-        teamMembers,
-        pendingInvoices,
-        timesheetPending,
-        upcomingDeliveries,
-        completion,
-        workOrderValue,
-        health,
-        workloadPercent,
-      };
-    });
-
-    // Sort departments by workload descending
-    list.sort((a, b) => b.workloadPercent - a.workloadPercent);
-
-    const counts = {
-      healthy: list.filter((d) => d.health === "Healthy").length,
-      atRisk: list.filter((d) => d.health === "At Risk").length,
-      delayed: list.filter((d) => d.health === "Delayed").length,
-    };
-
-    const avgComp = deptCountWithProjects > 0 ? Math.round(totalCompletionSum / deptCountWithProjects) : 0;
-
-    return {
-      deptList: list,
-      healthCounts: counts,
-      totals: {
-        departments: list.length,
-        totalProjects: totalProjectsCount || projects.length,
-        teamMembers: totalTeamCount,
-        averageCompletion: avgComp,
-      },
-      upcomingActions: {
-        dueToday,
-        dueThisWeek,
-        overdue,
-      },
-    };
-  }, [pendingByDepartment]);
+  const { departments } = useDashboardSummary();
+  const deptList = departments.list.filter(
+    (dept) =>
+      dept.activeProjects > 0 ||
+      dept.completedProjects > 0 ||
+      dept.onHoldProjects > 0 ||
+      dept.delayedProjects > 0 ||
+      dept.teamMembers > 0 ||
+      dept.workOrderValue > 0
+  );
+  const healthCounts = {
+    healthy: deptList.filter((d) => d.health === "Healthy").length,
+    atRisk: deptList.filter((d) => d.health === "At Risk").length,
+    delayed: deptList.filter((d) => d.health === "Delayed").length,
+  };
+  const totals = {
+    ...departments.totals,
+    departments: deptList.length,
+  };
 
   return (
     <Card padded={false} elevated className="transition-all duration-200 overflow-hidden">
@@ -321,13 +157,18 @@ const DepartmentSummary: React.FC = () => {
                 </h3>
               </div>
               <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                {deptList.length} Active Departments
+                {deptList.length} Departments with projects
               </span>
             </div>
 
             {/* Department Operation Cards Scrollable Container */}
             <div className="max-h-[230px] overflow-y-auto custom-scrollbar space-y-2 pr-1">
-              {deptList.map((dept) => {
+              {deptList.length === 0 ? (
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 px-1 py-6 text-center">
+                  No departments with authorized projects. Empty baseline names are not shown.
+                </p>
+              ) : (
+              deptList.map((dept) => {
                 const DeptIcon = getDeptIcon(dept.department);
 
                 return (
@@ -403,7 +244,8 @@ const DepartmentSummary: React.FC = () => {
                     </div>
                   </div>
                 );
-              })}
+              })
+              )}
             </div>
           </div>
 
@@ -565,32 +407,36 @@ const DepartmentSummary: React.FC = () => {
             </div>
           </div>
 
-          {/* CARD 3: Upcoming Department Actions */}
+          {/* CARD 3: Upcoming Department Actions — counts are not in GET /dashboard/summary
+              (no agreed data model). Do not display the old frontend heuristic numbers. */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800/90 rounded-xl p-3.5 shadow-xs space-y-2.5 shrink-0">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2">
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
                 Upcoming Department Actions
               </h4>
-              <Flame size={14} className="text-amber-500 animate-bounce" />
+              <Flame size={14} className="text-amber-500" />
             </div>
 
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="p-2 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-900/60">
                 <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400 mx-auto mb-1" />
                 <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">Due Today</p>
-                <p className="text-base font-black text-emerald-900 dark:text-emerald-100 mt-0.5">{upcomingActions.dueToday}</p>
+                <p className="text-base font-black text-slate-400 dark:text-slate-500 mt-0.5">—</p>
+                <p className="text-[9px] font-semibold text-slate-400 dark:text-slate-500 mt-0.5">Not configured</p>
               </div>
 
               <div className="p-2 rounded-xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/60">
                 <CalendarCheck size={15} className="text-amber-600 dark:text-amber-400 mx-auto mb-1" />
                 <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">This Week</p>
-                <p className="text-base font-black text-amber-900 dark:text-amber-100 mt-0.5">{upcomingActions.dueThisWeek}</p>
+                <p className="text-base font-black text-slate-400 dark:text-slate-500 mt-0.5">—</p>
+                <p className="text-[9px] font-semibold text-slate-400 dark:text-slate-500 mt-0.5">Not configured</p>
               </div>
 
               <div className="p-2 rounded-xl bg-rose-50/70 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/60">
                 <AlertTriangle size={15} className="text-rose-600 dark:text-rose-400 mx-auto mb-1" />
                 <p className="text-[10px] font-bold uppercase tracking-wider text-rose-800 dark:text-rose-300">Overdue</p>
-                <p className="text-base font-black text-rose-900 dark:text-rose-100 mt-0.5">{upcomingActions.overdue}</p>
+                <p className="text-base font-black text-slate-400 dark:text-slate-500 mt-0.5">—</p>
+                <p className="text-[9px] font-semibold text-slate-400 dark:text-slate-500 mt-0.5">Not configured</p>
               </div>
             </div>
           </div>

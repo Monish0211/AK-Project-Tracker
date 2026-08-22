@@ -67,15 +67,15 @@ export function ClientFinancialTable({ customerList }: Props) {
                   <tr key={row.client} className="hover:bg-[var(--nu-surface-alt)]/50 transition">
                     <td className="p-2.5 font-extrabold text-[var(--nu-text)]">{row.client}</td>
                     <td className="p-2.5 text-center font-mono font-bold">{row.projectCount}</td>
-                    <td className="p-2.5 text-right font-mono font-bold">₹{formatBusinessINR(row.woValue)}</td>
+                    <td className="p-2.5 text-right font-mono font-bold">{formatBusinessINR(row.woValue)}</td>
                     <td className="p-2.5 text-right font-mono text-blue-600 dark:text-blue-400 font-bold">
-                      ₹{formatBusinessINR(row.raised)}
+                      {formatBusinessINR(row.raised)}
                     </td>
                     <td className="p-2.5 text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                      ₹{formatBusinessINR(row.received)}
+                      {formatBusinessINR(row.received)}
                     </td>
                     <td className="p-2.5 text-right font-mono text-amber-600 dark:text-amber-400 font-bold">
-                      ₹{formatBusinessINR(row.outstanding)}
+                      {formatBusinessINR(row.outstanding)}
                     </td>
                     <td className="p-2.5 text-right font-mono font-extrabold">
                       <span

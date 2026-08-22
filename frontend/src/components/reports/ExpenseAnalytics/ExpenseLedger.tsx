@@ -33,7 +33,7 @@ export function ExpenseLedger({ projects }: Props) {
       });
 
       // Manhour cost summary if present
-      const manhour = (p.manhourExpenses || []).reduce((acc: number, e: any) => acc + (e.totalCost || e.amount || 0), 0);
+      const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
       if (manhour > 0) {
         list.push({
           id: `mh-${p.id}`,
@@ -60,6 +60,7 @@ export function ExpenseLedger({ projects }: Props) {
       (r) =>
         r.prNo.toLowerCase().includes(term) ||
         r.client.toLowerCase().includes(term) ||
+        r.projectTitle.toLowerCase().includes(term) ||
         r.category.toLowerCase().includes(term) ||
         r.description.toLowerCase().includes(term)
     );
@@ -73,7 +74,7 @@ export function ExpenseLedger({ projects }: Props) {
             Detailed Project Expense Ledger
           </h3>
           <p className="text-[11px] text-[var(--nu-text-muted)] mt-0.5">
-            Complete transaction ledger for site travel, licenses, flights, and engineering manhour costs.
+            Audit register of non-manhour project expenses and timesheet-backed engineering costs.
           </p>
         </div>
 
@@ -84,7 +85,7 @@ export function ExpenseLedger({ projects }: Props) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search Category, PR, Client..."
+              placeholder="Search expenses..."
               className="w-full pl-8 pr-3 py-1.5 bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-xl text-xs text-[var(--nu-text)] focus:outline-none focus:ring-2 focus:ring-[var(--nu-accent)]"
             />
           </div>
@@ -129,9 +130,9 @@ export function ExpenseLedger({ projects }: Props) {
                     </span>
                   </td>
                   <td className="p-2.5 text-center font-mono">{row.quantity}</td>
-                  <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">₹{formatBusinessINR(row.unitCost)}</td>
+                  <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">{formatBusinessINR(row.unitCost)}</td>
                   <td className="p-2.5 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
-                    ₹{formatBusinessINR(row.totalCost)}
+                    {formatBusinessINR(row.totalCost)}
                   </td>
                 </tr>
               ))}

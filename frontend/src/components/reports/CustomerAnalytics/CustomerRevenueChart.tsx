@@ -29,8 +29,8 @@ export function CustomerRevenueChart({ customerList }: Props) {
           <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
             <XAxis dataKey="client" tick={{ fontSize: 10 }} />
-            <YAxis tickFormatter={(v) => `₹${(v / 100000).toFixed(0)}L`} tick={{ fontSize: 10 }} />
-            <Tooltip formatter={(val: any) => [`₹ ${formatBusinessINR(Number(val))}`, ""]} />
+            <YAxis tickFormatter={(v) => formatBusinessINR(v)} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), ""]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="Contract Value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
             <Bar dataKey="Invoiced Revenue" fill="#10b981" radius={[4, 4, 0, 0]} />

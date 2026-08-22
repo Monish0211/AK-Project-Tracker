@@ -14,7 +14,7 @@ export function InvoiceStatusCards({ analytics }: Props) {
     <div className="grid gap-3.5 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
       <KPIReportCard
         title="Draft Invoices"
-        value={`₹ ${formatBusinessINR(vals.draft)}`}
+        value={formatBusinessINR(vals.draft)}
         subtitle={`${counts.draft} unsubmitted cycles`}
         icon={<FileText size={16} />}
         tone="slate"
@@ -22,7 +22,7 @@ export function InvoiceStatusCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Raised / Submitted"
-        value={`₹ ${formatBusinessINR(vals.raised)}`}
+        value={formatBusinessINR(vals.raised)}
         subtitle={`${counts.raised} pending payment`}
         trend="Submitted"
         trendType="neutral"
@@ -32,7 +32,7 @@ export function InvoiceStatusCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Paid Invoices"
-        value={`₹ ${formatBusinessINR(vals.paid)}`}
+        value={formatBusinessINR(vals.paid)}
         subtitle={`${counts.paid} settled invoices`}
         trend="Collected"
         trendType="positive"
@@ -42,7 +42,7 @@ export function InvoiceStatusCards({ analytics }: Props) {
 
       <KPIReportCard
         title="90+ Days Ageing"
-        value={`₹ ${formatBusinessINR(analytics.ageing["90+ Days"])}`}
+        value={formatBusinessINR(analytics.ageing["90+ Days"])}
         subtitle="Overdue receivables"
         trend={analytics.ageing["90+ Days"] > 0 ? "Critical" : "Clear"}
         trendType={analytics.ageing["90+ Days"] > 0 ? "negative" : "positive"}
@@ -52,7 +52,7 @@ export function InvoiceStatusCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Cancelled Invoices"
-        value={`₹ ${formatBusinessINR(vals.cancelled)}`}
+        value={formatBusinessINR(vals.cancelled)}
         subtitle="Voided invoice cycles"
         icon={<XCircle size={16} />}
         tone="rose"

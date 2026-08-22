@@ -1,13 +1,14 @@
 import React from "react";
 import { ArrowRight, FolderKanban, Info, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { getProjectsWithHoursOverrun } from "../../../services/dashboardService";
+import { useDashboardSummary } from "../DashboardSummaryContext";
 
 const ProjectsInLossHoursWidget: React.FC = () => {
   const navigate = useNavigate();
 
-  // Retrieve calculated overrun data from Dashboard Service fresh on every render
-  const { totalMatchingProjects, top5Projects } = getProjectsWithHoursOverrun();
+  const { hoursOverrun } = useDashboardSummary();
+  const totalMatchingProjects = hoursOverrun.totalMatchingProjects;
+  const top5Projects = hoursOverrun.top5;
 
   const handleNavigateToProjects = (projectId?: string) => {
     if (projectId) {

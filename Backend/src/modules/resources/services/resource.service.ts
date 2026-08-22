@@ -7,6 +7,7 @@ import {
   countResourcesByEmployeeNo,
   deleteResource as deleteResourceInRepository,
   findResourceByProjectAndEmployee,
+  getAllResourcesForAuthorizedProjects,
   getResourceById,
   getResourcesByEmployeeNo,
   getResourcesByProjectId,
@@ -74,6 +75,12 @@ export async function listResourcesForProject(projectId: string, user: AccessTok
   await assertProjectExists(projectId, user);
 
   const rows = await getResourcesByProjectId(projectId);
+  return { items: rows.map((row) => toResourceDto(row)) };
+}
+
+export async function listAllAuthorizedResources(user: AccessTokenPayload): Promise<ResourceListDto> {
+  const callerUserId = user.roleName === "Administrator" ? undefined : user.sub;
+  const rows = await getAllResourcesForAuthorizedProjects(callerUserId);
   return { items: rows.map((row) => toResourceDto(row)) };
 }
 

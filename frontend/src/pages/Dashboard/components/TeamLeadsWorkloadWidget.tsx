@@ -1,13 +1,14 @@
 import React from "react";
 import { ArrowRight, User, Users, Info, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { getTeamLeadsWorkload } from "../../../services/dashboardService";
+import { useDashboardSummary } from "../DashboardSummaryContext";
 
 const TeamLeadsWorkloadWidget: React.FC = () => {
   const navigate = useNavigate();
 
-  // Retrieve calculated team leads workload data from Dashboard Service
-  const { totalReportingManagers, top5Leads } = getTeamLeadsWorkload();
+  const { teamLeads } = useDashboardSummary();
+  const totalReportingManagers = teamLeads.totalReportingManagers;
+  const top5Leads = teamLeads.top5;
 
   const handleNavigateToLeads = (managerName?: string) => {
     if (managerName) {
@@ -172,7 +173,7 @@ const TeamLeadsWorkloadWidget: React.FC = () => {
             <span>✅ All Balanced</span>
           </h4>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 max-w-sm">
-            No active reporting managers with assigned project workload.
+            No reporting managers found on authorized Active projects via ProjectResource → Employee.reportingManager (or primaryProjectManager fallback).
           </p>
         </div>
       )}

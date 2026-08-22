@@ -39,6 +39,12 @@ export const createResource = asyncHandler(async (req: Request, res: Response) =
   res.status(201).json({ success: true, data: resource, message: "Project resource created successfully." });
 });
 
+export const getAllAuthorizedResources = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  const result = await resourceService.listAllAuthorizedResources(user);
+  res.status(200).json({ success: true, data: result });
+});
+
 export const getResourcesByProject = asyncHandler(async (req: Request, res: Response) => {
   const user = requireUser(req);
   const projectId = parseProjectIdParam(req);

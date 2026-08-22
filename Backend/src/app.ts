@@ -13,6 +13,7 @@ import { resourceRoutes } from "./modules/resources/index.js";
 import { timesheetRoutes } from "./modules/timesheets/index.js";
 import { mailIngestionRoutes } from "./modules/mailIngestion/index.js";
 import { pdfImportRoutes } from "./modules/pdfImport/index.js";
+import { dashboardRoutes } from "./modules/dashboard/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { AppError } from "./shared/utils/AppError.js";
 import { env } from "./shared/utils/env.js";
@@ -41,6 +42,10 @@ app.get("/health", (_req, res) => {
 
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
+// Project Resource ("Team Assigned") — mounted before /projects so that
+// exact literal routes like GET /projects/resources match resourceRoutes
+// instead of getting swallowed by projectRoutes' /:id handler.
+app.use(resourceRoutes);
 app.use("/projects", projectRoutes);
 app.use("/projects", projectNoteRoutes);
 // quantity.routes.ts already declares its own full paths
@@ -71,15 +76,6 @@ app.use("/employees", employeeRoutes);
 // Master / Manpower). Declares only relative paths; mounted under /customers.
 // Project.client remains plain text — this module never owns project rows.
 app.use("/customers", customerRoutes);
-// Project Resource ("Team Assigned") — Phase 3.7, backend-only (see
-// resource.routes.ts's own note: no frontend code calls these routes yet).
-// Declares its own full paths (/projects/:projectId/resources,
-// /employees/:employeeNo/assignments, /resources/:id), mounted at root
-// alongside quantity/milestone/expense routes above — its
-// /employees/:employeeNo/assignments literal never collides with
-// employeeRoutes' /employees/:id above, since Express matches on exact
-// segment count/structure, not just a shared prefix.
-app.use(resourceRoutes);
 // Timesheet backend — Phase 3.8. Declares its own full paths
 // (/timesheets/import, /timesheets/imports[...], /timesheets/entries[...]),
 // mounted at root alongside quantity/milestone/expense/resource routes
@@ -99,6 +95,11 @@ app.use(mailIngestionRoutes);
 // checked "Use Claude AI for enhanced extraction" in the PDF Import modal
 // — never automatically based on OCR confidence (see pdfImportService.ts).
 app.use(pdfImportRoutes);
+// Dashboard aggregations — Phase 2. Declares its own full path
+// (GET /dashboard/summary), mounted at root like timesheet/pdfImport.
+// Read-only; authenticate + requireModuleAccess("Dashboard"); ownership
+// matches GET /projects. Does not change any other module.
+app.use(dashboardRoutes);
 
 app.use((req, _res, next) => {
   next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));
