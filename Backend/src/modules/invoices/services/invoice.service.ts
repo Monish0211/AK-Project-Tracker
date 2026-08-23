@@ -1,6 +1,7 @@
 import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
-import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccessById, getProjectCreatorUserId } from "../../../shared/utils/projectAccess.js";
+import { notify, resolveProjectEventRecipients } from "../../notifications/notification.service.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { getMilestonePercentageById } from "../../milestones/services/milestone.service.js";
 import { getQuantityItemById, listQuantityForProject } from "../../quantity/services/quantity.service.js";
@@ -28,6 +29,26 @@ function round(value: number): number {
 
 function isUniqueConstraintViolation(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
+
+/**
+ * Priority #6 Phase 3B — ONE notification for a real invoice status
+ * transition, called only from the two approved call sites below (creation
+ * with a non-Draft status, and a PATCH that actually changes status).
+ * Recipient resolution follows the same approved rule as Project events —
+ * the project's real creator if known, otherwise Invoices module holders.
+ */
+async function notifyInvoiceStatusEvent(projectId: string, invoiceNo: string, message: string): Promise<void> {
+  const createdByUserId = await getProjectCreatorUserId(projectId);
+  const recipients = await resolveProjectEventRecipients(createdByUserId, "Invoices");
+  await notify(recipients, {
+    title: "Invoice Status Updated",
+    message: `Invoice ${invoiceNo} ${message}`,
+    type: "INVOICE_STATUS_CHANGED",
+    severity: "Info",
+    entityType: "Invoice",
+    entityId: projectId,
+  });
 }
 
 /** Same id — but is it actually the same data? Compared field-by-field, mirrors milestone.service.ts's milestoneMatchesPayload(). */
@@ -204,6 +225,14 @@ export async function createInvoiceLineForQuantityItem(
   };
 
   const created = await createLineInRepository(quantityItemId, data);
+
+  // Priority #6 Phase 3B — only when the newly created line is NOT Draft
+  // (a plain Draft creation is a workspace edit, not a billing event worth
+  // surfacing). Fire-and-forget; never affects the create response.
+  if (created.status !== "Draft") {
+    await notifyInvoiceStatusEvent(quantityItem.projectId, created.invoiceNo, `was created as ${created.status}.`);
+  }
+
   return toInvoiceLineDto(created);
 }
 
@@ -290,6 +319,21 @@ export async function updateInvoiceLine(
     ...(input.status !== undefined && { status: input.status }),
     ...(needsRecompute && { unitPriceINR, calculatedAmountINR, commercialAdjustmentINR }),
   });
+
+  // Priority #6 Phase 3B — only a REAL status transition (oldStatus !==
+  // newStatus) notifies. A PATCH that doesn't touch status, or one that
+  // "changes" it to the same value it already was, never does. Different
+  // legitimate transitions (Draft->Raised, Raised->PartiallyPaid, ...) each
+  // notify independently — this check is on the actual before/after values
+  // every time, not a one-shot "has this ever transitioned" flag, so no
+  // schema change is needed for correct idempotency here.
+  if (input.status !== undefined && input.status !== existing.status) {
+    await notifyInvoiceStatusEvent(
+      parentQuantityItem.projectId,
+      updated.invoiceNo,
+      `status changed from ${existing.status} to ${updated.status}.`
+    );
+  }
 
   return toInvoiceLineDto(updated);
 }

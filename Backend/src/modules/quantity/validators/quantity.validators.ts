@@ -3,17 +3,19 @@ import { z } from "zod";
 /**
  * uom/assignedTo/currency mirror frontend/src/types/QuantityItem.ts exactly.
  * pendingQty/unitRateINR/woValue/pendingAmount are deliberately NOT accepted
- * here — quantity.service.ts derives them from woQty/invoiceQty/unitRate/
- * exchangeRate/currency/uom (same formula as recalcQuantityItem() in
- * frontend/src/utils/quantityCalculations.ts), so the backend is never
- * trusted to store a client-computed value that could drift from the
- * server's own calculation.
+ * here — quantity.service.ts derives unitRateINR/woValue from woQty/
+ * unitRate/exchangeRate/currency/uom (same formula as recalcQuantityItem()
+ * in frontend/src/utils/quantityCalculations.ts), and invoiceQty/pendingQty/
+ * pendingAmount are derived at read time from real InvoiceLine.quantityBilled
+ * activity (see shared/utils/quantityProgress.ts) — never accepted as
+ * client input at all (Priority #3 fix: these three used to be persisted,
+ * client-settable columns that drifted from real invoicing activity, since
+ * nothing ever kept them in sync with the Invoice module).
  */
 export const createQuantitySchema = z.object({
   description: z.string().trim().min(1, "Description is required."),
 
   woQty: z.coerce.number().min(0, "WO Qty cannot be negative."),
-  invoiceQty: z.coerce.number().min(0, "Invoice Qty cannot be negative.").default(0),
 
   uom: z.string().trim().min(1, "UOM is required."),
   assignedTo: z.string().trim().min(1).optional().nullable(),
@@ -31,7 +33,6 @@ export const updateQuantitySchema = z.object({
   description: z.string().trim().min(1).optional(),
 
   woQty: z.coerce.number().min(0, "WO Qty cannot be negative.").optional(),
-  invoiceQty: z.coerce.number().min(0, "Invoice Qty cannot be negative.").optional(),
 
   uom: z.string().trim().min(1).optional(),
   assignedTo: z.string().trim().min(1).optional().nullable(),

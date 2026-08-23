@@ -12,6 +12,7 @@ import type {
   ChangeFirstPasswordInput,
   ChangePasswordInput,
   ForgotPasswordInput,
+  ListAuditLogsQuery,
   LoginInput,
   ResetPasswordInput,
 } from "../validators/auth.validators.js";
@@ -19,6 +20,7 @@ import {
   createAuditLog,
   createPasswordResetToken,
   createRefreshToken,
+  findAuditLogsPage,
   findPasswordResetTokenByHash,
   findRefreshTokenByHash,
   findUserAccessById,
@@ -35,7 +37,7 @@ import {
   setNewPassword,
   updateLastLogin,
 } from "../repository/auth.repository.js";
-import type { LoginResponseDto, LoginSuccessDto, RefreshTokenResponseDto } from "../dto/login.dto.js";
+import type { AuditLogListDto, LoginResponseDto, LoginSuccessDto, RefreshTokenResponseDto } from "../dto/login.dto.js";
 
 function toSafeUser(user: NonNullable<Awaited<ReturnType<typeof findUserByEmail>>>): SafeUser {
   return {
@@ -390,4 +392,31 @@ export async function validateResetToken(token: string): Promise<{ valid: boolea
   const stored = await findPasswordResetTokenByHash(hashToken(token));
   const valid = !!stored && !stored.usedAt && stored.expiresAt.getTime() > Date.now();
   return { valid };
+}
+
+/**
+ * Administrator-only read side of AuthAuditLog (route-gated). Maps directly
+ * to AuditLogEntryDto — no field on the model needs redaction (see the
+ * model's own field list; there is no metadata/secret column), so this is a
+ * plain projection, not a sanitizer.
+ */
+export async function listAuditLogs(query: ListAuditLogsQuery): Promise<AuditLogListDto> {
+  const { page, pageSize } = query;
+  const { items, total } = await findAuditLogsPage(page, pageSize);
+
+  return {
+    items: items.map((row) => ({
+      id: row.id,
+      occurredAt: row.createdAt.toISOString(),
+      event: row.event,
+      email: row.email,
+      userId: row.userId,
+      userFullName: row.user?.fullName ?? null,
+      ipAddress: row.ipAddress,
+      userAgent: row.userAgent,
+    })),
+    total,
+    page,
+    pageSize,
+  };
 }

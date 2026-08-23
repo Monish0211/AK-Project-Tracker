@@ -23,12 +23,29 @@ export const listImportRowsQuerySchema = z.object({
 });
 export type ListImportRowsQuery = z.infer<typeof listImportRowsQuerySchema>;
 
-/** GET /timesheets/entries — find a TimesheetEntry by its identity fields. */
+/**
+ * GET /timesheets/entries — find TimesheetEntry rows by identity fields
+ * and/or a date range, bounded by page/pageSize (same convention as
+ * listEmployeesQuerySchema/listImportsQuerySchema — page positive-int
+ * default 1, pageSize positive-int capped, default matching imports' own
+ * default). startDate/endDate are additive to the existing exact-match
+ * `workDate` filter, never a replacement for it — a caller that only needs
+ * one exact date keeps using `workDate` exactly as before; startDate/endDate
+ * is a new, independent way to ask for a range instead. This is purely a
+ * retrieval-boundedness change (Priority #4) — it does not alter what any
+ * existing caller's un-paginated, unfiltered request used to mean; it only
+ * gives every caller a way to ask for a bounded slice instead of everything
+ * in one response.
+ */
 export const findEntriesQuerySchema = z.object({
   employeeNo: z.string().trim().min(1).optional(),
   projectId: z.string().trim().min(1).optional(),
   workDate: z.coerce.date().optional(),
   task: z.string().trim().optional(),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(200).default(20),
 });
 export type FindEntriesQuery = z.infer<typeof findEntriesQuerySchema>;
 

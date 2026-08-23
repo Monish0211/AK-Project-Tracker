@@ -67,8 +67,12 @@ export interface TimesheetEntryDto {
   updatedAt: Date;
 }
 
+/** Priority #4 — bounded, same {items, total, page, pageSize} shape as TimesheetImportListDto/the Employees list response. */
 export interface TimesheetEntryListDto {
   items: TimesheetEntryDto[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 /** GET /timesheets/entries/:id/history — the row-log history for one entry, each row already carrying its own Import context. */

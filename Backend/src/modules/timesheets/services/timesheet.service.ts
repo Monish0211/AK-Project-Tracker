@@ -7,6 +7,7 @@ import * as timesheetRepo from "../repository/timesheet.repository.js";
 import * as importRepo from "../repository/timesheetImport.repository.js";
 import * as rowLogRepo from "../repository/timesheetImportRowLog.repository.js";
 import { recomputeProjectResource } from "./projectResource.service.js";
+import { decideEntryOutcome, identityKey, normalizeEmployeeNo } from "./timesheetReconciliation.rules.js";
 import type {
   ImportStatus,
   ParsedTimesheetRow,
@@ -15,20 +16,6 @@ import type {
   TimesheetImportMeta,
 } from "../timesheet.types.js";
 import type { EditEntryBody } from "../validators/timesheet.validators.js";
-
-function normalizeEmployeeNo(raw: string): string {
-  return raw.trim().toLowerCase();
-}
-
-/** "YYYY-MM-DD" — see projectResource.service.ts's identical helper for why UTC getters are correct here (workDate is always stored at UTC midnight). */
-function dateKey(date: Date): string {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
-}
-
-/** projectId is null for an "Unassigned" row (Employee matched, Project did not) — still a stable, distinct identity per employee+date+task among other unassigned rows. */
-function identityKey(employeeNo: string, projectId: string | null, workDate: Date, task: string): string {
-  return `${normalizeEmployeeNo(employeeNo)}||${projectId ?? "UNASSIGNED"}||${dateKey(workDate)}||${task.trim()}`;
-}
 
 /**
  * Fetches every Employee once (this application's realistic scale is
@@ -135,10 +122,17 @@ export async function processTimesheetImport(
   // Unassigned row is correctly recognized as "existing" (Updated/Removed)
   // instead of always looking like a brand-new row. See
   // findEntriesByProjectIds()'s own comment for why this was necessary.
+  //
+  // Keyed by entry.rawProjectCode (Priority #5 fix), NOT entry.projectId —
+  // see timesheetReconciliation.rules.ts's identityKey() for why: keying by
+  // the resolved projectId made the same Keka row's identity change between
+  // an import where its Project didn't exist yet and a later import where
+  // it does, which is exactly what produced the confirmed duplicate
+  // (employee 0533 / PR 12006 / 20-Aug-2026 — rows bed09dc4/a6fffd2a).
   const existingEntries = await timesheetRepo.findEntriesByProjectIds([...resolvedProjectIds]);
   const initialExisting = new Map<string, (typeof existingEntries)[number]>();
   for (const entry of existingEntries) {
-    initialExisting.set(identityKey(entry.employeeNo, entry.projectId, entry.workDate, entry.task), entry);
+    initialExisting.set(identityKey(entry.employeeNo, entry.rawProjectCode, entry.workDate, entry.task), entry);
   }
 
   let createdCount = 0;
@@ -168,7 +162,11 @@ export async function processTimesheetImport(
         // when unmatched, the raw KEKA value is used as-is since there is
         // no canonical form to align to.
         const canonicalEmployeeNo = employee?.employeeNo ?? row.employeeNo;
-        const key = identityKey(canonicalEmployeeNo, projectId, row.workDate, row.task);
+        // Priority #5 fix: keyed by row.rawProjectCode (stable across
+        // imports), NOT projectId (which can change between "unresolved"
+        // and "resolved" runs of the exact same Keka fact — see
+        // timesheetReconciliation.rules.ts).
+        const key = identityKey(canonicalEmployeeNo, row.rawProjectCode, row.workDate, row.task);
         const existing = existingMap.get(key);
         // ProjectResource is inherently project-scoped — never recompute it
         // for an Unassigned pair, since there is no Project to attach it to
@@ -177,25 +175,12 @@ export async function processTimesheetImport(
           resolvedPairs.add(`${canonicalEmployeeNo}||${projectId}`);
         }
 
-        if (!existing) {
-          // A row that never existed before, arriving with 0 hours, creates
-          // nothing — there is no "removal" to represent.
-          if (row.hours === 0) {
-            unchangedCount++;
-            rowLogs.push({
-              entryId: null,
-              rawEmployeeNo: row.employeeNo,
-              rawProjectCode: row.rawProjectCode,
-              workDate: row.workDate,
-              task: row.task,
-              previousHours: null,
-              newHours: 0,
-              outcome: "Unchanged",
-              failureReason: null,
-            });
-            continue;
-          }
+        const decision = decideEntryOutcome(
+          existing ? { projectId: existing.projectId, hours: existing.hours } : undefined,
+          { projectId, hours: row.hours }
+        );
 
+        if (decision.outcome === "Created") {
           const created = await timesheetRepo.createEntry(tx, {
             employeeNo: canonicalEmployeeNo,
             rawEmployeeName: row.employeeName || null,
@@ -225,23 +210,27 @@ export async function processTimesheetImport(
           continue;
         }
 
-        if (existing.hours === row.hours) {
+        if (!existing) {
+          // The only other way to reach decision.outcome !== "Created" with
+          // no existing match: a row that never existed before, arriving
+          // with 0 hours — creates nothing, there is no "removal" to
+          // represent (pre-existing special case, unchanged by this fix).
           unchangedCount++;
           rowLogs.push({
-            entryId: existing.id,
+            entryId: null,
             rawEmployeeNo: row.employeeNo,
             rawProjectCode: row.rawProjectCode,
             workDate: row.workDate,
             task: row.task,
-            previousHours: existing.hours,
-            newHours: row.hours,
+            previousHours: null,
+            newHours: 0,
             outcome: "Unchanged",
             failureReason: null,
           });
           continue;
         }
 
-        if (row.hours === 0) {
+        if (decision.outcome === "Removed") {
           await timesheetRepo.deleteEntry(tx, existing.id);
           existingMap.delete(key);
           removedCount++;
@@ -268,9 +257,43 @@ export async function processTimesheetImport(
           continue;
         }
 
-        // A revision — the later KEKA value always wins. NEVER added to
-        // the previous value.
-        const updated = await timesheetRepo.updateEntryHours(tx, existing.id, row.hours, timesheetImport.id);
+        if (decision.outcome === "Unchanged") {
+          // Hours already match. Priority #5: a pending project link
+          // (Unassigned -> Resolved, or a relink to a different resolved
+          // project) is still written here even though the outcome stays
+          // "Unchanged" — a deliberate, confirmed business-rule choice (see
+          // timesheetReconciliation.rules.ts's decideEntryOutcome() doc
+          // comment), not a missed case.
+          const updatedRow = decision.writeProjectId
+            ? await timesheetRepo.updateEntryHours(tx, existing.id, row.hours, timesheetImport.id, projectId)
+            : existing;
+          existingMap.set(key, updatedRow);
+          unchangedCount++;
+          rowLogs.push({
+            entryId: existing.id,
+            rawEmployeeNo: row.employeeNo,
+            rawProjectCode: row.rawProjectCode,
+            workDate: row.workDate,
+            task: row.task,
+            previousHours: existing.hours,
+            newHours: row.hours,
+            outcome: "Unchanged",
+            failureReason: null,
+          });
+          continue;
+        }
+
+        // Updated — the later KEKA value always wins. NEVER added to the
+        // previous value. Also relinks projectId in the same statement when
+        // decision.writeProjectId is true (an Unassigned/relink transition
+        // whose hours also changed).
+        const updated = await timesheetRepo.updateEntryHours(
+          tx,
+          existing.id,
+          row.hours,
+          timesheetImport.id,
+          decision.writeProjectId ? projectId : undefined
+        );
         existingMap.set(key, updated);
         updatedCount++;
         rowLogs.push({
