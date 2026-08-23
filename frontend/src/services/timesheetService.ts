@@ -40,17 +40,61 @@ interface BackendTimesheetEntryDto {
   sourceStatus: string;
 }
 
+interface BackendTimesheetEntryPage {
+  items: BackendTimesheetEntryDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Priority #4 (scalability) — fetches the SAME complete authorized
+ * TimesheetEntry dataset refreshTimesheetImportsFromBackend() has always
+ * fetched, via bounded paginated requests instead of one unbounded request.
+ * No date window is applied here — every consumer of the resulting
+ * localStorage mirror (Team Assigned's lifetime "All" view,
+ * getProcessedLifetimeActualHours(), Dashboard's Hours Overrun widget,
+ * Expense Budget Analysis, Reports, projectMetrics.ts) depends on the full
+ * history being present, confirmed by the Priority #4 dependency audit —
+ * narrowing what gets fetched would silently understate every one of those
+ * calculations. Mirrors fetchAllProjectsFromApi()'s existing accumulation
+ * pattern in projectService.ts (do/while + safety cap), scaled up for
+ * Timesheet's larger expected row count.
+ */
+async function fetchAllTimesheetEntriesFromApi(): Promise<BackendTimesheetEntryDto[]> {
+  const all: BackendTimesheetEntryDto[] = [];
+  const pageSize = 200;
+  let page = 1;
+  let total = 0;
+
+  do {
+    const result = await apiClient.get<BackendTimesheetEntryPage>(
+      `/timesheets/entries?page=${page}&pageSize=${pageSize}`
+    );
+    all.push(...result.items);
+    total = result.total;
+    page += 1;
+  } while (all.length < total && page <= 2000);
+
+  return all;
+}
+
 /**
  * Connects the Timesheets page's "Timesheet Records" display to the real
  * backend TimesheetEntry data (produced by the KEKA import pipeline — see
  * Backend/src/modules/timesheets/services/timesheet.service.ts's
- * processTimesheetImport()). Fetches every real entry, adapts it into the
- * existing TimesheetEntry/TimesheetImportMonth shape this module has always
- * used, and writes it into the SAME localStorage key getAllTimesheetImports()
- * already reads — so every existing consumer (this page, Team Assigned via
- * project.resources, TimesheetProcessingService, Reports, Dashboard) keeps
- * working completely unchanged; only the underlying data source moves from
- * "whatever was last uploaded in this browser" to "the real database."
+ * processTimesheetImport()). Fetches every real entry — now via bounded
+ * pages (see fetchAllTimesheetEntriesFromApi() above), never one unbounded
+ * response — adapts it into the existing TimesheetEntry/TimesheetImportMonth
+ * shape this module has always used, and writes it into the SAME
+ * localStorage key getAllTimesheetImports() already reads — so every
+ * existing consumer (this page, Team Assigned, TimesheetProcessingService,
+ * Reports, Dashboard, Expense Budget Analysis, Notifications, PMO
+ * Assistant) keeps working completely unchanged; only the underlying data
+ * source moves from "whatever was last uploaded in this browser" to "the
+ * real database," and only the transport mechanism (one request vs. many
+ * bounded ones) changes — the accumulated dataset itself is identical
+ * either way.
  *
  * Months are merged, not replaced wholesale: any month with real backend
  * data takes over that month's slot; any other locally-uploaded month (not
@@ -59,12 +103,12 @@ interface BackendTimesheetEntryDto {
  * rule.
  */
 export async function refreshTimesheetImportsFromBackend(): Promise<void> {
-  const result = await apiClient.get<{ items: BackendTimesheetEntryDto[] }>("/timesheets/entries");
+  const items = await fetchAllTimesheetEntriesFromApi();
   const employees = getEmployees();
 
   const entriesByMonth = new Map<string, TimesheetEntry[]>();
 
-  for (const dto of result.items) {
+  for (const dto of items) {
     const empMaster = employees.find((e) => e.employeeNo.trim().toLowerCase() === dto.employeeNo.trim().toLowerCase());
     const dateKey = dto.workDate.slice(0, 10);
 
@@ -125,6 +169,62 @@ export async function refreshTimesheetImportsFromBackend(): Promise<void> {
   const preservedLocalMonths = getAllTimesheetImports().filter((m) => !backendMonthKeys.has(m.month));
 
   saveAllTimesheetImports([...preservedLocalMonths, ...backendMonths]);
+}
+
+// Priority #5C — Team Assigned's stale-localStorage fix. Module-level (not
+// component-level) so every caller across the whole app shares the same
+// guard, exactly the "reuse the existing mechanism, don't build a second
+// one" requirement.
+let inFlightImportsRefresh: Promise<void> | null = null;
+let lastImportsRefreshCompletedAt = 0;
+// A short cool-down, NOT a polling interval — nothing here is ever
+// scheduled/timer-driven; this only ever fires in response to an actual
+// caller (a component mounting, a user clicking Refresh). It exists solely
+// to collapse back-to-back callers within the same few seconds (e.g. two
+// Team Assigned cards mounting together, or the user switching between two
+// projects' Team Assigned tabs right after Timesheets already synced) into
+// a single backend request instead of one each.
+const IMPORTS_REFRESH_COOLDOWN_MS = 5000;
+
+/**
+ * Ensures `timesheets_imports` reflects a reasonably-current backend state
+ * before a consumer (e.g. Team Assigned) reads it, without ever polling the
+ * backend on a timer and without duplicating refreshTimesheetImportsFromBackend()'s
+ * own fetch/merge logic — this is a thin de-duplicating wrapper around that
+ * exact function, not a second sync implementation.
+ *
+ * - Concurrent callers share one in-flight request (`inFlightImportsRefresh`)
+ *   rather than each firing their own GET.
+ * - A short cool-down: skips a redundant request entirely if one already
+ *   completed within the last few seconds — see IMPORTS_REFRESH_COOLDOWN_MS
+ *   above.
+ * - Never throws: a failed backend refresh is logged and swallowed, leaving
+ *   whatever is already in `timesheets_imports` completely untouched, so a
+ *   transient network/API failure degrades to "last known data" rather than
+ *   breaking the caller. Callers that need to react to failure (e.g. the
+ *   Team Assigned "Refresh" button, which should visibly report a failure)
+ *   should call refreshTimesheetImportsFromBackend() directly instead — this
+ *   wrapper is specifically for passive, on-mount synchronization.
+ */
+export function ensureTimesheetImportsFresh(): Promise<void> {
+  if (inFlightImportsRefresh) return inFlightImportsRefresh;
+
+  if (Date.now() - lastImportsRefreshCompletedAt < IMPORTS_REFRESH_COOLDOWN_MS) {
+    return Promise.resolve();
+  }
+
+  inFlightImportsRefresh = refreshTimesheetImportsFromBackend()
+    .then(() => {
+      lastImportsRefreshCompletedAt = Date.now();
+    })
+    .catch((err) => {
+      console.warn("Could not refresh timesheet data from backend — showing last known cached data.", err);
+    })
+    .finally(() => {
+      inFlightImportsRefresh = null;
+    });
+
+  return inFlightImportsRefresh;
 }
 
 /**

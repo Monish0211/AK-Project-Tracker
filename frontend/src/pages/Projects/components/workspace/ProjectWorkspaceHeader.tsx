@@ -1,4 +1,4 @@
-import { FileText, IndianRupee, Gauge, Pencil, Printer, Share2, StickyNote, Wallet } from "lucide-react";
+import { FileText, IndianRupee, Gauge, Pencil, StickyNote, Wallet } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Project } from "../../../../types/Project";
 import { Badge } from "../../../../components/ui/Badge";
@@ -58,8 +58,6 @@ const ProjectWorkspaceHeader = ({
   onEdit,
 }: Props) => {
   const healthStatus = getProjectHealthStatus({ profitMargin, hasRevenue, pendingQtyPercentage });
-
-  const handleComingSoon = (feature: string) => alert(`${feature} — coming soon.`);
 
   return (
     <div className="rounded-[var(--nu-radius-lg)] overflow-hidden border border-[var(--nu-border)] shadow-[var(--nu-shadow-sm)]">
@@ -131,15 +129,6 @@ const ProjectWorkspaceHeader = ({
                 Edit Project
               </Button>
             )}
-            <Button variant="secondary" size="sm" icon={<FileText size={13} />} onClick={() => handleComingSoon("Documents")}>
-              Documents
-            </Button>
-            <Button variant="secondary" size="sm" icon={<Printer size={13} />} onClick={() => window.print()}>
-              Print
-            </Button>
-            <Button variant="secondary" size="sm" icon={<Share2 size={13} />} onClick={() => handleComingSoon("Share")}>
-              Share
-            </Button>
           </div>
         </div>
       </div>

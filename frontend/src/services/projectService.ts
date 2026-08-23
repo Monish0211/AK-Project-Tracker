@@ -766,19 +766,22 @@ interface ImportProjectsResponse {
 }
 
 /**
- * Excel import's persistence layer — General Information for every parsed
- * row goes through the real backend (POST /projects/import) in one
- * request, same all-or-nothing semantics the Import UI already documents
- * ("if any row fails validation, the entire import is rejected"): either
- * every row lands in Postgres with a real id, or the whole call throws and
- * nothing is written anywhere, including the local mirror.
+ * Excel import's General Information persistence step — every parsed row
+ * goes through the real backend (POST /projects/import) in one request,
+ * same all-or-nothing semantics the Import UI already documents ("if any
+ * row fails validation, the entire import is rejected"): either every row
+ * lands in Postgres with a real id, or the whole call throws and nothing is
+ * written anywhere, including the local mirror.
  *
  * `parsedProjects` are the full local Project objects parseProjectsWorkbook()
  * already built — Quantity/Payment Milestones/Expense Budget/Invoice Items
- * included, since those modules aren't backend-migrated yet. Each one is
- * passed as the explicit base to mergeBackendGeneralInfoIntoLocalProject()
- * so that data survives the round trip; only the id and General Information
- * fields are overwritten with what the backend actually stored.
+ * included. Each one is passed as the explicit base to
+ * mergeBackendGeneralInfoIntoLocalProject() so that data survives the round
+ * trip; only the id and General Information fields are overwritten with
+ * what the backend actually stored. Quantity/Payment Milestones/Expense
+ * Budget are persisted separately, by the caller, immediately afterward —
+ * see projectImportPersistenceService.ts's persistImportedProjectChildRecords()
+ * (Invoice Items remain local-mirror-only; out of that function's scope).
  */
 export async function bulkImportProjectGeneralInfo(parsedProjects: Project[]): Promise<Project[]> {
   // The Excel Import template (see projectWorkbookService.ts's
