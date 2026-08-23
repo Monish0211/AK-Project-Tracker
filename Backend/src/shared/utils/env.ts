@@ -134,6 +134,16 @@ const envSchema = z.object({
   PDF_IMPORT_AI_MAX_DOCUMENT_SET_MB: z.coerce.number().int().positive().default(20),
   PDF_IMPORT_AI_MAX_DOCUMENTS_PER_SET: z.coerce.number().int().positive().default(10),
 
+  // Priority #6 — Web Push VAPID key pair. Optional, same "app boots fine
+  // blank, the feature just refuses to run until configured" treatment as
+  // Graph/KEKA and Claude above — webPush.service.ts's isWebPushConfigured()
+  // is the single gate every push-send path checks. VAPID_PUBLIC_KEY is safe
+  // to return to the frontend (it's not a secret, only the private key is);
+  // never hardcode either in source, .env only.
+  VAPID_PUBLIC_KEY: optionalTrimmedString(z.string()),
+  VAPID_PRIVATE_KEY: optionalTrimmedString(z.string()),
+  VAPID_SUBJECT: optionalTrimmedString(z.string()),
+
   // Deliberately OPT-IN, not a default-on restriction: app.ts's cors()
   // currently allows every origin. Restricting that by default here would
   // risk locking the real production frontend out entirely if this value

@@ -3,6 +3,7 @@ import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import type { AuthEventContext } from "../../../shared/types/auth.types.js";
 import * as authService from "../services/auth.service.js";
+import { listAuditLogsQuerySchema } from "../validators/auth.validators.js";
 import type {
   ChangeFirstPasswordInput,
   ChangePasswordInput,
@@ -84,4 +85,19 @@ export const validateResetToken = asyncHandler(async (req: Request, res: Respons
 export const changeFirstPassword = asyncHandler(async (req: Request, res: Response) => {
   const result = await authService.changeFirstPassword(req.body as ChangeFirstPasswordInput, contextFrom(req));
   res.status(200).json({ success: true, data: result });
+});
+
+// Query params aren't covered by the shared `validate()` middleware (body
+// only) — same manual-safeParse convention as employee.controller.ts's
+// getEmployees.
+export const getAuditLogs = asyncHandler(async (req: Request, res: Response) => {
+  const result = listAuditLogsQuerySchema.safeParse(req.query);
+  if (!result.success) {
+    const firstIssue = result.error.issues[0];
+    const message = firstIssue ? `${firstIssue.path.join(".")}: ${firstIssue.message}` : "Invalid query parameters.";
+    throw new AppError(message, 400);
+  }
+
+  const page = await authService.listAuditLogs(result.data);
+  res.status(200).json({ success: true, data: page });
 });

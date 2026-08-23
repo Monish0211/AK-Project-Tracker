@@ -23,8 +23,10 @@ const router = Router();
 // this app — every logged-in Portal User with the "Projects" module grant
 // (Resources is a project sub-resource, not its own module).
 // Project-ownership authorization is checked one layer deeper, inside each
-// service function — except getAssignmentsByEmployee, which spans multiple
-// projects at once and is documented as a known gap (see security audit).
+// service function — including getAssignmentsByEmployee, which spans
+// multiple projects at once and filters each one's Project via
+// projectOwnershipWhereOr() in the repository query (see security audit —
+// this route previously had no ownership check at all; fixed).
 router.get("/projects/resources", authenticate, requireModuleAccess("Projects"), getAllAuthorizedResources);
 router.get("/projects/:projectId/resources", authenticate, requireModuleAccess("Projects"), getResourcesByProject);
 router.post(

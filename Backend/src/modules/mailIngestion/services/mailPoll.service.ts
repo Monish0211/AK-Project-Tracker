@@ -3,6 +3,10 @@ import { env } from "../../../shared/utils/env.js";
 import { findImportByEmailMessageId } from "../../timesheets/repository/timesheetImport.repository.js";
 import { parseTimesheetWorkbook, validateAttachment } from "../../timesheets/services/excelParser.service.js";
 import { processTimesheetImport } from "../../timesheets/services/timesheet.service.js";
+import {
+  notifyKekaImportFailedBeforeImportRow,
+  notifyTimesheetImportOutcome,
+} from "../../timesheets/services/timesheetImportNotification.service.js";
 import { getGraphAccessToken, isGraphConfigured } from "./graphAuth.service.js";
 import type { GraphAttachment, GraphMessage, PollResult } from "../mailIngestion.types.js";
 
@@ -146,9 +150,26 @@ export async function pollKekaMailbox(): Promise<PollResult> {
       result.unchangedCount += importResult.unchangedCount;
       result.removedCount += importResult.removedCount;
       result.failedCount += importResult.failedCount;
+
+      // Priority #6 Phase 3B — ONE summary notification per processed
+      // email/import, after processTimesheetImport() has already fully
+      // resolved and committed. Never inside that function, never per-row.
+      // notify() is fire-and-forget and never throws (see
+      // notification.service.ts's own contract), so this can never turn a
+      // successful import into a poll-loop error.
+      await notifyTimesheetImportOutcome(importResult, "Keka");
     } catch (err) {
       const messageText = err instanceof Error ? err.message : "Unknown error.";
       result.errors.push(`Message ${message.id}: ${messageText}`);
+
+      // Priority #6 Phase 3B — this message failed somewhere in
+      // parsing/validation/reconciliation. A TimesheetImport row may or may
+      // not exist depending on exactly where it failed (processTimesheetImport
+      // itself already finalizes a row as "Failed" before rethrowing, but
+      // that id isn't available at this catch site) — entityId is
+      // deliberately left null here rather than guessing, per the approved
+      // design ("do NOT invent an entity ID").
+      await notifyKekaImportFailedBeforeImportRow(`Message ${message.id}: ${messageText}`);
     }
   }
 

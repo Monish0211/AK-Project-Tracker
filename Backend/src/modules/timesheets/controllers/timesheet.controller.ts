@@ -9,6 +9,7 @@ import {
   editTimesheetEntry,
   processTimesheetImport,
 } from "../services/timesheet.service.js";
+import { notifyTimesheetImportOutcome } from "../services/timesheetImportNotification.service.js";
 import * as importRepo from "../repository/timesheetImport.repository.js";
 import * as rowLogRepo from "../repository/timesheetImportRowLog.repository.js";
 import * as timesheetRepo from "../repository/timesheet.repository.js";
@@ -58,6 +59,12 @@ export const importTimesheet = asyncHandler(async (req: Request, res: Response) 
     uploadedByUserId: req.user?.sub ?? null,
   });
 
+  // Priority #6 Phase 3B — ONE summary notification for this manual upload,
+  // after the import has fully resolved and committed. Fire-and-forget
+  // (notify() never throws), so a notification failure can never turn a
+  // successful upload into an error response.
+  await notifyTimesheetImportOutcome(result, "Manual");
+
   res.status(201).json({ success: true, data: result, message: "Timesheet import completed." });
 });
 
@@ -95,8 +102,9 @@ export const getEntries = asyncHandler(async (req: Request, res: Response) => {
   if (!parsed.success) throw new AppError("Invalid query parameters.", 400);
 
   const callerUserId = user.roleName === "Administrator" ? undefined : user.sub;
-  const items = await timesheetRepo.findEntries(parsed.data, callerUserId);
-  res.status(200).json({ success: true, data: { items } });
+  const { page, pageSize } = parsed.data;
+  const result = await timesheetRepo.findEntries(parsed.data, callerUserId);
+  res.status(200).json({ success: true, data: { items: result.items, total: result.total, page, pageSize } });
 });
 
 /**

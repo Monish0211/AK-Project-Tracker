@@ -21,8 +21,6 @@ export interface QuantityTotalsRow {
   projectId: string;
   woValue: number;
   woQty: number;
-  invoiceQty: number;
-  pendingQty: number;
 }
 
 export interface InvoiceLineRow {
@@ -33,6 +31,16 @@ export interface InvoiceLineRow {
   invoiceNo: string;
   milestoneId: string | null;
   projectId: string;
+  quantityItemId: string;
+  quantityBilled: number;
+}
+
+/** Raw per-item rows needed to derive invoiceQty/pendingQty at the project level — see dashboard.service.ts. Kept separate from groupQuantityTotals() because the LUMP SUM pending-quantity ceiling (see shared/utils/quantityProgress.ts) must be applied per item before summing, not on an already-summed project total. */
+export interface QuantityItemRow {
+  id: string;
+  projectId: string;
+  woQty: number;
+  uom: string;
 }
 
 export interface ResourceRow {
@@ -95,15 +103,22 @@ export async function groupQuantityTotals(projectIds: string[]): Promise<Quantit
   const rows = await prisma.quantityItem.groupBy({
     by: ["projectId"],
     where: { projectId: { in: projectIds } },
-    _sum: { woValue: true, woQty: true, invoiceQty: true, pendingQty: true },
+    _sum: { woValue: true, woQty: true },
   });
   return rows.map((row) => ({
     projectId: row.projectId,
     woValue: row._sum.woValue ?? 0,
     woQty: row._sum.woQty ?? 0,
-    invoiceQty: row._sum.invoiceQty ?? 0,
-    pendingQty: row._sum.pendingQty ?? 0,
   }));
+}
+
+/** One query, every QuantityItem for these projects — see QuantityItemRow's own comment for why this stays separate from groupQuantityTotals(). */
+export function findQuantityItemsForProjects(projectIds: string[]): Promise<QuantityItemRow[]> {
+  if (projectIds.length === 0) return Promise.resolve([]);
+  return prisma.quantityItem.findMany({
+    where: { projectId: { in: projectIds } },
+    select: { id: true, projectId: true, woQty: true, uom: true },
+  });
 }
 
 export async function findInvoiceLinesForProjects(projectIds: string[]): Promise<InvoiceLineRow[]> {
@@ -117,6 +132,8 @@ export async function findInvoiceLinesForProjects(projectIds: string[]): Promise
       invoiceDate: true,
       invoiceNo: true,
       milestoneId: true,
+      quantityItemId: true,
+      quantityBilled: true,
       quantityItem: { select: { projectId: true } },
     },
   });
@@ -127,6 +144,8 @@ export async function findInvoiceLinesForProjects(projectIds: string[]): Promise
     invoiceDate: row.invoiceDate,
     invoiceNo: row.invoiceNo,
     milestoneId: row.milestoneId,
+    quantityItemId: row.quantityItemId,
+    quantityBilled: row.quantityBilled,
     projectId: row.quantityItem.projectId,
   }));
 }

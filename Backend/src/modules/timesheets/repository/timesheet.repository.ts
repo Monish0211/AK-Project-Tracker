@@ -75,6 +75,26 @@ export interface FindEntriesFilters {
   projectId?: string | undefined;
   workDate?: Date | undefined;
   task?: string | undefined;
+  startDate?: Date | undefined;
+  endDate?: Date | undefined;
+  page: number;
+  pageSize: number;
+}
+
+export interface FindEntriesResult {
+  items: Awaited<ReturnType<typeof queryEntries>>;
+  total: number;
+}
+
+/** The one findMany() shape shared by the count and the page fetch below — kept as its own function purely so TypeScript can infer FindEntriesResult's item type from a single source. */
+function queryEntries(where: Prisma.TimesheetEntryWhereInput, skip: number, take: number) {
+  return prisma.timesheetEntry.findMany({
+    where,
+    orderBy: { workDate: "asc" },
+    include: { project: { select: { prNo: true, projectTitle: true } } },
+    skip,
+    take,
+  });
 }
 
 /**
@@ -82,7 +102,7 @@ export interface FindEntriesFilters {
  * with no project at all (the "Unassigned" import case — not attributable
  * to any project, so there's nothing to restrict) plus entries whose
  * project the caller is authorized for — same project-ownership rule as
- * GET /projects, never a second concept.
+ * GET /projects, never a second concept. Unchanged by this Priority #4 fix.
  *
  * Includes the linked Project's prNo/projectTitle directly (a mapped row
  * has projectId but no other Project fields of its own) so the frontend
@@ -91,29 +111,76 @@ export interface FindEntriesFilters {
  * that mirror is only ever filled by visiting the Projects/Manpower pages,
  * so relying on it here silently showed every mapped row as unresolved on
  * a fresh session that went straight to Timesheets.
+ *
+ * Priority #4 — bounded by page/pageSize (same skip/take + count() shape as
+ * employee.repository.ts's listEmployees). startDate/endDate add an
+ * optional workDate RANGE filter, independent of (and never combined with)
+ * the pre-existing exact-match `workDate` filter — a caller using the
+ * original single-date filter sees byte-identical behavior to before this
+ * change. This function's own WHERE/ownership semantics are otherwise
+ * unchanged; the only thing genuinely new is that a caller must now either
+ * pass page/pageSize or accept the schema's defaults, rather than always
+ * receiving every matching row in one response.
  */
-export function findEntries(filters: FindEntriesFilters, callerUserId?: string) {
+export async function findEntries(filters: FindEntriesFilters, callerUserId?: string): Promise<FindEntriesResult> {
   const ownershipOr = projectOwnershipWhereOr(callerUserId);
-  return prisma.timesheetEntry.findMany({
-    where: {
-      ...(filters.employeeNo && { employeeNo: filters.employeeNo }),
-      ...(filters.projectId && { projectId: filters.projectId }),
-      ...(filters.workDate && { workDate: filters.workDate }),
-      ...(filters.task !== undefined && { task: filters.task }),
-      ...(ownershipOr && { OR: [{ projectId: null }, { project: { OR: ownershipOr } }] }),
-    },
-    orderBy: { workDate: "asc" },
-    include: { project: { select: { prNo: true, projectTitle: true } } },
-  });
+
+  let workDateFilter: Prisma.TimesheetEntryWhereInput["workDate"] | undefined;
+  if (filters.startDate || filters.endDate) {
+    workDateFilter = {
+      ...(filters.startDate && { gte: filters.startDate }),
+      ...(filters.endDate && { lte: filters.endDate }),
+    };
+  } else if (filters.workDate) {
+    workDateFilter = filters.workDate;
+  }
+
+  const where: Prisma.TimesheetEntryWhereInput = {
+    ...(filters.employeeNo && { employeeNo: filters.employeeNo }),
+    ...(filters.projectId && { projectId: filters.projectId }),
+    ...(workDateFilter !== undefined && { workDate: workDateFilter }),
+    ...(filters.task !== undefined && { task: filters.task }),
+    ...(ownershipOr && { OR: [{ projectId: null }, { project: { OR: ownershipOr } }] }),
+  };
+
+  const skip = (filters.page - 1) * filters.pageSize;
+  const [items, total] = await Promise.all([
+    queryEntries(where, skip, filters.pageSize),
+    prisma.timesheetEntry.count({ where }),
+  ]);
+
+  return { items, total };
 }
 
 export function createEntry(tx: Prisma.TransactionClient, data: TimesheetEntryCreateData) {
   return tx.timesheetEntry.create({ data });
 }
 
-/** A revision — hours change, lastImportId moves to the import that made the change. firstImportId is never touched. */
-export function updateEntryHours(tx: Prisma.TransactionClient, id: string, hours: number, lastImportId: string) {
-  return tx.timesheetEntry.update({ where: { id }, data: { hours, lastImportId } });
+/**
+ * A revision — hours change, lastImportId moves to the import that made the
+ * change. firstImportId is never touched.
+ *
+ * `projectId` is an optional 5th parameter (Priority #5 fix) so a single
+ * statement can also relink a row's project (Unassigned -> Resolved, or a
+ * relink to a different resolved project — see
+ * timesheetReconciliation.rules.ts's decideEntryOutcome()) in the same
+ * write as an hours revision, without needing a second repository function.
+ * Omitted (undefined) leaves projectId completely untouched — the exact
+ * same single-column write this function has always done. Passing `null`
+ * explicitly clears the link back to Unassigned; this is distinct from
+ * omitting the argument, via the `!== undefined` check below.
+ */
+export function updateEntryHours(
+  tx: Prisma.TransactionClient,
+  id: string,
+  hours: number,
+  lastImportId: string,
+  projectId?: string | null
+) {
+  return tx.timesheetEntry.update({
+    where: { id },
+    data: { hours, lastImportId, ...(projectId !== undefined && { projectId }) },
+  });
 }
 
 /** Backs the "Removed" outcome — a correction to 0 hours deletes the row rather than storing a zero (matches the existing frontend parser's own "0 hours is not a real entry" precedent). */

@@ -46,6 +46,21 @@ export async function assertProjectAccessById(projectId: string, user: AccessTok
 }
 
 /**
+ * Priority #6 Phase 3B — the one place a project-scoped child-resource
+ * module (Invoices, and any future one) reads just createdByUserId to
+ * resolve a business-event notification's recipient, without needing the
+ * full Project DTO or duplicating this same minimal findUnique shape in
+ * each module. Returns null both when the project is unclaimed AND when it
+ * genuinely doesn't exist — callers that already validated the project's
+ * existence via assertProjectAccessById() don't need to distinguish those
+ * cases here.
+ */
+export async function getProjectCreatorUserId(projectId: string): Promise<string | null> {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { createdByUserId: true } });
+  return project?.createdByUserId ?? null;
+}
+
+/**
  * The Prisma OR-clause fragment that scopes a list query to projects the
  * caller may see — pass `undefined` for an Administrator (no restriction).
  * Shared by GET /projects, GET /timesheets/pending-projects, and GET

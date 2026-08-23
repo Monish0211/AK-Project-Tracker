@@ -9,8 +9,6 @@ export interface QuantityItemData {
   description: string;
 
   woQty: number;
-  invoiceQty: number;
-  pendingQty: number;
 
   uom: string;
   assignedTo?: string | null;
@@ -22,5 +20,4 @@ export interface QuantityItemData {
   unitRateINR: number;
 
   woValue: number;
-  pendingAmount: number;
 }

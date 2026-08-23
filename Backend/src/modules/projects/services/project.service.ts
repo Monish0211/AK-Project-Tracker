@@ -1,6 +1,7 @@
 import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccess } from "../../../shared/utils/projectAccess.js";
 import { reconcileUnassignedEntriesForProject } from "../../timesheets/services/timesheet.service.js";
+import { notify, resolveProjectEventRecipients } from "../../notifications/notification.service.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type {
   ImportProjectsResultDto,
@@ -330,6 +331,22 @@ export async function archiveProject(id: string, user: AccessTokenPayload): Prom
   assertProjectAccess(user, existing);
 
   await archiveProjectInRepository(id);
+
+  // Priority #6 Phase 3B — after the archive has committed. Duplicate
+  // protection is structural, not something added here: findProjectById()
+  // above only ever finds a currently-active (isDeleted: false) project, so
+  // a second archive attempt on an already-archived project 404s before
+  // ever reaching this line — this can only ever fire once per real
+  // archive transition. Fire-and-forget; never affects this response.
+  const recipients = await resolveProjectEventRecipients(existing.createdByUserId, "Projects");
+  await notify(recipients, {
+    title: "Project Archived",
+    message: `Project ${existing.prNo} (${existing.projectTitle}) was archived.`,
+    type: "PROJECT_ARCHIVED",
+    severity: "Medium",
+    entityType: "Project",
+    entityId: id,
+  });
 }
 
 /**
@@ -352,6 +369,20 @@ export async function restoreProject(id: string, user: AccessTokenPayload): Prom
   }
 
   await restoreProjectInRepository(id);
+
+  // Priority #6 Phase 3B — structurally protected against duplicates the
+  // same way as archive: the 409 guard just above already refuses a second
+  // restore attempt on a project that isn't currently archived, so this can
+  // only ever fire once per real restore transition.
+  const recipients = await resolveProjectEventRecipients(existing.createdByUserId, "Projects");
+  await notify(recipients, {
+    title: "Project Restored",
+    message: `Project ${existing.prNo} (${existing.projectTitle}) was restored.`,
+    type: "PROJECT_RESTORED",
+    severity: "Info",
+    entityType: "Project",
+    entityId: id,
+  });
 }
 
 /**
@@ -388,6 +419,34 @@ export async function permanentlyDeleteProject(id: string, user: AccessTokenPayl
   assertProjectAccess(user, existing);
 
   await hardDeleteProjectInRepository(id);
+
+  // Priority #6 Phase 3B — after the delete has committed. Structurally
+  // protected against duplicates: the row is gone once this line runs, so a
+  // second attempt against the same id 404s at findProjectByIdAny() above,
+  // before ever reaching here — this can only ever fire once.
+  //
+  // entityType is deliberately NULL here, NOT "Project" — this is a forced
+  // consequence of notify()'s existing, protected buildActionUrl(), which
+  // unconditionally derives actionUrl from entityType+entityId together
+  // whenever entityType is truthy (see notification.service.ts's notify()).
+  // Since the Project entity type already has a real route builder
+  // (/projects/edit/:id), setting entityType: "Project" here would
+  // unavoidably produce a dead link to a project that no longer exists —
+  // exactly what's explicitly disallowed. entityId is still preserved as
+  // the deleted project's real id for historical reference (createNotification
+  // stores entityType/entityId independently, not as a coupled pair — only
+  // buildActionUrl treats them as one), which is the smallest change that
+  // satisfies both "keep the historical id" and "never a dead link" without
+  // modifying notify()'s existing behavior.
+  const recipients = await resolveProjectEventRecipients(existing.createdByUserId, "Projects");
+  await notify(recipients, {
+    title: "Project Permanently Deleted",
+    message: `Project ${existing.prNo} (${existing.projectTitle}) was permanently deleted.`,
+    type: "PROJECT_DELETED",
+    severity: "Critical",
+    entityType: null,
+    entityId: id,
+  });
 }
 
 export async function listProjects(query: ListProjectsQuery, user: AccessTokenPayload): Promise<PaginatedProjectListDto> {

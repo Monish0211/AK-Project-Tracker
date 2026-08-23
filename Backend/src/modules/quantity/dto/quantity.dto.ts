@@ -8,8 +8,6 @@ export interface CreateQuantityDto {
   description: string;
 
   woQty: number;
-  invoiceQty: number;
-  pendingQty: number;
 
   uom: string;
   assignedTo?: string | null;
@@ -21,7 +19,6 @@ export interface CreateQuantityDto {
   unitRateINR: number;
 
   woValue: number;
-  pendingAmount: number;
 }
 
 /** Same fields as CreateQuantityDto, all optional — a PATCH only carries what changed. */
@@ -29,8 +26,6 @@ export interface UpdateQuantityDto {
   description?: string;
 
   woQty?: number;
-  invoiceQty?: number;
-  pendingQty?: number;
 
   uom?: string;
   assignedTo?: string | null;
@@ -42,9 +37,14 @@ export interface UpdateQuantityDto {
   unitRateINR?: number;
 
   woValue?: number;
-  pendingAmount?: number;
 }
 
+/**
+ * invoiceQty / pendingQty / pendingAmount are DERIVED response fields, not
+ * persisted columns (see Priority #3 fix) — computed at read time from
+ * InvoiceLine.quantityBilled via shared/utils/quantityProgress.ts. The API
+ * contract shape is unchanged; only how these three are produced changed.
+ */
 export interface QuantityDto {
   id: string;
   projectId: string;

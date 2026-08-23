@@ -1,4 +1,5 @@
 import { getTimesheetPendingProjects } from "../../timesheets/services/timesheetPending.service.js";
+import { computeInvoiceProgress } from "../../../shared/utils/quantityProgress.js";
 import type {
   ActivityEventDto,
   DashboardSummaryDto,
@@ -46,6 +47,7 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
 
   const [
     quantityTotals,
+    quantityItems,
     invoiceLines,
     expenseTotals,
     manhourTotals,
@@ -56,6 +58,7 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
     timesheetPendingItems,
   ] = await Promise.all([
     dashboardRepo.groupQuantityTotals(projectIds),
+    dashboardRepo.findQuantityItemsForProjects(projectIds),
     dashboardRepo.findInvoiceLinesForProjects(projectIds),
     dashboardRepo.groupExpenseTotals(projectIds),
     dashboardRepo.groupManhourCostTotals(projectIds),
@@ -74,6 +77,39 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
 
   const qtyByProject = new Map(quantityTotals.map((row) => [row.projectId, row]));
   const invoiceByProject = linesByProject(invoiceLines);
+
+  // Derived invoiceQty/pendingQty — see Priority #3 fix: QuantityItem no
+  // longer stores these (they used to drift from real invoicing activity).
+  // billedByQuantityItemId reuses the SAME invoiceLines already fetched
+  // above for Payment Received — no additional query. The LUMP SUM ceiling
+  // (shared/utils/quantityProgress.ts) must be applied per QuantityItem
+  // before summing to the project level, so this groups by quantityItemId,
+  // not projectId, before the per-project loop below sums each item's own
+  // derived pendingQty/invoiceQty.
+  const billedByQuantityItemId = new Map<string, number>();
+  for (const line of invoiceLines) {
+    if (line.status === "Cancelled") continue;
+    billedByQuantityItemId.set(
+      line.quantityItemId,
+      (billedByQuantityItemId.get(line.quantityItemId) ?? 0) + line.quantityBilled
+    );
+  }
+  const quantityItemsByProject = new Map<string, dashboardRepo.QuantityItemRow[]>();
+  for (const item of quantityItems) {
+    const list = quantityItemsByProject.get(item.projectId);
+    if (list) list.push(item);
+    else quantityItemsByProject.set(item.projectId, [item]);
+  }
+  function derivedInvoiceProgressForProject(projectId: string): { invoiceQty: number; pendingQty: number } {
+    let invoiceQty = 0;
+    let pendingQty = 0;
+    for (const item of quantityItemsByProject.get(projectId) ?? []) {
+      const progress = computeInvoiceProgress(item.woQty, item.uom, billedByQuantityItemId.get(item.id) ?? 0);
+      invoiceQty += progress.invoiceQty;
+      pendingQty += progress.pendingQty;
+    }
+    return { invoiceQty, pendingQty };
+  }
   const milestonesByProject = new Map<string, { id: string; paymentPercentage: number }[]>();
   for (const m of milestones) {
     const list = milestonesByProject.get(m.projectId);
@@ -110,10 +146,12 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
     const expenses = expenseTotals.get(project.id) ?? 0;
     const manhourCost = manhourTotals.get(project.id) ?? 0;
 
+    const { invoiceQty: derivedInvoiceQty, pendingQty: derivedPendingQty } = derivedInvoiceProgressForProject(project.id);
+
     woByProject.set(project.id, woValue);
     raisedByProject.set(project.id, commercial.totalInvoiceRaised);
-    pendingQtyByProject.set(project.id, qty?.pendingQty ?? 0);
-    pendingPctByProject.set(project.id, pendingInvoicePercentage(qty?.pendingQty ?? 0, qty?.woQty ?? 0));
+    pendingQtyByProject.set(project.id, derivedPendingQty);
+    pendingPctByProject.set(project.id, pendingInvoicePercentage(derivedPendingQty, qty?.woQty ?? 0));
     teamCountByProject.set(project.id, (resourcesByProject.get(project.id) ?? []).length);
 
     const billedMilestoneIds = new Set<string>();
@@ -126,7 +164,7 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
       project.id,
       calculateCompletionPercentage({
         totalWOQty: qty?.woQty ?? 0,
-        totalInvoiceQty: qty?.invoiceQty ?? 0,
+        totalInvoiceQty: derivedInvoiceQty,
         milestonePercentages: milestonesByProject.get(project.id) ?? [],
         billedMilestoneIds,
         woValueINR: woValue,

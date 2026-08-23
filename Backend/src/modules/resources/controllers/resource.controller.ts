@@ -52,12 +52,10 @@ export const getResourcesByProject = asyncHandler(async (req: Request, res: Resp
   res.status(200).json({ success: true, data: result });
 });
 
-// NOT project-ownership scoped — see resource.service.ts's
-// listResourcesForEmployee() comment (spans multiple projects at once, no
-// live frontend caller today).
 export const getAssignmentsByEmployee = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const employeeNo = parseEmployeeNoParam(req);
-  const result = await resourceService.listResourcesForEmployee(employeeNo);
+  const result = await resourceService.listResourcesForEmployee(employeeNo, user);
   res.status(200).json({ success: true, data: result });
 });
 

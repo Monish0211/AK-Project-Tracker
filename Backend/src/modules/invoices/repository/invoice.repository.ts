@@ -161,6 +161,31 @@ export function findConflictingLineForMilestone(params: {
 }
 
 /**
+ * Backs the Priority #3 fix — the single query that derives "how much of
+ * each QuantityItem has actually been invoiced," for however many item ids
+ * the caller has (one QuantityItem, or a whole project's worth). One
+ * groupBy regardless of list size — never one query per item. Excludes
+ * Cancelled lines, matching the existing frontend Invoice-progress rule
+ * (InvoiceCalculations.ts's getActivityCompletedQty) exactly. Callers pass
+ * the result into shared/utils/quantityProgress.ts's computeInvoiceProgress().
+ */
+export async function sumBilledQuantityByQuantityItemIds(quantityItemIds: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (quantityItemIds.length === 0) return map;
+
+  const rows = await prisma.invoiceLine.groupBy({
+    by: ["quantityItemId"],
+    where: { quantityItemId: { in: quantityItemIds }, status: { not: "Cancelled" } },
+    _sum: { quantityBilled: true },
+  });
+
+  for (const row of rows) {
+    map.set(row.quantityItemId, row._sum.quantityBilled ?? 0);
+  }
+  return map;
+}
+
+/**
  * Also backs the Quantity delete guard — called only once
  * countNonCancelledLinesForQuantityItem() above has confirmed zero
  * non-cancelled lines remain. The InvoiceLine.quantityItemId FK is

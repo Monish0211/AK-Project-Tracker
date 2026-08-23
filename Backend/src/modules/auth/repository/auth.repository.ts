@@ -182,3 +182,17 @@ export function createAuditLog(entry: AuthAuditEntry) {
     },
   });
 }
+
+/** Read side of AuthAuditLog — newest first, paginated. Administrator-only, gated at the route. */
+export async function findAuditLogsPage(page: number, pageSize: number) {
+  const [items, total] = await Promise.all([
+    prisma.authAuditLog.findMany({
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: { user: { select: { fullName: true } } },
+    }),
+    prisma.authAuditLog.count(),
+  ]);
+  return { items, total };
+}

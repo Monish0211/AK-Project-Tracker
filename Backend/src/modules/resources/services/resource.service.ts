@@ -88,15 +88,14 @@ export async function listAllAuthorizedResources(user: AccessTokenPayload): Prom
  * No employee-existence check here — see resource.validators.ts's module
  * comment: Resources has zero dependency on the Employees module by design.
  *
- * NOT project-ownership scoped: this spans every project a given employee
- * is assigned to at once, so a single "does the caller own project X" gate
- * doesn't apply cleanly. Documented as a known gap (see security audit) —
- * this route is backend-only with no live frontend caller today (Phase
- * 3.7), so it's left unchanged rather than building bespoke per-row
- * filtering for an endpoint nothing currently calls.
+ * Ownership-scoped the same way as listAllAuthorizedResources: an employee
+ * can be assigned across projects owned by different users, so employeeNo
+ * alone is never an authorization boundary — each returned row's Project
+ * is filtered by projectOwnershipWhereOr() inside the repository query.
  */
-export async function listResourcesForEmployee(employeeNo: string): Promise<ResourceListDto> {
-  const rows = await getResourcesByEmployeeNo(employeeNo);
+export async function listResourcesForEmployee(employeeNo: string, user: AccessTokenPayload): Promise<ResourceListDto> {
+  const callerUserId = user.roleName === "Administrator" ? undefined : user.sub;
+  const rows = await getResourcesByEmployeeNo(employeeNo, callerUserId);
   return { items: rows.map((row) => toResourceDto(row)) };
 }
 

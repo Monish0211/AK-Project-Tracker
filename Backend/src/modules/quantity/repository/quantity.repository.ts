@@ -4,8 +4,10 @@ import type { QuantityItemData } from "../quantity.types.js";
 /**
  * All Prisma access for Quantity lives here — the service layer never
  * imports `prisma` directly (same rule as project.repository.ts). No
- * business logic, no calculations — pendingQty/unitRateINR/woValue/
- * pendingAmount arrive already computed by quantity.service.ts.
+ * business logic, no calculations — unitRateINR/woValue arrive already
+ * computed by quantity.service.ts. invoiceQty/pendingQty/pendingAmount are
+ * not persisted at all (see quantity.service.ts's toQuantityDto) — nothing
+ * here ever touches them.
  */
 
 export function createQuantity(projectId: string, data: QuantityItemData) {

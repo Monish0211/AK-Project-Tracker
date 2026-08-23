@@ -136,15 +136,12 @@ test("GET /dashboard/summary auth, ownership, and KPI formulas", async () => {
         projectId: secretProject.id,
         description: "WO",
         woQty: 1,
-        invoiceQty: 0,
-        pendingQty: 1,
         uom: "LOT",
         currency: "INR",
         unitRate: 50000,
         exchangeRate: 1,
         unitRateINR: 50000,
         woValue: 50000,
-        pendingAmount: 50000,
       },
     });
 

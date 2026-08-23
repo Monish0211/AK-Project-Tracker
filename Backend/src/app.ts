@@ -14,6 +14,7 @@ import { timesheetRoutes } from "./modules/timesheets/index.js";
 import { mailIngestionRoutes } from "./modules/mailIngestion/index.js";
 import { pdfImportRoutes } from "./modules/pdfImport/index.js";
 import { dashboardRoutes } from "./modules/dashboard/index.js";
+import { notificationRoutes } from "./modules/notifications/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { AppError } from "./shared/utils/AppError.js";
 import { env } from "./shared/utils/env.js";
@@ -100,6 +101,11 @@ app.use(pdfImportRoutes);
 // Read-only; authenticate + requireModuleAccess("Dashboard"); ownership
 // matches GET /projects. Does not change any other module.
 app.use(dashboardRoutes);
+// Notification infrastructure — Priority #6, Phase 2. Declares its own full
+// paths (/notifications[...], /notifications/push-subscriptions[...]),
+// mounted at root like dashboard/timesheet above. INFRASTRUCTURE ONLY: no
+// business module calls notification.service.ts's notify() yet (Phase 3).
+app.use(notificationRoutes);
 
 app.use((req, _res, next) => {
   next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));

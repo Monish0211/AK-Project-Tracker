@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
+import { authorize } from "../../../shared/middleware/authorize.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import {
   changeFirstPassword,
   changePassword,
   forgotPassword,
+  getAuditLogs,
   login,
   logout,
   me,
@@ -35,5 +37,10 @@ router.post("/change-first-password", validate(changeFirstPasswordSchema), chang
 router.post("/forgot-password", validate(forgotPasswordSchema), forgotPassword);
 router.get("/validate-reset-token", validateResetToken);
 router.post("/reset-password", validate(resetPasswordSchema), resetPassword);
+
+// Read-only, Administrator-only view of AuthAuditLog — no write route exists
+// or is intended; audit rows are only ever created internally by
+// auth.service.ts's logAuthEvent().
+router.get("/audit-logs", authenticate, authorize("Administrator"), getAuditLogs);
 
 export default router;

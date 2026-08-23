@@ -96,6 +96,15 @@ model PortalUser {
   // via onDelete: SetNull declared on that relation, never orphaned.
   createdProjects Project[] @relation("ProjectCreator")
 
+  // Priority #6 — notification infrastructure. onDelete: Cascade on both:
+  // a deleted PortalUser's personal notification history and push
+  // subscriptions have no meaning to anyone else and are never reassigned
+  // (contrast Project.createdByUserId's SetNull-to-unclaimed rule, which
+  // exists because a PROJECT survives its creator; a notification does not
+  // survive its recipient).
+  notifications      Notification[]
+  pushSubscriptions  PushSubscription[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -439,9 +448,7 @@ model QuantityItem {
 
   description String
 
-  woQty      Float
-  invoiceQty Float
-  pendingQty Float
+  woQty Float
 
   uom        String  @default("")
   assignedTo String?
@@ -451,8 +458,19 @@ model QuantityItem {
   exchangeRate Float
   unitRateINR  Float
 
-  woValue       Float
-  pendingAmount Float
+  woValue Float
+
+  // invoiceQty / pendingQty / pendingAmount were removed from here (see
+  // Priority #3 fix) — they were plain persisted columns that only the
+  // Quantity module's own Create/Update ever wrote, and were never updated
+  // when an InvoiceLine was created/edited/deleted, so they drifted from
+  // real invoicing activity as soon as the first invoice was raised against
+  // an item. The single source of truth for invoiced quantity is now
+  // InvoiceLine.quantityBilled (summed, excluding Cancelled lines) —
+  // invoiceQty/pendingQty/pendingAmount are computed at read time from that
+  // sum (see Backend/src/shared/utils/quantityProgress.ts) and still
+  // returned on QuantityDto exactly as before; only the underlying storage
+  // changed, not the API contract.
 
   invoiceLines InvoiceLine[]
 
@@ -809,6 +827,13 @@ model TimesheetEntry {
   @@index([employeeNo, projectId, workDate, task])
   @@index([projectId])
   @@index([employeeNo])
+  // Priority #4 — GET /timesheets/entries orders by workDate and, in its
+  // most common real call (the frontend's bounded paginated full-history
+  // accumulation), applies no employeeNo/projectId equality filter ahead of
+  // it, so the existing composite index above can't serve that sort/skip
+  // efficiently. This index exists solely to support that one access
+  // pattern at scale — not a general-purpose addition.
+  @@index([workDate])
 }
 
 // =============================================================================
@@ -940,4 +965,78 @@ model Customer {
   @@index([status])
   @@index([customerCode])
   @@index([customerName])
+}
+
+// =============================================================================
+// NOTIFICATION — Priority #6, Phase 2 (infrastructure only — see
+// notification.service.ts's own module comment). Durable, per-user record of
+// a PMO event, independent of whether browser push delivery ever succeeds
+// (see PushSubscription below) — a push failure must never mean the event
+// itself was lost; it only ever affects whether a toast was shown.
+//
+// type/severity/entityType are deliberately plain strings with a default,
+// not a Prisma enum — same convention already used throughout this schema
+// for every other status-like field (TimesheetImport.status,
+// ProjectResource.assignmentStatus, Employee.status, ...), so a new
+// category never requires a migration.
+// =============================================================================
+model Notification {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  userId String
+  user   PortalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title   String
+  message String
+
+  type     String
+  severity String @default("Info")
+
+  // Identifies what business record (if any) this notification is about —
+  // entityType is one of a fixed, server-side allowlist (see
+  // notification.service.ts's buildActionUrl()); actionUrl is always
+  // DERIVED from entityType+entityId server-side, never accepted as a raw
+  // client-supplied URL, so a caller can never inject an arbitrary link.
+  entityType String?
+  entityId   String?
+  actionUrl  String?
+
+  isRead Boolean   @default(false)
+  readAt DateTime?
+
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead, createdAt])
+  @@index([userId, createdAt])
+}
+
+// =============================================================================
+// PUSH SUBSCRIPTION — one row per (PortalUser, browser/device) pair. A user
+// can hold many simultaneously (Chrome + Edge + a second computer, etc.) —
+// endpoint is the only uniqueness boundary, never userId, since one user
+// legitimately has several. revokedAt (not a delete) preserves the row when
+// the push service reports the endpoint as gone (404/410) — see
+// notification.service.ts's sendPush() — so a resubscribe from the same
+// browser cleanly reactivates rather than needing a fresh row.
+// =============================================================================
+model PushSubscription {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  userId String
+  user   PortalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  endpoint String @unique
+  p256dh   String
+  auth     String
+
+  userAgent   String?
+  deviceLabel String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  revokedAt DateTime?
+
+  @@index([userId])
 }

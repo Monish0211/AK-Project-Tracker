@@ -79,3 +79,15 @@ export const refreshTokenSchema = z.object({
 });
 
 export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
+
+/**
+ * GET /auth/audit-logs query params — same page/pageSize convention as
+ * listEmployeesQuerySchema/listNotificationsQuerySchema. Parsed directly in
+ * the controller — the shared `validate()` middleware only covers req.body.
+ */
+export const listAuditLogsQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(200).default(25),
+});
+
+export type ListAuditLogsQuery = z.infer<typeof listAuditLogsQuerySchema>;

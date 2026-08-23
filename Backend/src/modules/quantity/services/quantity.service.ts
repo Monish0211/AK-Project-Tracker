@@ -1,9 +1,11 @@
 import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import { computeInvoiceProgress } from "../../../shared/utils/quantityProgress.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import {
   countNonCancelledLinesForQuantityItem,
   deleteCancelledLinesForQuantityItem,
+  sumBilledQuantityByQuantityItemIds,
 } from "../../invoices/repository/invoice.repository.js";
 import type { QuantityDto, QuantityListDto } from "../dto/quantity.dto.js";
 import {
@@ -17,18 +19,27 @@ import {
 import type { QuantityItemData } from "../quantity.types.js";
 import type { CreateQuantityInput, UpdateQuantityInput } from "../validators/quantity.validators.js";
 
-function toQuantityDto(row: Awaited<ReturnType<typeof getQuantityById>>): QuantityDto {
+/**
+ * billedQty is the sum of this item's non-Cancelled InvoiceLine.quantityBilled
+ * rows — the caller fetches it (in bulk for a list, or once for a single
+ * item) so this function itself never has to be async. See
+ * shared/utils/quantityProgress.ts for the LUMP SUM ceiling rule.
+ */
+function toQuantityDto(row: Awaited<ReturnType<typeof getQuantityById>>, billedQty: number): QuantityDto {
   if (!row) {
     throw new AppError("Quantity item not found.", 404);
   }
+
+  const { invoiceQty, pendingQty } = computeInvoiceProgress(row.woQty, row.uom, billedQty);
+  const pendingAmount = pendingQty * row.unitRateINR;
 
   return {
     id: row.id,
     projectId: row.projectId,
     description: row.description,
     woQty: row.woQty,
-    invoiceQty: row.invoiceQty,
-    pendingQty: row.pendingQty,
+    invoiceQty,
+    pendingQty,
     uom: row.uom,
     assignedTo: row.assignedTo,
     currency: row.currency,
@@ -36,41 +47,36 @@ function toQuantityDto(row: Awaited<ReturnType<typeof getQuantityById>>): Quanti
     exchangeRate: row.exchangeRate,
     unitRateINR: row.unitRateINR,
     woValue: row.woValue,
-    pendingAmount: row.pendingAmount,
+    pendingAmount,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
 
 /**
- * Derives unitRateINR/woValue/pendingQty/pendingAmount from the fields a
- * client actually controls (woQty/invoiceQty/unitRate/exchangeRate/currency/
- * uom) — the exact same formula as recalcQuantityItem() in
- * frontend/src/utils/quantityCalculations.ts, so a future frontend
- * integration produces identical numbers whether calculated client-side or
- * re-derived here. Never trusts a client-submitted derived value.
+ * Derives unitRateINR/woValue from the fields a client actually controls
+ * (woQty/unitRate/exchangeRate/currency/uom) — the exact same formula as
+ * recalcQuantityItem() in frontend/src/utils/quantityCalculations.ts, so a
+ * future frontend integration produces identical numbers whether calculated
+ * client-side or re-derived here. Never trusts a client-submitted derived
+ * value. invoiceQty/pendingQty/pendingAmount are no longer part of this —
+ * they depend on real invoicing activity, not on anything settable here
+ * (see toQuantityDto() above).
  */
 function computeDerivedFields(fields: {
   woQty: number;
-  invoiceQty: number;
   uom: string;
   currency: string;
   unitRate: number;
   exchangeRate: number;
-}): Pick<QuantityItemData, "unitRateINR" | "woValue" | "pendingQty" | "pendingAmount"> {
+}): Pick<QuantityItemData, "unitRateINR" | "woValue"> {
   const isLumpSum = fields.uom.trim().toUpperCase() === "LUMP SUM";
 
   const unitRateINR = fields.currency === "INR" ? fields.unitRate : fields.unitRate * fields.exchangeRate;
 
   const woValue = isLumpSum ? unitRateINR : fields.woQty * unitRateINR;
 
-  const pendingQty = isLumpSum
-    ? Math.max(1 - fields.invoiceQty, 0)
-    : Math.max(fields.woQty - fields.invoiceQty, 0);
-
-  const pendingAmount = pendingQty * unitRateINR;
-
-  return { unitRateINR, woValue, pendingQty, pendingAmount };
+  return { unitRateINR, woValue };
 }
 
 /** Throws AppError(404) if the project doesn't exist, or 403 if the caller isn't authorized for it — see shared/utils/projectAccess.ts. */
@@ -87,7 +93,6 @@ export async function createQuantityForProject(
 
   const derived = computeDerivedFields({
     woQty: input.woQty,
-    invoiceQty: input.invoiceQty,
     uom: input.uom,
     currency: input.currency,
     unitRate: input.unitRate,
@@ -97,7 +102,6 @@ export async function createQuantityForProject(
   const data: QuantityItemData = {
     description: input.description,
     woQty: input.woQty,
-    invoiceQty: input.invoiceQty,
     uom: input.uom,
     assignedTo: input.assignedTo ?? null,
     currency: input.currency,
@@ -107,14 +111,16 @@ export async function createQuantityForProject(
   };
 
   const created = await createQuantityInRepository(projectId, data);
-  return toQuantityDto(created);
+  // A brand-new item cannot yet have any InvoiceLine referencing it.
+  return toQuantityDto(created, 0);
 }
 
 export async function listQuantityForProject(projectId: string, user: AccessTokenPayload): Promise<QuantityListDto> {
   await assertProjectExists(projectId, user);
 
   const rows = await getQuantityByProjectId(projectId);
-  return { items: rows.map((row) => toQuantityDto(row)) };
+  const billedByItemId = await sumBilledQuantityByQuantityItemIds(rows.map((row) => row.id));
+  return { items: rows.map((row) => toQuantityDto(row, billedByItemId.get(row.id) ?? 0)) };
 }
 
 export async function updateQuantityItem(
@@ -130,7 +136,6 @@ export async function updateQuantityItem(
 
   const merged = {
     woQty: input.woQty ?? existing.woQty,
-    invoiceQty: input.invoiceQty ?? existing.invoiceQty,
     uom: input.uom ?? existing.uom,
     currency: input.currency ?? existing.currency,
     unitRate: input.unitRate ?? existing.unitRate,
@@ -146,7 +151,8 @@ export async function updateQuantityItem(
     ...derived,
   });
 
-  return toQuantityDto(updated);
+  const billedByItemId = await sumBilledQuantityByQuantityItemIds([id]);
+  return toQuantityDto(updated, billedByItemId.get(id) ?? 0);
 }
 
 export async function deleteQuantityItem(id: string, user: AccessTokenPayload): Promise<void> {
@@ -180,7 +186,8 @@ export async function deleteQuantityItem(id: string, user: AccessTokenPayload): 
  * duplicate the not-found check.
  */
 export async function getQuantityItemById(id: string): Promise<QuantityDto> {
-  return toQuantityDto(await getQuantityById(id));
+  const billedByItemId = await sumBilledQuantityByQuantityItemIds([id]);
+  return toQuantityDto(await getQuantityById(id), billedByItemId.get(id) ?? 0);
 }
 
 /**

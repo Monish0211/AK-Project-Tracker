@@ -3,6 +3,16 @@ import { prisma } from "../../../shared/utils/prismaClient.js";
 import { projectOwnershipWhereOr } from "../../../shared/utils/projectAccess.js";
 import type { ProjectResourceData } from "../resource.types.js";
 
+/** Same ownership-where shape as getAllResourcesForAuthorizedProjects — kept in one place so the two never drift. */
+function authorizedProjectWhere(callerUserId: string | undefined): Prisma.ProjectWhereInput {
+  const projectWhere: Prisma.ProjectWhereInput = { isDeleted: false };
+  const ownershipOr = projectOwnershipWhereOr(callerUserId);
+  if (ownershipOr) {
+    projectWhere.OR = ownershipOr;
+  }
+  return projectWhere;
+}
+
 /**
  * All Prisma access for Project Resources lives here — the service layer
  * never imports `prisma` directly (same rule as quantity.repository.ts). No
@@ -11,15 +21,8 @@ import type { ProjectResourceData } from "../resource.types.js";
  */
 
 export function getAllResourcesForAuthorizedProjects(callerUserId?: string) {
-  const projectWhere: Prisma.ProjectWhereInput = {
-    isDeleted: false,
-  };
-  const ownershipOr = projectOwnershipWhereOr(callerUserId);
-  if (ownershipOr) {
-    projectWhere.OR = ownershipOr;
-  }
   return prisma.projectResource.findMany({
-    where: { project: projectWhere },
+    where: { project: authorizedProjectWhere(callerUserId) },
     orderBy: { createdAt: "asc" },
   });
 }
@@ -35,9 +38,17 @@ export function getResourcesByProjectId(projectId: string) {
   });
 }
 
-export function getResourcesByEmployeeNo(employeeNo: string) {
+/**
+ * Ownership-scoped exactly like getAllResourcesForAuthorizedProjects — an
+ * assignment is only returned if the caller is authorized for its Project
+ * (Administrator: unrestricted; normal user: own or unclaimed projects
+ * only, via projectOwnershipWhereOr). employeeNo has no ownership meaning
+ * of its own, since one employee can be assigned across projects owned by
+ * different users.
+ */
+export function getResourcesByEmployeeNo(employeeNo: string, callerUserId: string | undefined) {
   return prisma.projectResource.findMany({
-    where: { employeeNo },
+    where: { employeeNo, project: authorizedProjectWhere(callerUserId) },
     orderBy: { createdAt: "asc" },
   });
 }
