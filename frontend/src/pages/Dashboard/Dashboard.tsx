@@ -70,7 +70,7 @@ const Dashboard = () => {
   const showBlockingError = Boolean(loadError) && !summary;
 
   return (
-    <div className="dashboard-shell -m-6">
+    <div className="dashboard-shell">
       {ENABLE_DASHBOARD_BACKGROUND && <DashboardAtmosphere />}
 
       <div className="relative z-[1]">

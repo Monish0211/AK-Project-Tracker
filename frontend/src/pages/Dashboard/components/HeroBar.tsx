@@ -220,7 +220,7 @@ const HeroBar = ({ lastUpdated, isStale = false }: Props) => {
           .pmo-hero { min-height: 170px; display: flex; align-items: center; }
         }
         @media (min-width: 1200px) and (max-width: 1599px) {
-          .pmo-hero-in, .pmo-chip-container { flex-wrap: nowrap; gap: 12px; }
+          .pmo-hero-in, .pmo-chip-container { flex-wrap: wrap; gap: 12px; }
           .pmo-hero-in { padding: 20px 16px; }
           .pmo-chip { width: 175px; padding: 8px 10px; gap: 8px; }
           .pmo-chip-label { font-size: 8px; }

@@ -37,7 +37,7 @@ const MainLayout = () => {
       <Sidebar />
 
       {/* Right Content */}
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className="flex-1 flex flex-col min-h-screen min-w-0">
 
         {/* Navbar */}
         <Navbar />
@@ -57,7 +57,7 @@ const MainLayout = () => {
             element (and every ancestor up to here) a definite height (h-screen/
             h-dvh, not min-h-screen) plus min-h-0 — otherwise this duplicate-
             scrollbar bug reappears. */}
-        <main className="flex-1 bg-[#F8FAFC] dark:bg-[#0B0F19] transition-colors duration-300">
+        <main className="flex-1 min-w-0 bg-[#F8FAFC] dark:bg-[#0B0F19] transition-colors duration-300">
           {/* Fluid container: padding scales smoothly with viewport width/height
               instead of jumping at fixed breakpoints, and the max-width ceiling
               rises on very large monitors so content doesn't feel starved of
