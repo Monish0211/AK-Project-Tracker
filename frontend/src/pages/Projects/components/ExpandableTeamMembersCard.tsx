@@ -20,9 +20,11 @@ import {
   getProcessedTeamMembers,
 } from "../../../services/timesheetProcessingService";
 import {
+  ensureTimesheetImportsFresh,
   formatDisplayDate,
   formatMonthDisplay,
   getAllTimesheetImports,
+  refreshTimesheetImportsFromBackend,
 } from "../../../services/timesheetService";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { StatTile } from "../../../components/ui/StatTile";
@@ -71,6 +73,11 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
   // imported month — with each specific month still selectable to drill down.
   const [selectedMonth, setSelectedMonth] = useState<string>(ALL_MONTHS);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Priority #5C — surfaces a failed EXPLICIT (button-triggered) backend
+  // refresh only. The passive on-mount sync below deliberately does not set
+  // this (see its own comment) — it silently keeps whatever was already
+  // cached, matching Timesheets.tsx's own "non-fatal on failure" precedent.
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const availableMonths = getProcessedProjectMonths(project.prNo, allImports);
   const hasSyncedData = hasProcessedTimesheetData(project.prNo, allImports);
@@ -85,8 +92,37 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableMonths.join(",")]);
 
+  // Priority #5C — Team Assigned previously only ever read whatever was
+  // already sitting in localStorage, which could be arbitrarily stale (e.g.
+  // still reflecting a TimesheetEntry the backend has since reconciled or a
+  // duplicate that's since been cleaned up — see the 0533/PR12006/17.14h
+  // case). On mount, ask the SAME backend-sync function Timesheets.tsx
+  // already uses (ensureTimesheetImportsFresh() de-dupes/cools-down around
+  // refreshTimesheetImportsFromBackend() — see timesheetService.ts) to bring
+  // `timesheets_imports` up to date, then re-read it. `allImports` already
+  // starts populated from cached localStorage (useState above), so the card
+  // renders immediately with last-known data and simply re-renders with
+  // fresh data once this resolves — never a blank screen, and a failed
+  // refresh (network/API down) leaves the existing cached render exactly as
+  // it was, per ensureTimesheetImportsFresh()'s own "never throws" contract.
+  useEffect(() => {
+    let cancelled = false;
+    ensureTimesheetImportsFresh().then(() => {
+      if (!cancelled) setAllImports(getAllTimesheetImports());
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Re-sync when the viewed project changes (e.g. navigating between two
+    // projects' Team Assigned tabs) — not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.prNo]);
+
   // Keep in sync with the Timesheets module (and Manpower rate changes)
-  // without requiring a manual refresh or a page reload.
+  // without requiring a manual refresh or a page reload. Unchanged by
+  // Priority #5C — this only ever re-reads localStorage locally, it never
+  // calls the backend, so it isn't the "aggressive polling" that fix was
+  // told to avoid.
   useEffect(() => {
     const interval = setInterval(() => {
       setAllImports(getAllTimesheetImports());
@@ -94,10 +130,27 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleRefresh = () => {
+  // Priority #5C — previously just re-read the same (possibly stale)
+  // localStorage snapshot (`setAllImports(getAllTimesheetImports())`),
+  // which is why clicking Refresh never actually fixed a stale display. Now
+  // performs a real backend sync, same as Timesheets.tsx's own explicit
+  // actions — an explicit user click always hits the backend (bypassing
+  // ensureTimesheetImportsFresh()'s cool-down, which is only meant for
+  // passive/automatic callers), and a failure is surfaced inline rather
+  // than silently swallowed, matching Timesheets.tsx's actionError
+  // convention for user-triggered actions.
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    setAllImports(getAllTimesheetImports());
-    setTimeout(() => setIsRefreshing(false), 400);
+    setSyncError(null);
+    try {
+      await refreshTimesheetImportsFromBackend();
+      setAllImports(getAllTimesheetImports());
+    } catch (err) {
+      setSyncError("Could not refresh from the server. Showing the last known data.");
+      console.warn("Team Assigned: manual backend refresh failed.", err);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   // Consolidated per-employee summaries — Total Hours, Working Days (unique
@@ -160,6 +213,11 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
             </Button>
           }
         />
+        {syncError && (
+          <CardBody>
+            <p className="text-[12px] text-[var(--nu-danger)]">{syncError}</p>
+          </CardBody>
+        )}
         {availableMonths.length > 0 && (
           <CardBody>
             <div className="flex flex-wrap gap-2">

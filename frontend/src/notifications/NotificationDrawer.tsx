@@ -4,6 +4,7 @@ import { notificationService } from "./notificationService";
 import type { PMONotification } from "./notificationTypes";
 import { useNavigate, useLocation } from "react-router-dom";
 import Portal from "../components/ui/Portal";
+import { EnableNotificationsButton } from "./EnableNotificationsButton";
 
 interface NotificationDrawerProps {
   isOpen: boolean;
@@ -177,6 +178,13 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
               <X size={20} />
             </button>
           </div>
+        </div>
+
+        {/* Priority #6, Phase 2 — browser push opt-in. Purely additive: does
+            not read/write anything the reminder engine or the local
+            notification store already own. */}
+        <div className="shrink-0 px-5 py-3 border-b border-slate-200 dark:border-slate-800">
+          <EnableNotificationsButton />
         </div>
 
         {/* Action Bar */}

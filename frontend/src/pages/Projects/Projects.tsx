@@ -29,6 +29,7 @@ import {
   permanentlyDeleteProjectViaApi,
   bulkImportProjectGeneralInfo,
 } from "../../services/projectService";
+import { persistImportedProjectChildRecords } from "../../services/projectImportPersistenceService";
 import { ApiError } from "../../services/apiClient";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import { useAuth } from "../../auth/authContext";
@@ -86,6 +87,15 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   // Live project state — already scoped to this page's dataset
   const [projects, setProjects] = useState<Project[]>(() => scopeProjectsByMode(getProjects(), mode));
 
+  // Unscoped mirror kept in lockstep with `projects`, used ONLY for the KPI
+  // stats below — the Project Repository table must exclude Completed rows
+  // (scopeProjectsByMode), but the "Completed" KPI count needs the full,
+  // unfiltered dataset or it is structurally guaranteed to read 0 (every
+  // Completed row would already have been filtered out before counting).
+  // Mirrors Dashboard's getProjectStatusData(), which counts from
+  // getProjects() directly for the same reason.
+  const [allProjects, setAllProjects] = useState<Project[]>(() => getProjects());
+
   // Phase 3.7.2: pending confirmation targets for the custom ConfirmDialog —
   // replaces window.confirm() for both Archive and Delete Permanently.
   // Holding the id/project here (rather than confirming inline) is what lets
@@ -112,7 +122,9 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
 
   useEffect(() => {
     const handleDataChange = () => {
-      setProjects(scopeProjectsByMode(getProjects(), mode));
+      const fresh = getProjects();
+      setProjects(scopeProjectsByMode(fresh, mode));
+      setAllProjects(fresh);
     };
     window.addEventListener("pmo:data-changed", handleDataChange);
     return () => {
@@ -150,11 +162,19 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     return () => clearTimeout(timer);
   }, [search, department, status, mode, sortField, sortAsc]);
 
-  // Computed statistics
+  // Computed statistics. `active`/`onHold`/`cancelled` and the WO/invoice/
+  // outstanding totals stay scoped to `projects` exactly as before (the
+  // Project Repository table's own Completed-exclusion is intentional and
+  // unrelated to this fix). Only `completed` is read from the unfiltered
+  // `allProjects` — computing it from `projects` was structurally
+  // guaranteed to be 0, since scopeProjectsByMode already strips every
+  // Completed row out of `projects` in repository mode before this ever
+  // runs. Mirrors Dashboard's getProjectStatusData(), which counts
+  // Completed from getProjects() directly for the same reason.
   const stats = useMemo(() => {
     const active = projects.filter((p) => p.projectStatus === "Active").length;
     const onHold = projects.filter((p) => p.projectStatus === "On Hold").length;
-    const completed = projects.filter((p) => p.projectStatus === "Completed").length;
+    const completed = allProjects.filter((p) => p.projectStatus === "Completed").length;
     const cancelled = projects.filter((p) => p.projectStatus === "Cancelled").length;
     const totalWOValue = projects.reduce(
       (sum, p) => sum + (p.workOrderValueINR || 0),
@@ -181,7 +201,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       pendingInvoice,
       totalOutstanding,
     };
-  }, [projects]);
+  }, [projects, allProjects]);
 
   // Unique departments for filter
   const departments = useMemo(() => {
@@ -365,17 +385,42 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
         return;
       }
 
-      // Persistence layer only: General Information for every parsed row
-      // goes to the real backend in one request (POST /projects/import),
-      // which issues the real ids used everywhere else in the app from
-      // this point on. All-or-nothing — if the backend rejects the batch
-      // (e.g. a race-condition duplicate PR Number), nothing is written
-      // here either. Quantity/Payment Milestones/Expense Budget/Invoice
-      // Items already parsed by parseProjectsWorkbook() above are
-      // untouched and travel with each row into the local mirror.
+      // Persistence layer: General Information for every parsed row goes to
+      // the real backend in one request (POST /projects/import), which
+      // issues the real ids used everywhere else in the app from this point
+      // on. All-or-nothing — if the backend rejects the batch (e.g. a
+      // race-condition duplicate PR Number), nothing is written here either.
       const createdProjects = await bulkImportProjectGeneralInfo(imported);
+
+      // Quantity Details / Payment Milestones / Expense Budget rows already
+      // parsed onto each project above are pushed to the real backend here,
+      // via the same lazy-migration functions Edit Project's own "open a
+      // legacy-localStorage-only project" path already uses — see
+      // projectImportPersistenceService.ts. Not part of the same all-or-
+      // nothing batch as General Information (the existing single-item
+      // Create endpoints have no bulk/transactional variant), so failures
+      // are reported per project/section below rather than silently implied
+      // by a blanket "Import complete."
+      const childReports = await persistImportedProjectChildRecords(createdProjects);
       setProjects(scopeProjectsByMode(getProjects(), mode));
-      alert(`Import complete! Successfully added ${createdProjects.length} project(s).`);
+
+      const failedReports = childReports.filter((r) => r.quantity.failed || r.milestones.failed || r.expenses.failed);
+      if (failedReports.length === 0) {
+        alert(`Import complete! Successfully added ${createdProjects.length} project(s), including Quantity Details, Payment Milestones, and Expense Budget.`);
+      } else {
+        const detail = failedReports
+          .map((r) => {
+            const parts: string[] = [];
+            if (r.quantity.failed) parts.push(`Quantity ${r.quantity.persisted}/${r.quantity.expected}`);
+            if (r.milestones.failed) parts.push(`Payment Milestones ${r.milestones.persisted}/${r.milestones.expected}`);
+            if (r.expenses.failed) parts.push(`Expense Budget ${r.expenses.persisted}/${r.expenses.expected}`);
+            return `${r.prNo}: ${parts.join(", ")} saved`;
+          })
+          .join("\n");
+        alert(
+          `Import partially complete. ${createdProjects.length} project(s) were created, but some Quantity/Payment Milestone/Expense Budget rows failed to save:\n\n${detail}\n\nOpen each affected project's Edit screen to add the missing rows.`
+        );
+      }
     } catch (err) {
       const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Unknown error while reading the file.";
       alert(`Error reading file: ${message}`);

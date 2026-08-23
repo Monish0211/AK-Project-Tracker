@@ -1,11 +1,24 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Bell } from "lucide-react";
 import { useNotifications } from "./useNotifications";
 import { NotificationDrawer } from "./NotificationDrawer";
+import { syncBackendNotifications } from "./backendNotificationSync";
 
 export const NotificationBell: React.FC = () => {
   const { notifications, unreadCount } = useNotifications();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Priority #6 Phase 3B — the Bell is always mounted in the app header, so
+  // this is the one place backend notifications get pulled into the
+  // existing local store on load, without requiring the user to open
+  // Timesheets or any specific page first (same "sync on mount" precedent
+  // as ExpandableTeamMembersCard.tsx's ensureTimesheetImportsFresh() from
+  // Priority #5C). Real-time delivery for an OPEN, focused session still
+  // goes through Web Push -> the Service Worker -> the OS notification;
+  // this only backfills the in-drawer history.
+  useEffect(() => {
+    void syncBackendNotifications();
+  }, []);
 
   return (
     <>

@@ -54,14 +54,28 @@ class NotificationServiceFacade {
   /**
    * Dispatches a one-time Event Notification (e.g., Project Created, Timesheet Imported).
    * Events are persistent and do not auto-resolve.
+   *
+   * `id`/`isRead` are optional (Priority #6 Phase 3B) — omitted, this is
+   * byte-identical to before: a fresh random id, always unread, exactly
+   * reminderScheduler.ts's existing usage. Passed explicitly, this is how
+   * backendNotificationSync.ts feeds a REAL backend Notification's own id/
+   * read-state through this same entry point, so NotificationStore's
+   * existing id-based dedup (addEventNotification()) applies to backend
+   * events too, without a second dedup mechanism.
    */
-  dispatchEvent(event: Omit<PMONotification, "id" | "persistent" | "autoResolve" | "isRead" | "isArchived">) {
+  dispatchEvent(
+    event: Omit<PMONotification, "id" | "persistent" | "autoResolve" | "isRead" | "isArchived"> & {
+      id?: string;
+      isRead?: boolean;
+    }
+  ) {
+    const { id, isRead, ...rest } = event;
     const newEvent: PMONotification = {
-      ...event,
-      id: crypto.randomUUID(), // Events use random UUIDs
+      ...rest,
+      id: id ?? crypto.randomUUID(),
       persistent: true,
       autoResolve: false,
-      isRead: false,
+      isRead: isRead ?? false,
       isArchived: false,
     };
     store.addEventNotification(newEvent);

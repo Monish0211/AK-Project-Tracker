@@ -9,6 +9,7 @@ import { AuditDetailDrawer } from "./AuditDetailDrawer";
 import { RecentSecurityEventsCard } from "./RecentSecurityEventsCard";
 import { FailedLoginCard } from "./FailedLoginCard";
 import { SystemTimelineCard } from "./SystemTimelineCard";
+import { LiveAuthAuditLogCard } from "./LiveAuthAuditLogCard";
 
 export function SecurityAuditSection() {
   const [logs, setLogs] = useState<AuditLogItem[]>(() => auditLogService.getAuditLogs());
@@ -133,6 +134,9 @@ export function SecurityAuditSection() {
           </button>
         </div>
       </div>
+
+      {/* ════════ LIVE, REAL BACKEND AUTHENTICATION AUDIT (Administrator only) ════════ */}
+      <LiveAuthAuditLogCard />
 
       {/* ════════ 5 SUMMARY KPI CARDS ════════ */}
       <AuditSummaryCards stats={kpiStats} />

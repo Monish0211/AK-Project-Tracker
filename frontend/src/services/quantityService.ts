@@ -38,11 +38,18 @@ interface BackendQuantityListDto {
   items: BackendQuantityDto[];
 }
 
-/** What the backend's Create/Update Quantity endpoints accept — pendingQty/unitRateINR/woValue/pendingAmount are deliberately excluded, since the backend derives them itself (see quantity.service.ts's computeDerivedFields). */
+/**
+ * What the backend's Create/Update Quantity endpoints accept —
+ * pendingQty/unitRateINR/woValue/pendingAmount are deliberately excluded,
+ * since the backend derives them itself (see quantity.service.ts's
+ * computeDerivedFields), and invoiceQty is excluded because it's now
+ * derived server-side from real InvoiceLine activity, never a client-set
+ * value (Priority #3 fix — no UI here has ever set it; it was only ever
+ * silently defaulted to 0).
+ */
 interface QuantityPayload {
   description: string;
   woQty: number;
-  invoiceQty: number;
   uom: string;
   assignedTo: string | null;
   currency: string;
@@ -54,7 +61,6 @@ function toQuantityPayload(item: QuantityItem): QuantityPayload {
   return {
     description: item.description,
     woQty: item.woQty,
-    invoiceQty: item.invoiceQty,
     uom: item.uom,
     assignedTo: item.assignedTo?.trim() ? item.assignedTo.trim() : null,
     currency: item.currency,
@@ -81,13 +87,12 @@ function toQuantityItem(dto: BackendQuantityDto): QuantityItem {
   };
 }
 
-/** Same fields toQuantityPayload() sends — a row is "changed" only if one of these actually differs, so an untouched row costs zero PATCH calls on Save. */
+/** Same fields toQuantityPayload() sends — a row is "changed" only if one of these actually differs, so an untouched row costs zero PATCH calls on Save. invoiceQty is deliberately excluded (see toQuantityPayload's comment) — it's derived server-side, never something editing this form could change. */
 function hasQuantityChanged(dto: BackendQuantityDto, item: QuantityItem): boolean {
   const payload = toQuantityPayload(item);
   return (
     payload.description !== dto.description ||
     payload.woQty !== dto.woQty ||
-    payload.invoiceQty !== dto.invoiceQty ||
     payload.uom !== dto.uom ||
     payload.assignedTo !== dto.assignedTo ||
     payload.currency !== dto.currency ||
