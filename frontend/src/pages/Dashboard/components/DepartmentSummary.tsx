@@ -195,7 +195,7 @@ const DepartmentSummary: React.FC = () => {
               </span>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0 flex flex-col">
+            <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar min-h-0 flex flex-col">
               <table className="w-full text-left text-xs border-collapse flex-1">
                 <thead className="bg-slate-100/90 dark:bg-slate-800/90 text-[10px] uppercase font-extrabold text-slate-600 dark:text-slate-400 sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700">
                   <tr>
