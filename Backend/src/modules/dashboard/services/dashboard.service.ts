@@ -1,3 +1,4 @@
+import { AppError } from "../../../shared/utils/AppError.js";
 import { getTimesheetPendingProjects } from "../../timesheets/services/timesheetPending.service.js";
 import { computeInvoiceProgress } from "../../../shared/utils/quantityProgress.js";
 import type {
@@ -43,6 +44,22 @@ function linesByProject(lines: InvoiceLineRow[]): Map<string, InvoiceLineRow[]> 
 
 export async function getDashboardSummary(callerUserId: string | undefined): Promise<DashboardSummaryDto> {
   const projects = await dashboardRepo.findAuthorizedProjects(callerUserId);
+
+  // P1-05 — findAuthorizedProjects() fetches CAP + 1 rows specifically so
+  // this can tell "there were more than CAP projects" apart from "there
+  // happened to be exactly CAP" and fail loudly instead of silently
+  // computing every KPI/formula below from an incomplete project set. At
+  // this application's realistic project-count scale this is not expected
+  // to ever fire; it exists as a safety net, not a claim this figure is
+  // load-bearing today.
+  if (projects.length > dashboardRepo.DASHBOARD_PROJECT_FETCH_CAP) {
+    throw new AppError(
+      `Dashboard cannot render: more than ${dashboardRepo.DASHBOARD_PROJECT_FETCH_CAP} authorized projects exist. ` +
+        "This exceeds the current safe fetch limit — contact support before this figure is trusted.",
+      500
+    );
+  }
+
   const projectIds = projects.map((p) => p.id);
 
   const [
@@ -249,6 +266,8 @@ function buildHoursOverrun(
       id: p.id,
       prNumber: p.prNo || "N/A",
       projectName: projectDisplayName(p.client, p.projectTitle),
+      projectManager:
+        p.primaryProjectManager && isUsableManagerName(p.primaryProjectManager) ? p.primaryProjectManager : null,
       budgetHours: budget,
       actualHours: actual,
       hoursOverrun: overrun,
@@ -266,6 +285,8 @@ function buildHoursOverrun(
   return {
     totalMatchingProjects: overrunProjects.length,
     top5: overrunProjects.slice(0, 5),
+    // Same array top5 is sliced from — see HoursOverrunDto's comment (P2-05).
+    allMatching: overrunProjects,
   };
 }
 

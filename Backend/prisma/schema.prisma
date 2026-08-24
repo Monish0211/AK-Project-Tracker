@@ -176,6 +176,11 @@ model AuthAuditLog {
   createdAt DateTime @default(now())
 
   @@index([userId])
+  // P1-08 — the Security Audit Log listing (GET /auth/audit-log, see
+  // auth.repository.ts's paginated query) always sorts by createdAt desc;
+  // this lets that ORDER BY + pagination use an index scan instead of a
+  // full sort as the table grows.
+  @@index([createdAt])
 }
 
 // =============================================================================
@@ -438,6 +443,32 @@ model Project {
   @@index([client])
   @@index([createdByUserId])
   @@index([prCategory])
+  // P1-08 — prNo is the project's own business identifier: looked up on
+  // every create/edit's duplicate-PR-number check (assertPrNoAvailable) and
+  // filtered/searched on directly from Projects/Reports/Timesheets, and by
+  // findAllProjectsForTimesheetMatching() (Keka matching), which
+  // deliberately includes archived projects (Decision 24) — a query with no
+  // isDeleted filter needs a plain, all-rows index to be servable, which
+  // the partial unique index below (WHERE "isDeleted" = false) cannot
+  // reliably provide by itself. Kept alongside the constraint below, not
+  // redundant with it.
+  @@index([prNo])
+  // P1-17 — Project.prNo uniqueness. Business rule (confirmed from current
+  // application code, assertPrNoAvailable() -> findActiveProjectByPrNo()):
+  // prNo must be unique among ACTIVE (isDeleted = false) projects only — an
+  // archived project's prNo may legitimately be reused by a new project.
+  // This is a PARTIAL unique index, which Prisma's schema DSL cannot
+  // express declaratively (no `@@unique(..., where: ...)` syntax exists as
+  // of this Prisma version) — it exists ONLY as hand-written raw SQL in
+  // migration 20260824090000_project_prno_partial_unique_index, NOT as a
+  // `@@unique` line here. This is the officially documented Prisma pattern
+  // for partial indexes, with one known caveat: a future `prisma migrate
+  // dev` run computing a new migration may propose DROPPING this index
+  // (since nothing in this file declares it) — reviewers must reject any
+  // such DROP INDEX "Project_prNo_active_key" statement in a future
+  // migration diff. Do not add a plain `@@unique([prNo])` here — that would
+  // enforce uniqueness across ALL rows including archived ones, breaking
+  // the confirmed "reuse a PR number after archiving" business rule.
 }
 
 model QuantityItem {
@@ -590,6 +621,12 @@ model InvoiceLine {
 
   @@index([quantityItemId])
   @@index([invoiceNo])
+  // P1-08 — countNonCancelledLinesForMilestone() (invoice.repository.ts)
+  // filters by milestoneId on every invoice-line create/update that
+  // touches a milestone, to enforce the "no duplicate milestone billing"
+  // business rule — a real hot-path equality filter, not merely "the field
+  // exists".
+  @@index([milestoneId])
 }
 
 // =============================================================================
@@ -800,6 +837,19 @@ model TimesheetEntry {
   // Postgres's "NULL is distinct from every other NULL" surprise.
   task String @default("")
 
+  // Raw KEKA "Start Time"/"End Time" columns, preserved exactly as received
+  // (e.g. "9:00", "09:00", "13:30") — never normalized in storage. Null for
+  // any entry created before this pair of fields existed, and for rows
+  // whose source Excel had no such column/value (mirrors rawProjectName's
+  // "populated at creation time only, null = not available" role above).
+  // Part of identityKey() (timesheetReconciliation.rules.ts) alongside
+  // employeeNo/rawProjectCode/workDate/task, added specifically so two
+  // genuinely separate KEKA work sessions on the same day/task (different
+  // Start/End Time) are reconciled as two distinct TimesheetEntry rows
+  // instead of one overwriting the other — see that file's own doc comment.
+  startTime String?
+  endTime   String?
+
   hours Float
 
   // KEKA's own optional per-row lifecycle marker ("Active"/"Released").
@@ -889,6 +939,13 @@ model TimesheetImport {
 
   @@index([receivedAt])
   @@index([status])
+  // P1-08/P1-09 — listImports() (timesheetImport.repository.ts) always
+  // sorts by createdAt desc with pagination (the Timesheets module's Import
+  // History list) — same "ORDER BY + pagination needs an index" reasoning
+  // as AuthAuditLog.createdAt above. emailMessageId is already covered by
+  // its own @unique constraint above (the duplicate-email guard), so no
+  // separate index is added for it here.
+  @@index([createdAt])
 }
 
 // =============================================================================
@@ -916,6 +973,14 @@ model TimesheetImportRowLog {
   rawProjectCode String
   workDate       DateTime
   task           String
+
+  // Same raw KEKA values as TimesheetEntry.startTime/endTime, captured at
+  // log-creation time for audit fidelity — null for logs written before
+  // this pair of fields existed, and for rows whose source Excel had no
+  // such column/value. Never used for any decision; identity/reconciliation
+  // logic lives entirely in identityKey()/decideEntryOutcome().
+  startTime String?
+  endTime   String?
 
   previousHours Float?
   newHours      Float?

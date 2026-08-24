@@ -1,5 +1,6 @@
 import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import { findEmployeeByEmployeeNo } from "../../employees/repository/employee.repository.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type { ResourceDto, ResourceListDto } from "../dto/resource.dto.js";
 import {
@@ -11,6 +12,7 @@ import {
   getResourceById,
   getResourcesByEmployeeNo,
   getResourcesByProjectId,
+  RESOURCE_FETCH_CAP,
   updateResource as updateResourceInRepository,
 } from "../repository/resource.repository.js";
 import type { ProjectResourceData } from "../resource.types.js";
@@ -55,15 +57,24 @@ export async function createResourceForProject(
     throw new AppError(`Employee "${input.employeeNo}" is already assigned to this project.`, 409);
   }
 
+  // P2-09 — never trust a client-supplied hourlyRateSnapshot (removed from
+  // CreateResourceInput entirely — see resource.validators.ts). Resolved
+  // server-side from Employee Master, same best-effort "not found -> 0"
+  // fallback as recomputeProjectResource()'s proven P1-04 pattern — a
+  // missing Employee row is tolerated here (Resources doesn't require one
+  // to exist), it just means no rate can be resolved yet.
+  const employee = await findEmployeeByEmployeeNo(input.employeeNo);
+  const hourlyRateSnapshot = employee?.manhourExpenses ?? 0;
+
   const data: ProjectResourceData = {
     employeeNo: input.employeeNo,
     assignmentStartDate: input.assignmentStartDate ?? null,
     assignmentEndDate: input.assignmentEndDate ?? null,
     assignmentStatus: input.assignmentStatus,
-    hourlyRateSnapshot: input.hourlyRateSnapshot,
+    hourlyRateSnapshot,
     workingDays: input.workingDays,
     totalHours: input.totalHours,
-    manhourCost: input.totalHours * input.hourlyRateSnapshot,
+    manhourCost: input.totalHours * hourlyRateSnapshot,
     lastSyncedAt: new Date(),
   };
 
@@ -78,9 +89,33 @@ export async function listResourcesForProject(projectId: string, user: AccessTok
   return { items: rows.map((row) => toResourceDto(row)) };
 }
 
+/**
+ * P2-06 — pure boundary check, extracted so the exact off-by-one threshold
+ * (`cap` rows is fine, `cap + 1` is not) is unit-testable without seeding
+ * RESOURCE_FETCH_CAP+1 real rows into Postgres. Same "CAP+1 fetch, throw if
+ * we actually got more than CAP" reasoning as dashboard.service.ts's own
+ * project-count overflow check.
+ */
+export function assertResourceCountWithinCap(rowCount: number, cap: number): void {
+  if (rowCount > cap) {
+    throw new AppError(
+      `Project resources cannot be listed: more than ${cap} authorized resource rows exist. ` +
+        "This exceeds the current safe fetch limit — contact support before this figure is trusted.",
+      500
+    );
+  }
+}
+
 export async function listAllAuthorizedResources(user: AccessTokenPayload): Promise<ResourceListDto> {
   const callerUserId = user.roleName === "Administrator" ? undefined : user.sub;
   const rows = await getAllResourcesForAuthorizedProjects(callerUserId);
+
+  // Fail loudly rather than ever silently truncating: this single
+  // unpaginated response feeds fetchAllProjectsFromApi()'s per-project
+  // resource-cost attribution (Reports/Analytics), so an incomplete list
+  // here would silently understate real cost figures instead of erroring.
+  assertResourceCountWithinCap(rows.length, RESOURCE_FETCH_CAP);
+
   return { items: rows.map((row) => toResourceDto(row)) };
 }
 
@@ -110,7 +145,13 @@ export async function updateResourceItem(
   }
   await assertProjectAccessById(existing.projectId, user);
 
-  const hourlyRateSnapshot = input.hourlyRateSnapshot ?? existing.hourlyRateSnapshot;
+  // P2-09 — hourlyRateSnapshot is never accepted from the client on update
+  // either (removed from UpdateResourceInput entirely — see
+  // resource.validators.ts). An existing row's rate is frozen forever, per
+  // the schema's own rule and recomputeProjectResource()'s proven P1-04
+  // pattern (its updateData deliberately omits hourlyRateSnapshot too) —
+  // always the persisted value, never re-derived or client-overridable here.
+  const hourlyRateSnapshot = existing.hourlyRateSnapshot;
   const totalHours = input.totalHours ?? existing.totalHours;
 
   const updated = await updateResourceInRepository(id, {
@@ -118,7 +159,6 @@ export async function updateResourceItem(
     ...(input.assignmentEndDate !== undefined && { assignmentEndDate: input.assignmentEndDate }),
     ...(input.assignmentStatus !== undefined && { assignmentStatus: input.assignmentStatus }),
     ...(input.workingDays !== undefined && { workingDays: input.workingDays }),
-    hourlyRateSnapshot,
     totalHours,
     manhourCost: totalHours * hourlyRateSnapshot,
     lastSyncedAt: new Date(),

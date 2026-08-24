@@ -21,7 +21,17 @@ import type { ParsedTimesheetRow } from "../timesheet.types.js";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB — generous for a timesheet export; real KEKA file size unverified (Stage 4 §7 open question)
 const MAX_HEADER_SCAN_ROWS = 10;
 
-type FieldKey = "employeeNo" | "employeeName" | "projectCode" | "projectName" | "date" | "task" | "totalHours" | "status";
+type FieldKey =
+  | "employeeNo"
+  | "employeeName"
+  | "projectCode"
+  | "projectName"
+  | "date"
+  | "task"
+  | "totalHours"
+  | "status"
+  | "startTime"
+  | "endTime";
 
 const COLUMN_SYNONYMS: Record<FieldKey, string[]> = {
   employeeNo: ["employee number", "employee no", "employee code", "emp no", "emp code"],
@@ -40,6 +50,14 @@ const COLUMN_SYNONYMS: Record<FieldKey, string[]> = {
   task: ["task"],
   totalHours: ["total hours", "hours", "hours worked", "time spent"],
   status: ["status"],
+  // Optional, same "absence never fails detection" treatment as task/status
+  // above — confirmed present in the real KEKA export as "Start Time"/
+  // "End Time" columns (values like "9:00", "13:30"). Their absence leaves
+  // startTime/endTime as "" for that row, which normalizeTimeOfDay() in
+  // timesheetReconciliation.rules.ts treats identically to a genuinely
+  // blank cell — i.e. legacy-compatible, never a parse failure.
+  startTime: ["start time"],
+  endTime: ["end time"],
 };
 
 const REQUIRED_FIELDS: { key: FieldKey; label: string }[] = [
@@ -116,8 +134,16 @@ function parseWorkDate(value: unknown): Date | null {
   return null;
 }
 
+/** One structurally-malformed source row, skipped before ever reaching reconciliation — see the `continue` site below for exactly which checks produce which reason. rowNumber is 1-based and counts from the first DATA row (excluding the header itself), matching how a spreadsheet user would count rows in the sheet after the header. */
+export interface InvalidRow {
+  rowNumber: number;
+  reason: string;
+}
+
 export interface ParsedWorkbookResult {
   rows: ParsedTimesheetRow[];
+  /** Additive reporting only — does NOT change which rows are valid/invalid (that rule is unchanged). Surfaces the reason a row never became a ParsedTimesheetRow, so an interactive upload (manual/historical Excel) can show it instead of the row silently vanishing. Keka's automated poll may ignore this field; it costs it nothing to receive it. */
+  invalidRows: InvalidRow[];
   detectedSheets: string[];
   selectedSheet: string;
   headerRowNumber: number;
@@ -186,12 +212,15 @@ export function parseTimesheetWorkbook(bytes: Buffer): ParsedWorkbookResult {
         task: findColumnIndex(normalized, COLUMN_SYNONYMS.task),
         totalHours: findColumnIndex(normalized, COLUMN_SYNONYMS.totalHours),
         status: findColumnIndex(normalized, COLUMN_SYNONYMS.status),
+        startTime: findColumnIndex(normalized, COLUMN_SYNONYMS.startTime),
+        endTime: findColumnIndex(normalized, COLUMN_SYNONYMS.endTime),
       };
 
       const dataRows = allRows.slice(i + 1).filter((r) => !isRowBlank(r));
       const rows: ParsedTimesheetRow[] = [];
+      const invalidRows: InvalidRow[] = [];
 
-      for (const row of dataRows) {
+      dataRows.forEach((row, rowIndex) => {
         const employeeNo = getCellText(row, indices.employeeNo);
         const employeeName = getCellText(row, indices.employeeName);
         const rawProjectCode = getCellText(row, indices.projectCode);
@@ -200,6 +229,8 @@ export function parseTimesheetWorkbook(bytes: Buffer): ParsedWorkbookResult {
         const hours = Number(getCellText(row, indices.totalHours));
         const task = indices.task !== -1 ? getCellText(row, indices.task) : "";
         const statusText = indices.status !== -1 ? getCellText(row, indices.status) : "";
+        const startTime = indices.startTime !== -1 ? getCellText(row, indices.startTime) : "";
+        const endTime = indices.endTime !== -1 ? getCellText(row, indices.endTime) : "";
 
         // Structurally malformed rows (no employee, no project, no parseable
         // date, or a non-numeric hours cell) are skipped here — this is a
@@ -208,8 +239,18 @@ export function parseTimesheetWorkbook(bytes: Buffer): ParsedWorkbookResult {
         // against. Matches the existing frontend parser's own precedent of
         // silently ignoring genuinely blank/malformed trailing rows. Project
         // Name is deliberately NOT part of this check (same as Task/Status)
-        // — its absence never makes an otherwise-valid row malformed.
-        if (!employeeNo || !rawProjectCode || !workDate || isNaN(hours)) continue;
+        // — its absence never makes an otherwise-valid row malformed. The
+        // rule itself is UNCHANGED by this addition — only the reason a
+        // skipped row was skipped is now recorded instead of discarded.
+        if (!employeeNo || !rawProjectCode || !workDate || isNaN(hours)) {
+          const reasons: string[] = [];
+          if (!employeeNo) reasons.push("Employee Number is missing");
+          if (!rawProjectCode) reasons.push("Project Code / PR Number is missing");
+          if (!workDate) reasons.push("Date is missing or unparseable");
+          if (isNaN(hours)) reasons.push("Total Hours is missing or not a number");
+          invalidRows.push({ rowNumber: rowIndex + 1, reason: reasons.join("; ") });
+          return;
+        }
 
         rows.push({
           employeeNo,
@@ -218,13 +259,16 @@ export function parseTimesheetWorkbook(bytes: Buffer): ParsedWorkbookResult {
           rawProjectName,
           workDate,
           task,
+          startTime,
+          endTime,
           hours,
           sourceStatus: statusText.toLowerCase() === "released" ? "Released" : "Active",
         });
-      }
+      });
 
       return {
         rows,
+        invalidRows,
         detectedSheets: workbook.SheetNames,
         selectedSheet: sheetName,
         headerRowNumber: i + 1,

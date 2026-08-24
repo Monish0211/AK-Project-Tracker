@@ -20,15 +20,54 @@ function authorizedProjectWhere(callerUserId: string | undefined): Prisma.Projec
  * resource.service.ts.
  */
 
+// P2-06 (production hardening) — a defensive fetch bound, not a claim that
+// this many resource rows is expected. Same "CAP + 1 so the caller can tell
+// 'exactly CAP rows' apart from 'there are MORE than CAP and this silently
+// dropped some'" reasoning as dashboard.repository.ts's
+// DASHBOARD_PROJECT_FETCH_CAP — see listAllAuthorizedResources()'s own
+// overflow check, which throws rather than ever returning a silently
+// incomplete resource list (this feeds Reports' per-project resource costs).
+export const RESOURCE_FETCH_CAP = 50_000;
+
 export function getAllResourcesForAuthorizedProjects(callerUserId?: string) {
   return prisma.projectResource.findMany({
     where: { project: authorizedProjectWhere(callerUserId) },
     orderBy: { createdAt: "asc" },
+    take: RESOURCE_FETCH_CAP + 1,
   });
 }
 
 export function createResource(projectId: string, data: ProjectResourceData) {
   return prisma.projectResource.create({ data: { ...data, projectId } });
+}
+
+/**
+ * P1-04 (production hardening) — atomic create-or-update on the
+ * @@unique([projectId, employeeNo]) key, run inside the caller's advisory-
+ * locked transaction (see projectResource.service.ts's recomputeProjectResource()).
+ * Replaces the old separate "read existing, then create-or-update" sequence
+ * for that one call site: a single INSERT ... ON CONFLICT DO UPDATE is
+ * atomic on its own, so there is no window between deciding "this pair
+ * doesn't exist yet" and writing where a second concurrent recompute for the
+ * exact same pair could either duplicate-insert (would have hit the unique
+ * constraint and errored) or interleave a stale write. `createData` and
+ * `updateData` are deliberately separate (Prisma upsert's own shape) so
+ * hourlyRateSnapshot can be included in `createData` only — it is set on
+ * first creation and must never be touched by a later recompute, exactly as
+ * before.
+ */
+export function upsertResourceByProjectAndEmployee(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  employeeNo: string,
+  createData: ProjectResourceData,
+  updateData: Partial<ProjectResourceData>
+) {
+  return tx.projectResource.upsert({
+    where: { projectId_employeeNo: { projectId, employeeNo } },
+    create: { ...createData, projectId, employeeNo },
+    update: updateData,
+  });
 }
 
 export function getResourcesByProjectId(projectId: string) {
@@ -57,9 +96,19 @@ export function getResourceById(id: string) {
   return prisma.projectResource.findUnique({ where: { id } });
 }
 
-/** Backs the @@unique([projectId, employeeNo]) constraint — one employee, one row, per project. */
-export function findResourceByProjectAndEmployee(projectId: string, employeeNo: string) {
-  return prisma.projectResource.findUnique({
+/**
+ * Backs the @@unique([projectId, employeeNo]) constraint — one employee, one
+ * row, per project. Optional `tx` (P1-04) lets recomputeProjectResource()
+ * read this inside its own advisory-locked transaction instead of a
+ * separate, unlocked connection — defaults to the plain client so every
+ * pre-existing caller is completely unaffected.
+ */
+export function findResourceByProjectAndEmployee(
+  projectId: string,
+  employeeNo: string,
+  tx: Prisma.TransactionClient | typeof prisma = prisma
+) {
+  return tx.projectResource.findUnique({
     where: { projectId_employeeNo: { projectId, employeeNo } },
   });
 }

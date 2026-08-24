@@ -1,3 +1,4 @@
+import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import type { MilestoneData } from "../milestone.types.js";
 
@@ -8,8 +9,20 @@ import type { MilestoneData } from "../milestone.types.js";
  * all (see milestone.service.ts).
  */
 
-export function createMilestone(projectId: string, data: MilestoneData) {
-  return prisma.paymentMilestone.create({ data: { ...data, projectId } });
+/**
+ * P0-07 (production hardening) — optional `tx`, same convention as
+ * resource.repository.ts/timesheet.repository.ts's P1-04 fix: lets
+ * milestone.service.ts read/write this inside its own advisory-locked
+ * transaction so a concurrent create/update for the SAME project can never
+ * interleave with the aggregate-percentage check. Defaults to the plain
+ * client so every pre-existing caller is completely unaffected.
+ */
+export function createMilestone(
+  projectId: string,
+  data: MilestoneData,
+  tx: Prisma.TransactionClient | typeof prisma = prisma
+) {
+  return tx.paymentMilestone.create({ data: { ...data, projectId } });
 }
 
 /**
@@ -28,15 +41,18 @@ export function createMilestonesWithIds(projectId: string, rows: Array<Milestone
   });
 }
 
-export function getMilestonesByProjectId(projectId: string) {
-  return prisma.paymentMilestone.findMany({
+export function getMilestonesByProjectId(
+  projectId: string,
+  tx: Prisma.TransactionClient | typeof prisma = prisma
+) {
+  return tx.paymentMilestone.findMany({
     where: { projectId },
     orderBy: { createdAt: "asc" },
   });
 }
 
-export function getMilestoneById(id: string) {
-  return prisma.paymentMilestone.findUnique({ where: { id } });
+export function getMilestoneById(id: string, tx: Prisma.TransactionClient | typeof prisma = prisma) {
+  return tx.paymentMilestone.findUnique({ where: { id } });
 }
 
 /** Ingest's idempotency/foreign-project bulk check — one query for the whole batch instead of one per row. */
@@ -44,8 +60,12 @@ export function getMilestonesByIds(ids: string[]) {
   return prisma.paymentMilestone.findMany({ where: { id: { in: ids } } });
 }
 
-export function updateMilestone(id: string, data: Partial<MilestoneData>) {
-  return prisma.paymentMilestone.update({ where: { id }, data });
+export function updateMilestone(
+  id: string,
+  data: Partial<MilestoneData>,
+  tx: Prisma.TransactionClient | typeof prisma = prisma
+) {
+  return tx.paymentMilestone.update({ where: { id }, data });
 }
 
 export function deleteMilestone(id: string) {

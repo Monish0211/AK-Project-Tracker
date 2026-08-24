@@ -22,6 +22,7 @@ export interface HoursOverrunProjectDto {
   id: string;
   prNumber: string;
   projectName: string;
+  projectManager: string | null;
   budgetHours: number;
   actualHours: number;
   hoursOverrun: number;
@@ -36,6 +37,15 @@ export interface HoursOverrunProjectDto {
 export interface HoursOverrunDto {
   totalMatchingProjects: number;
   top5: HoursOverrunProjectDto[];
+  // P2-05 — the Financial Loss drill-down (frontend/src/pages/Projects/
+  // FinancialLossProjects.tsx) used to recompute this list itself from a
+  // frontend localStorage project mirror + a separate client-side
+  // actual-hours derivation, which could disagree with this exact
+  // server-authoritative calculation (different budget-hours fallback,
+  // different actual-hours source). allMatching reuses the SAME list top5
+  // is sliced from — no second calculation — so the drill-down can render
+  // the full set while staying byte-for-byte consistent with the tile.
+  allMatching: HoursOverrunProjectDto[];
 }
 
 export type TimelineAlertPriority = "Orange" | "Yellow" | "Red" | "DarkRed" | "Green";

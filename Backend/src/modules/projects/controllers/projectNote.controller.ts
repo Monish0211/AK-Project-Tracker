@@ -28,13 +28,12 @@ export async function createProjectNoteController(
   try {
     const user = requireUser(req);
     const { projectId } = req.params as { projectId: string };
-    const authorName = req.body?.createdBy || user.email.split("@")[0] || "Administrator";
+    // createdBy is never read from req.body — always derived server-side
+    // from the authenticated caller (see createNoteForProjectService()), so
+    // attribution can never be spoofed as a different person.
     const note = await createNoteForProjectService(
       projectId,
-      {
-        message: req.body?.message,
-        createdBy: authorName,
-      },
+      { message: req.body?.message },
       user
     );
     res.status(201).json({

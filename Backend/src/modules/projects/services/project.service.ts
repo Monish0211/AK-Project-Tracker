@@ -1,3 +1,4 @@
+import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccess } from "../../../shared/utils/projectAccess.js";
 import { reconcileUnassignedEntriesForProject } from "../../timesheets/services/timesheet.service.js";
@@ -92,6 +93,27 @@ async function assertPrNoAvailable(prNo: string, excludingProjectId?: string): P
 }
 
 /**
+ * P1-17 — this pre-check alone cannot close the race between two
+ * concurrent requests for the same prNo (both can pass the check before
+ * either commits); the actual guarantee is the DB's partial unique index
+ * (`Project_prNo_active_key`, see schema.prisma's Project model and
+ * migration 20260824090000_project_prno_partial_unique_index). Same
+ * `isUniqueConstraintViolation` convention already used in
+ * invoice.service.ts/milestone.service.ts for their own ingest-duplicate
+ * handling — every write path that can hit this constraint converts the
+ * raw P2002 into the SAME friendly, specific message assertPrNoAvailable()
+ * already produces, so a caller who loses the race sees a normal 409
+ * business error, never a raw/generic 500.
+ */
+function isUniqueConstraintViolation(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
+
+function throwPrNoConflict(prNo: string): never {
+  throw new AppError(`A project with PR Number "${prNo}" already exists.`, 409);
+}
+
+/**
  * Widened relative to CreateProjectInput only for workOrderStatus/
  * projectStatus (plain string instead of the strict enum) — so this same
  * function can also accept a row validated by importProjectRowSchema, whose
@@ -153,7 +175,16 @@ function toGeneralInfoData(input: GeneralInfoInput): ProjectGeneralInfoData {
 export async function createProject(input: CreateProjectInput, creatorUserId: string): Promise<ProjectDto> {
   await assertPrNoAvailable(input.prNo);
 
-  const created = await createProjectInRepository({ ...toGeneralInfoData(input), createdByUserId: creatorUserId });
+  let created;
+  try {
+    created = await createProjectInRepository({ ...toGeneralInfoData(input), createdByUserId: creatorUserId });
+  } catch (err) {
+    // P1-17 — a concurrent request created the same prNo between the check
+    // above and this insert; the DB's partial unique index caught what the
+    // pre-check couldn't.
+    if (isUniqueConstraintViolation(err)) throwPrNoConflict(input.prNo);
+    throw err;
+  }
 
   // Previously-imported KEKA timesheet rows whose PR code didn't match any
   // Project at import time are stored as "Unassigned" (projectId: null),
@@ -195,9 +226,25 @@ export async function bulkImportProjects(
     throw new AppError(`The following PR Numbers already exist: ${names}.`, 409);
   }
 
-  const created = await createProjectsBulk(
-    input.projects.map((p) => ({ ...toGeneralInfoData(p), createdByUserId: creatorUserId }))
-  );
+  let created;
+  try {
+    created = await createProjectsBulk(
+      input.projects.map((p) => ({ ...toGeneralInfoData(p), createdByUserId: creatorUserId }))
+    );
+  } catch (err) {
+    // P1-17 — a concurrent request (another import, or a single-project
+    // create) landed one of these prNos between the batch check above and
+    // this insert. createProjectsBulk() is one multi-row INSERT, so this
+    // aborts the whole batch — consistent with this function's own existing
+    // "all rows land or none do" guarantee; the caller must resubmit.
+    if (isUniqueConstraintViolation(err)) {
+      throw new AppError(
+        "One or more PR Numbers in this import were just created by another request. Please review and resubmit.",
+        409
+      );
+    }
+    throw err;
+  }
   const createdByPrNo = new Map(created.map((row) => [row.prNo, row]));
 
   const items = input.projects.map((p) => {
@@ -298,7 +345,15 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
   }
 
   const updateData = toUpdateData(input);
-  const updated = await updateProjectInRepository(id, updateData);
+  let updated;
+  try {
+    updated = await updateProjectInRepository(id, updateData);
+  } catch (err) {
+    // P1-17 — a concurrent request claimed this prNo between the check
+    // above and this update.
+    if (prNoChanged && isUniqueConstraintViolation(err)) throwPrNoConflict(input.prNo!);
+    throw err;
+  }
 
   // Same reconciliation as createProject() above — a PR Number edit can
   // newly match previously-Unassigned timesheet rows just as a brand-new

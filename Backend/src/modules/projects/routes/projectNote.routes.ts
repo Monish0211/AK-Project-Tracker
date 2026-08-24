@@ -2,7 +2,9 @@ import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
 import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
+import { validate } from "../../../shared/middleware/validate.js";
 import { createProjectNoteController, getProjectNotesController } from "../controllers/projectNote.controller.js";
+import { createProjectNoteSchema } from "../validators/projectNote.validators.js";
 
 const router = Router();
 
@@ -19,6 +21,7 @@ router.post(
   authenticate,
   denyReadOnlyWrites,
   requireModuleAccess("Projects"),
+  validate(createProjectNoteSchema),
   createProjectNoteController
 );
 

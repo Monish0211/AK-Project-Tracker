@@ -173,6 +173,63 @@ test("GET /auth/audit-logs — Administrator-only, paginated, newest-first, no s
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     assert.equal(writeAttempt.status, 404);
+
+    // 8. filter by email (contains, case-insensitive) — only our fixtures (all under adminUser.email) match, nothing else leaks in.
+    const byEmail = await getAuditLogs(adminToken, `?pageSize=200&email=${encodeURIComponent(adminUser.email.toUpperCase())}`);
+    assert.equal(byEmail.status, 200);
+    assert.equal(byEmail.json.data!.total, fixtures.length);
+    assert.ok(byEmail.json.data!.items.every((r) => r.email === adminUser.email));
+
+    // 9. filter by exact event name — matches exactly one fixture.
+    const byEvent = await getAuditLogs(adminToken, `?event=${encodeURIComponent(newestFirst[0]!.event)}`);
+    assert.equal(byEvent.status, 200);
+    assert.equal(byEvent.json.data!.total, 1);
+    assert.equal(byEvent.json.data!.items[0]!.event, newestFirst[0]!.event);
+
+    // 10. filter by date range (from/to) around exactly the middle 3 fixtures.
+    const rangeRes = await getAuditLogs(
+      adminToken,
+      `?pageSize=200&from=${encodeURIComponent(fixtures[1]!.createdAt.toISOString())}&to=${encodeURIComponent(fixtures[3]!.createdAt.toISOString())}`
+    );
+    assert.equal(rangeRes.status, 200);
+    assert.deepEqual(
+      rangeRes.json.data!.items.map((r) => r.event).sort(),
+      [fixtures[1]!.event, fixtures[2]!.event, fixtures[3]!.event].sort()
+    );
+
+    // 11. eventCategory=success excludes our AUDIT_TEST_EVENT_* fixtures (none contain FAILED/BLOCKED/LOCKED); a real LOGIN_FAILED-style fixture is correctly bucketed as failure.
+    const failureFixture = await prisma.authAuditLog.create({
+      data: {
+        userId: adminUser.id,
+        email: adminUser.email,
+        event: "LOGIN_FAILED_BAD_PASSWORD",
+        ipAddress: "10.0.0.2",
+        createdAt: new Date(base.getTime() + 10 * 60_000),
+      },
+    });
+    createdAuditLogIds.push(failureFixture.id);
+
+    const successOnly = await getAuditLogs(adminToken, `?pageSize=200&email=${encodeURIComponent(adminUser.email)}&eventCategory=success`);
+    assert.equal(successOnly.status, 200);
+    assert.equal(successOnly.json.data!.total, fixtures.length);
+    assert.ok(!successOnly.json.data!.items.some((r) => r.id === failureFixture.id));
+
+    const failureOnly = await getAuditLogs(adminToken, `?pageSize=200&email=${encodeURIComponent(adminUser.email)}&eventCategory=failure`);
+    assert.equal(failureOnly.status, 200);
+    assert.equal(failureOnly.json.data!.total, 1);
+    assert.equal(failureOnly.json.data!.items[0]!.id, failureFixture.id);
+
+    // 12. empty result: an email that matches nothing still returns 200 with an empty page, not an error.
+    const emptyRes = await getAuditLogs(adminToken, `?email=${encodeURIComponent(`${TAG}-nobody-matches-this@example.com`)}`);
+    assert.equal(emptyRes.status, 200);
+    assert.deepEqual(emptyRes.json.data!.items, []);
+    assert.equal(emptyRes.json.data!.total, 0);
+
+    // 13. invalid pagination params are rejected with 400, not silently clamped or 500'd.
+    const invalidPage = await getAuditLogs(adminToken, "?page=0");
+    assert.equal(invalidPage.status, 400);
+    const invalidPageSize = await getAuditLogs(adminToken, "?pageSize=201");
+    assert.equal(invalidPageSize.status, 400);
   } finally {
     if (createdAuditLogIds.length > 0) {
       await prisma.authAuditLog.deleteMany({ where: { id: { in: createdAuditLogIds } } });

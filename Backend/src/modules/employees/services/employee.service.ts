@@ -7,6 +7,7 @@ import {
   deleteEmployee as deleteEmployeeInRepository,
   findEmployeeByEmployeeNo,
   findEmployeeById,
+  findEmployeesByEmployeeNos,
   findEmployeesPage,
   updateEmployee as updateEmployeeInRepository,
 } from "../repository/employee.repository.js";
@@ -79,20 +80,44 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Employ
  * import does. A row missing employeeNo/employeeName was already filtered
  * out client-side (see importEmployeeRowSchema's comment) before reaching
  * here, so every row that arrives is attempted.
+ *
+ * P1-10 (production hardening) — the READ side of the old N+1 (one
+ * `findEmployeeByEmployeeNo` SELECT per row, before ever touching the row's
+ * own create/update) is replaced with exactly ONE bulk SELECT for every
+ * employeeNo in this batch, seeding an in-memory existence map. The loop
+ * below still processes rows one at a time and keeps that map updated as it
+ * goes (`knownIds.set(...)` after every create/update) — so behavior is
+ * byte-identical to before for every case that matters, including the
+ * pre-existing "two rows in the same file share an employeeNo" case: the
+ * FIRST occurrence still creates and the SECOND still updates the
+ * just-created row (last-row-in-file wins), because the map reflects this
+ * run's own writes immediately, not a stale snapshot. The WRITE side is
+ * deliberately left as individual per-row create/update calls, each with
+ * its own try/catch (not merged into a shared Prisma transaction): Postgres
+ * aborts every statement after the first error within one transaction, so
+ * wrapping these in a shared transaction would silently fail every
+ * subsequent — otherwise valid — row once any single row fails, which is
+ * the opposite of the required "row-level error reporting, one bad row
+ * doesn't kill the batch" behavior.
  */
 export async function bulkImportEmployees(input: ImportEmployeesInput): Promise<ImportEmployeesResultDto> {
   let added = 0;
   let updated = 0;
   let invalid = 0;
 
+  const employeeNos = [...new Set(input.employees.map((row) => row.employeeNo))];
+  const existingEmployees = await findEmployeesByEmployeeNos(employeeNos);
+  const knownIds = new Map(existingEmployees.map((e) => [e.employeeNo, e.id] as const));
+
   for (const row of input.employees) {
     try {
-      const existing = await findEmployeeByEmployeeNo(row.employeeNo);
-      if (existing) {
-        await updateEmployeeInRepository(existing.id, toEmployeeData(row));
+      const existingId = knownIds.get(row.employeeNo);
+      if (existingId) {
+        await updateEmployeeInRepository(existingId, toEmployeeData(row));
         updated += 1;
       } else {
-        await createEmployeeInRepository(toEmployeeData(row));
+        const created = await createEmployeeInRepository(toEmployeeData(row));
+        knownIds.set(row.employeeNo, created.id);
         added += 1;
       }
     } catch {

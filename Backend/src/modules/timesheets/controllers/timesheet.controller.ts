@@ -4,6 +4,7 @@ import { AppError } from "../../../shared/utils/AppError.js";
 import { requireUser } from "../../../shared/utils/requireUser.js";
 import { parseTimesheetWorkbook, validateAttachment } from "../services/excelParser.service.js";
 import {
+  clearHistoricalTimesheetEntries,
   deleteAllTimesheetEntries,
   deleteTimesheetEntry,
   editTimesheetEntry,
@@ -13,10 +14,11 @@ import { notifyTimesheetImportOutcome } from "../services/timesheetImportNotific
 import * as importRepo from "../repository/timesheetImport.repository.js";
 import * as rowLogRepo from "../repository/timesheetImportRowLog.repository.js";
 import * as timesheetRepo from "../repository/timesheet.repository.js";
-import type { EditEntryBody } from "../validators/timesheet.validators.js";
+import type { EditEntryBody, HistoricalClearQuery } from "../validators/timesheet.validators.js";
 import {
   entryIdParamSchema,
   findEntriesQuerySchema,
+  historicalClearQuerySchema,
   importIdParamSchema,
   listImportRowsQuerySchema,
   listImportsQuerySchema,
@@ -57,6 +59,7 @@ export const importTimesheet = asyncHandler(async (req: Request, res: Response) 
     triggeredBy: "ManualUpload",
     attachmentFilename: file.originalname,
     uploadedByUserId: req.user?.sub ?? null,
+    invalidRows: parsed.invalidRows,
   });
 
   // Priority #6 Phase 3B — ONE summary notification for this manual upload,
@@ -92,8 +95,9 @@ export const getImportRows = asyncHandler(async (req: Request, res: Response) =>
   const record = await importRepo.findImportById(id);
   if (!record) throw new AppError("Timesheet import not found.", 404);
 
-  const items = await rowLogRepo.findRowLogsByImportId(id, parsedQuery.data.status);
-  res.status(200).json({ success: true, data: { items } });
+  const { status, page, pageSize } = parsedQuery.data;
+  const { items, total } = await rowLogRepo.findRowLogsByImportId(id, status, page, pageSize);
+  res.status(200).json({ success: true, data: { items, total, page, pageSize } });
 });
 
 export const getEntries = asyncHandler(async (req: Request, res: Response) => {
@@ -126,8 +130,9 @@ export const getEntryHistory = asyncHandler(async (req: Request, res: Response) 
  * route's validate(editEntryBodySchema) middleware (see timesheet.routes.ts).
  */
 export const editEntry = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const id = parseEntryIdParam(req);
-  const updated = await editTimesheetEntry(id, req.body as EditEntryBody);
+  const updated = await editTimesheetEntry(id, req.body as EditEntryBody, user);
   res.status(200).json({ success: true, data: updated, message: "Timesheet entry updated." });
 });
 
@@ -144,5 +149,28 @@ export const deleteAllEntries = asyncHandler(async (_req: Request, res: Response
     success: true,
     data: result,
     message: `Deleted ${result.deletedCount} timesheet entr${result.deletedCount === 1 ? "y" : "ies"}.`,
+  });
+});
+
+/**
+ * Administrator-only, irreversible, date-scoped — see timesheet.routes.ts's
+ * authorize("Administrator") gate and timesheet.service.ts's
+ * clearHistoricalTimesheetEntries() for the exact deletion scope. Query
+ * params only (no body — matches this module's existing GET-with-query
+ * convention); the shared validate() middleware only covers req.body.
+ */
+export const clearHistoricalEntries = asyncHandler(async (req: Request, res: Response) => {
+  const parsed = historicalClearQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0];
+    throw new AppError(firstIssue?.message ?? "Invalid start/end date.", 400);
+  }
+  const { startDate, endDate } = parsed.data as HistoricalClearQuery;
+
+  const result = await clearHistoricalTimesheetEntries(startDate, endDate);
+  res.status(200).json({
+    success: true,
+    data: result,
+    message: `Deleted ${result.deletedCount} timesheet entr${result.deletedCount === 1 ? "y" : "ies"} between ${result.startDate.toISOString().slice(0, 10)} and ${result.endDate.toISOString().slice(0, 10)}.`,
   });
 });

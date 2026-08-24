@@ -2,15 +2,27 @@ import { z } from "zod";
 
 /**
  * Phase 3.7 — backend-only, ready for a future Timesheet integration (see
- * schema.prisma's ProjectResource model comment). `hourlyRateSnapshot` is a
- * REQUIRED input here, not server-derived — the caller (the future
- * Timesheet import process, which already resolves an employee's current
- * rate from Employee Master before computing anything, exactly like
- * frontend/src/services/timesheetProcessingService.ts's rateForEmployee()
- * does today) is responsible for resolving it; this endpoint's only job is
- * to freeze whatever it's given and never re-derive it later. `manhourCost`
- * is never accepted from a client — always `totalHours * hourlyRateSnapshot`,
- * computed in resource.service.ts, same convention as QuantityItem.woValue.
+ * schema.prisma's ProjectResource model comment).
+ *
+ * P2-09 (security/data-integrity fix) — `hourlyRateSnapshot` is deliberately
+ * NOT accepted here. It used to be, on the theory that "the caller" would
+ * always be an internal, already-rate-resolving process — but this route is
+ * reachable by any authenticated Portal User with the Projects module grant
+ * (see resource.routes.ts's own comment), not restricted to such a caller,
+ * so a client could set an arbitrary financial figure that flows straight
+ * into manhourCost / Dashboard's totalActualProjectCost. The schema's own
+ * comment on ProjectResource.hourlyRateSnapshot is the authoritative
+ * business rule: "Frozen at row creation/update time from
+ * Employee.manhourExpenses — never re-derived from a later Employee read."
+ * resource.service.ts's createResourceForProject() now resolves it
+ * server-side from Employee Master at creation time — the exact same
+ * pattern timesheets/services/projectResource.service.ts's P1-04-hardened
+ * recomputeProjectResource() already uses for the automatic sync path.
+ * Any hourlyRateSnapshot field a client sends here is silently ignored
+ * (plain zod object, no .strict() — unrecognized keys are dropped).
+ * `manhourCost` is never accepted from a client either — always
+ * `totalHours * hourlyRateSnapshot`, computed in resource.service.ts, same
+ * convention as QuantityItem.woValue.
  */
 export const createResourceSchema = z.object({
   employeeNo: z.string().trim().min(1, "Employee Number is required."),
@@ -18,8 +30,6 @@ export const createResourceSchema = z.object({
   assignmentStartDate: z.coerce.date().optional().nullable(),
   assignmentEndDate: z.coerce.date().optional().nullable(),
   assignmentStatus: z.enum(["Active", "Released"]).default("Active"),
-
-  hourlyRateSnapshot: z.coerce.number().min(0, "Hourly Rate cannot be negative."),
 
   workingDays: z.coerce.number().min(0, "Working Days cannot be negative.").default(0),
   totalHours: z.coerce.number().min(0, "Total Hours cannot be negative.").default(0),
@@ -30,17 +40,21 @@ export type CreateResourceInput = z.infer<typeof createResourceSchema>;
 /**
  * Same fields as createResourceSchema minus employeeNo (an assignment is
  * never reassigned to a different employee — remove and recreate instead),
- * all optional — a PATCH only carries what changed. `hourlyRateSnapshot` is
- * updatable here deliberately (e.g. a future re-sync correcting an earlier
- * import), but is never auto-recomputed from a fresh Employee read anywhere
- * in this module.
+ * all optional — a PATCH only carries what changed.
+ *
+ * P2-09 — `hourlyRateSnapshot` is NOT accepted here either, for the same
+ * reason as createResourceSchema above, and per the schema's own "frozen...
+ * never re-derived" rule: an existing row's rate must never change via this
+ * endpoint, matching recomputeProjectResource()'s proven updateData, which
+ * deliberately omits hourlyRateSnapshot from every ordinary update. There is
+ * no re-sync/correction override anywhere in the authoritative code this
+ * mirrors — if one is ever needed, it requires its own explicit business
+ * decision, not silent client control of this field.
  */
 export const updateResourceSchema = z.object({
   assignmentStartDate: z.coerce.date().optional().nullable(),
   assignmentEndDate: z.coerce.date().optional().nullable(),
   assignmentStatus: z.enum(["Active", "Released"]).optional(),
-
-  hourlyRateSnapshot: z.coerce.number().min(0, "Hourly Rate cannot be negative.").optional(),
 
   workingDays: z.coerce.number().min(0, "Working Days cannot be negative.").optional(),
   totalHours: z.coerce.number().min(0, "Total Hours cannot be negative.").optional(),

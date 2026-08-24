@@ -30,6 +30,8 @@ export interface TimesheetEntryCreateData {
   rawProjectName: string | null;
   workDate: Date;
   task: string;
+  startTime: string | null;
+  endTime: string | null;
   hours: number;
   sourceStatus: string;
   firstImportId: string;
@@ -50,20 +52,38 @@ export interface TimesheetEntryCreateData {
  * realistically dozens, never thousands) rather than a compound-key IN
  * clause over every (employeeNo, projectId, workDate, task) tuple, which
  * would risk hitting practical parameter-count limits on a large file.
- * Read-only — runs against the plain client, not tx, since it happens
- * before the write transaction begins.
+ *
+ * Optional `tx` — now runs INSIDE processTimesheetImport()'s own
+ * transaction, behind its advisory lock (see that function's comment on
+ * the concurrency fix), rather than against the plain client before the
+ * transaction begins. Defaults to `prisma` so any other caller is
+ * unaffected.
  */
-export function findEntriesByProjectIds(projectIds: string[]) {
-  return prisma.timesheetEntry.findMany({
+export function findEntriesByProjectIds(projectIds: string[], tx: Prisma.TransactionClient | typeof prisma = prisma) {
+  return tx.timesheetEntry.findMany({
     where: {
       OR: [...(projectIds.length > 0 ? [{ projectId: { in: projectIds } }] : []), { projectId: null }],
     },
   });
 }
 
-/** Full history for one (employeeNo, projectId) pair — the ONLY input to ProjectResource recomputation (projectResource.service.ts). Never scoped to a date range or a single import. Read-only, runs after the write transaction has already committed. */
-export function findEntriesForPair(employeeNo: string, projectId: string) {
-  return prisma.timesheetEntry.findMany({ where: { employeeNo, projectId } });
+/**
+ * Full history for one (employeeNo, projectId) pair — the ONLY input to
+ * ProjectResource recomputation (projectResource.service.ts). Never scoped
+ * to a date range or a single import. Read-only, runs after the write
+ * transaction that touched TimesheetEntry rows has already committed.
+ *
+ * Optional `tx` (P1-04) — recomputeProjectResource() now reads this inside
+ * its own advisory-locked transaction so a concurrent recompute for the
+ * SAME pair can never interleave with it; defaults to the plain client so
+ * every pre-existing caller is unaffected.
+ */
+export function findEntriesForPair(
+  employeeNo: string,
+  projectId: string,
+  tx: Prisma.TransactionClient | typeof prisma = prisma
+) {
+  return tx.timesheetEntry.findMany({ where: { employeeNo, projectId } });
 }
 
 export function findEntryById(id: string) {
@@ -169,17 +189,32 @@ export function createEntry(tx: Prisma.TransactionClient, data: TimesheetEntryCr
  * same single-column write this function has always done. Passing `null`
  * explicitly clears the link back to Unassigned; this is distinct from
  * omitting the argument, via the `!== undefined` check below.
+ *
+ * `startTime`/`endTime` are optional 6th/7th parameters for the Start/End
+ * Time correction fix (see timesheetReconciliation.rules.ts's
+ * findTimeCorrectedEntry()) — written only when the caller matched this
+ * row via time-range overlap rather than an exact identity match, i.e.
+ * only when the row's recorded time is actually being corrected. Same
+ * `!== undefined` convention as projectId above.
  */
 export function updateEntryHours(
   tx: Prisma.TransactionClient,
   id: string,
   hours: number,
   lastImportId: string,
-  projectId?: string | null
+  projectId?: string | null,
+  startTime?: string | null,
+  endTime?: string | null
 ) {
   return tx.timesheetEntry.update({
     where: { id },
-    data: { hours, lastImportId, ...(projectId !== undefined && { projectId }) },
+    data: {
+      hours,
+      lastImportId,
+      ...(projectId !== undefined && { projectId }),
+      ...(startTime !== undefined && { startTime }),
+      ...(endTime !== undefined && { endTime }),
+    },
   });
 }
 
@@ -231,6 +266,35 @@ export function findDistinctMappedPairs() {
 /** Backs Delete-All — every TimesheetEntry row, unconditionally. Projects/Employees/TimesheetImport history are untouched (see timesheet.service.ts's deleteAllTimesheetEntries). */
 export function deleteAllEntries() {
   return prisma.timesheetEntry.deleteMany({});
+}
+
+/**
+ * Date-scoped counterpart to findDistinctMappedPairs() — used by the
+ * historical-backfill clear (timesheet.service.ts's
+ * clearHistoricalTimesheetEntries()) to know which (employeeNo, projectId)
+ * pairs need ProjectResource recomputed after the range-scoped delete
+ * below, exactly mirroring how Delete-All captures its own pairs BEFORE
+ * deleting. inclusive on both ends (workDate >= startDate AND <= endDate).
+ */
+export function findDistinctMappedPairsInRange(startDate: Date, endDate: Date) {
+  return prisma.timesheetEntry.findMany({
+    where: { projectId: { not: null }, workDate: { gte: startDate, lte: endDate } },
+    select: { employeeNo: true, projectId: true },
+    distinct: ["employeeNo", "projectId"],
+  });
+}
+
+/**
+ * Date-scoped counterpart to deleteAllEntries() — deletes ONLY
+ * TimesheetEntry rows whose workDate falls within [startDate, endDate]
+ * (inclusive both ends). Every other TimesheetEntry row (outside the
+ * range), every Project/Employee/Customer, and all TimesheetImport/
+ * TimesheetImportRowLog audit history are untouched — same scope
+ * discipline as deleteAllEntries(), just bounded by date instead of
+ * unconditional.
+ */
+export function deleteEntriesInRange(startDate: Date, endDate: Date) {
+  return prisma.timesheetEntry.deleteMany({ where: { workDate: { gte: startDate, lte: endDate } } });
 }
 
 /**
