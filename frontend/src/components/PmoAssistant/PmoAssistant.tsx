@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import {
   Bot,
   X,
@@ -199,12 +200,29 @@ export const PmoAssistant: React.FC = () => {
       {/* Draggable Floating Spherical PMO Assistant Orb */}
       <PmoAssistantOrb onTogglePanel={handleOrbTogglePanel} />
 
-      {/* Floating Assistant Panel (Fixed Viewport Overlay Anchored Relative to Draggable Orb) */}
-      {isOpen && (
-        <div
-          style={{ position: "fixed", left: `${anchorPos.left}px`, top: `${anchorPos.top}px` }}
-          className="z-[99999] font-sans no-print w-[min(380px,calc(100vw-32px))] h-[min(520px,calc(100vh-32px))] max-h-[calc(100vh-32px)] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-3 duration-200"
-        >
+      {/* Floating Assistant Panel (Fixed Viewport Overlay Anchored Relative to
+          Draggable Orb). Portaled directly into document.body for the same
+          reason PmoAssistantOrb is: this div was rendering inside
+          MainLayout's wrapper, which carries `.animate-pmo-fade-up`
+          (index.css's `pmoFadeUp` keyframe ends at `filter: blur(0)`, not
+          `filter: none`, and with `animation-fill-mode: forwards` that
+          leaves a permanent non-none `filter` on the wrapper). Per the CSS
+          Filter Effects spec, any non-none `filter` on an ancestor creates a
+          new containing block for `position: fixed` descendants, so the
+          panel's "fixed" left/top were being resolved against that
+          scrolling wrapper's box instead of the true viewport — placing it
+          far from the orb (worse the more the page had scrolled) even
+          though anchorPos itself was already computed correctly from the
+          orb's real getBoundingClientRect(). The orb was already immune to
+          this (it has its own portal); the panel did not, and is not a
+          child of the orb or vice versa either way — this portal is the
+          only change needed to make the panel immune too. */}
+      {isOpen &&
+        createPortal(
+          <div
+            style={{ position: "fixed", left: `${anchorPos.left}px`, top: `${anchorPos.top}px` }}
+            className="z-[100000] font-sans no-print w-[min(380px,calc(100vw-32px))] h-[min(520px,calc(100vh-32px))] max-h-[calc(100vh-32px)] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-3 duration-200"
+          >
           {/* Left Popover Arrow Connector pointing to Sidebar Spherical Mascot */}
           <div className="absolute -left-2 top-24 w-4 h-4 bg-slate-900 border-l border-b border-blue-900/40 transform rotate-45 hidden sm:block z-10" />
 
@@ -645,8 +663,9 @@ export const PmoAssistant: React.FC = () => {
               </div>
             )}
           </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </>
   );
 };

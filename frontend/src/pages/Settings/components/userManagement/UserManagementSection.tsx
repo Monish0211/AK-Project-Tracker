@@ -17,6 +17,7 @@ import { UserViewDrawer } from "./UserViewDrawer";
 import { ResetPasswordDialog } from "./ResetPasswordDialog";
 import { DeleteUserDialog } from "./DeleteUserDialog";
 import { Users } from "lucide-react";
+import { usePmoToast } from "../../../../components/ui/usePmoToast";
 
 interface FormDrawerState {
   isOpen: boolean;
@@ -25,6 +26,7 @@ interface FormDrawerState {
 }
 
 export const UserManagementSection = () => {
+  const { showToast } = usePmoToast();
   const [users, setUsers] = useState<User[]>([]);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
@@ -35,8 +37,6 @@ export const UserManagementSection = () => {
   const [viewUser, setViewUser] = useState<User | undefined>(undefined);
   const [resetPasswordUser, setResetPasswordUser] = useState<User | undefined>(undefined);
   const [deleteTargetUser, setDeleteTargetUser] = useState<User | undefined>(undefined);
-
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Real role/module/region/approval ids the Add User form needs to submit
   // a valid POST /users payload — fetched once, on mount.
@@ -66,11 +66,6 @@ export const UserManagementSection = () => {
       .then(setLookups)
       .catch((error) => console.error("Failed to load user lookups:", error));
   }, []);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
 
   const stats = useMemo(() => {
     return {
@@ -115,7 +110,7 @@ export const UserManagementSection = () => {
   const handleToggleStatus = (targetUser: User) => {
     const nextStatus: AccountStatus = targetUser.status === "Active" ? "Inactive" : "Active";
     setUserStatus(targetUser.id, nextStatus);
-    showToast(`${targetUser.employeeName} is now ${nextStatus}.`);
+    showToast({ type: "success", message: `${targetUser.employeeName} is now ${nextStatus}.` });
   };
 
   const handleConfirmDelete = async () => {
@@ -124,9 +119,12 @@ export const UserManagementSection = () => {
     try {
       await deleteUser(target.id);
       await refreshUsers();
-      showToast(`${target.employeeName} has been removed.`);
+      showToast({ type: "success", message: `${target.employeeName} has been removed.` });
     } catch (error) {
-      showToast(error instanceof ApiError ? error.message : "Failed to delete user. Please try again.");
+      showToast({
+        type: "error",
+        message: error instanceof ApiError ? error.message : "Failed to delete user. Please try again.",
+      });
     } finally {
       setDeleteTargetUser(undefined);
     }
@@ -134,12 +132,6 @@ export const UserManagementSection = () => {
 
   return (
     <div className="space-y-4 nu-fade-in">
-      {toastMessage && (
-        <div className="fixed top-16 right-6 z-50 px-4 py-2.5 rounded-[var(--nu-radius-md)] bg-[var(--nu-accent)] text-white font-medium text-[12.5px] shadow-[var(--nu-shadow-lg)] transition-all">
-          {toastMessage}
-        </div>
-      )}
-
       <UserManagementHero
         total={stats.total}
         administrators={stats.administrators}
@@ -190,7 +182,10 @@ export const UserManagementSection = () => {
           // re-fetching from the backend is what makes the change appear
           // immediately, no page reload needed.
           refreshUsers();
-          showToast(`${saved.employeeName} has been ${formDrawer.mode === "add" ? "added" : "updated"}.`);
+          showToast({
+            type: "success",
+            message: `${saved.employeeName} has been ${formDrawer.mode === "add" ? "added" : "updated"}.`,
+          });
         }}
         onRequestResetPassword={(user) => {
           setFormDrawer({ isOpen: false, mode: "add" });
@@ -214,7 +209,7 @@ export const UserManagementSection = () => {
           user={resetPasswordUser}
           onCancel={() => setResetPasswordUser(undefined)}
           onDone={() => {
-            showToast(`Password reset for ${resetPasswordUser.employeeName}.`);
+            showToast({ type: "success", message: `Password reset for ${resetPasswordUser.employeeName}.` });
             setResetPasswordUser(undefined);
           }}
         />

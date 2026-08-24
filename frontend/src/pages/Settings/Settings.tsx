@@ -1,24 +1,36 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Users, Sliders, Bell, Shield } from "lucide-react";
+import { Users, Shield } from "lucide-react";
 import { UserManagementSection } from "./components/userManagement/UserManagementSection";
 import { SecurityAuditSection } from "./components/audit/SecurityAuditSection";
 import "./settings-theme.css";
 
-type SettingsTab = "users" | "system" | "notifications" | "audit";
+type SettingsTab = "users" | "audit";
+
+// "system" (System Preferences) and "notifications" (Notification Alert
+// Rules) were removed — both were unimplemented placeholder cards with no
+// real functionality behind them. Any link still pointing at one of these
+// legacy tab values is redirected to the audit tab rather than left to
+// render nothing.
+const LEGACY_REMOVED_TABS = new Set(["system", "notifications"]);
+const VALID_TABS: SettingsTab[] = ["users", "audit"];
 
 const Settings = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const tabParam = searchParams.get("tab") as SettingsTab | null;
+  const tabParam = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<SettingsTab>(
-    tabParam && ["users", "system", "notifications", "audit"].includes(tabParam)
-      ? tabParam
-      : "users"
+    (VALID_TABS as string[]).includes(tabParam ?? "") ? (tabParam as SettingsTab) : "users"
   );
 
   useEffect(() => {
-    if (tabParam && ["users", "system", "notifications", "audit"].includes(tabParam)) {
-      setActiveTab(tabParam);
+    if (!tabParam) return;
+    if (LEGACY_REMOVED_TABS.has(tabParam)) {
+      setActiveTab("audit");
+      setSearchParams({ tab: "audit" }, { replace: true });
+      return;
+    }
+    if ((VALID_TABS as string[]).includes(tabParam)) {
+      setActiveTab(tabParam as SettingsTab);
     }
   }, [tabParam]);
 
@@ -46,32 +58,6 @@ const Settings = () => {
 
         <button
           type="button"
-          onClick={() => handleTabChange("system")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
-            activeTab === "system"
-              ? "bg-[var(--nu-accent)] text-white shadow-[var(--nu-shadow-sm)]"
-              : "text-[var(--nu-text-secondary)] hover:bg-[var(--nu-surface-alt)] hover:text-[var(--nu-text)]"
-          }`}
-        >
-          <Sliders size={15} />
-          System Preferences
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleTabChange("notifications")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
-            activeTab === "notifications"
-              ? "bg-[var(--nu-accent)] text-white shadow-[var(--nu-shadow-sm)]"
-              : "text-[var(--nu-text-secondary)] hover:bg-[var(--nu-surface-alt)] hover:text-[var(--nu-text)]"
-          }`}
-        >
-          <Bell size={15} />
-          Notification Alert Rules
-        </button>
-
-        <button
-          type="button"
           onClick={() => handleTabChange("audit")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
             activeTab === "audit"
@@ -86,27 +72,6 @@ const Settings = () => {
 
       {/* Tab Panels */}
       {activeTab === "users" && <UserManagementSection />}
-
-      {activeTab === "system" && (
-        <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] p-8 text-center space-y-2">
-          <Sliders size={32} className="mx-auto text-[var(--nu-text-muted)]" />
-          <h3 className="text-base font-bold text-[var(--nu-text)]">System Preferences</h3>
-          <p className="text-[12.5px] text-[var(--nu-text-muted)] max-w-md mx-auto">
-            Configure global currency formatting, fiscal year start dates, default project templates, and regional localization.
-          </p>
-        </div>
-      )}
-
-      {activeTab === "notifications" && (
-        <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] p-8 text-center space-y-2">
-          <Bell size={32} className="mx-auto text-[var(--nu-text-muted)]" />
-          <h3 className="text-base font-bold text-[var(--nu-text)]">Notification Alert Rules</h3>
-          <p className="text-[12.5px] text-[var(--nu-text-muted)] max-w-md mx-auto">
-            Configure automated email digest rules, payment milestone reminders, invoice collection alerts, and project status notifications.
-          </p>
-        </div>
-      )}
-
       {activeTab === "audit" && <SecurityAuditSection />}
     </div>
   );

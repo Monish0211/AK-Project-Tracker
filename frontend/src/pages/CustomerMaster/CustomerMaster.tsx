@@ -17,6 +17,7 @@ import { useAuth } from "../../auth/authContext";
 import { canMutateData } from "../../auth/permissions";
 import { useLiveRefresh } from "../../hooks/useLiveRefresh";
 import { Card, CardHeader } from "../../components/ui/Card";
+import { usePmoToast } from "../../components/ui/usePmoToast";
 
 import CustomerHero from "./components/CustomerHero";
 import CustomerToolbar from "./components/CustomerToolbar";
@@ -34,6 +35,7 @@ interface FormModalState {
 const CustomerMaster = () => {
   const { refreshKey } = useLiveRefresh();
   const { user } = useAuth();
+  const { showToast } = usePmoToast();
   const canMutate = canMutateData(user);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -139,30 +141,41 @@ const CustomerMaster = () => {
       const result = await importCustomersFromFile(file);
 
       if (result.errors.length > 0) {
-        alert(
-          `Import aborted. Fix the following validation issues:\n\n${result.errors
+        showToast({
+          type: "error",
+          title: "Import aborted",
+          message: `Fix the following validation issues:\n\n${result.errors
             .slice(0, 10)
-            .join("\n")}${result.errors.length > 10 ? `\n...and ${result.errors.length - 10} more` : ""}`
-        );
+            .join("\n")}${result.errors.length > 10 ? `\n...and ${result.errors.length - 10} more` : ""}`,
+          duration: 0,
+        });
         return;
       }
 
-      alert(`Imported ${result.imported} customer(s).\nSkipped ${result.skipped} duplicate(s).`);
+      showToast({
+        type: result.skipped > 0 ? "warning" : "success",
+        message:
+          result.skipped > 0
+            ? `Imported ${result.imported} customer(s) — ${result.skipped} duplicate(s) skipped.`
+            : `Imported ${result.imported} customer(s) successfully.`,
+      });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Failed to read the file. Please check the file format and try again.";
-      alert(message);
+      showToast({ type: "error", message });
     }
   };
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
+    const customerName = deleteTarget.customerName;
     setDeleting(true);
     try {
       await deleteCustomer(deleteTarget.id);
       setDeleteTarget(null);
+      showToast({ type: "success", message: `"${customerName}" deleted successfully.` });
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Unable to delete customer.";
-      alert(message);
+      showToast({ type: "error", message });
     } finally {
       setDeleting(false);
     }

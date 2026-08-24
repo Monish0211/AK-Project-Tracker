@@ -34,6 +34,7 @@ import { ApiError } from "../../services/apiClient";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import { useAuth } from "../../auth/authContext";
 import { canMutateData, hasApprovalPermission } from "../../auth/permissions";
+import { usePmoToast } from "../../components/ui/usePmoToast";
 
 /** Sort fields the backend's GET /projects can order by — see listProjectsQuerySchema. Anything else (Team/Commercial/Invoice columns, not modeled server-side yet) is synced with the default sort instead and left to this page's own client-side sort exactly as before. */
 const BACKEND_SORTABLE_FIELDS = new Set([
@@ -69,6 +70,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const statusParam = searchParams.get("status") || "All";
   const { user } = useAuth();
+  const { showToast } = usePmoToast();
   // Delete Permanently requires the "Delete Project Permanently" approval
   // permission — the backend enforces this independently
   const canMutate = canMutateData(user);
@@ -154,9 +156,24 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
         pageSize: 200,
         sortField: backendSortField,
         sortDirection: sortAsc ? "asc" : "desc",
-      }).catch((err) => {
-        console.error("Failed to sync projects from backend:", err);
-      });
+      })
+        .then((result) => {
+          // P2-06 — fail loudly instead of silently computing this page's
+          // table/KPIs from an incomplete set: if the authorized+filtered
+          // project count ever exceeds the 200-row cap above, `total` tells
+          // us so even though the request itself succeeded (200 is a valid
+          // page, not an error). This does not change behavior at all when
+          // total <= 200 (the case today, and the only case so far).
+          if (result.total > result.items.length) {
+            showToast({
+              type: "error",
+              message: `Showing only the first ${result.items.length} of ${result.total} matching projects — narrow your search or filters to see the rest accurately.`,
+            });
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to sync projects from backend:", err);
+        });
     }, 300);
 
     return () => clearTimeout(timer);
@@ -235,11 +252,15 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       if (err instanceof ApiError && err.status === 404) {
         deleteProject(id);
       } else {
-        alert(err instanceof ApiError ? err.message : "Failed to archive project. Please try again.");
+        showToast({
+          type: "error",
+          message: err instanceof ApiError ? err.message : "Failed to archive project. Please try again.",
+        });
         return;
       }
     }
     setProjects(scopeProjectsByMode(getProjects(), mode));
+    showToast({ type: "success", message: "Project archived successfully." });
   };
 
   // Permanent Delete — irreversible, gated by the "Delete Project
@@ -252,10 +273,14 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     try {
       await permanentlyDeleteProjectViaApi(project.id);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "Failed to permanently delete project. Please try again.");
+      showToast({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Failed to permanently delete project. Please try again.",
+      });
       return;
     }
     setProjects(scopeProjectsByMode(getProjects(), mode));
+    showToast({ type: "success", message: `"${project.prNo}" permanently deleted.` });
   };
 
   const clr = () => {
@@ -341,7 +366,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   // Export to Excel
   const handleExport = async () => {
     if (projects.length === 0) {
-      alert("No project data available to export.");
+      showToast({ type: "info", message: "No project data available to export." });
       return;
     }
 
@@ -372,16 +397,19 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       const { projects: imported, errors } = parseProjectsWorkbook(workbook, existing);
 
       if (errors.length > 0) {
-        alert(
-          `Import aborted. Fix the following validation issues:\n\n${errors
+        showToast({
+          type: "error",
+          title: "Import aborted",
+          message: `Fix the following validation issues:\n\n${errors
             .slice(0, 10)
-            .join("\n")}${errors.length > 10 ? `\n...and ${errors.length - 10} more` : ""}`
-        );
+            .join("\n")}${errors.length > 10 ? `\n...and ${errors.length - 10} more` : ""}`,
+          duration: 0,
+        });
         return;
       }
 
       if (imported.length === 0) {
-        alert("No valid projects found to import.");
+        showToast({ type: "warning", message: "No valid projects found to import." });
         return;
       }
 
@@ -406,7 +434,10 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
 
       const failedReports = childReports.filter((r) => r.quantity.failed || r.milestones.failed || r.expenses.failed);
       if (failedReports.length === 0) {
-        alert(`Import complete! Successfully added ${createdProjects.length} project(s), including Quantity Details, Payment Milestones, and Expense Budget.`);
+        showToast({
+          type: "success",
+          message: `Import completed successfully — ${createdProjects.length} project(s) added, including Quantity Details, Payment Milestones, and Expense Budget.`,
+        });
       } else {
         const detail = failedReports
           .map((r) => {
@@ -417,13 +448,16 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
             return `${r.prNo}: ${parts.join(", ")} saved`;
           })
           .join("\n");
-        alert(
-          `Import partially complete. ${createdProjects.length} project(s) were created, but some Quantity/Payment Milestone/Expense Budget rows failed to save:\n\n${detail}\n\nOpen each affected project's Edit screen to add the missing rows.`
-        );
+        showToast({
+          type: "warning",
+          title: "Import completed with warnings",
+          message: `${createdProjects.length} project(s) were created, but some Quantity/Payment Milestone/Expense Budget rows failed to save:\n\n${detail}\n\nOpen each affected project's Edit screen to add the missing rows.`,
+          duration: 0,
+        });
       }
     } catch (err) {
       const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Unknown error while reading the file.";
-      alert(`Error reading file: ${message}`);
+      showToast({ type: "error", title: "Import failed", message: `Error reading file: ${message}` });
     } finally {
       e.target.value = ""; // clear file
     }

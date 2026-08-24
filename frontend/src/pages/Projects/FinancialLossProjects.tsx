@@ -9,21 +9,62 @@ import {
 } from "lucide-react";
 import { getProjects } from "../../services/projectService";
 import {
-  getProjectsWithHoursOverrun,
-  type HoursOverrunProjectSummary,
-} from "../../services/dashboardService";
+  fetchDashboardSummary,
+  type HoursOverrunProject,
+} from "../../services/dashboardSummaryService";
 import {
   buildExportWorkbook,
   downloadWorkbook,
 } from "../../services/projectWorkbookService";
+import { usePmoToast } from "../../components/ui/usePmoToast";
+import { useLiveRefresh } from "../../hooks/useLiveRefresh";
+import { ApiError } from "../../services/apiClient";
 
 export default function FinancialLossProjects() {
   const navigate = useNavigate();
+  const { showToast } = usePmoToast();
+  const { refreshKey, refresh } = useLiveRefresh();
 
-  // Fetch fresh loss projects live from dashboard service
-  const [lossProjects, setLossProjects] = useState<HoursOverrunProjectSummary[]>(
-    () => getProjectsWithHoursOverrun().allMatchingProjects
-  );
+  // P2-05 — server-authoritative: the exact same calculation
+  // (Backend/src/modules/dashboard/services/dashboard.service.ts's
+  // buildHoursOverrun()) the Dashboard tile (ProjectsInLossHoursWidget)
+  // renders, via the same GET /dashboard/summary endpoint. No
+  // client-side recomputation of budget/actual hours, no read of the
+  // frontend project localStorage mirror for the Financial Loss
+  // determination itself — see hoursOverrun.allMatching's own comment in
+  // dashboardSummaryService.ts.
+  const [lossProjects, setLossProjects] = useState<HoursOverrunProject[]>([]);
+  const [totalMatchingProjects, setTotalMatchingProjects] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    setLoadError(null);
+
+    fetchDashboardSummary()
+      .then((summary) => {
+        if (!isMounted) return;
+        setLossProjects(summary.hoursOverrun.allMatching);
+        setTotalMatchingProjects(summary.hoursOverrun.totalMatchingProjects);
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : "Unable to load Financial Loss data. Please try again.";
+        setLoadError(message);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [refreshKey]);
 
   // Search & Sorting state
   const [search, setSearch] = useState("");
@@ -34,43 +75,15 @@ export default function FinancialLossProjects() {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 10;
 
-  // Live synchronization whenever project or timesheet data changes
-  useEffect(() => {
-    const handleDataChange = () => {
-      setLossProjects(getProjectsWithHoursOverrun().allMatchingProjects);
-    };
-    window.addEventListener("pmo:data-changed", handleDataChange);
-    return () => {
-      window.removeEventListener("pmo:data-changed", handleDataChange);
-    };
-  }, []);
-
-  // Map additional project audit fields (Client, PM) from project repository
-  const enrichedProjects = useMemo(() => {
-    const allProjects = getProjects();
-    const map = new Map(allProjects.map((p) => [p.id, p]));
-
-    return lossProjects.map((item) => {
-      const p = map.get(item.id);
-      return {
-        ...item,
-        clientName: p?.client || "Unknown Client",
-        projectManager: p?.primaryProjectManager || "Unassigned",
-        projectTitleOnly: p?.projectTitle || item.projectName,
-      };
-    });
-  }, [lossProjects]);
-
   // Filtered & Sorted list
   const processedProjects = useMemo(() => {
-    let result = enrichedProjects.filter((item) => {
+    let result = lossProjects.filter((item) => {
       if (!search) return true;
       const q = search.toLowerCase();
       return (
         item.prNumber.toLowerCase().includes(q) ||
-        item.clientName.toLowerCase().includes(q) ||
         item.projectName.toLowerCase().includes(q) ||
-        item.projectManager.toLowerCase().includes(q)
+        (item.projectManager || "").toLowerCase().includes(q)
       );
     });
 
@@ -86,7 +99,7 @@ export default function FinancialLossProjects() {
     });
 
     return result;
-  }, [enrichedProjects, search, sortField, sortAsc]);
+  }, [lossProjects, search, sortField, sortAsc]);
 
   // Reset pagination when search changes
   useEffect(() => {
@@ -116,7 +129,7 @@ export default function FinancialLossProjects() {
     const exportData = allProjects.filter((p) => lossIds.has(p.id));
 
     if (exportData.length === 0) {
-      alert("No financial loss project data available to export.");
+      showToast({ type: "info", message: "No financial loss project data available to export." });
       return;
     }
     const workbook = await buildExportWorkbook(exportData);
@@ -151,7 +164,7 @@ export default function FinancialLossProjects() {
             </button>
             <div className="bg-rose-950/80 border border-rose-800/60 rounded-xl px-3.5 py-2 text-right">
               <p className="text-[10px] uppercase font-bold text-rose-300">Loss Projects</p>
-              <p className="text-xl font-black text-white">{lossProjects.length}</p>
+              <p className="text-xl font-black text-white">{totalMatchingProjects}</p>
             </div>
           </div>
         </div>
@@ -175,7 +188,7 @@ export default function FinancialLossProjects() {
             </div>
           </div>
           <span className="text-xs font-bold px-3 py-1 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 rounded-full border border-rose-200 dark:border-rose-900/50">
-            Showing {processedProjects.length} of {lossProjects.length} Loss Projects
+            Showing {processedProjects.length} of {totalMatchingProjects} Loss Projects
           </span>
         </div>
 
@@ -186,7 +199,7 @@ export default function FinancialLossProjects() {
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search PR No · Client · Project · Manager..."
+                placeholder="Search PR No · Project · Manager..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-8 pr-8 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 outline-none focus:border-rose-500"
@@ -208,20 +221,43 @@ export default function FinancialLossProjects() {
           </div>
 
           <button
-            onClick={() => setLossProjects(getProjectsWithHoursOverrun().allMatchingProjects)}
+            onClick={refresh}
             className="text-xs font-semibold text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:underline cursor-pointer"
           >
             Refresh Data
           </button>
         </div>
 
+        {/* Loading / error states — same GET /dashboard/summary call the
+        Dashboard tile uses, so these mirror Dashboard.tsx's own states. */}
+        {isLoading && lossProjects.length === 0 && !loadError && (
+          <div className="p-10 text-center">
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Loading Financial Loss data…</p>
+            <p className="text-xs text-slate-400 mt-1.5">Fetching the authoritative figures from the server.</p>
+          </div>
+        )}
+
+        {loadError && lossProjects.length === 0 && !isLoading && (
+          <div className="p-10 text-center">
+            <p className="text-sm font-bold text-red-600 dark:text-red-400">Unable to load Financial Loss data</p>
+            <p className="text-xs text-slate-400 mt-1.5 max-w-lg mx-auto">{loadError}</p>
+            <button
+              type="button"
+              onClick={refresh}
+              className="mt-4 text-xs font-semibold text-rose-600 hover:underline"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
         {/* Table */}
+        {!(isLoading && lossProjects.length === 0) && !(loadError && lossProjects.length === 0) && (
         <div className="overflow-x-auto min-h-[300px]">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 <th className="py-3 px-4">PR NO.</th>
-                <th className="py-3 px-4">CLIENT</th>
                 <th className="py-3 px-4">PROJECT</th>
                 <th className="py-3 px-4">PROJECT MANAGER</th>
                 <th className="py-3 px-4 text-right">BUDGET HOURS</th>
@@ -243,21 +279,17 @@ export default function FinancialLossProjects() {
                       {item.prNumber}
                     </td>
 
-                    <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">
-                      {item.clientName}
-                    </td>
-
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2 max-w-xs">
                         <FolderKanban size={14} className="text-slate-400 shrink-0 group-hover:text-rose-500 transition-colors" />
-                        <span className="font-semibold text-slate-900 dark:text-slate-100 truncate" title={item.projectTitleOnly}>
-                          {item.projectTitleOnly}
+                        <span className="font-semibold text-slate-900 dark:text-slate-100 truncate" title={item.projectName}>
+                          {item.projectName}
                         </span>
                       </div>
                     </td>
 
                     <td className="py-3 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                      {item.projectManager}
+                      {item.projectManager || "Unassigned"}
                     </td>
 
                     <td className="py-3 px-4 text-right tabular-nums font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">
@@ -285,7 +317,7 @@ export default function FinancialLossProjects() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
                     No financial loss projects found matching search.
                   </td>
                 </tr>
@@ -293,6 +325,7 @@ export default function FinancialLossProjects() {
             </tbody>
           </table>
         </div>
+        )}
 
         {/* Footer Pagination */}
         {totalPages > 1 && (

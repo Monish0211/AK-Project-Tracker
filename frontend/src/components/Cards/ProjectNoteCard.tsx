@@ -4,6 +4,7 @@ import { User, Clock, FileText, ExternalLink, AlertCircle, CheckCircle2, Trash2,
 import { formatNoteTime } from "../../services/ProjectNotesService";
 import { getProjectById } from "../../services/projectService";
 import { useNavigate } from "react-router-dom";
+import { usePmoToast } from "../ui/usePmoToast";
 
 interface Props {
   note: ProjectNote;
@@ -13,6 +14,7 @@ const INVOICE_NO_REGEX = /(PR-[^\s\n,:]+-INV-\d+)/gi;
 
 export const ProjectNoteCard = ({ note }: Props) => {
   const navigate = useNavigate();
+  const { showToast } = usePmoToast();
 
   // Determine icon & header tint based on note subject / title
   const noteHeaderMeta = useMemo(() => {
@@ -59,7 +61,7 @@ export const ProjectNoteCard = ({ note }: Props) => {
 
   const handleInvoiceClick = (invoiceNo: string, lineId?: string, projectId?: string) => {
     if (invoiceLookup && !invoiceLookup.exists) {
-      alert(`This invoice (${invoiceNo}) has been deleted.`);
+      showToast({ type: "info", message: `This invoice (${invoiceNo}) has been deleted.` });
       return;
     }
     if (projectId) {

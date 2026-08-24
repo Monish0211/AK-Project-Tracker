@@ -7,21 +7,195 @@ import { getEmployees } from "./employeeService";
 const TIMESHEET_STORAGE_KEY = "timesheets_imports";
 
 /**
- * Read all imported timesheet months directly from storage.
- * Single source of truth used by both the Timesheets module and any
- * live consumer (e.g. Project Team Members) so neither can go stale.
+ * Storage backend for the full timesheet mirror — IndexedDB, not
+ * localStorage. The historical backfill (Start/End Time identity fix)
+ * grew this dataset from ~15k to ~17.7k TimesheetEntry rows, and the
+ * serialized mirror (~4.8MB+) now sits at/over most browsers'
+ * localStorage-per-origin quota (commonly 5-10MB, shared with every other
+ * localStorage key this app uses) — confirmed in production via a real
+ * `QuotaExceededError` thrown from the old `localStorage.setItem()` call
+ * here, which silently broke Team Assigned/Timesheets/Reports/Dashboard's
+ * Hours Overrun widget for every consumer of this mirror. IndexedDB's
+ * per-origin quota is much larger (commonly hundreds of MB+), so this
+ * dataset has real room to keep growing.
+ *
+ * Design: a module-level in-memory cache (`cachedMonths`) remains the
+ * SYNCHRONOUS source of truth every existing caller of
+ * getAllTimesheetImports()/saveAllTimesheetImports() already depends on
+ * (this module deliberately keeps that exact synchronous signature so
+ * none of this mirror's ~10 other consumer files need to change) — reads
+ * and writes to it are immediate. IndexedDB is purely the async,
+ * persistent backing store: hydrated into the cache once per page load
+ * (best-effort, non-blocking) and written to in the background
+ * (fire-and-forget) on every save. This mirrors the exact pattern this
+ * module's callers already use for the backend itself (seed from
+ * whatever's cached, then correct via an explicit re-render once a slower
+ * async operation resolves) — see refreshTimesheetImportsFromBackend()
+ * below, whose own mount-effect callers already re-render after it
+ * resolves regardless of this storage swap.
  */
-export function getAllTimesheetImports(): TimesheetImportMonth[] {
+const IDB_DB_NAME = "PmoTimesheetCache";
+const IDB_STORE_NAME = "timesheetImports";
+const IDB_RECORD_KEY = "months";
+// Deliberately tiny — never the actual data — so it can never itself hit
+// the localStorage quota. Its only job is to keep the browser's native
+// `storage` event firing across tabs when this mirror changes, exactly as
+// localStorage already did before this change; a listener below reacts to
+// it by invalidating this tab's in-memory cache so it re-hydrates from
+// IndexedDB (the actual data) rather than ever storing data in this key.
+const CROSS_TAB_SYNC_MARKER_KEY = "timesheets_imports_sync_marker";
+
+let cachedMonths: TimesheetImportMonth[] | null = null;
+let hasSavedSinceHydrationStarted = false;
+let hydrationPromise: Promise<void> | null = null;
+
+function openTimesheetDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(IDB_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(IDB_STORE_NAME);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function idbGetMonths(): Promise<TimesheetImportMonth[] | null> {
   try {
-    const data = localStorage.getItem(TIMESHEET_STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch {
-    return [];
+    const db = await openTimesheetDb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE_NAME, "readonly");
+      const req = tx.objectStore(IDB_STORE_NAME).get(IDB_RECORD_KEY);
+      req.onsuccess = () => resolve((req.result as TimesheetImportMonth[] | undefined) ?? null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (err) {
+    console.warn("Could not read the timesheet cache from IndexedDB:", err);
+    return null;
   }
 }
 
+async function idbSetMonths(months: TimesheetImportMonth[]): Promise<void> {
+  try {
+    const db = await openTimesheetDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE_NAME, "readwrite");
+      tx.objectStore(IDB_STORE_NAME).put(months, IDB_RECORD_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    // The in-memory cache (this tab's synchronous source of truth) is
+    // already updated by the caller regardless — a failed IndexedDB write
+    // only means this tab's data won't survive a reload, never a lost
+    // update within the current session.
+    console.warn("Could not persist the timesheet cache to IndexedDB (this tab's in-memory copy is still current):", err);
+  }
+}
+
+/** Best-effort, one-time-per-page-load hydration: adopt IndexedDB's stored value, or migrate a legacy localStorage blob into IndexedDB if this is the first load since this change shipped, then remove that legacy key to free quota for every other feature sharing this origin's localStorage. */
+function ensureHydrated(): void {
+  if (hydrationPromise) return;
+  hydrationPromise = idbGetMonths().then((stored) => {
+    // A real save (from this tab's own code, e.g. a fast backend refresh
+    // that already resolved) always wins over whatever this slower
+    // IndexedDB read would otherwise adopt.
+    if (hasSavedSinceHydrationStarted) return;
+
+    if (stored !== null) {
+      cachedMonths = stored;
+      return;
+    }
+
+    // Nothing in IndexedDB yet. If getAllTimesheetImports() already seeded
+    // cachedMonths from a legacy localStorage blob (see below), persist
+    // that into IndexedDB now and reclaim the old key's quota space.
+    if (cachedMonths && cachedMonths.length > 0) {
+      void idbSetMonths(cachedMonths);
+    }
+    try {
+      localStorage.removeItem(TIMESHEET_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
+if (typeof window !== "undefined") {
+  // Cross-tab sync: another tab's save touches CROSS_TAB_SYNC_MARKER_KEY,
+  // which fires the native `storage` event here (never in the tab that
+  // made the change) — invalidate this tab's cache so its NEXT
+  // getAllTimesheetImports() call re-hydrates from IndexedDB instead of
+  // serving this tab's now-stale in-memory copy, and nudge any listener
+  // already reacting to "pmo:data-changed" (this app's existing custom
+  // cross-feature refresh signal) to refresh too.
+  window.addEventListener("storage", (event) => {
+    if (event.key !== CROSS_TAB_SYNC_MARKER_KEY) return;
+    cachedMonths = null;
+    hasSavedSinceHydrationStarted = false;
+    hydrationPromise = null;
+    window.dispatchEvent(new Event("pmo:data-changed"));
+  });
+}
+
+/**
+ * Read all imported timesheet months directly from storage.
+ * Single source of truth used by both the Timesheets module and any
+ * live consumer (e.g. Project Team Members) so neither can go stale.
+ * Synchronous, same as before — see the module-level design comment above
+ * for how this stays true now that the real data lives in IndexedDB.
+ */
+export function getAllTimesheetImports(): TimesheetImportMonth[] {
+  if (cachedMonths !== null) return cachedMonths;
+
+  // First synchronous call in this tab's lifetime: bridge from whatever
+  // legacy localStorage blob might still exist (reading it is always safe
+  // — only writing can hit the quota) so the very first render isn't an
+  // unnecessary empty flash, while the real hydration/migration above
+  // continues in the background.
+  try {
+    const legacy = localStorage.getItem(TIMESHEET_STORAGE_KEY);
+    cachedMonths = legacy ? (JSON.parse(legacy) as TimesheetImportMonth[]) : [];
+  } catch {
+    cachedMonths = [];
+  }
+
+  ensureHydrated();
+  return cachedMonths;
+}
+
 export function saveAllTimesheetImports(months: TimesheetImportMonth[]): void {
-  localStorage.setItem(TIMESHEET_STORAGE_KEY, JSON.stringify(months));
+  cachedMonths = months;
+  hasSavedSinceHydrationStarted = true;
+  void idbSetMonths(months);
+  try {
+    localStorage.setItem(CROSS_TAB_SYNC_MARKER_KEY, String(Date.now()));
+  } catch {
+    /* purely a cross-tab notification — never the actual data, safe to skip on failure */
+  }
+}
+
+/**
+ * Wipes this tab's in-memory cache AND the persisted IndexedDB store.
+ * Called from auth/authService.ts's clearCachedBusinessDataOnLogout() —
+ * now that the actual timesheet mirror lives in IndexedDB rather than the
+ * `timesheets_imports` localStorage key that logout already clears, that
+ * removeItem() call alone would silently stop working (IndexedDB survives
+ * it), which would let a previous user's cached timesheet data leak to the
+ * next person logging in on a shared machine. Marking
+ * hasSavedSinceHydrationStarted here also prevents a hydration already
+ * in flight from before logout from repopulating the cache with the
+ * previous user's data afterward.
+ */
+export function clearTimesheetCache(): void {
+  cachedMonths = [];
+  hasSavedSinceHydrationStarted = true;
+  hydrationPromise = null;
+  try {
+    indexedDB.deleteDatabase(IDB_DB_NAME);
+  } catch (err) {
+    console.warn("Could not clear the persisted timesheet cache on logout:", err);
+  }
 }
 
 interface BackendTimesheetEntryDto {
@@ -75,6 +249,35 @@ async function fetchAllTimesheetEntriesFromApi(): Promise<BackendTimesheetEntryD
     total = result.total;
     page += 1;
   } while (all.length < total && page <= 2000);
+
+  // P1-01 (production hardening) — this loop's own safety cap (page <= 2000,
+  // i.e. 400,000 rows) exists to guarantee it can never spin forever against
+  // a runaway `total`, NOT as a claim that 400K is an intended ceiling for
+  // real data. Raising that number alone would still silently truncate
+  // beyond whatever the new number is — the actual fix is that truncation
+  // must never be silent. Every caller of refreshTimesheetImportsFromBackend()
+  // already wraps it in try/catch or .catch() (Timesheets.tsx,
+  // DashboardToolbar.tsx, ExpandableTeamMembersCard.tsx,
+  // ensureTimesheetImportsFresh() below), so throwing here surfaces as a
+  // caught, logged/toast-shown failure — never an unhandled rejection — and
+  // every one of those callers already leaves whatever data was already in
+  // `timesheets_imports` untouched on failure, so a truncation error
+  // degrades to "last known good data displayed, refresh failed" rather
+  // than "silently showing an incomplete dataset as if it were complete."
+  //
+  // This does NOT by itself make the app safe at 1,000,000 TimesheetEntry
+  // rows — see the P1 report's finding for why a genuine architectural fix
+  // (server-side aggregation per consumer) was judged out of proportion for
+  // this pass, given every current consumer of this data (Team Assigned's
+  // lifetime view, Dashboard's Hours Overrun widget, Expense Budget
+  // Analysis, Reports, projectMetrics.ts) was already confirmed to
+  // genuinely need the full history.
+  if (all.length < total) {
+    throw new Error(
+      `Timesheet data fetch was incomplete: received ${all.length} of ${total} total entries from the server ` +
+        `(stopped after ${page - 1} pages). No local data was overwritten with this incomplete result.`
+    );
+  }
 
   return all;
 }

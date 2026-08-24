@@ -10,6 +10,7 @@ import { EmptyState } from "../../../../components/ui/EmptyState";
 import { formatBusinessINR } from "../../../../utils/formatCurrency";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 import { MoneyValue, MoneyTooltip } from "../../../../components/ui/MoneyTooltip";
+import { ConfirmDialog } from "../../../../components/ui/ConfirmDialog";
 import {
   getInvoiceCyclesForProject,
   getInvoiceCycleStatus,
@@ -86,6 +87,7 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, onUpdateInvo
   const [activityFilter, setActivityFilter] = useState(initialActivityFilter ?? "all");
   const [statusFilter, setStatusFilter] = useState<InvoiceLineStatus | "all">("all");
   const [search, setSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ item: InvoiceItem; line: InvoiceLine } | null>(null);
 
   // Lump Sum and MLMP both bill against milestone percentages, not activity
   // quantities — the Qty Invoiced/Unit Rate/System Amount/Commercial
@@ -409,11 +411,7 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, onUpdateInvo
                         {onDelete && (
                           <button
                             type="button"
-                            onClick={() => {
-                              if (window.confirm(`Delete invoice ${row.invoiceNo}? This cannot be undone.`)) {
-                                onDelete(row.item, row.line);
-                              }
-                            }}
+                            onClick={() => setDeleteTarget({ item: row.item, line: row.line })}
                             title="Delete Invoice"
                             className="p-1.5 rounded-lg text-[var(--nu-danger)] hover:bg-[var(--nu-danger-soft)] transition"
                           >
@@ -432,6 +430,21 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, onUpdateInvo
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        variant="danger"
+        title="Delete Invoice?"
+        message={`Delete invoice ${deleteTarget?.line.invoiceNo ?? ""}? This cannot be undone.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          onDelete?.(deleteTarget.item, deleteTarget.line);
+          setDeleteTarget(null);
+        }}
+      />
     </div>
   );
 }

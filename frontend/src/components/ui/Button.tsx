@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 type Variant = "primary" | "hero" | "secondary" | "ghost" | "outline" | "danger";
@@ -43,14 +44,18 @@ const SIZES: Record<Size, string> = {
   icon: "p-1.5",
 };
 
-export const Button = ({ variant = "secondary", size = "md", icon, children, className = "", ...rest }: ButtonProps) => {
-  return (
-    <button
-      className={`inline-flex items-center justify-center rounded-[var(--nu-radius-md)] font-medium transition-all duration-150 whitespace-nowrap ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
-      {...rest}
-    >
-      {icon}
-      {children}
-    </button>
-  );
-};
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ variant = "secondary", size = "md", icon, children, className = "", ...rest }, ref) => {
+    return (
+      <button
+        ref={ref}
+        className={`inline-flex items-center justify-center rounded-[var(--nu-radius-md)] font-medium transition-all duration-150 whitespace-nowrap ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
+        {...rest}
+      >
+        {icon}
+        {children}
+      </button>
+    );
+  }
+);
+Button.displayName = "Button";

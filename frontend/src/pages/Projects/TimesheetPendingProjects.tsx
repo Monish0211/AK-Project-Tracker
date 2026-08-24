@@ -5,6 +5,7 @@ import { Search, Clock3 } from "lucide-react";
 import { fetchTimesheetPendingProjects, type TimesheetPendingProjectRow } from "../../services/timesheetPendingService";
 import { formatDisplayDate } from "../../services/timesheetService";
 import { downloadWorkbook } from "../../services/projectWorkbookService";
+import { usePmoToast } from "../../components/ui/usePmoToast";
 
 /**
  * Project Timesheet Pending Repository — the "View All" destination for the
@@ -18,6 +19,7 @@ import { downloadWorkbook } from "../../services/projectWorkbookService";
  */
 export default function TimesheetPendingProjects() {
   const navigate = useNavigate();
+  const { showToast } = usePmoToast();
 
   const [rows, setRows] = useState<TimesheetPendingProjectRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -81,7 +83,7 @@ export default function TimesheetPendingProjects() {
 
   const handleExport = async () => {
     if (filteredRows.length === 0) {
-      alert("No matching timesheet-pending projects to export.");
+      showToast({ type: "info", message: "No matching timesheet-pending projects to export." });
       return;
     }
 

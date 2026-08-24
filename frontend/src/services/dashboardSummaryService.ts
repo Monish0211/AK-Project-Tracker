@@ -22,6 +22,7 @@ export interface HoursOverrunProject {
   id: string;
   prNumber: string;
   projectName: string;
+  projectManager: string | null;
   budgetHours: number;
   actualHours: number;
   hoursOverrun: number;
@@ -36,6 +37,10 @@ export interface HoursOverrunProject {
 export interface HoursOverrun {
   totalMatchingProjects: number;
   top5: HoursOverrunProject[];
+  // P2-05 — same authoritative list top5 is sliced from; the Financial Loss
+  // drill-down (FinancialLossProjects.tsx) renders this instead of
+  // recomputing its own list from the frontend project mirror.
+  allMatching: HoursOverrunProject[];
 }
 
 export type TimelineAlertPriority = "Orange" | "Yellow" | "Red" | "DarkRed" | "Green";

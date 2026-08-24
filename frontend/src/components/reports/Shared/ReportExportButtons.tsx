@@ -1,5 +1,6 @@
 import { Download, FileSpreadsheet } from "lucide-react";
 import * as XLSX from "xlsx";
+import { sanitizeExportRows } from "../../../utils/sanitizeExportCell";
 
 interface Props {
   data: Record<string, any>[];
@@ -10,7 +11,12 @@ interface Props {
 export function ReportExportButtons({ data, filename = "PMO_Report_Export" }: Props) {
   const exportToExcel = () => {
     if (!data || data.length === 0) return;
-    const ws = XLSX.utils.json_to_sheet(data);
+    // P2-11 — every one of this component's 11 real callers (Financial,
+    // Profitability, Customer/Employee/Commercial/Quantity/Invoice
+    // Analytics, etc.) includes authenticated-user-entered free-text
+    // fields (e.g. Project.client, remarks) that must never be handed to
+    // the spreadsheet library unsanitized — see sanitizeExportCell.ts.
+    const ws = XLSX.utils.json_to_sheet(sanitizeExportRows(data));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Report Data");
     XLSX.writeFile(wb, `${filename}_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -18,7 +24,7 @@ export function ReportExportButtons({ data, filename = "PMO_Report_Export" }: Pr
 
   const exportToCSV = () => {
     if (!data || data.length === 0) return;
-    const ws = XLSX.utils.json_to_sheet(data);
+    const ws = XLSX.utils.json_to_sheet(sanitizeExportRows(data));
     const csv = XLSX.utils.sheet_to_csv(ws);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);

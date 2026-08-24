@@ -60,17 +60,17 @@ export async function fetchProjectNotes(projectId: string): Promise<ProjectNote[
 }
 
 /**
- * Creates a new project note on the backend API POST /projects/:projectId/notes
+ * Creates a new project note on the backend API POST /projects/:projectId/notes.
+ * Author attribution is always derived server-side from the authenticated
+ * session — the backend never reads a client-supplied createdBy.
  */
 export async function addProjectNote(
   projectId: string,
-  message: string,
-  createdBy?: string
+  message: string
 ): Promise<ProjectNote | null> {
   try {
     const res = await apiClient.post<ProjectNote>(`/projects/${projectId}/notes`, {
       message,
-      createdBy,
     });
     return res;
   } catch (error) {
