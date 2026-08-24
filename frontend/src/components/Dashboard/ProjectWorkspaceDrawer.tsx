@@ -5,11 +5,11 @@ import type { ProjectReminder } from "../../types/ProjectReminder";
 import { ProjectNoteCard } from "../Cards/ProjectNoteCard";
 import { groupNotesByDate, fetchProjectNotes, addProjectNote } from "../../services/ProjectNotesService";
 import { getProjectById } from "../../services/projectService";
-import { useAuth } from "../../auth/authContext";
 import { reminderService } from "../../services/reminders/ReminderService";
 import { ReminderCard } from "../Cards/ReminderCard";
 import { ReminderForm } from "../../pages/Projects/components/workspace/ReminderForm";
 import { EmptyState } from "../ui/EmptyState";
+import { usePmoToast } from "../ui/usePmoToast";
 
 interface Props {
   isOpen: boolean;
@@ -21,7 +21,7 @@ interface Props {
 
 export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, readOnly = false }: Props) => {
   const [activeTab, setActiveTab] = useState<"notes" | "reminders">("notes");
-  const { user } = useAuth();
+  const { showToast } = usePmoToast();
   
   // Notes State
   const [noteText, setNoteText] = useState("");
@@ -97,9 +97,9 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
 
     try {
       setIsSavingNote(true);
-      const authorName = user?.name ? user.name.trim().split(" ")[0] : user?.email ? user.email.split("@")[0] : "Administrator";
-      
-      const createdNote = await addProjectNote(project.id, noteText.trim(), authorName);
+      // Author attribution is derived server-side from the authenticated
+      // session — the backend never reads a client-supplied name.
+      const createdNote = await addProjectNote(project.id, noteText.trim());
 
       if (createdNote) {
         const updatedNotes = [createdNote, ...(project.notes || [])];
@@ -111,9 +111,11 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
         // Reset composer input
         setNoteText("");
         setCharacterCount(0);
+        showToast({ type: "success", message: "Note added successfully." });
       }
     } catch (err) {
       console.error("Failed to save project note:", err);
+      showToast({ type: "error", message: "Unable to save the note. Please try again." });
     } finally {
       setIsSavingNote(false);
     }

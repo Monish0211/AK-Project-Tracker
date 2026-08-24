@@ -22,6 +22,7 @@ import { Button } from "../../../../components/ui/Button";
 import { Badge } from "../../../../components/ui/Badge";
 import { Toggle } from "../../../../components/ui/Toggle";
 import { CreatableCombobox } from "../../../../components/ui/CreatableCombobox";
+import { usePmoToast } from "../../../../components/ui/usePmoToast";
 
 interface UserDrawerProps {
   isOpen: boolean;
@@ -121,6 +122,7 @@ const formatDateTime = (iso?: string | null): string => {
 const DEFAULT_ROLE: SystemRole = "Engineer";
 
 export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestResetPassword, existingUsers, lookups }: UserDrawerProps) => {
+  const { showToast } = usePmoToast();
   const [animateShow, setAnimateShow] = useState(false);
 
   const [employeeName, setEmployeeName] = useState("");
@@ -435,7 +437,9 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
                   <p className="text-[11px] text-[var(--nu-text-muted)] mt-0.5">JPG or PNG up to 2MB</p>
                   <button
                     type="button"
-                    onClick={() => alert("Photo upload is ready for backend integration.")}
+                    onClick={() =>
+                      showToast({ type: "info", message: "Photo upload isn't available yet — this will be enabled in a future update." })
+                    }
                     className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--nu-accent)] hover:underline cursor-pointer"
                   >
                     <Camera size={12} /> Upload Photo

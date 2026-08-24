@@ -1,9 +1,12 @@
 import { Save, RotateCcw, X, ArrowLeft, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
 import type { Project } from "../../../types/Project";
 import { Button } from "../../../components/ui/Button";
+import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
+import { usePmoToast } from "../../../components/ui/usePmoToast";
 
 import {
   addProject,
@@ -45,6 +48,9 @@ const FormButtons = ({
   onValidate,
 }: Props) => {
   const navigate = useNavigate();
+  const { showToast } = usePmoToast();
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 
   /**
    * Phase 3.1: General Information now round-trips through the real backend
@@ -72,7 +78,10 @@ const FormButtons = ({
         await updateProjectGeneralInfo(existing.id, project);
       }
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "Failed to save General Information. Please try again.");
+      showToast({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Failed to save General Information. Please try again.",
+      });
       return false;
     }
 
@@ -90,7 +99,10 @@ const FormButtons = ({
         projectToSave = { ...projectToSave, quantityItems: syncedQuantityItems };
         setProject(projectToSave);
       } catch (err) {
-        alert(err instanceof ApiError ? err.message : "Failed to save Quantity Details. Please try again.");
+        showToast({
+          type: "error",
+          message: err instanceof ApiError ? err.message : "Failed to save Quantity Details. Please try again.",
+        });
         return false;
       }
     }
@@ -112,7 +124,10 @@ const FormButtons = ({
         projectToSave = { ...projectToSave, paymentMilestones: syncedMilestones };
         setProject(projectToSave);
       } catch (err) {
-        alert(err instanceof ApiError ? err.message : "Failed to save Payment Milestones. Please try again.");
+        showToast({
+          type: "error",
+          message: err instanceof ApiError ? err.message : "Failed to save Payment Milestones. Please try again.",
+        });
         return false;
       }
     }
@@ -131,7 +146,10 @@ const FormButtons = ({
         projectToSave = { ...projectToSave, nonManhourExpenses: syncedExpenses };
         setProject(projectToSave);
       } catch (err) {
-        alert(err instanceof ApiError ? err.message : "Failed to save Other Project Expenses. Please try again.");
+        showToast({
+          type: "error",
+          message: err instanceof ApiError ? err.message : "Failed to save Other Project Expenses. Please try again.",
+        });
         return false;
       }
     }
@@ -168,7 +186,10 @@ const FormButtons = ({
     if (onValidate && !onValidate()) return;
     const saved = await saveProjectData();
     if (!saved) return;
-    alert(mode === "add" ? "Project Saved Successfully!" : "Project Updated Successfully!");
+    showToast({
+      type: "success",
+      message: mode === "add" ? "Project saved successfully." : "Project updated successfully.",
+    });
     navigate("/projects");
   };
 
@@ -187,27 +208,9 @@ const FormButtons = ({
     }
   };
 
-  const handleReset = () => {
-    if (
-      !window.confirm(
-        "Are you sure you want to reset the form?"
-      )
-    ) {
-      return;
-    }
+  const handleReset = () => setResetConfirmOpen(true);
 
-    setProject(createEmptyProject());
-  };
-
-  const handleCancel = () => {
-    if (
-      window.confirm(
-        "Are you sure you want to cancel?"
-      )
-    ) {
-      navigate("/projects");
-    }
-  };
+  const handleCancel = () => setCancelConfirmOpen(true);
 
   return (
     <div className="sticky bottom-0 z-40 -mx-4 mt-2 bg-[var(--nu-surface)]/95 backdrop-blur-md border-t border-[var(--nu-border)] py-3 px-4 flex flex-wrap justify-between items-center gap-3 shadow-[var(--nu-shadow-md)] rounded-t-[var(--nu-radius-lg)]">
@@ -274,6 +277,32 @@ const FormButtons = ({
           </Button>
         )}
       </div>
+
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        title="Reset Form?"
+        message="This will clear every unsaved field on this form back to empty. This cannot be undone."
+        confirmLabel="Reset"
+        cancelLabel="Cancel"
+        onCancel={() => setResetConfirmOpen(false)}
+        onConfirm={() => {
+          setResetConfirmOpen(false);
+          setProject(createEmptyProject());
+        }}
+      />
+
+      <ConfirmDialog
+        open={cancelConfirmOpen}
+        title="Cancel?"
+        message="Any unsaved changes on this form will be lost."
+        confirmLabel="Discard Changes"
+        cancelLabel="Keep Editing"
+        onCancel={() => setCancelConfirmOpen(false)}
+        onConfirm={() => {
+          setCancelConfirmOpen(false);
+          navigate("/projects");
+        }}
+      />
     </div>
   );
 };

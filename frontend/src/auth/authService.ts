@@ -1,5 +1,11 @@
 import { apiClient, setAccessToken, setUnauthorizedHandler } from "../services/apiClient";
 import { AUTH_CONFIG } from "./authConfig";
+// Deliberate exception to this function's own "just duplicate key names,
+// no cross-module imports" convention below: the actual timesheet mirror
+// now lives in IndexedDB (see timesheetService.ts), which — unlike a plain
+// localStorage key — can't be wiped by just naming it; clearing it
+// requires calling back into the module that owns that storage.
+import { clearTimesheetCache } from "../services/timesheetService";
 
 /**
  * Session shape kept close to the OLD mock UserSession (name, employeeId,
@@ -98,6 +104,48 @@ function toUserSession(profile: MeResponseDto): UserSession {
   };
 }
 
+/**
+ * Business-data caches to wipe on logout so a second person logging in on
+ * the same shared machine/browser profile never sees the previous user's
+ * cached projects/employees/timesheets/notifications/reminders. Deliberately
+ * excludes genuinely user-independent preferences (`theme`), the PMO
+ * Assistant's own on-screen position (`pmo-assistant-position` — owned by
+ * PmoAssistantOrb.tsx, out of scope here), the one-time employees migration
+ * marker (`employees_migration_completed_v1` — app state, not per-user
+ * data), and the push-subscription device pairing id (`pmo_push_
+ * subscription_id` — tied to this browser/device, not this session). Key
+ * names are duplicated here deliberately (matching how each owning module
+ * already declares its own STORAGE_KEY constant independently) rather than
+ * importing every one of those modules into the auth layer just for this.
+ */
+function clearCachedBusinessDataOnLogout(): void {
+  const localStorageKeysToClear = [
+    "projects", // projectService.ts — includes nested Quantity/Milestones/Invoices/Expenses mirrors
+    "employees_v6", // employeeService.ts
+    "timesheets_imports", // timesheetService.ts
+    "pmo_notifications", // notifications/notificationRepository.ts (also read by the legacy services/NotificationService.ts)
+    "pmo_reminders", // services/reminders/ClientReminderRepository.ts
+  ];
+  for (const key of localStorageKeysToClear) {
+    localStorage.removeItem(key);
+  }
+
+  // "timesheets_imports" above only ever clears a small legacy-bridge
+  // value now — the real timesheet mirror lives in IndexedDB and needs
+  // its own clear so a previous user's cached data can never leak to the
+  // next person logging in on this machine (see timesheetService.ts).
+  clearTimesheetCache();
+
+  const sessionStorageKeysToClear = [
+    "pmo-greeting-shown-session",
+    "view-project-tab", // utils/breadcrumbHelpers.ts, pages/Projects/ViewProject.tsx
+    "view-project-notes", // utils/breadcrumbHelpers.ts, pages/Projects/ViewProject.tsx
+  ];
+  for (const key of sessionStorageKeysToClear) {
+    sessionStorage.removeItem(key);
+  }
+}
+
 function persistToken(token: string | null): void {
   setAccessToken(token);
   if (token) {
@@ -114,6 +162,10 @@ persistToken(localStorage.getItem(AUTH_CONFIG.tokenStorageKey));
 
 setUnauthorizedHandler(() => {
   persistToken(null);
+  // A session-expiry-triggered logout is still a logout — the same
+  // shared-machine exposure applies whether the user clicked "Logout" or
+  // their token simply expired mid-session.
+  clearCachedBusinessDataOnLogout();
   if (window.location.pathname !== "/login") {
     window.location.assign("/login");
   }
@@ -190,7 +242,7 @@ export const authService = {
       // Logout is a client-side guarantee: forget the token even if the
       // network call itself fails.
       persistToken(null);
-      sessionStorage.removeItem("pmo-greeting-shown-session");
+      clearCachedBusinessDataOnLogout();
     }
   },
 

@@ -172,9 +172,29 @@ export async function fetchCustomersFromApi(params: CustomerListParams = {}): Pr
   return { items, total: result.total, page: result.page, pageSize: result.pageSize };
 }
 
-/** Convenience: load the full directory for autocomplete / Customer Master page. */
+/**
+ * Convenience: load the full directory for autocomplete / Customer Master
+ * page. P2-06 — pageSize 1000 is the backend's own listCustomersQuerySchema
+ * ceiling, matching the existing Projects.tsx bulk-fetch pattern exactly.
+ * Fails loudly (throws) instead of ever silently caching/returning a
+ * partial customer list if the real count ever exceeds that ceiling — every
+ * caller (Customer Master, Reports, Project Client Name autocomplete,
+ * PMO Assistant) already either awaits this in a try/catch or has an
+ * existing .catch()/.then() error path, so this surfaces as a caught,
+ * reported failure rather than silent data loss.
+ */
 export async function loadCustomersForApp(): Promise<Customer[]> {
-  const { items } = await fetchCustomersFromApi({ page: 1, pageSize: 1000, sortField: "customerName", sortDirection: "asc" });
+  const { items, total } = await fetchCustomersFromApi({
+    page: 1,
+    pageSize: 1000,
+    sortField: "customerName",
+    sortDirection: "asc",
+  });
+  if (total > items.length) {
+    throw new Error(
+      `Customer data fetch was incomplete: received ${items.length} of ${total} total customers from the server.`
+    );
+  }
   return items;
 }
 

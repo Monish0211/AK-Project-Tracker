@@ -13,6 +13,7 @@ import { getDepartmentOptions } from "../../services/departmentDirectoryService"
 import { ApiError } from "../../services/apiClient";
 import { useAuth } from "../../auth/authContext";
 import { canMutateData, hasApprovalPermission } from "../../auth/permissions";
+import { usePmoToast } from "../../components/ui/usePmoToast";
 
 /** Sort fields the backend's GET /projects can order by — see listProjectsQuerySchema. */
 const BACKEND_SORTABLE_FIELDS = new Set(["prNo", "client", "projectTitle", "department", "projectStartDate", "createdAt"]);
@@ -49,6 +50,7 @@ const formatArchivedOn = (iso?: string | null): string => {
 export default function ArchivedProjects() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { showToast } = usePmoToast();
   const canMutate = canMutateData(user);
   const canPermanentlyDelete = canMutate && hasApprovalPermission(user, "Delete Project Permanently");
 
@@ -56,7 +58,6 @@ export default function ArchivedProjects() {
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState("All");
@@ -123,10 +124,13 @@ export default function ArchivedProjects() {
     try {
       await restoreProjectViaApi(project.id);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "Failed to recover project. Please try again.");
+      showToast({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Failed to recover project. Please try again.",
+      });
       return;
     }
-    setSuccessMessage(`"${project.prNo}" recovered to the Project Repository.`);
+    showToast({ type: "success", message: `"${project.prNo}" recovered to the Project Repository.` });
     load();
   };
 
@@ -135,30 +139,30 @@ export default function ArchivedProjects() {
     try {
       await permanentlyDeleteProjectViaApi(project.id);
     } catch (err) {
+      let message = "Failed to permanently delete project. Please try again.";
       if (err instanceof ApiError) {
         if (err.status === 403) {
-          alert("You do not have permission to permanently delete projects.");
+          message = "You do not have permission to permanently delete projects.";
         } else if (err.status === 404) {
-          alert("This project is no longer available. It may have already been deleted.");
+          message = "This project is no longer available. It may have already been deleted.";
         } else if (err.status === 409) {
-          alert(err.message || "This project cannot be permanently deleted right now.");
+          message = err.message || "This project cannot be permanently deleted right now.";
         } else if (err.status === 401) {
-          alert("Your session has expired. Please sign in again.");
+          message = "Your session has expired. Please sign in again.";
         } else {
-          alert(err.message || "Failed to permanently delete project. Please try again.");
+          message = err.message || message;
         }
-      } else {
-        alert("Failed to permanently delete project. Please try again.");
       }
+      showToast({ type: "error", message });
       return;
     }
-    setSuccessMessage(`"${project.prNo}" permanently deleted.`);
+    showToast({ type: "success", message: `"${project.prNo}" permanently deleted.` });
     load();
   };
 
   const handleExport = async () => {
     if (rows.length === 0) {
-      alert("No archived projects to export.");
+      showToast({ type: "info", message: "No archived projects to export." });
       return;
     }
     const workbook = await buildExportWorkbook(rows);
@@ -216,20 +220,6 @@ export default function ArchivedProjects() {
             </div>
           </div>
         </div>
-
-        {successMessage && (
-          <div className="mx-4 mt-3 px-3 py-2 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50 flex items-center justify-between gap-2">
-            <span>{successMessage}</span>
-            <button
-              type="button"
-              onClick={() => setSuccessMessage(null)}
-              className="text-emerald-700/70 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-200"
-              aria-label="Dismiss"
-            >
-              ×
-            </button>
-          </div>
-        )}
 
         {/* Toolbar */}
         <div className="flex items-center justify-between gap-2 p-3 bg-slate-50/50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800 flex-wrap">

@@ -10,6 +10,7 @@ import { refreshTimesheetImportsFromBackend } from "../../../services/timesheetS
 import { ApiError } from "../../../services/apiClient";
 import { Badge } from "../../../components/ui/Badge";
 import { statusTone } from "../../../components/ui/statusTone";
+import { usePmoToast } from "../../../components/ui/usePmoToast";
 
 interface Props {
   onRefresh: () => void;
@@ -27,6 +28,7 @@ interface SearchHit {
 
 const DashboardToolbar = ({ onRefresh }: Props) => {
   const navigate = useNavigate();
+  const { showToast } = usePmoToast();
 
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
   const [query, setQuery] = useState("");
@@ -93,7 +95,10 @@ const DashboardToolbar = ({ onRefresh }: Props) => {
       await refreshTimesheetImportsFromBackend();
     } catch (err) {
       if (!(err instanceof ApiError && err.status === 403)) {
-        alert(err instanceof ApiError ? err.message : "Failed to refresh timesheet data. Please try again.");
+        showToast({
+          type: "error",
+          message: err instanceof ApiError ? err.message : "Failed to refresh timesheet data. Please try again.",
+        });
       }
     } finally {
       onRefresh();

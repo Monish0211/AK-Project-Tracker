@@ -11,6 +11,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Plus,
+  Upload,
+  History,
 } from "lucide-react";
 import { GlassReflectionOverlay } from "../../components/ui/GlassReflectionOverlay";
 
@@ -27,6 +29,7 @@ import { syncTimesheetToProjects } from "../../services/timesheetSyncService";
 import { getProjects, updateProject } from "../../services/projectService";
 import { getEmployees } from "../../services/employeeService";
 import { apiClient, ApiError } from "../../services/apiClient";
+import { useAuth } from "../../auth/authContext";
 import type { Employee } from "../../types/EmployeeModel";
 import { Card, CardHeader } from "../../components/ui/Card";
 import { StatTile } from "../../components/ui/StatTile";
@@ -34,6 +37,10 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Input } from "../../components/ui/Input";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { usePmoToast } from "../../components/ui/usePmoToast";
+import { TimesheetExcelImportModal } from "./components/TimesheetExcelImportModal";
+import { TimesheetHistoricalResetModal } from "./components/TimesheetHistoricalResetModal";
 import "./timesheets-theme.css";
 
 const timesheetStorage = {
@@ -134,9 +141,26 @@ const EmployeeAutocomplete = ({ value, onChange, onSelect, employees }: Employee
 };
 
 const Timesheets = () => {
+  const { showToast } = usePmoToast();
+  const { user } = useAuth();
+  const isAdministrator = user?.role === "Administrator";
   const [allMonths, setAllMonths] = useState<TimesheetImportMonth[]>(
     timesheetStorage.getMonths()
   );
+  const [excelImportOpen, setExcelImportOpen] = useState(false);
+  const [historicalResetOpen, setHistoricalResetOpen] = useState(false);
+
+  // Shared refresh-after-mutation path for both the Excel import and the
+  // historical reset — mirrors handleDeleteAllMonths()'s existing
+  // "re-sync from backend, then swap local state" pattern exactly.
+  const handleBackendDataChanged = async () => {
+    try {
+      await refreshTimesheetImportsFromBackend();
+      setAllMonths(timesheetStorage.getMonths());
+    } catch (err) {
+      console.warn("Could not refresh Timesheet Records from backend after import/reset:", err);
+    }
+  };
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [selectedProject, setSelectedProject] = useState<string>("all");
   const [searchEmployee, setSearchEmployee] = useState<string>("");
@@ -149,7 +173,6 @@ const Timesheets = () => {
   // buttons mid-request to prevent double-submits, actionError surfaces a
   // failed backend call instead of silently pretending it succeeded.
   const [actionPending, setActionPending] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const masterEmployees = useMemo(() => getEmployees(), []);
 
@@ -260,15 +283,16 @@ const Timesheets = () => {
     setCurrentPage(1);
   }, [selectedMonth, selectedProject, searchEmployee]);
 
+  const [deleteMonthTarget, setDeleteMonthTarget] = useState<string | null>(null);
+
   const handleDeleteMonth = (month: string) => {
-    if (window.confirm(`Delete timesheet data for ${formatMonthDisplay(month)}?`)) {
-      const updated = allMonths.filter((m) => m.month !== month);
-      timesheetStorage.save(updated);
-      setAllMonths(updated);
-      if (selectedMonth === month) {
-        setSelectedMonth(updated[updated.length - 1]?.month || "");
-      }
+    const updated = allMonths.filter((m) => m.month !== month);
+    timesheetStorage.save(updated);
+    setAllMonths(updated);
+    if (selectedMonth === month) {
+      setSelectedMonth(updated[updated.length - 1]?.month || "");
     }
+    showToast({ type: "success", message: `Timesheet data for ${formatMonthDisplay(month)} deleted.` });
   };
 
   // Real, protected backend operation (Part 2D) — deletes every
@@ -279,12 +303,9 @@ const Timesheets = () => {
   // re-synced from the backend AFTER that call succeeds — a failure
   // leaves every existing record visible, per the "never pretend it
   // succeeded" requirement.
-  const handleDeleteAllMonths = async () => {
-    if (!window.confirm("Are you sure you want to delete all imported timesheet records? This permanently removes every timesheet entry and cannot be undone.")) {
-      return;
-    }
+  const [deleteAllConfirmOpen, setDeleteAllConfirmOpen] = useState(false);
 
-    setActionError(null);
+  const handleDeleteAllMonths = async () => {
     setActionPending(true);
     try {
       await apiClient.delete("/timesheets/entries");
@@ -292,8 +313,12 @@ const Timesheets = () => {
       await refreshTimesheetImportsFromBackend();
       setAllMonths(timesheetStorage.getMonths());
       setSelectedMonth("");
+      showToast({ type: "success", message: "All timesheet records deleted successfully." });
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : "Failed to delete all timesheet records. Please try again.");
+      showToast({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Failed to delete all timesheet records. Please try again.",
+      });
     } finally {
       setActionPending(false);
     }
@@ -394,7 +419,6 @@ const Timesheets = () => {
     // identity fields (employeeNo/projectId) frozen, so only Hours/Date
     // changes here have any effect on the real record.
     if (entryModal.mode === "edit" && entryModal.original?.entryId && isBackendEntryId(entryModal.original.entryId)) {
-      setActionError(null);
       setActionPending(true);
       try {
         await apiClient.patch(`/timesheets/entries/${entryModal.original.entryId}`, {
@@ -404,8 +428,12 @@ const Timesheets = () => {
         await refreshTimesheetImportsFromBackend();
         setAllMonths(timesheetStorage.getMonths());
         setEntryModal(null);
+        showToast({ type: "success", message: "Timesheet entry updated successfully." });
       } catch (err) {
-        setFormError(err instanceof ApiError ? err.message : "Failed to update the timesheet entry. Please try again.");
+        showToast({
+          type: "error",
+          message: err instanceof ApiError ? err.message : "Failed to update the timesheet entry. Please try again.",
+        });
       } finally {
         setActionPending(false);
       }
@@ -459,6 +487,10 @@ const Timesheets = () => {
 
     persistMonthEntries([...filteredExisting, ...newEntries]);
     setEntryModal(null);
+    showToast({
+      type: "success",
+      message: entryModal.mode === "add" ? "Timesheet entry added successfully." : "Timesheet entry updated successfully.",
+    });
   };
 
   // Deletes every raw TimesheetEntry backing this row (Part 2C/3) — a row
@@ -466,25 +498,17 @@ const Timesheets = () => {
   // "delete this row" means deleting each of its underlying real entries.
   // Falls back to the old local-only removal only when none of them are
   // real backend rows (a purely manually-added group).
+  const [deleteEntryTarget, setDeleteEntryTarget] = useState<(typeof allEmployees)[number] | null>(null);
+
   const handleDeleteEntry = async (emp: (typeof allEmployees)[number]) => {
     const targetMonthKey = selectedMonth !== "all" ? selectedMonth : getMonthFromDate(emp.startDate);
     const targetMonthData = allMonths.find((m) => m.month === targetMonthKey);
     if (!targetMonthData) return;
 
-    if (
-      !window.confirm(
-        `Remove ${emp.employeeName} (${emp.employeeNo}) from ${emp.projectCode} for ${formatMonthDisplay(targetMonthKey)}?`
-      )
-    ) {
-      return;
-    }
-
     const groupEntries = targetMonthData.entries.filter(
       (e) => e.employeeNo === emp.employeeNo && e.projectCode === emp.projectCode
     );
     const realEntryIds = groupEntries.map((e) => e.id).filter(isBackendEntryId);
-
-    setActionError(null);
 
     if (realEntryIds.length > 0) {
       setActionPending(true);
@@ -492,8 +516,12 @@ const Timesheets = () => {
         await Promise.all(realEntryIds.map((id) => apiClient.delete(`/timesheets/entries/${id}`)));
         await refreshTimesheetImportsFromBackend();
         setAllMonths(timesheetStorage.getMonths());
+        showToast({ type: "success", message: `Timesheet entry for ${emp.employeeName} removed.` });
       } catch (err) {
-        setActionError(err instanceof ApiError ? err.message : "Failed to delete the timesheet entry. Please try again.");
+        showToast({
+          type: "error",
+          message: err instanceof ApiError ? err.message : "Failed to delete the timesheet entry. Please try again.",
+        });
       } finally {
         setActionPending(false);
       }
@@ -515,6 +543,7 @@ const Timesheets = () => {
     const updatedMonths = allMonths.map((m) => (m.month === targetMonthKey ? updatedMonth : m));
     timesheetStorage.save(updatedMonths);
     setAllMonths(updatedMonths);
+    showToast({ type: "success", message: `Timesheet entry for ${emp.employeeName} removed.` });
 
     try {
       const allProjects = getProjects();
@@ -539,6 +568,26 @@ const Timesheets = () => {
             <p className="text-[13px] text-[#a9bfda] mt-1 max-w-2xl leading-snug hidden md:block">
               Import employee timesheets — automatically synced to Projects by PR Number.
             </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 z-10">
+            {isAdministrator && (
+              <Button
+                variant="hero"
+                size="sm"
+                icon={<History size={14} />}
+                onClick={() => setHistoricalResetOpen(true)}
+              >
+                Historical Reset
+              </Button>
+            )}
+            <Button
+              variant="hero"
+              size="sm"
+              icon={<Upload size={14} />}
+              onClick={() => setExcelImportOpen(true)}
+            >
+              Upload Excel
+            </Button>
           </div>
         </div>
 
@@ -610,20 +659,6 @@ const Timesheets = () => {
             </div>
           )}
 
-          {actionError && (
-            <div className="mx-4 mt-3 flex items-start gap-2 rounded-[var(--nu-radius-md)] border border-[var(--nu-danger)]/20 bg-[var(--nu-danger-soft)] p-3">
-              <AlertTriangle size={14} className="text-[var(--nu-danger)] shrink-0 mt-0.5" />
-              <p className="flex-1 text-[12px] font-medium text-[var(--nu-danger)]">{actionError}</p>
-              <button
-                type="button"
-                onClick={() => setActionError(null)}
-                className="text-[11px] font-medium text-[var(--nu-danger)] underline shrink-0"
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-
           {/* Body */}
           {allMonths.length === 0 ? (
             <div className="py-10">
@@ -660,7 +695,7 @@ const Timesheets = () => {
                       variant="ghost"
                       size="sm"
                       icon={<Trash2 size={13} />}
-                      onClick={handleDeleteAllMonths}
+                      onClick={() => setDeleteAllConfirmOpen(true)}
                       disabled={actionPending}
                       className="!text-[var(--nu-danger)] hover:!bg-[var(--nu-danger-soft)]"
                     >
@@ -677,7 +712,7 @@ const Timesheets = () => {
                         variant="ghost"
                         size="sm"
                         icon={<Trash2 size={13} />}
-                        onClick={() => handleDeleteMonth(selectedMonth)}
+                        onClick={() => setDeleteMonthTarget(selectedMonth)}
                         className="!text-[var(--nu-danger)] hover:!bg-[var(--nu-danger-soft)]"
                       >
                         Delete Period
@@ -758,7 +793,7 @@ const Timesheets = () => {
                                 type="button"
                                 title="Delete"
                                 disabled={actionPending}
-                                onClick={() => handleDeleteEntry(emp)}
+                                onClick={() => setDeleteEntryTarget(emp)}
                                 className="w-9 h-9 rounded-[var(--nu-radius-md)] bg-[var(--nu-danger-soft)] text-[var(--nu-danger)] flex items-center justify-center hover:shadow-[var(--nu-shadow-md)] hover:-translate-y-0.5 transition-all duration-150"
                               >
                                 <Trash2 size={15} />
@@ -922,6 +957,71 @@ const Timesheets = () => {
             </div>
           </div>
         </div>
+      )}
+
+      <ConfirmDialog
+        open={deleteMonthTarget !== null}
+        variant="danger"
+        title="Delete Timesheet Period?"
+        message={`Delete timesheet data for ${deleteMonthTarget ? formatMonthDisplay(deleteMonthTarget) : ""}?`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onCancel={() => setDeleteMonthTarget(null)}
+        onConfirm={() => {
+          if (!deleteMonthTarget) return;
+          handleDeleteMonth(deleteMonthTarget);
+          setDeleteMonthTarget(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={deleteAllConfirmOpen}
+        variant="danger"
+        title="Delete All Timesheets?"
+        message="Are you sure you want to delete all imported timesheet records? This permanently removes every timesheet entry and cannot be undone."
+        confirmLabel="Delete All"
+        cancelLabel="Cancel"
+        onCancel={() => setDeleteAllConfirmOpen(false)}
+        onConfirm={async () => {
+          setDeleteAllConfirmOpen(false);
+          await handleDeleteAllMonths();
+        }}
+      />
+
+      <ConfirmDialog
+        open={deleteEntryTarget !== null}
+        variant="danger"
+        title="Remove Timesheet Entry?"
+        message={
+          deleteEntryTarget
+            ? `Remove ${deleteEntryTarget.employeeName} (${deleteEntryTarget.employeeNo}) from ${deleteEntryTarget.projectCode} for ${formatMonthDisplay(
+                selectedMonth !== "all" ? selectedMonth : getMonthFromDate(deleteEntryTarget.startDate)
+              )}?`
+            : ""
+        }
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        onCancel={() => setDeleteEntryTarget(null)}
+        onConfirm={async () => {
+          if (!deleteEntryTarget) return;
+          const target = deleteEntryTarget;
+          setDeleteEntryTarget(null);
+          await handleDeleteEntry(target);
+        }}
+      />
+
+      <TimesheetExcelImportModal
+        open={excelImportOpen}
+        onClose={() => setExcelImportOpen(false)}
+        onImported={handleBackendDataChanged}
+      />
+
+      {isAdministrator && (
+        <TimesheetHistoricalResetModal
+          open={historicalResetOpen}
+          onClose={() => setHistoricalResetOpen(false)}
+          onCleared={handleBackendDataChanged}
+        />
       )}
     </div>
   );

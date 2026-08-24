@@ -33,9 +33,12 @@ import {
 import { ApiError } from "../../services/apiClient";
 import EmployeeModal from "./components/EmployeeModal";
 import { Button } from "../../components/ui/Button";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { EmptyStateRow } from "../../components/ui/EmptyStateRow";
+import { usePmoToast } from "../../components/ui/usePmoToast";
 
 const Manpower = () => {
+  const { showToast } = usePmoToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Live employee database state
@@ -71,6 +74,7 @@ const Manpower = () => {
       })
       .catch((err) => {
         console.error("Failed to load Employee Master from backend:", err);
+        showToast({ type: "error", message: "Unable to load Employee Master from the server. Showing the last known data." });
       });
     return () => {
       isMounted = false;
@@ -235,11 +239,17 @@ const Manpower = () => {
     try {
       const result = await importEmployeesFromExcel(file);
       setEmployees(getEmployees());
-      alert(
-        `Import complete!\n\nEmployees Added: ${result.added}\nEmployees Updated: ${result.updated}\nTotal Imported: ${result.totalImported}`
-      );
+      const skippedCount = result.invalid + result.blank;
+      showToast({
+        type: skippedCount > 0 ? "warning" : "success",
+        title: skippedCount > 0 ? "Import completed with warnings" : undefined,
+        message:
+          skippedCount > 0
+            ? `${result.totalImported} employee(s) imported (${result.added} added, ${result.updated} updated) — ${skippedCount} row(s) skipped (${result.invalid} invalid, ${result.blank} blank).`
+            : `${result.totalImported} employee(s) imported successfully (${result.added} added, ${result.updated} updated).`,
+      });
     } catch (err: any) {
-      alert(err.message || "Failed to import Excel file. Verify file template format.");
+      showToast({ type: "error", message: err.message || "Failed to import Excel file. Verify file template format." });
     } finally {
       e.target.value = "";
     }
@@ -803,44 +813,35 @@ const Manpower = () => {
         />
       )}
 
-      {/* ─── ENTERPRISE DELETE CONFIRMATION MODAL ─── */}
-      {deleteConfirmId && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
-            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Delete Employee?</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">This action cannot be undone.</p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setDeleteConfirmId(null)}
-                className="px-4 py-2 border rounded-xl text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
-              >
-                Cancel
-              </button>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={async () => {
-                  if (!deleteConfirmId) return;
-                  try {
-                    await deleteEmployeeViaApi(deleteConfirmId);
-                  } catch (err) {
-                    if (err instanceof ApiError && err.status === 404) {
-                      deleteEmployee(deleteConfirmId);
-                    } else {
-                      alert(err instanceof ApiError ? err.message : "Failed to delete employee. Please try again.");
-                      return;
-                    }
-                  }
-                  setEmployees(getEmployees());
-                  setDeleteConfirmId(null);
-                }}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ─── DELETE CONFIRMATION ─── */}
+      <ConfirmDialog
+        open={deleteConfirmId !== null}
+        variant="danger"
+        title="Delete Employee?"
+        message="This action cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onCancel={() => setDeleteConfirmId(null)}
+        onConfirm={async () => {
+          if (!deleteConfirmId) return;
+          try {
+            await deleteEmployeeViaApi(deleteConfirmId);
+          } catch (err) {
+            if (err instanceof ApiError && err.status === 404) {
+              deleteEmployee(deleteConfirmId);
+            } else {
+              showToast({
+                type: "error",
+                message: err instanceof ApiError ? err.message : "Failed to delete employee. Please try again.",
+              });
+              return;
+            }
+          }
+          setEmployees(getEmployees());
+          setDeleteConfirmId(null);
+          showToast({ type: "success", message: "Employee deleted successfully." });
+        }}
+      />
     </div>
   );
 };

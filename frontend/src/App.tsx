@@ -5,10 +5,20 @@ import ChangePassword from "./pages/ChangePassword/ChangePassword";
 import ResetPassword from "./pages/ResetPassword/ResetPassword";
 import { AuthProvider } from "./auth/authContext";
 import ProtectedRoute from "./auth/ProtectedRoute";
+import { PmoToastProvider } from "./components/ui/PmoToastProvider";
 
 function App() {
   return (
     <AuthProvider>
+      {/* Mounted once at the app root, outside BrowserRouter's <Routes> — so
+          it's available on every route including Login/ChangePassword/
+          ResetPassword, which render outside MainLayout and therefore
+          outside PmoAssistant/GlobalReminderProvider's scope. This is the
+          ONE generic action-feedback toast system (success/error/warning/
+          info for things like "Project updated successfully") — entirely
+          separate from the business Notification Bell/Drawer and from the
+          reminder-toast system, neither of which this touches. */}
+      <PmoToastProvider>
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <Routes>
           <Route path="/login" element={<Login />} />
@@ -27,6 +37,7 @@ function App() {
           />
         </Routes>
       </BrowserRouter>
+      </PmoToastProvider>
     </AuthProvider>
   );
 }

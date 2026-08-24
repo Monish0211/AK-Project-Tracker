@@ -1,114 +1,167 @@
-import { useState, useMemo } from "react";
-import { Download, RefreshCw, Shield, CheckCircle2 } from "lucide-react";
-import { auditLogService } from "../../../../services/auditLogService";
-import type { AuditLogItem, AuditFilterOptions } from "../../../../types/AuditLog";
+import { useEffect, useMemo, useState } from "react";
+import { Download, RefreshCw, Shield, Lock } from "lucide-react";
+import { useAuth } from "../../../../auth/authContext";
+import { ApiError } from "../../../../services/apiClient";
+import {
+  exportAuditLogsToCsv,
+  fetchAuditKpiCounts,
+  fetchAuthAuditLogs,
+  type AuditKpiCounts,
+  type AuthAuditLogEntry,
+  type AuthAuditLogFilters,
+} from "../../../../services/authAuditLogService";
 import { AuditSummaryCards } from "./AuditSummaryCards";
-import { AuditFilterBar } from "./AuditFilterBar";
+import { AuditFilterBar, DEFAULT_AUDIT_FILTERS, type AuditFilterState } from "./AuditFilterBar";
 import { AuditLogTable } from "./AuditLogTable";
 import { AuditDetailDrawer } from "./AuditDetailDrawer";
-import { RecentSecurityEventsCard } from "./RecentSecurityEventsCard";
-import { FailedLoginCard } from "./FailedLoginCard";
-import { SystemTimelineCard } from "./SystemTimelineCard";
-import { LiveAuthAuditLogCard } from "./LiveAuthAuditLogCard";
+import { usePmoToast } from "../../../../components/ui/usePmoToast";
 
-export function SecurityAuditSection() {
-  const [logs, setLogs] = useState<AuditLogItem[]>(() => auditLogService.getAuditLogs());
-  const [selectedLog, setSelectedLog] = useState<AuditLogItem | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+const PAGE_SIZE = 20;
 
-  // Filters State
-  const [filters, setFilters] = useState<AuditFilterOptions>({
-    searchQuery: "",
-    eventType: "all",
-    userEmail: "all",
-    module: "all",
-    dateRange: "all",
-    status: "all",
-  });
+function dateRangeToFromTo(range: AuditFilterState["dateRange"]): { from?: Date } {
+  if (range === "all") return {};
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  if (range === "7days") from.setDate(from.getDate() - 6);
+  if (range === "30days") from.setDate(from.getDate() - 29);
+  return { from };
+}
 
-  // Calculate filtered logs
-  const filteredLogs = useMemo(() => {
-    return auditLogService.filterLogs(logs, filters);
-  }, [logs, filters]);
-
-  // Calculate KPI stats
-  const kpiStats = useMemo(() => {
-    return auditLogService.calculateKPIStats(logs);
-  }, [logs]);
-
-  // Unique users & event types for filter dropdowns
-  const uniqueUsers = useMemo(() => {
-    const map = new Map<string, { name: string; email: string }>();
-    logs.forEach((l) => {
-      if (!map.has(l.companyEmail)) {
-        map.set(l.companyEmail, { name: l.employeeName, email: l.companyEmail });
-      }
-    });
-    return Array.from(map.values());
-  }, [logs]);
-
-  const eventTypes = useMemo(() => {
-    const set = new Set<string>();
-    logs.forEach((l) => set.add(l.action));
-    return Array.from(set).sort();
-  }, [logs]);
-
-  // Handlers
-  const handleResetFilters = () => {
-    setFilters({
-      searchQuery: "",
-      eventType: "all",
-      userEmail: "all",
-      module: "all",
-      dateRange: "all",
-      status: "all",
-    });
+function toApiFilters(filters: AuditFilterState): AuthAuditLogFilters {
+  return {
+    ...(filters.email && { email: filters.email }),
+    ...(filters.ipAddress && { ipAddress: filters.ipAddress }),
+    ...(filters.event && { event: filters.event }),
+    ...(filters.eventCategory && { eventCategory: filters.eventCategory }),
+    ...dateRangeToFromTo(filters.dateRange),
   };
+}
+
+/**
+ * Real, backend-backed Security & Audit Logs — the ONLY data source is
+ * GET /auth/audit-logs (AuthAuditLog). The previous version of this
+ * component rendered a client-local fabricated "Enterprise Audit Trail"
+ * (fake names/IPs/modules/sessions via auditLogService.ts) — that dataset
+ * and every component that only existed to display it have been removed.
+ * Nothing shown here is invented; every field comes from a real database
+ * row.
+ *
+ * Administrator-only: the backend already enforces this (authenticate +
+ * authorize("Administrator") on the route) and returns 403 to anyone else —
+ * this component additionally never attempts the fetch for a non-admin, so
+ * a normal user sees a plain access notice instead of a wall of 403s.
+ */
+export function SecurityAuditSection() {
+  const { user } = useAuth();
+  const { showToast } = usePmoToast();
+  const isAdministrator = user?.role === "Administrator";
+
+  const [filters, setFilters] = useState<AuditFilterState>(DEFAULT_AUDIT_FILTERS);
+  const [page, setPage] = useState(1);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  const [items, setItems] = useState<AuthAuditLogEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [kpiStats, setKpiStats] = useState<AuditKpiCounts | null>(null);
+  const [kpiLoading, setKpiLoading] = useState(false);
+
+  const [selectedLog, setSelectedLog] = useState<AuthAuditLogEntry | null>(null);
+
+  const apiFilters = useMemo(() => toApiFilters(filters), [filters]);
+
+  // Reset to page 1 whenever filters change (a new filter combination has its own result set).
+  useEffect(() => {
+    setPage(1);
+  }, [filters]);
+
+  useEffect(() => {
+    if (!isAdministrator) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    const timer = setTimeout(() => {
+      fetchAuthAuditLogs(page, PAGE_SIZE, apiFilters)
+        .then((result) => {
+          if (cancelled) return;
+          setItems(result.items);
+          setTotal(result.total);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setError(err instanceof ApiError ? err.message : "Failed to load the authentication audit log.");
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isAdministrator, page, apiFilters, refreshTick]);
+
+  useEffect(() => {
+    if (!isAdministrator) return;
+    let cancelled = false;
+    setKpiLoading(true);
+    fetchAuditKpiCounts()
+      .then((stats) => {
+        if (!cancelled) setKpiStats(stats);
+      })
+      .catch(() => {
+        // KPI cards are a convenience summary — a failure here shouldn't block the main table.
+      })
+      .finally(() => {
+        if (!cancelled) setKpiLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdministrator, refreshTick]);
 
   const handleRefresh = () => {
-    setIsRefreshing(true);
-    setToastMessage("Refreshing audit logs from system log register...");
-    setTimeout(() => {
-      setLogs(auditLogService.getAuditLogs());
-      setIsRefreshing(false);
-      setTimeout(() => setToastMessage(null), 3000);
-    }, 600);
+    setRefreshTick((t) => t + 1);
   };
 
   const handleExport = () => {
-    auditLogService.exportToCSV(filteredLogs);
-    setToastMessage(`Exported ${filteredLogs.length} audit log records to CSV file.`);
-    setTimeout(() => setToastMessage(null), 4000);
+    if (items.length === 0) {
+      showToast({ type: "info", message: "Nothing to export on the current page." });
+      return;
+    }
+    exportAuditLogsToCsv(items);
+    showToast({ type: "success", message: `Exported ${items.length} audit record(s) from the current page to CSV.` });
   };
+
+  if (!isAdministrator) {
+    return (
+      <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] p-8 text-center space-y-2">
+        <Lock size={32} className="mx-auto text-[var(--nu-text-muted)]" />
+        <h3 className="text-base font-bold text-[var(--nu-text)]">Administrator Access Required</h3>
+        <p className="text-[12.5px] text-[var(--nu-text-muted)] max-w-md mx-auto">
+          Security & Audit Logs contains sensitive authentication history and is only visible to Administrators.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 nu-fade-in pb-8">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-slate-900 text-white shadow-2xl border border-slate-700 text-xs font-bold animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
-      {/* ════════ PAGE HEADER & ACTIONS ════════ */}
       <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] p-5 shadow-[var(--nu-shadow-sm)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5 min-w-0">
           <div className="p-3 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-600 text-white shadow-md shrink-0">
             <Shield size={24} />
           </div>
           <div>
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-lg sm:text-xl font-extrabold text-[var(--nu-text)] tracking-tight">
-                Security & Audit Logs
-              </h2>
-              <span className="px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[10.5px] font-bold uppercase tracking-wider">
-                Enterprise Audit Trail
-              </span>
-            </div>
+            <h2 className="text-lg sm:text-xl font-extrabold text-[var(--nu-text)] tracking-tight">
+              Security & Audit Logs
+            </h2>
             <p className="text-xs text-[var(--nu-text-muted)] mt-0.5">
-              Monitor user activities, authentication history, project modifications and system audit events.
+              Real authentication history — logins, logouts, and password events recorded by the backend.
             </p>
           </div>
         </div>
@@ -120,52 +173,36 @@ export function SecurityAuditSection() {
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--nu-accent)] hover:opacity-90 text-white text-xs font-bold shadow-xs transition cursor-pointer"
           >
             <Download size={14} />
-            <span>Export Logs</span>
+            <span>Export Page</span>
           </button>
 
           <button
             type="button"
             onClick={handleRefresh}
-            disabled={isRefreshing}
+            disabled={loading}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[var(--nu-border)] bg-[var(--nu-surface)] text-[var(--nu-text)] text-xs font-bold hover:bg-[var(--nu-surface-alt)] transition cursor-pointer disabled:opacity-50"
           >
-            <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             <span>Refresh</span>
           </button>
         </div>
       </div>
 
-      {/* ════════ LIVE, REAL BACKEND AUTHENTICATION AUDIT (Administrator only) ════════ */}
-      <LiveAuthAuditLogCard />
+      <AuditSummaryCards stats={kpiStats} loading={kpiLoading} />
 
-      {/* ════════ 5 SUMMARY KPI CARDS ════════ */}
-      <AuditSummaryCards stats={kpiStats} />
+      <AuditFilterBar filters={filters} onChange={setFilters} onReset={() => setFilters(DEFAULT_AUDIT_FILTERS)} />
 
-      {/* ════════ FILTER BAR ════════ */}
-      <AuditFilterBar
-        filters={filters}
-        onChange={setFilters}
-        onReset={handleResetFilters}
-        uniqueUsers={uniqueUsers}
-        eventTypes={eventTypes}
+      <AuditLogTable
+        items={items}
+        total={total}
+        page={page}
+        pageSize={PAGE_SIZE}
+        loading={loading}
+        error={error}
+        onSelect={setSelectedLog}
+        onPageChange={setPage}
       />
 
-      {/* ════════ MAIN CONTENT GRID ════════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Left 2 Columns: Audit Log Table */}
-        <div className="lg:col-span-2 space-y-5">
-          <AuditLogTable logs={filteredLogs} onSelectLog={setSelectedLog} />
-          <FailedLoginCard records={auditLogService.getFailedLogins()} />
-        </div>
-
-        {/* Right 1 Column: Security Cards & System Activity Timeline */}
-        <div className="space-y-5">
-          <RecentSecurityEventsCard logs={logs} onSelectLog={setSelectedLog} />
-          <SystemTimelineCard activities={auditLogService.getSystemTimeline()} />
-        </div>
-      </div>
-
-      {/* ════════ AUDIT DETAIL DRAWER ════════ */}
       <AuditDetailDrawer log={selectedLog} onClose={() => setSelectedLog(null)} />
     </div>
   );

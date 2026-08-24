@@ -17,12 +17,14 @@ import {
   buildExportWorkbook,
   downloadWorkbook,
 } from "../../services/projectWorkbookService";
+import { usePmoToast } from "../../components/ui/usePmoToast";
 
 const TIMELINE_FILTERS = ["All", "Due Soon", "Upcoming", "On Track", "Overdue"] as const;
 type TimelineStatusFilter = (typeof TIMELINE_FILTERS)[number];
 
 export default function TimelineAlertProjects() {
   const navigate = useNavigate();
+  const { showToast } = usePmoToast();
 
   // Use the same complete, priority-ordered timeline dataset as the Dashboard.
   // This includes every timeline status, including On Track.
@@ -115,7 +117,7 @@ export default function TimelineAlertProjects() {
       .filter((project): project is NonNullable<typeof project> => Boolean(project));
 
     if (exportData.length === 0) {
-      alert("No matching timeline project data available to export.");
+      showToast({ type: "info", message: "No matching timeline project data available to export." });
       return;
     }
     const workbook = await buildExportWorkbook(exportData);

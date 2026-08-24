@@ -635,6 +635,22 @@ export async function fetchAllProjectsFromApi(): Promise<Project[]> {
     page += 1;
   } while (all.length < total && page <= 50);
 
+  // P1-02 (production hardening) — same reasoning as
+  // fetchAllTimesheetEntriesFromApi()'s own P1-01 fix in timesheetService.ts:
+  // the page<=50 (10,000 project) cap is a runaway-loop safety bound, not an
+  // intended ceiling, and raising the number alone would still truncate
+  // silently past whatever the new number is. This function's one real
+  // caller (useReportsData.ts) already wraps the call in .then()/.catch(),
+  // so throwing here surfaces as a caught, logged failure that leaves
+  // Reports showing its prior (localStorage-backed) project list rather
+  // than silently rendering totals computed from an incomplete project set.
+  if (all.length < total) {
+    throw new Error(
+      `Project data fetch was incomplete: received ${all.length} of ${total} total projects from the server ` +
+        `(stopped after ${page - 1} pages).`
+    );
+  }
+
   // Single surgical batch fetch for all authorized ProjectResource records (Zero N+1)
   try {
     const resourceRes = await apiClient.get<{ items: BackendResourceDto[] }>("/projects/resources");

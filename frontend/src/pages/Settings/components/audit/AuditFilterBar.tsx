@@ -1,36 +1,47 @@
 import { Search, RotateCcw, Filter } from "lucide-react";
-import type { AuditFilterOptions } from "../../../../types/AuditLog";
+import { EVENT_LABELS } from "../../../../services/authAuditLogService";
+import type { AuditEventCategory } from "../../../../services/authAuditLogService";
 
-interface Props {
-  filters: AuditFilterOptions;
-  onChange: (newFilters: AuditFilterOptions) => void;
-  onReset: () => void;
-  uniqueUsers: { name: string; email: string }[];
-  eventTypes: string[];
+export type DateRangeOption = "all" | "today" | "7days" | "30days";
+
+export interface AuditFilterState {
+  email: string;
+  ipAddress: string;
+  event: string; // "" = all
+  eventCategory: AuditEventCategory | ""; // "" = all
+  dateRange: DateRangeOption;
 }
 
-export function AuditFilterBar({
-  filters,
-  onChange,
-  onReset,
-  uniqueUsers,
-  eventTypes,
-}: Props) {
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onChange({ ...filters, searchQuery: e.target.value });
-  };
+export const DEFAULT_AUDIT_FILTERS: AuditFilterState = {
+  email: "",
+  ipAddress: "",
+  event: "",
+  eventCategory: "",
+  dateRange: "all",
+};
 
-  const handleSelect = (key: keyof AuditFilterOptions, value: string) => {
-    onChange({ ...filters, [key]: value });
-  };
+interface Props {
+  filters: AuditFilterState;
+  onChange: (next: AuditFilterState) => void;
+  onReset: () => void;
+}
 
+/**
+ * Only filters the real AuthAuditLog API actually supports: free-text search
+ * (matched against email OR IP address server-side — see
+ * SecurityAuditSection.tsx), event type (populated from the same
+ * EVENT_LABELS map the table uses, so every option is a real, currently-
+ * emitted event), success/failure, and a date range. The previous version's
+ * "Module" and "User" (name) dropdowns are gone — AuthAuditLog has no
+ * module concept and no separate display-name field to filter by.
+ */
+export function AuditFilterBar({ filters, onChange, onReset }: Props) {
   const hasActiveFilters =
-    filters.searchQuery !== "" ||
-    filters.eventType !== "all" ||
-    filters.userEmail !== "all" ||
-    filters.module !== "all" ||
-    filters.dateRange !== "all" ||
-    filters.status !== "all";
+    filters.email !== "" ||
+    filters.ipAddress !== "" ||
+    filters.event !== "" ||
+    filters.eventCategory !== "" ||
+    filters.dateRange !== "all";
 
   return (
     <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] p-4 shadow-[var(--nu-shadow-sm)] space-y-3">
@@ -54,84 +65,73 @@ export function AuditFilterBar({
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
-        {/* Search Input */}
-        <div className="lg:col-span-2 relative">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="relative">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--nu-text-muted)]" />
           <input
             type="text"
-            value={filters.searchQuery}
-            onChange={handleSearch}
-            placeholder="Search by Employee, Email, ID, PR#, Module..."
+            value={filters.email}
+            onChange={(e) => onChange({ ...filters, email: e.target.value })}
+            placeholder="Search by email..."
             className="w-full bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] pl-9 pr-3 py-2 text-[12px] text-[var(--nu-text)] placeholder-[var(--nu-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--nu-accent)] transition"
           />
         </div>
 
-        {/* Event Type Filter */}
+        <div className="relative">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--nu-text-muted)]" />
+          <input
+            type="text"
+            value={filters.ipAddress}
+            onChange={(e) => onChange({ ...filters, ipAddress: e.target.value })}
+            placeholder="Search by IP address..."
+            className="w-full bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] pl-9 pr-3 py-2 text-[12px] text-[var(--nu-text)] placeholder-[var(--nu-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--nu-accent)] transition"
+          />
+        </div>
+
         <div>
           <select
-            value={filters.eventType}
-            onChange={(e) => handleSelect("eventType", e.target.value)}
+            value={filters.event}
+            onChange={(e) => onChange({ ...filters, event: e.target.value })}
             className="w-full bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] px-3 py-2 text-[12px] text-[var(--nu-text)] focus:outline-none focus:ring-2 focus:ring-[var(--nu-accent)] transition cursor-pointer"
           >
-            <option value="all">All Event Types</option>
-            {eventTypes.map((type) => (
-              <option key={type} value={type}>
-                {type}
+            <option value="">All Event Types</option>
+            {Object.entries(EVENT_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
               </option>
             ))}
           </select>
         </div>
 
-        {/* User Filter */}
-        <div>
-          <select
-            value={filters.userEmail}
-            onChange={(e) => handleSelect("userEmail", e.target.value)}
-            className="w-full bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] px-3 py-2 text-[12px] text-[var(--nu-text)] focus:outline-none focus:ring-2 focus:ring-[var(--nu-accent)] transition cursor-pointer"
-          >
-            <option value="all">All Users</option>
-            {uniqueUsers.map((u) => (
-              <option key={u.email} value={u.email}>
-                {u.name} ({u.email})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Module Filter */}
-        <div>
-          <select
-            value={filters.module}
-            onChange={(e) => handleSelect("module", e.target.value)}
-            className="w-full bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] px-3 py-2 text-[12px] text-[var(--nu-text)] focus:outline-none focus:ring-2 focus:ring-[var(--nu-accent)] transition cursor-pointer"
-          >
-            <option value="all">All Modules</option>
-            <option value="Dashboard">Dashboard</option>
-            <option value="Projects">Projects</option>
-            <option value="Customer Master">Customer Master</option>
-            <option value="Timesheets">Timesheets</option>
-            <option value="Invoices">Invoices</option>
-            <option value="Reports">Reports</option>
-            <option value="Settings">Settings</option>
-            <option value="User Management">User Management</option>
-            <option value="Notifications">Notifications</option>
-          </select>
-        </div>
-
-        {/* Date Range Filter */}
         <div>
           <select
             value={filters.dateRange}
-            onChange={(e) => handleSelect("dateRange", e.target.value as any)}
+            onChange={(e) => onChange({ ...filters, dateRange: e.target.value as DateRangeOption })}
             className="w-full bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] px-3 py-2 text-[12px] text-[var(--nu-text)] focus:outline-none focus:ring-2 focus:ring-[var(--nu-accent)] transition cursor-pointer"
           >
             <option value="all">All Time</option>
-            <option value="today">Today (04 Aug 2026)</option>
+            <option value="today">Today</option>
             <option value="7days">Last 7 Days</option>
             <option value="30days">Last 30 Days</option>
           </select>
         </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {(["", "success", "failure"] as const).map((option) => (
+          <button
+            key={option || "all"}
+            type="button"
+            onClick={() => onChange({ ...filters, eventCategory: option })}
+            className={`px-3 py-1 rounded-full text-[11px] font-bold border transition cursor-pointer ${
+              filters.eventCategory === option
+                ? "bg-[var(--nu-accent)] text-white border-[var(--nu-accent)]"
+                : "bg-[var(--nu-surface-alt)] text-[var(--nu-text-muted)] border-[var(--nu-border)] hover:text-[var(--nu-text)]"
+            }`}
+          >
+            {option === "" ? "All Outcomes" : option === "success" ? "Success" : "Failure"}
+          </button>
+        ))}
       </div>
     </div>
   );

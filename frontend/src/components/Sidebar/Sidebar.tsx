@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import {
   Archive,
@@ -21,6 +21,8 @@ import * as XLSX from "xlsx";
 import { queryProjectsFromApi } from "../../services/projectService";
 import { useAuth } from "../../auth/authContext";
 import { hasModuleAccess } from "../../auth/permissions";
+import { usePmoToast } from "../ui/usePmoToast";
+import { Portal } from "../ui/Portal";
 
 interface NavChild {
   label: string;
@@ -79,6 +81,7 @@ const Sidebar = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const { showToast } = usePmoToast();
 
   // Only render menu entries the logged-in user actually has module access
   // to — item.label doubles as the exact Module name (e.g. "Projects",
@@ -99,6 +102,50 @@ const Sidebar = () => {
     y: number;
     statusKey: string;
   } | null>(null);
+
+  // Collapsed-sidebar nav tooltip state — reuses the item's existing `label`
+  // (no duplicate label source) and the trigger element's own live
+  // getBoundingClientRect() (via e.currentTarget, so no extra refs are
+  // needed per item). Visibility is gated purely by CSS below (the same
+  // `min-[1440px]:` breakpoint already used to hide/show nav labels), so no
+  // JS "is the sidebar collapsed" tracking is needed either — one shared
+  // piece of state is enough for the whole sidebar since only one tooltip
+  // can be open at a time.
+  const [navTooltip, setNavTooltip] = useState<{ label: string; top: number; left: number } | null>(null);
+  const tooltipOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearTooltipOpenTimer = () => {
+    if (tooltipOpenTimerRef.current) {
+      clearTimeout(tooltipOpenTimerRef.current);
+      tooltipOpenTimerRef.current = null;
+    }
+  };
+
+  const positionTooltipFrom = (label: string, el: HTMLElement) => {
+    const rect = el.getBoundingClientRect();
+    setNavTooltip({ label, top: rect.top + rect.height / 2, left: rect.right + 10 });
+  };
+
+  // Small hover delay (200ms) so quickly moving the pointer across several
+  // icons doesn't flicker a tooltip per icon — keyboard focus opens
+  // immediately instead, since a focused element doesn't "pass through" the
+  // way a moving pointer does.
+  const scheduleNavTooltip = (label: string, el: HTMLElement) => {
+    clearTooltipOpenTimer();
+    tooltipOpenTimerRef.current = setTimeout(() => positionTooltipFrom(label, el), 200);
+  };
+
+  const openNavTooltipNow = (label: string, el: HTMLElement) => {
+    clearTooltipOpenTimer();
+    positionTooltipFrom(label, el);
+  };
+
+  const closeNavTooltip = () => {
+    clearTooltipOpenTimer();
+    setNavTooltip(null);
+  };
+
+  useEffect(() => clearTooltipOpenTimer, []);
 
   // View/Edit Project are shared routes reused by both modules, so their own
   // path can't tell us which one the user came from — Projects.tsx passes
@@ -203,7 +250,7 @@ const Sidebar = () => {
     try {
       const result = await queryProjectsFromApi({ projectStatus: statusKey, page: 1, pageSize: 200 });
       if (result.total === 0 || result.items.length === 0) {
-        alert(`No project data available with status "${statusKey}" to export.`);
+        showToast({ type: "info", message: `No project data available with status "${statusKey}" to export.` });
         return;
       }
 
@@ -228,7 +275,7 @@ const Sidebar = () => {
       XLSX.utils.book_append_sheet(workbook, worksheet, "Projects");
       XLSX.writeFile(workbook, `projects_export_${statusKey.toLowerCase().replace(/\s+/g, "_")}.xlsx`);
     } catch {
-      alert("Unable to export projects from the server. Try again from the Projects module.");
+      showToast({ type: "error", message: "Unable to export projects from the server. Try again from the Projects module." });
     }
   };
 
@@ -395,6 +442,25 @@ const Sidebar = () => {
             animation: none !important;
           }
         }
+
+        /* ── Collapsed-sidebar nav tooltip ──────────────────────────
+           Only meaningful while the sidebar is icon-only. Once it's wide
+           enough to show inline labels (the same min-[1440px] breakpoint
+           used everywhere else in this file), the tooltip would just
+           duplicate a label that's already visible, so it's force-hidden
+           here rather than by any JS "collapsed" check. */
+        @media (min-width: 1440px) {
+          .pmo-sidebar-tooltip {
+            display: none !important;
+          }
+        }
+        @keyframes pmoSidebarTooltipFadeIn {
+          from { opacity: 0; transform: translate(-2px, -50%); }
+          to   { opacity: 1; transform: translate(0, -50%); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .pmo-sidebar-tooltip { animation: none !important; }
+        }
       `,
         }}
       />
@@ -452,6 +518,10 @@ const Sidebar = () => {
                   <button
                     type="button"
                     onClick={() => setIsProjectsOpen((v) => !v)}
+                    onMouseEnter={(e) => scheduleNavTooltip(item.label, e.currentTarget)}
+                    onMouseLeave={closeNavTooltip}
+                    onFocus={(e) => openNavTooltipNow(item.label, e.currentTarget)}
+                    onBlur={closeNavTooltip}
                     aria-expanded={isProjectsOpen}
                     aria-controls="pmo-projects-submenu"
                     className={`
@@ -498,6 +568,10 @@ const Sidebar = () => {
                           <li key={child.to}>
                             <NavLink
                               to={child.to}
+                              onMouseEnter={(e) => scheduleNavTooltip(child.label, e.currentTarget)}
+                              onMouseLeave={closeNavTooltip}
+                              onFocus={(e) => openNavTooltipNow(child.label, e.currentTarget)}
+                              onBlur={closeNavTooltip}
                               className={`
                                 pmo-nav-item
                                 flex items-center justify-center min-[1440px]:justify-start
@@ -527,6 +601,10 @@ const Sidebar = () => {
                 <NavLink
                   to={to!}
                   end={to === "/"}
+                  onMouseEnter={(e) => scheduleNavTooltip(label, e.currentTarget)}
+                  onMouseLeave={closeNavTooltip}
+                  onFocus={(e) => openNavTooltipNow(label, e.currentTarget)}
+                  onBlur={closeNavTooltip}
                   className={({ isActive }) =>
                     `
                     pmo-nav-item
@@ -645,6 +723,37 @@ const Sidebar = () => {
             View Report
           </button>
         </div>
+      )}
+
+      {/* Collapsed-sidebar nav tooltip — portaled to document.body (via the
+          existing Portal component) so it can never be clipped by the
+          <nav>'s own overflow-y-auto (which implicitly clips overflow-x
+          too) or hijacked by MainLayout's animated wrapper turning
+          position:fixed into something scroll-relative. Only ONE can be
+          open at a time (single shared state), matching how only one icon
+          can be hovered/focused at once. Hidden outright via CSS
+          (.pmo-sidebar-tooltip below) once the sidebar is expanded
+          (>=1440px), the exact same breakpoint that already reveals the
+          inline labels this tooltip would otherwise duplicate. */}
+      {navTooltip && (
+        <Portal>
+          <span
+            role="tooltip"
+            className="pmo-sidebar-tooltip fixed z-[9999] whitespace-nowrap rounded-[var(--nu-radius-lg)] border border-[var(--nu-border)] bg-[var(--nu-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--nu-text)] shadow-[var(--nu-shadow-md)]"
+            style={{
+              top: navTooltip.top,
+              left: navTooltip.left,
+              transform: "translateY(-50%)",
+              animation: "pmoSidebarTooltipFadeIn 150ms ease-out",
+            }}
+          >
+            {navTooltip.label}
+            <span
+              className="absolute top-1/2 -left-[5px] h-2.5 w-2.5 -translate-y-1/2 rotate-45 border-b border-l border-[var(--nu-border)] bg-[var(--nu-surface)]"
+              aria-hidden="true"
+            />
+          </span>
+        </Portal>
       )}
     </aside>
   );

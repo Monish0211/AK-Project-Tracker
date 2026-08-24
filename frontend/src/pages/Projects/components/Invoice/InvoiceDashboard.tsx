@@ -22,6 +22,7 @@ import { getInvoiceMethod, getInvoiceCyclesForProject, suggestNextInvoiceNumber 
 import { logInvoiceDeletedAudit, logInvoiceCycleStatusChangedAudit } from "../../../../services/projectAuditService";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { Card, CardBody } from "../../../../components/ui/Card";
+import { usePmoToast } from "../../../../components/ui/usePmoToast";
 
 interface Props {
   project: Project;
@@ -62,6 +63,7 @@ interface DrawerState {
  * activity, which this shared selection replaces.
  */
 export function InvoiceDashboard({ project, setProject, readOnly = false, initialActivityId, initialInvoiceLineId }: Props) {
+  const { showToast } = usePmoToast();
   const isReadOnly = readOnly || !setProject;
 
   const [drawerState, setDrawerState] = useState<DrawerState | null>(null);
@@ -185,6 +187,12 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
       })
       .catch((error) => {
         console.error("Failed to sync invoice changes with the backend:", error);
+        showToast({
+          type: "error",
+          title: "Invoice change not saved to the server",
+          message: "Your change is showing locally, but saving it to the server failed. Please retry, or it may not persist.",
+          duration: 0,
+        });
       });
   };
 

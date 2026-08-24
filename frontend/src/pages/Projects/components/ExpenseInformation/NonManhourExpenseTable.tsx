@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Briefcase, Pencil, Trash2 } from "lucide-react";
 
 import type { NonManhourExpense } from "../../../../types/NonManhourExpense";
@@ -6,6 +7,7 @@ import {
   formatIndianCurrency,
   formatIndianNumber,
 } from "../../../../utils/quantityCalculations";
+import { ConfirmDialog } from "../../../../components/ui/ConfirmDialog";
 
 interface Props {
   expenses: NonManhourExpense[];
@@ -14,13 +16,9 @@ interface Props {
 }
 
 const NonManhourExpenseTable = ({ expenses, onEdit, onDelete }: Props) => {
-  const handleDelete = (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this expense?")) {
-      return;
-    }
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
-    onDelete(id);
-  };
+  const handleDelete = (id: string) => setDeleteTargetId(id);
 
   return (
     <div className="max-h-[26rem] overflow-auto">
@@ -162,6 +160,20 @@ const NonManhourExpenseTable = ({ expenses, onEdit, onDelete }: Props) => {
 
       </table>
 
+      <ConfirmDialog
+        open={deleteTargetId !== null}
+        variant="danger"
+        title="Delete Expense?"
+        message="Are you sure you want to delete this expense? This cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onCancel={() => setDeleteTargetId(null)}
+        onConfirm={() => {
+          if (!deleteTargetId) return;
+          onDelete(deleteTargetId);
+          setDeleteTargetId(null);
+        }}
+      />
     </div>
   );
 };
