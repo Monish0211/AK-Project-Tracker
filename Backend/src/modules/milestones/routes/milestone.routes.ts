@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
+import { authorize } from "../../../shared/middleware/authorize.js";
 import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
@@ -29,11 +30,15 @@ router.post(
 );
 // Ingest — legacy-migration / future-Import only, preserves caller-supplied
 // ids; see milestone.service.ts's ingestMilestonesForProject().
+// Administrator-only, matching the invoice-ingest precedent (invoice.routes.ts) —
+// this is the one path a client-chosen id is adopted verbatim, so it must
+// not be reachable by ordinary Projects-module access.
 router.post(
   "/projects/:projectId/milestones/ingest",
   authenticate,
   denyReadOnlyWrites,
   requireModuleAccess("Projects"),
+  authorize("Administrator"),
   validate(ingestMilestonesSchema),
   ingestMilestones
 );

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
+import { authorize } from "../../../shared/middleware/authorize.js";
 import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
@@ -22,11 +23,18 @@ const router = Router();
 router.get("/projects/:projectId/invoice-items", authenticate, requireModuleAccess("Invoices"), getInvoiceItemsByProject);
 // Ingest — legacy-migration only, preserves caller-supplied ids and raw
 // historical amounts; see invoice.service.ts's ingestInvoiceLinesForProject().
+// Administrator-only: this is the one path that accepts a client-chosen id
+// and raw financial snapshot values (unitPriceINR/calculatedAmountINR/
+// commercialAdjustmentINR) instead of deriving them from Quantity/Milestones,
+// so it must not be reachable by ordinary Invoices-module access — same
+// precedent as timesheet.routes.ts's manual import and Delete-All/Delete-
+// Permanently gates.
 router.post(
   "/projects/:projectId/invoice-items/ingest",
   authenticate,
   denyReadOnlyWrites,
   requireModuleAccess("Invoices"),
+  authorize("Administrator"),
   validate(ingestInvoiceLinesSchema),
   ingestInvoiceLines
 );

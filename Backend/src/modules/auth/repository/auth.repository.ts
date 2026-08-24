@@ -1,3 +1,4 @@
+import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 
 /**
@@ -183,16 +184,53 @@ export function createAuditLog(entry: AuthAuditEntry) {
   });
 }
 
-/** Read side of AuthAuditLog — newest first, paginated. Administrator-only, gated at the route. */
-export async function findAuditLogsPage(page: number, pageSize: number) {
+export interface AuditLogFilters {
+  page: number;
+  pageSize: number;
+  email?: string | undefined;
+  event?: string | undefined;
+  eventCategory?: "success" | "failure" | undefined;
+  ipAddress?: string | undefined;
+  from?: Date | undefined;
+  to?: Date | undefined;
+}
+
+const FAILURE_EVENT_PATTERNS = ["FAILED", "BLOCKED", "LOCKED"];
+
+/** Read side of AuthAuditLog — newest first, paginated, optionally filtered. Administrator-only, gated at the route. */
+export async function findAuditLogsPage(filters: AuditLogFilters) {
+  const where: Prisma.AuthAuditLogWhereInput = {};
+
+  if (filters.email) {
+    where.email = { contains: filters.email, mode: "insensitive" };
+  }
+  if (filters.event) {
+    where.event = filters.event;
+  }
+  if (filters.eventCategory === "failure") {
+    where.OR = FAILURE_EVENT_PATTERNS.map((pattern) => ({ event: { contains: pattern } }));
+  } else if (filters.eventCategory === "success") {
+    where.NOT = FAILURE_EVENT_PATTERNS.map((pattern) => ({ event: { contains: pattern } }));
+  }
+  if (filters.ipAddress) {
+    where.ipAddress = { contains: filters.ipAddress };
+  }
+  if (filters.from || filters.to) {
+    where.createdAt = {
+      ...(filters.from && { gte: filters.from }),
+      ...(filters.to && { lte: filters.to }),
+    };
+  }
+
   const [items, total] = await Promise.all([
     prisma.authAuditLog.findMany({
+      where,
       orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      skip: (filters.page - 1) * filters.pageSize,
+      take: filters.pageSize,
       include: { user: { select: { fullName: true } } },
     }),
-    prisma.authAuditLog.count(),
+    prisma.authAuditLog.count({ where }),
   ]);
   return { items, total };
 }

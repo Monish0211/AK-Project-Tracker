@@ -36,6 +36,8 @@ export interface TimesheetImportRowLogDto {
   rawProjectCode: string;
   workDate: Date;
   task: string;
+  startTime: string | null;
+  endTime: string | null;
   previousHours: number | null;
   newHours: number | null;
   outcome: string;
@@ -59,6 +61,8 @@ export interface TimesheetEntryDto {
   rawProjectName: string | null;
   workDate: Date;
   task: string;
+  startTime: string | null;
+  endTime: string | null;
   hours: number;
   sourceStatus: string;
   firstImportId: string;

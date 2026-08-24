@@ -210,6 +210,13 @@ export async function updateUser(targetUserId: string, input: UpdateUserInput): 
     }
   }
 
+  // Decided before the transaction, against the pre-update row — only a
+  // transition INTO deactivated/locked revokes sessions; toggling either
+  // flag off (re-activating/unlocking) must not touch refresh tokens, same
+  // as the unlock case below.
+  const isNewlyDeactivated = input.isActive === false && existingUser.isActive !== false;
+  const isNewlyLocked = input.accountLocked === true && existingUser.accountLocked !== true;
+
   await prisma.$transaction(async (tx) => {
     await updatePortalUser(tx, targetUserId, {
       ...(input.fullName !== undefined && { fullName: input.fullName }),
@@ -229,10 +236,19 @@ export async function updateUser(targetUserId: string, input: UpdateUserInput): 
     await replaceUserApprovalPermissions(tx, targetUserId, input.approvalIds);
   });
 
-  // An account unlocked via this toggle should behave like any other
-  // unlock — the same revoke-everything-and-force-a-fresh-login reasoning
-  // resetPassword() already applies doesn't apply here (the password
-  // itself didn't change), so refresh tokens are left alone.
+  // Deactivating or locking a user must end their existing session, not
+  // just block new ones — every outstanding refresh token stops working
+  // immediately (refreshAccessToken() also independently re-checks
+  // isActive/accountLocked on the user row it already loads, so this holds
+  // even for a token issued in the brief window before this call commits).
+  if (isNewlyDeactivated || isNewlyLocked) {
+    await revokeAllRefreshTokensForUser(targetUserId);
+  }
+
+  // An account unlocked/reactivated via this toggle should behave like any
+  // other unlock — the same revoke-everything-and-force-a-fresh-login
+  // reasoning resetPassword() already applies doesn't apply here (the
+  // password itself didn't change), so refresh tokens are left alone.
   const updatedUser = await findUserWithAccessById(targetUserId);
   if (!updatedUser) {
     throw new AppError("User not found after update.", 404);

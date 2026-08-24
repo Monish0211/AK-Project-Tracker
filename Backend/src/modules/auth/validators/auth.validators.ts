@@ -84,10 +84,23 @@ export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
  * GET /auth/audit-logs query params — same page/pageSize convention as
  * listEmployeesQuerySchema/listNotificationsQuerySchema. Parsed directly in
  * the controller — the shared `validate()` middleware only covers req.body.
+ * All filters are optional and additive to plain pagination: `email`/
+ * `ipAddress` are case-insensitive contains-matches, `event` is an exact
+ * match against one of the fixed literal event strings logAuthEvent() (see
+ * auth.service.ts) writes, `eventCategory` buckets by the same
+ * success/failure classification the frontend uses (any event name
+ * containing FAILED/BLOCKED/LOCKED is a failure), and `from`/`to` filter on
+ * createdAt.
  */
 export const listAuditLogsQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(200).default(25),
+  email: z.string().trim().min(1).optional(),
+  event: z.string().trim().min(1).optional(),
+  eventCategory: z.enum(["success", "failure"]).optional(),
+  ipAddress: z.string().trim().min(1).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
 });
 
 export type ListAuditLogsQuery = z.infer<typeof listAuditLogsQuerySchema>;

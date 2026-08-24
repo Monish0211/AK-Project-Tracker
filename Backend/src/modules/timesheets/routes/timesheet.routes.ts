@@ -6,6 +6,7 @@ import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrite
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import {
+  clearHistoricalEntries,
   deleteAllEntries,
   deleteEntry,
   editEntry,
@@ -68,6 +69,20 @@ router.patch(
   requireModuleAccess("Timesheets"),
   validate(editEntryBodySchema),
   editEntry
+);
+
+// Historical-backfill clear — Administrator-only, date-scoped (see
+// timesheet.service.ts's clearHistoricalTimesheetEntries()). MUST be
+// registered before "/timesheets/entries/:id" below: Express matches DELETE
+// routes in registration order, and ":id" would otherwise swallow a request
+// to this literal "historical" path as if it were an entry id.
+router.delete(
+  "/timesheets/entries/historical",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Timesheets"),
+  authorize("Administrator"),
+  clearHistoricalEntries
 );
 
 // Destructive — Administrator-only, matching the "Delete Permanently"/

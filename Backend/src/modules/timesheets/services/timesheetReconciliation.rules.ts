@@ -47,6 +47,55 @@ export function dateKey(date: Date): string {
 }
 
 /**
+ * TIME NORMALIZATION RULE (Start Time / End Time identity component):
+ *
+ * Blank/null/undefined -> "" — this is the deliberate legacy-compatibility
+ * anchor. Every TimesheetEntry row created before this feature existed has
+ * no stored startTime/endTime (NULL in the database); every future row
+ * whose source Excel genuinely has no Start Time/End Time column/value also
+ * normalizes to "". Both cases collapse to the SAME "" component, so two
+ * blank-time rows for the same employee/project/date/task still collapse
+ * into one identity, exactly as the pre-existing 4-field identity already
+ * did — this is what "preserve compatibility with the existing identity
+ * behavior for legacy records" means in practice: it is not that old rows
+ * are specially detected, it is that "no time info available" always
+ * normalizes the same way, whether that absence comes from an old row or a
+ * new one.
+ *
+ * A recognizable "H:MM", "HH:MM", "H:MM:SS", or "H:MM AM/PM" text value is
+ * normalized to a zero-padded 24-hour "HH:MM" — seconds are dropped
+ * entirely (never meaningful for distinguishing one work session from
+ * another), and "09:00", "9:00", and "09:00:00" all collapse to the same
+ * "09:00" component, so cosmetic formatting differences between two KEKA
+ * exports of the same fact can never create a phantom new identity.
+ *
+ * A genuinely unparseable non-blank value (some KEKA export oddity) is kept
+ * as its own trimmed/uppercased text — the SAME fallback philosophy
+ * projectIdentityComponent() below already uses for an unparseable raw
+ * project code: two different unparseable values must remain distinct
+ * identities, never silently collapsed into one shared bucket.
+ */
+const TIME_OF_DAY_PATTERN = /^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM|am|pm)?$/;
+
+export function normalizeTimeOfDay(raw: string | null | undefined): string {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return "";
+
+  const match = TIME_OF_DAY_PATTERN.exec(trimmed);
+  if (!match) {
+    return trimmed.toUpperCase();
+  }
+
+  const [, hourText, minuteText, meridiemText] = match;
+  let hour = Number(hourText);
+  const meridiem = meridiemText?.toUpperCase();
+  if (meridiem === "PM" && hour < 12) hour += 12;
+  if (meridiem === "AM" && hour === 12) hour = 0;
+
+  return `${String(hour).padStart(2, "0")}:${minuteText}`;
+}
+
+/**
  * The project component of the identity key. Uses the SAME
  * normalizeProjectCode() project resolution itself already relies on for
  * matching — never a second, competing normalization rule — so identity
@@ -68,9 +117,120 @@ function projectIdentityComponent(rawProjectCode: string): string {
  * task text). Never built from a resolved projectId, which is exactly what
  * made the previous identity unstable across the Unassigned→Resolved
  * transition.
+ *
+ * Start Time / End Time (normalized via normalizeTimeOfDay() above) were
+ * added as the 5th/6th identity components specifically because the
+ * previous 4-field identity could not distinguish two genuinely separate
+ * KEKA work sessions on the same employee/project/date/task (e.g.
+ * 09:00-13:00 and 14:00-18:30) from a duplicate/corrected re-send of the
+ * SAME session — it collapsed both into one row, discarding the earlier
+ * session's hours (confirmed against real KEKA data: 99% of a 9,495-hour
+ * discrepancy across the historical export traced to exactly this pattern).
+ * Two blank-time rows still collapse to one identity (both normalize to
+ * ""), preserving the legacy 4-field identity's behavior for any row with
+ * no time information — see normalizeTimeOfDay()'s own doc comment.
+ *
+ * KNOWN, DELIBERATELY UNRESOLVED LIMITATION: this identity has no way to
+ * distinguish "the end time of an existing session was corrected" from "a
+ * genuinely new, later session started" — changing either time value
+ * changes the identity itself, so a time correction is always reconciled as
+ * a new Created row alongside the original, never as an Updated row
+ * replacing it. No heuristic is applied here to guess which case a given
+ * repeat is — see this module's test suite for the passing/documented proof
+ * of this exact behavior, and the Phase A.2 design analysis for why this was
+ * deliberately not resolved by inventing an unapproved business rule.
  */
-export function identityKey(employeeNo: string, rawProjectCode: string, workDate: Date, task: string): string {
+/**
+ * The employee+project+date+task prefix identityKey() itself uses,
+ * exported separately so the time-correction matching below (and its
+ * tests) can group candidate existing rows by this SAME coarse identity
+ * without duplicating the normalization rules.
+ */
+export function coarseIdentityKey(employeeNo: string, rawProjectCode: string, workDate: Date, task: string): string {
   return `${normalizeEmployeeNo(employeeNo)}||${projectIdentityComponent(rawProjectCode)}||${dateKey(workDate)}||${task.trim()}`;
+}
+
+export function identityKey(
+  employeeNo: string,
+  rawProjectCode: string,
+  workDate: Date,
+  task: string,
+  startTime: string | null | undefined,
+  endTime: string | null | undefined
+): string {
+  return `${coarseIdentityKey(employeeNo, rawProjectCode, workDate, task)}||${normalizeTimeOfDay(startTime)}||${normalizeTimeOfDay(endTime)}`;
+}
+
+/**
+ * TIME-CORRECTION MATCHING (Phase B design, see the task's own analysis):
+ *
+ * The 6-field identityKey() above cannot tell "the end time of an existing
+ * session was corrected" apart from "a genuinely new, later session
+ * started" — changing either time value changes the identity itself. This
+ * function is the deliberately narrow fix: it is ONLY ever consulted after
+ * an exact 6-field match has already failed (see processTimesheetImport()),
+ * and it only ever matches by genuine TIME-RANGE OVERLAP among rows already
+ * known to share the same employee+project+date+task.
+ *
+ * Proven safe against every required case (not assumed):
+ *  - Two genuinely separate, non-overlapping sessions on the same
+ *    date/task (e.g. 09:00-13:00 and 14:00-18:00) never overlap — they stay
+ *    two rows, regardless of how similar their hours are.
+ *  - Back-to-back sessions that merely TOUCH (one ending exactly when the
+ *    next starts, e.g. 09:00-13:00 then 13:00-17:00) do NOT count as
+ *    overlapping (strict inequality both sides) — they stay separate too.
+ *  - A start-only, end-only, or both-times correction (e.g. 09:00-13:00 ->
+ *    09:05-13:00) always overlaps the row it corrects, and is matched.
+ *  - If a row's incoming time range overlaps MORE THAN ONE existing
+ *    candidate, that is treated as unresolvable ambiguity — never silently
+ *    picked or merged — and the caller falls through to Created, leaving
+ *    every existing candidate untouched (correctness over avoiding a
+ *    duplicate, per the approved priority order).
+ *  - A candidate (or the incoming row) with a blank/unrecognized time is
+ *    NEVER matched here — a blank time carries no information to compare
+ *    against a real range, so forcing a guess would occasionally merge
+ *    two genuinely different facts with no way to detect it. This is a
+ *    DELIBERATE non-fix, not an oversight: a legacy blank-time row later
+ *    "corrected" by a real timed row for the same identity is left exactly
+ *    as today's behavior (a second, separate row) — there is no safe way
+ *    to infer they are the same session from the data available.
+ *
+ * Only ever reads the fields it needs (never Prisma-specific), so the
+ * exact same real TimesheetEntry rows the service layer passes in, and the
+ * plain fixtures this module's own tests use, both work unchanged.
+ */
+export interface TimeRangeCandidate {
+  startTime: string | null | undefined;
+  endTime: string | null | undefined;
+}
+
+function timeToMinutes(normalized: string): number | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(normalized);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function rangesOverlap(startA: number, endA: number, startB: number, endB: number): boolean {
+  return startA < endB && startB < endA;
+}
+
+export function findTimeCorrectedEntry<T extends TimeRangeCandidate>(
+  candidates: readonly T[],
+  incomingStartTime: string | null | undefined,
+  incomingEndTime: string | null | undefined
+): T | undefined {
+  const incomingStart = timeToMinutes(normalizeTimeOfDay(incomingStartTime));
+  const incomingEnd = timeToMinutes(normalizeTimeOfDay(incomingEndTime));
+  if (incomingStart === null || incomingEnd === null) return undefined;
+
+  const overlapping = candidates.filter((candidate) => {
+    const candidateStart = timeToMinutes(normalizeTimeOfDay(candidate.startTime));
+    const candidateEnd = timeToMinutes(normalizeTimeOfDay(candidate.endTime));
+    if (candidateStart === null || candidateEnd === null) return false;
+    return rangesOverlap(incomingStart, incomingEnd, candidateStart, candidateEnd);
+  });
+
+  return overlapping.length === 1 ? overlapping[0] : undefined;
 }
 
 export interface ExistingEntrySnapshot {

@@ -1,6 +1,7 @@
 import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccessById, getProjectCreatorUserId } from "../../../shared/utils/projectAccess.js";
+import { getUserDisplayName } from "../../../shared/utils/userDisplayName.js";
 import { notify, resolveProjectEventRecipients } from "../../notifications/notification.service.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { getMilestonePercentageById } from "../../milestones/services/milestone.service.js";
@@ -206,6 +207,11 @@ export async function createInvoiceLineForQuantityItem(
     invoiceAmountINR: input.invoiceAmountINR,
   });
 
+  // Never trusts a client-supplied name — always the current fullName for
+  // the authenticated caller, so a line can never be attributed to someone
+  // else.
+  const createdBy = await getUserDisplayName(user.sub);
+
   const data: InvoiceLineData = {
     invoiceNo: input.invoiceNo,
     invoiceDate: input.invoiceDate,
@@ -221,7 +227,7 @@ export async function createInvoiceLineForQuantityItem(
     clientReference: input.clientReference ?? null,
     remarks: input.remarks ?? null,
     status: input.status,
-    createdBy: input.createdBy,
+    createdBy,
   };
 
   const created = await createLineInRepository(quantityItemId, data);

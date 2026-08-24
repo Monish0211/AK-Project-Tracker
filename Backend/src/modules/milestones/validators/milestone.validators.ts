@@ -11,7 +11,10 @@ import { z } from "zod";
  */
 export const createMilestoneSchema = z.object({
   milestoneName: z.string().trim().min(1, "Milestone Name is required."),
-  paymentPercentage: z.coerce.number().positive("Payment % must be greater than 0."),
+  paymentPercentage: z.coerce
+    .number()
+    .positive("Payment % must be greater than 0.")
+    .max(100, "Payment % cannot exceed 100."),
   dueDate: z.coerce.date().optional().nullable(),
 });
 
@@ -20,7 +23,11 @@ export type CreateMilestoneInput = z.infer<typeof createMilestoneSchema>;
 /** Same fields as createMilestoneSchema, all optional — a PATCH only carries what changed. */
 export const updateMilestoneSchema = z.object({
   milestoneName: z.string().trim().min(1).optional(),
-  paymentPercentage: z.coerce.number().positive("Payment % must be greater than 0.").optional(),
+  paymentPercentage: z.coerce
+    .number()
+    .positive("Payment % must be greater than 0.")
+    .max(100, "Payment % cannot exceed 100.")
+    .optional(),
   dueDate: z.coerce.date().optional().nullable(),
 });
 
@@ -49,7 +56,17 @@ export const ingestMilestonesSchema = z.object({
       z.object({
         id: z.string().trim().uuid("Milestone ID must be a valid UUID."),
         milestoneName: z.string().trim().min(1, "Milestone Name is required."),
-        paymentPercentage: z.coerce.number().positive("Payment % must be greater than 0."),
+        // .max(100) is a per-row sanity floor, not the cross-milestone total
+        // rule (see assertMilestoneTotalWithinLimit(), deliberately NOT
+        // applied to ingest — a legacy project's real historical milestones
+        // may not sum to exactly 100%, and rejecting the whole adopted batch
+        // over that would break genuine migration). No legitimate milestone,
+        // historical or not, can ever represent more than 100% of a
+        // project's Work Order Value, so this bound is safe even here.
+        paymentPercentage: z.coerce
+          .number()
+          .positive("Payment % must be greater than 0.")
+          .max(100, "Payment % cannot exceed 100."),
         dueDate: z.coerce.date().optional().nullable(),
       })
     )

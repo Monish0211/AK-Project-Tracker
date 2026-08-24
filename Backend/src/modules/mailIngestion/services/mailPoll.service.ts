@@ -1,6 +1,6 @@
 import { AppError } from "../../../shared/utils/AppError.js";
 import { env } from "../../../shared/utils/env.js";
-import { findImportByEmailMessageId } from "../../timesheets/repository/timesheetImport.repository.js";
+import { decideImportEligibility } from "../../timesheets/repository/timesheetImport.repository.js";
 import { parseTimesheetWorkbook, validateAttachment } from "../../timesheets/services/excelParser.service.js";
 import { processTimesheetImport } from "../../timesheets/services/timesheet.service.js";
 import {
@@ -41,13 +41,19 @@ async function graphFetch<T>(path: string, token: string): Promise<T> {
 
 /**
  * Finds candidate KEKA emails within a lookback window (Decision 9 — never
- * just "today"), skips any already recorded in TimesheetImport
- * (emailMessageId is unique — this IS the duplicate-email guard, a
- * different concern from the row-level reconciliation inside
- * processTimesheetImport), downloads the matching attachment, and hands it
- * to the shared engine. One message failing (a parse error, a missing
- * attachment, a transient Graph error) never stops the rest of the batch —
- * Stage 4 §16 step 9.
+ * just "today"), decides per-email whether to process/retry/skip via
+ * decideImportEligibility() (emailMessageId is unique — this IS the
+ * duplicate-email guard, a different concern from the row-level
+ * reconciliation inside processTimesheetImport), downloads the matching
+ * attachment, and hands it to the shared engine. One message failing (a
+ * parse error, a missing attachment, a transient Graph error) never stops
+ * the rest of the batch — Stage 4 §16 step 9.
+ *
+ * P2-08 — a message whose only prior TimesheetImport is "Failed" is no
+ * longer treated as permanently done: it is retried (reusing that same
+ * row) rather than silently skipped forever. See
+ * timesheetImport.repository.ts's decideImportEligibility() for the full
+ * per-status decision and its atomic, race-safe retry claim.
  */
 export async function pollKekaMailbox(): Promise<PollResult> {
   if (!isGraphConfigured()) {
@@ -96,8 +102,17 @@ export async function pollKekaMailbox(): Promise<PollResult> {
         continue;
       }
 
-      const existingImport = await findImportByEmailMessageId(message.id);
-      if (existingImport) {
+      // P2-08 — previously: any existing TimesheetImport for this email,
+      // regardless of status, was treated as "already processed" and
+      // skipped forever — so a transient failure permanently and silently
+      // dropped that day's Keka data. decideImportEligibility() now
+      // distinguishes Succeeded/PartiallySucceeded (skip, correct as
+      // before), Processing/Pending (skip — another attempt is already in
+      // flight, never start a second one), and Failed (retry-eligible,
+      // atomically claimed so two concurrent poll executions can never both
+      // retry the same email — see that function's own comment).
+      const eligibility = await decideImportEligibility(message.id);
+      if (eligibility.action === "skip") {
         result.skippedAlreadyProcessed++;
         continue;
       }
@@ -142,6 +157,8 @@ export async function pollKekaMailbox(): Promise<PollResult> {
         attachmentId: attachment.id,
         attachmentFilename: attachment.name,
         receivedAt: new Date(message.receivedDateTime),
+        invalidRows: parsed.invalidRows,
+        existingImportId: eligibility.action === "retryExisting" ? eligibility.existingImportId : null,
       });
 
       result.processed++;

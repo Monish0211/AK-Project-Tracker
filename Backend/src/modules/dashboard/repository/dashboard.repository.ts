@@ -78,9 +78,21 @@ export function authorizedNonDeletedProjectWhere(callerUserId: string | undefine
   };
 }
 
+// P1-05 (production hardening) — a defensive fetch bound, not a claim that
+// this many projects is expected. Re-audited: this query was already lean
+// (12 projected columns, no `include`/nested relation, no N+1) — the real
+// gap was only the total absence of any upper bound. `take` is CAP + 1 (not
+// CAP) specifically so the caller can tell "exactly CAP rows happened to
+// exist" apart from "there are MORE than CAP rows and this silently
+// dropped some" — see getDashboardSummary()'s own overflow check, which
+// throws an explicit error rather than ever computing Dashboard KPIs from a
+// silently-incomplete project set.
+export const DASHBOARD_PROJECT_FETCH_CAP = 50_000;
+
 export function findAuthorizedProjects(callerUserId: string | undefined): Promise<DashboardProjectRow[]> {
   return prisma.project.findMany({
     where: authorizedNonDeletedProjectWhere(callerUserId),
+    take: DASHBOARD_PROJECT_FETCH_CAP + 1,
     select: {
       id: true,
       prNo: true,
@@ -121,33 +133,66 @@ export function findQuantityItemsForProjects(projectIds: string[]): Promise<Quan
   });
 }
 
+// Dashboard bug fix (found during P2-13 stress testing) — this used to be
+// `prisma.invoiceLine.findMany({ where: { quantityItem: { projectId: {...} } },
+// select: { ..., quantityItem: { select: { projectId: true } } } })`, reading
+// `row.quantityItem.projectId` on every result row. Confirmed by direct
+// query-log inspection: this driver-adapter setup (@prisma/adapter-pg, no
+// Rust query engine — relationLoadStrategy: "join" isn't available) always
+// executes a nested to-one `select` as TWO separate SQL statements — first
+// InvoiceLine, then a follow-up QuantityItem-by-id lookup — not one atomic
+// JOIN. InvoiceLine.quantityItem is schema-guaranteed non-null at rest
+// (onDelete: Restrict — Postgres itself refuses to delete a QuantityItem
+// while any InvoiceLine still references it), so this was never a data
+// problem: it's a read-consistency gap between those two round trips. If a
+// concurrent DELETE /projects/:id/permanent (hardDeleteProject() — an
+// atomic $transaction that deletes the project's InvoiceLines, then
+// cascade-deletes its QuantityItems) commits in that gap, statement 1 can
+// still return an InvoiceLine row that existed a moment ago, while
+// statement 2's now-empty QuantityItem lookup makes Prisma fill in `null`
+// for that row's nested relation — a genuine crash (TypeError reading
+// `.projectId` of null), reproduced under concurrent test load.
+//
+// Fixed by anchoring the query on QuantityItem instead of InvoiceLine:
+// projectId is QuantityItem's own direct scalar column (@@index([projectId])),
+// never a separately-loaded relation, so it can never be null regardless of
+// what the second (invoiceLines) query does. In the same race, the worst
+// case is now a transiently-short invoiceLines array (Prisma's normal,
+// always-safe default for "no rows found" on a to-many relation) — never a
+// null dereference. Output shape (InvoiceLineRow[]) is unchanged.
 export async function findInvoiceLinesForProjects(projectIds: string[]): Promise<InvoiceLineRow[]> {
   if (projectIds.length === 0) return [];
-  const rows = await prisma.invoiceLine.findMany({
-    where: { quantityItem: { projectId: { in: projectIds } } },
+  const quantityItems = await prisma.quantityItem.findMany({
+    where: { projectId: { in: projectIds } },
     select: {
-      id: true,
-      status: true,
-      invoiceAmountINR: true,
-      invoiceDate: true,
-      invoiceNo: true,
-      milestoneId: true,
-      quantityItemId: true,
-      quantityBilled: true,
-      quantityItem: { select: { projectId: true } },
+      projectId: true,
+      invoiceLines: {
+        select: {
+          id: true,
+          status: true,
+          invoiceAmountINR: true,
+          invoiceDate: true,
+          invoiceNo: true,
+          milestoneId: true,
+          quantityItemId: true,
+          quantityBilled: true,
+        },
+      },
     },
   });
-  return rows.map((row) => ({
-    id: row.id,
-    status: row.status,
-    invoiceAmountINR: row.invoiceAmountINR,
-    invoiceDate: row.invoiceDate,
-    invoiceNo: row.invoiceNo,
-    milestoneId: row.milestoneId,
-    quantityItemId: row.quantityItemId,
-    quantityBilled: row.quantityBilled,
-    projectId: row.quantityItem.projectId,
-  }));
+  return quantityItems.flatMap((item) =>
+    item.invoiceLines.map((line) => ({
+      id: line.id,
+      status: line.status,
+      invoiceAmountINR: line.invoiceAmountINR,
+      invoiceDate: line.invoiceDate,
+      invoiceNo: line.invoiceNo,
+      milestoneId: line.milestoneId,
+      quantityItemId: line.quantityItemId,
+      quantityBilled: line.quantityBilled,
+      projectId: item.projectId,
+    }))
+  );
 }
 
 export async function groupExpenseTotals(projectIds: string[]): Promise<Map<string, number>> {

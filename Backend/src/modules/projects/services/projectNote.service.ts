@@ -1,5 +1,6 @@
 import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import { getUserDisplayName } from "../../../shared/utils/userDisplayName.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { createProjectNote, getProjectNotesByProjectId } from "../repository/projectNote.repository.js";
 
@@ -19,19 +20,20 @@ export async function getNotesForProjectService(projectId: string, user?: Access
 
 export async function createNoteForProjectService(
   projectId: string,
-  data: { message?: string; createdBy?: string },
-  user?: AccessTokenPayload
+  data: { message?: string },
+  user: AccessTokenPayload
 ) {
-  if (user) {
-    await assertProjectAccessById(projectId, user);
-  }
+  await assertProjectAccessById(projectId, user);
 
   const message = data.message?.trim();
   if (!message) {
     throw new AppError("Note message is required and cannot be empty", 400);
   }
 
-  const createdBy = data.createdBy?.trim() || "Administrator";
+  // Never trusts a client-supplied name — always the current fullName for
+  // the authenticated caller, so a note can never be attributed to someone
+  // else.
+  const createdBy = await getUserDisplayName(user.sub);
 
   const note = await createProjectNote(projectId, { message, createdBy });
   return {

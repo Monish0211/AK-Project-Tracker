@@ -1,0 +1,30 @@
+-- P1-17: Project.prNo must be unique among ACTIVE (non-archived) projects
+-- only — confirmed business rule from current application code
+-- (project.service.ts's assertPrNoAvailable() -> findActiveProjectByPrNo(),
+-- which has always scoped its duplicate check to isDeleted = false). An
+-- archived project's prNo may legitimately be reused by a new project, so a
+-- plain `@@unique` across ALL rows would be wrong and would break that
+-- workflow. Postgres partial unique indexes are the correct, DB-native tool
+-- for exactly this "unique only under a condition" case.
+--
+-- Pre-migration safety check performed (read-only, against the current
+-- local dev DB): 0 duplicate prNo values exist among all 30 Project rows
+-- currently in the database (checked both exact and case-insensitive/
+-- trimmed), so this index applies cleanly with no pre-cleanup required.
+--
+-- Not expressed as `@@unique` in schema.prisma: Prisma's schema DSL has no
+-- syntax for a partial (WHERE-scoped) unique index as of this Prisma
+-- version. This is the officially documented workaround (hand-written
+-- migration SQL), with the schema.prisma model carrying an explanatory
+-- comment warning future maintainers not to let a later `prisma migrate
+-- dev` run drop this index just because nothing in the schema file
+-- declares it.
+--
+-- Not CONCURRENTLY: this table is small (tens of rows, business-scale
+-- bounded — Project is not this application's 1M-record driver) and this
+-- migration already runs inside Prisma's normal transactional migration
+-- wrapper; CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
+-- If the Project table ever grows large enough for a brief exclusive lock
+-- during index creation to matter, this can be re-created CONCURRENTLY
+-- outside a migration transaction at that time.
+CREATE UNIQUE INDEX "Project_prNo_active_key" ON "Project" ("prNo") WHERE "isDeleted" = false;

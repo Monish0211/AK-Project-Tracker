@@ -197,6 +197,20 @@ export async function changeFirstPassword(
     throw new AppError("Invalid email or current password.", 401);
   }
 
+  // Same account-state gate login() applies before ever issuing a session —
+  // this endpoint is the OTHER place a session gets issued from unverified
+  // (no-JWT-yet) input, so it must not skip the check just because the
+  // caller arrived via forcePasswordChange instead of a normal password.
+  if (user.accountLocked) {
+    await logAuthEvent({ userId: user.id, email: user.email, event: "LOGIN_BLOCKED_ACCOUNT_LOCKED" }, context);
+    throw new AppError("Your account is locked. Please contact your administrator.", 403);
+  }
+
+  if (!user.isActive) {
+    await logAuthEvent({ userId: user.id, email: user.email, event: "LOGIN_BLOCKED_INACTIVE" }, context);
+    throw new AppError("Your account is inactive. Please contact your administrator.", 403);
+  }
+
   if (!user.forcePasswordChange) {
     throw new AppError("Password change is not required for this account. Please log in normally.", 400);
   }
@@ -277,6 +291,18 @@ export async function refreshAccessToken(refreshTokenPlaintext: string, context:
 
   if (!stored || stored.revokedAt || stored.expiresAt.getTime() < Date.now()) {
     throw new AppError("Invalid or expired refresh token. Please log in again.", 401);
+  }
+
+  // stored.user is already loaded by findRefreshTokenByHash()'s include — no
+  // extra query. A deactivated/locked account must not be able to extend its
+  // session via refresh, even if it's still holding an unrevoked token (the
+  // normal case is also covered separately: updateUser() revokes every
+  // refresh token for a user the moment they're deactivated/locked).
+  if (stored.user.accountLocked) {
+    throw new AppError("Your account is locked. Please contact your administrator.", 403);
+  }
+  if (!stored.user.isActive) {
+    throw new AppError("Your account is inactive. Please contact your administrator.", 403);
   }
 
   const newPlaintext = generateOpaqueToken();
@@ -402,7 +428,7 @@ export async function validateResetToken(token: string): Promise<{ valid: boolea
  */
 export async function listAuditLogs(query: ListAuditLogsQuery): Promise<AuditLogListDto> {
   const { page, pageSize } = query;
-  const { items, total } = await findAuditLogsPage(page, pageSize);
+  const { items, total } = await findAuditLogsPage(query);
 
   return {
     items: items.map((row) => ({

@@ -20,8 +20,18 @@ export function findEmployeeById(id: string) {
   return prisma.employee.findUnique({ where: { id } });
 }
 
-export function findEmployeeByEmployeeNo(employeeNo: string) {
-  return prisma.employee.findUnique({ where: { employeeNo } });
+/** Optional `tx` (P1-04) lets a caller read this on its own already-open transaction connection instead of a separate one — defaults to the plain client, so every pre-existing caller is unaffected. */
+export function findEmployeeByEmployeeNo(employeeNo: string, tx: Prisma.TransactionClient | typeof prisma = prisma) {
+  return tx.employee.findUnique({ where: { employeeNo } });
+}
+
+/** P1-10 — one bulk lookup backing bulkImportEmployees()'s existence check, replacing what used to be one findEmployeeByEmployeeNo() SELECT per imported row. */
+export function findEmployeesByEmployeeNos(employeeNos: string[]) {
+  if (employeeNos.length === 0) return Promise.resolve([]);
+  return prisma.employee.findMany({
+    where: { employeeNo: { in: employeeNos } },
+    select: { id: true, employeeNo: true },
+  });
 }
 
 /**

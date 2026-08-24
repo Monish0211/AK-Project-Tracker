@@ -25,6 +25,9 @@ const CREATE_INVOICE_LINE_STATUSES = ["Draft", "Raised", "Cancelled"] as const;
  * Milestones. quantityItemId is not part of the body — it comes from the
  * route param (POST /quantity/:quantityItemId/invoice-lines), matching how
  * projectId is a route param, not a body field, on every other module.
+ * createdBy is likewise NOT accepted here — it is always derived server-side
+ * from the authenticated caller (see invoice.service.ts's
+ * createInvoiceLineForQuantityItem()), never trusted from the request body.
  */
 export const createInvoiceLineSchema = z.object({
   invoiceNo: z.string().trim().min(1, "Invoice No is required."),
@@ -43,7 +46,6 @@ export const createInvoiceLineSchema = z.object({
   remarks: z.string().trim().optional().nullable(),
 
   status: z.enum(CREATE_INVOICE_LINE_STATUSES).default("Raised"),
-  createdBy: z.string().trim().min(1, "Created By is required."),
 });
 
 export type CreateInvoiceLineInput = z.infer<typeof createInvoiceLineSchema>;

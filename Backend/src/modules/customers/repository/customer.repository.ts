@@ -30,6 +30,23 @@ export function findCustomerByNameInsensitive(customerName: string, excludingId?
   });
 }
 
+/**
+ * P2-01 — bulk existence check backing bulkImportCustomers(), replacing
+ * what used to be one findCustomerByNameInsensitive() SELECT per imported
+ * row. `mode: "insensitive"` applies to the whole filter object including
+ * `in`, so this is the exact same case-insensitive comparison as the
+ * single-name lookup above, just evaluated against every candidate name in
+ * one query. Lean projection (`customerName` only) — this exists purely to
+ * build an existence set, never to read/return full customer rows.
+ */
+export function findCustomersByNamesInsensitive(customerNames: string[]) {
+  if (customerNames.length === 0) return Promise.resolve([]);
+  return prisma.customer.findMany({
+    where: { customerName: { in: customerNames, mode: "insensitive" } },
+    select: { customerName: true },
+  });
+}
+
 export function updateCustomer(id: string, data: Partial<CustomerData>) {
   return prisma.customer.update({ where: { id }, data });
 }

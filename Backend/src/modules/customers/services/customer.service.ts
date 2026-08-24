@@ -7,6 +7,7 @@ import {
   deleteCustomer as deleteCustomerInRepository,
   findCustomerById,
   findCustomerByNameInsensitive,
+  findCustomersByNamesInsensitive,
   findCustomersPage,
   updateCustomer as updateCustomerInRepository,
 } from "../repository/customer.repository.js";
@@ -79,11 +80,33 @@ export async function createCustomer(input: CreateCustomerInput): Promise<Custom
  * importCustomersFromFile() abort-on-any-error behavior. Every row must be
  * valid and non-duplicate (within the batch and against the database)
  * before any insert runs.
+ *
+ * P2-01 (production hardening) — the database-existence check used to be
+ * one findCustomerByNameInsensitive() SELECT per row, awaited inside this
+ * loop. It is now ONE bulk findCustomersByNamesInsensitive() call, made
+ * once before the loop starts, covering every distinct non-empty name in
+ * the file (a superset — includes names that will later turn out to be
+ * in-file duplicates too, which costs nothing extra since it's already a
+ * single query regardless). The loop below is otherwise byte-for-byte the
+ * same sequential algorithm as before, with only the DB `await` replaced
+ * by a synchronous lookup (`existingKeys.has(key)`) against that
+ * pre-fetched set — including its own exact pre-existing ordering quirk:
+ * `seenNames` only ever records a name once a row has passed EVERY check
+ * (missing-name, in-file-duplicate, AND database-exists), so two
+ * identically-named rows that both already exist in the database each
+ * still produce their own "already exists" error rather than the second
+ * one being reclassified as an "in-file duplicate" — reproduced exactly,
+ * not just approximated, since this task requires byte-identical error
+ * behavior, not just an equivalent outcome.
  */
 export async function bulkImportCustomers(input: ImportCustomersInput): Promise<ImportCustomersResultDto> {
   const errors: string[] = [];
   const seenNames = new Set<string>();
   const rows: CustomerData[] = [];
+
+  const distinctNames = [...new Set(input.customers.map((r) => r.customerName.trim()).filter(Boolean))];
+  const existingCustomers = await findCustomersByNamesInsensitive(distinctNames);
+  const existingKeys = new Set(existingCustomers.map((c) => c.customerName.trim().toLowerCase()));
 
   for (let i = 0; i < input.customers.length; i++) {
     const row = input.customers[i]!;
@@ -101,8 +124,7 @@ export async function bulkImportCustomers(input: ImportCustomersInput): Promise<
       continue;
     }
 
-    const existing = await findCustomerByNameInsensitive(name);
-    if (existing) {
+    if (existingKeys.has(key)) {
       errors.push(`Row ${rowNum}: Customer "${name}" already exists.`);
       continue;
     }

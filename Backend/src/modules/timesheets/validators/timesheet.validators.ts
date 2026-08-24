@@ -17,9 +17,20 @@ export const importIdParamSchema = z.object({
 });
 export type ImportIdParam = z.infer<typeof importIdParamSchema>;
 
-/** GET /timesheets/imports/:id/rows — optional outcome filter (?status=Failed). */
+/**
+ * GET /timesheets/imports/:id/rows — optional outcome filter (?status=Failed),
+ * paginated (P1-11 — this had no bound at all; a single large Keka import
+ * can genuinely have tens of thousands of rows, confirmed by real
+ * benchmarking during P1-03, so returning every row-log entry for one
+ * import in one response was a real risk, not a theoretical one). No
+ * current frontend caller exists yet for this endpoint, so these defaults
+ * are chosen to match every other paginated list in this module
+ * (listImportsQuerySchema) rather than to preserve any existing behavior.
+ */
 export const listImportRowsQuerySchema = z.object({
   status: z.enum(["Created", "Updated", "Unchanged", "Removed", "Failed"]).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(500).default(50),
 });
 export type ListImportRowsQuery = z.infer<typeof listImportRowsQuerySchema>;
 
@@ -70,3 +81,35 @@ export const editEntryBodySchema = z
   })
   .refine((data) => Object.keys(data).length > 0, { message: "At least one field must be provided." });
 export type EditEntryBody = z.infer<typeof editEntryBodySchema>;
+
+/**
+ * DELETE /timesheets/entries/historical — query params for the
+ * Administrator-only historical-backfill clear (see timesheet.service.ts's
+ * clearHistoricalTimesheetEntries()). startDate/endDate are always
+ * explicit, Administrator-supplied inputs — there is no configured or
+ * derivable "Keka implementation start date" anywhere in this codebase
+ * (confirmed by inspection: env.ts, the poll scheduler, and mailPoll.
+ * service.ts carry no such value), so this deliberately never guesses one.
+ * endDate is capped at "yesterday," computed fresh against `new Date()` at
+ * validation time (never a hardcoded literal) — this is explicitly a
+ * HISTORICAL clear, not a general-purpose one, so clearing today's
+ * still-arriving Keka data is refused rather than silently allowed.
+ */
+export const historicalClearQuerySchema = z
+  .object({
+    startDate: z.coerce.date(),
+    endDate: z.coerce.date(),
+  })
+  .refine((data) => data.startDate.getTime() <= data.endDate.getTime(), {
+    message: "Start date must be on or before the end date.",
+    path: ["startDate"],
+  })
+  .refine(
+    (data) => {
+      const todayUtcMidnight = new Date();
+      todayUtcMidnight.setUTCHours(0, 0, 0, 0);
+      return data.endDate.getTime() < todayUtcMidnight.getTime();
+    },
+    { message: "End date must be on or before yesterday — this operation is for historical data only.", path: ["endDate"] }
+  );
+export type HistoricalClearQuery = z.infer<typeof historicalClearQuerySchema>;

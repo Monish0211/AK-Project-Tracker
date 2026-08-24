@@ -1,4 +1,5 @@
 import { Prisma } from "../../../../generated/prisma/client.js";
+import { prisma } from "../../../shared/utils/prismaClient.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
@@ -68,6 +69,57 @@ async function assertProjectExists(projectId: string, user: AccessTokenPayload):
   await assertProjectAccessById(projectId, user);
 }
 
+/**
+ * Business rule: a project's Payment Milestones may never collectively
+ * exceed 100% — enforced server-side (never trusting the frontend's own
+ * validatePaymentMilestonesTab() alone) against the CURRENT set of
+ * milestones already saved for this project, excluding the milestone being
+ * updated (if any) so its own prior percentage isn't double-counted.
+ *
+ * P0-07 (production hardening) — concurrency-safe. This was previously a
+ * plain read-then-throw check with no transaction, no lock, and no DB
+ * constraint: two concurrent requests for the SAME project (e.g. two
+ * milestone creates submitted moments apart) could both read the same
+ * pre-race total, both compute a total <=100%, and both commit — pushing
+ * the true total over 100% with no error ever raised. A Postgres CHECK
+ * constraint cannot enforce this (CHECK constraints validate one row in
+ * isolation; they cannot see a SUM() across sibling rows), so the fix is
+ * the same DB-native transactional-lock pattern already proven for
+ * ProjectResource (see projectResource.service.ts's recomputeProjectResource()):
+ * this now always runs inside the caller's Prisma transaction, which must
+ * first take a Postgres advisory transaction lock keyed by projectId
+ * (`pg_advisory_xact_lock(hashtext(projectId))`) before this function reads
+ * anything. A concurrent call for the SAME project blocks until the first
+ * transaction commits, so it always re-checks against the truly current
+ * total; a concurrent call for a DIFFERENT project hashes to a different
+ * lock key and proceeds fully in parallel, unaffected — this never
+ * serializes unrelated projects' milestone writes against each other.
+ */
+async function assertMilestoneTotalWithinLimit(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  incomingPercentage: number,
+  excludeMilestoneId?: string
+): Promise<void> {
+  const existing = await getMilestonesByProjectId(projectId, tx);
+  const existingTotal = existing
+    .filter((m) => m.id !== excludeMilestoneId)
+    .reduce((sum, m) => sum + m.paymentPercentage, 0);
+
+  const newTotal = existingTotal + incomingPercentage;
+  if (newTotal > 100) {
+    throw new AppError(
+      `Payment Milestones for this project would total ${newTotal}%, exceeding 100%. Existing milestones already total ${existingTotal}%.`,
+      400
+    );
+  }
+}
+
+/** Acquire the project-scoped advisory lock — must be the first statement inside the transaction, before any read this function's caller relies on for its aggregate check. Same hashtext()-keyed pattern as projectResource.service.ts. */
+async function lockProjectForMilestoneWrite(tx: Prisma.TransactionClient, projectId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${projectId}))`;
+}
+
 export async function createMilestoneForProject(
   projectId: string,
   input: CreateMilestoneInput,
@@ -75,11 +127,34 @@ export async function createMilestoneForProject(
 ): Promise<MilestoneDto> {
   await assertProjectExists(projectId, user);
 
-  const created = await createMilestoneInRepository(projectId, {
-    milestoneName: input.milestoneName,
-    paymentPercentage: input.paymentPercentage,
-    dueDate: input.dueDate ?? null,
-  });
+  // P0-07 — lock, re-check, and write all inside one transaction so no
+  // concurrent create/update for this same project can interleave with the
+  // aggregate <=100% check (see assertMilestoneTotalWithinLimit()'s own
+  // comment for the full race and why this is the correct fix).
+  const created = await prisma.$transaction(
+    async (tx) => {
+      await lockProjectForMilestoneWrite(tx, projectId);
+      await assertMilestoneTotalWithinLimit(tx, projectId, input.paymentPercentage);
+
+      return createMilestoneInRepository(
+        projectId,
+        {
+          milestoneName: input.milestoneName,
+          paymentPercentage: input.paymentPercentage,
+          dueDate: input.dueDate ?? null,
+        },
+        tx
+      );
+    },
+    // Same reasoning as projectResource.service.ts's recomputeProjectResource()
+    // — this transaction can now block on the advisory lock behind a slower
+    // concurrent write for the same project, so it needs headroom beyond
+    // Prisma's 5000ms default. The work itself is cheap (one indexed read
+    // plus one insert); 30s comfortably covers being queued behind another
+    // in-flight milestone write for the same project without being an
+    // arbitrarily huge value.
+    { timeout: 30_000, maxWait: 10_000 }
+  );
 
   const workOrderValueINR = await getWorkOrderValueForProject(projectId);
   return toMilestoneDto(created, workOrderValueINR);
@@ -107,11 +182,30 @@ export async function updateMilestoneItem(
   }
   await assertProjectAccessById(existing.projectId, user);
 
-  const updated = await updateMilestoneInRepository(id, {
-    ...(input.milestoneName !== undefined && { milestoneName: input.milestoneName }),
-    ...(input.paymentPercentage !== undefined && { paymentPercentage: input.paymentPercentage }),
-    ...(input.dueDate !== undefined && { dueDate: input.dueDate }),
-  });
+  // P0-07 — same lock-then-check-then-write transaction as
+  // createMilestoneForProject() above, keyed by the SAME project so a
+  // concurrent create and a concurrent update for the same project's
+  // milestones can never race each other either (not just update-vs-update).
+  const updated = await prisma.$transaction(
+    async (tx) => {
+      await lockProjectForMilestoneWrite(tx, existing.projectId);
+
+      if (input.paymentPercentage !== undefined) {
+        await assertMilestoneTotalWithinLimit(tx, existing.projectId, input.paymentPercentage, id);
+      }
+
+      return updateMilestoneInRepository(
+        id,
+        {
+          ...(input.milestoneName !== undefined && { milestoneName: input.milestoneName }),
+          ...(input.paymentPercentage !== undefined && { paymentPercentage: input.paymentPercentage }),
+          ...(input.dueDate !== undefined && { dueDate: input.dueDate }),
+        },
+        tx
+      );
+    },
+    { timeout: 30_000, maxWait: 10_000 }
+  );
 
   const workOrderValueINR = await getWorkOrderValueForProject(updated.projectId);
   return toMilestoneDto(updated, workOrderValueINR);
