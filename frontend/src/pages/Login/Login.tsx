@@ -6,20 +6,44 @@ import {
   FileText, BadgeIndianRupee, Calendar, FileSpreadsheet, Cpu, Layers
 } from "lucide-react";
 import { useAuth } from "../../auth/authContext";
+import { hasModuleAccess } from "../../auth/permissions";
 import { useTheme } from "../../context/ThemeContext";
 import LoadingScreen from "../../components/LoadingScreen/LoadingScreen";
 import { Logo } from "../../components/ui/Logo";
 import ForgotPasswordModal from "./ForgotPasswordModal";
+import type { UserSession } from "../../auth/authService";
+
+/**
+ * Where a signed-in user lands right after login (or when already
+ * authenticated and revisiting /login). Timesheets first for anyone who
+ * currently has Timesheets module access — checked fresh from the just-
+ * loaded session (GET /auth/me's live grants, not anything cached from a
+ * previous login), so a user who gains/loses Timesheets access sees the
+ * change take effect on their very next login. Dashboard otherwise, same
+ * as before this change — a user without Timesheets access is never sent
+ * somewhere they'd immediately hit Access Denied.
+ */
+function getPostLoginPath(user: UserSession | null): string {
+  return hasModuleAccess(user, "Timesheets") ? "/timesheets" : "/";
+}
+
+/** Same decision as getPostLoginPath(), for the moment right after a fresh
+ * login result comes back (see LoginResult.modules's own comment for why
+ * this reads the result's modules directly instead of `user` from
+ * useAuth() at that call site). */
+function getPostLoginPathFromModules(modules: string[] | undefined): string {
+  return (modules ?? []).includes("Timesheets") ? "/timesheets" : "/";
+}
 
 export default function Login() {
   const { user, login } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
-  // If already authenticated, redirect immediately to Dashboard
+  // If already authenticated, redirect immediately.
   useEffect(() => {
     if (user && user.isAuthenticated) {
-      navigate("/", { replace: true });
+      navigate(getPostLoginPath(user), { replace: true });
     }
   }, [user, navigate]);
 
@@ -137,10 +161,11 @@ export default function Login() {
         setAuthStatusText("Success!");
         setFailedAttempts(0);
 
+        const postLoginPath = getPostLoginPathFromModules(result.modules);
         setTimeout(() => {
           setIsTransitioning(true);
           setTimeout(() => {
-            navigate("/");
+            navigate(postLoginPath);
           }, 600);
         }, 1000);
       } else {

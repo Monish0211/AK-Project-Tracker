@@ -8,6 +8,17 @@ export interface LoginResult {
   /** True when the account must change its password before a session can be issued — no `user` was set; the caller should redirect to /auth/change-password. */
   requiresPasswordChange?: boolean;
   email?: string;
+  /**
+   * The freshly-issued session's module grants, present only on a genuine
+   * success (never alongside requiresPasswordChange or a failure). A caller
+   * that needs to decide something based on the just-logged-in user's
+   * access (e.g. Login.tsx's post-login redirect) should read this instead
+   * of the `user` from useAuth() — that context value is captured in
+   * whatever closure called login() and is NOT guaranteed to reflect the
+   * setUser() this function just did by the time an async/delayed caller
+   * gets around to reading it.
+   */
+  modules?: string[];
 }
 
 interface AuthContextType {
@@ -62,7 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: true, requiresPasswordChange: true, email: outcome.email };
       }
       setUser(outcome.session);
-      return { success: true, requiresPasswordChange: false };
+      return { success: true, requiresPasswordChange: false, modules: outcome.session.modules };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid email or password.";
       return { success: false, error: message };

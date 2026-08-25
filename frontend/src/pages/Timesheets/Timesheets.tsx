@@ -24,6 +24,7 @@ import {
   getAllTimesheetImports,
   saveAllTimesheetImports,
   refreshTimesheetImportsFromBackend,
+  ensureTimesheetImportsFresh,
 } from "../../services/timesheetService";
 import { syncTimesheetToProjects } from "../../services/timesheetSyncService";
 import { getProjects, updateProject } from "../../services/projectService";
@@ -180,8 +181,21 @@ const Timesheets = () => {
   // (KEKA import pipeline) instead of only whatever was last uploaded in
   // this browser. Non-fatal on failure — the page still works from
   // whatever local data already exists (e.g. offline, or backend down).
+  //
+  // Goes through ensureTimesheetImportsFresh() (the shared de-duplicating
+  // wrapper — see timesheetService.ts) rather than calling
+  // refreshTimesheetImportsFromBackend() directly, unlike this file's other
+  // call sites: this is the one PASSIVE, on-mount sync in this file (every
+  // other call here follows an explicit mutation — import/reset/edit/delete
+  // — and correctly needs the unconditional, uncached version to show
+  // authoritative fresh data right away). Before this, revisiting this page
+  // shortly after any other passive sync already completed elsewhere (e.g.
+  // a project's Team Assigned tab, which already used this same wrapper)
+  // still re-ran the full ~90-request paginated history fetch from
+  // scratch, unnecessarily, every single time — this is what made the page
+  // feel slow to load, not the fetch itself being broken.
   useEffect(() => {
-    refreshTimesheetImportsFromBackend()
+    ensureTimesheetImportsFresh()
       .then(() => setAllMonths(timesheetStorage.getMonths()))
       .catch((err) => console.warn("Could not refresh Timesheet Records from backend:", err));
   }, []);
