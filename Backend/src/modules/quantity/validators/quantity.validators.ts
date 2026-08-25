@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
 
 /**
  * uom/assignedTo/currency mirror frontend/src/types/QuantityItem.ts exactly.
@@ -51,14 +52,11 @@ export type UpdateQuantityInput = z.infer<typeof updateQuantitySchema>;
  * getProjects for the same manual-safeParse convention used for params/
  * query that aren't part of the body).
  */
-export const projectIdParamSchema = z.object({
-  projectId: z.string().trim().min(1, "Project ID is required."),
-});
+// P2-07 — Project.id/QuantityItem.id are real UUID surrogate keys.
+export const projectIdParamSchema = uuidParamSchema("projectId", "Project ID");
 
 export type ProjectIdParam = z.infer<typeof projectIdParamSchema>;
 
-export const quantityIdParamSchema = z.object({
-  id: z.string().trim().min(1, "Quantity ID is required."),
-});
+export const quantityIdParamSchema = uuidParamSchema("id", "Quantity ID");
 
 export type QuantityIdParam = z.infer<typeof quantityIdParamSchema>;

@@ -79,7 +79,12 @@ test("POST /projects rejects a concurrent duplicate prNo (TOCTOU race closed by 
     createdUserIds.push(user.id);
     const token = tokenFor({ ...user, roleName: adminRole.name });
 
-    const prNo = `${TAG}-PR`;
+    // P0-… Region -> PR Category -> PR Number prefix rule now enforces
+    // server-side that an "India" PR Category's prNo starts with "PR-" — this
+    // was already an arbitrary synthetic identifier before that rule
+    // existed, so it's simply reshaped to satisfy the new rule while staying
+    // just as unique/synthetic (TAG is still embedded in full).
+    const prNo = `PR-${TAG}`;
 
     const post = () =>
       fetch(`${url}/projects`, {
@@ -141,7 +146,7 @@ test("Archiving a project frees its prNo for reuse by a new active project", asy
     });
     createdUserIds.push(user.id);
     const token = tokenFor({ ...user, roleName: adminRole.name });
-    const prNo = `${TAG}-REUSE-PR`;
+    const prNo = `PR-${TAG}-REUSE`;
     const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
     // Create the first project.

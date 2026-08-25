@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { requireUser } from "../../../shared/utils/requireUser.js";
+import { assertProjectAccess } from "../../../shared/utils/projectAccess.js";
 import { parseTimesheetWorkbook, validateAttachment } from "../services/excelParser.service.js";
 import {
   clearHistoricalTimesheetEntries,
@@ -116,13 +117,30 @@ export const getEntries = asyncHandler(async (req: Request, res: Response) => {
  * from 4 to 6" is answered by locating the entry (GET /timesheets/entries)
  * then calling this with its id: every row-log entry for it, each already
  * carrying its own Import (email/attachment/timestamps).
+ *
+ * P5 — same project-ownership rule as GET /timesheets/entries
+ * (findEntries()'s projectOwnershipWhereOr), applied here explicitly since
+ * a lookup-by-id has no WHERE clause of its own to inherit it from. An
+ * Unassigned entry (projectId: null) stays visible to any Timesheets-access
+ * caller, matching findEntries()'s own "always visible" rule for that case.
+ * A nonexistent id and an existing-but-unauthorized id both now respond
+ * identically in shape (404/403 via AppError, no entry data), closing the
+ * previous always-200-with-full-data behavior.
  */
 export const getEntryHistory = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const id = parseEntryIdParam(req);
   const entry = await timesheetRepo.findEntryById(id);
+  if (!entry) {
+    throw new AppError("Timesheet entry not found.", 404);
+  }
+  if (entry.projectId) {
+    assertProjectAccess(user, entry.project!);
+  }
+
   const history = await rowLogRepo.findHistoryForEntry(id);
 
-  res.status(200).json({ success: true, data: { entry: entry ?? null, history } });
+  res.status(200).json({ success: true, data: { entry, history } });
 });
 
 /**

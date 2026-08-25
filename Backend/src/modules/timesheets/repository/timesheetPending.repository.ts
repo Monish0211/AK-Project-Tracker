@@ -28,6 +28,16 @@ export interface ActiveProjectForPendingCheck {
  * project-ownership rule as GET /projects, never a second concept (see
  * shared/utils/projectAccess.ts's projectOwnershipWhereOr()).
  */
+// P2-01 (production hardening) — a defensive fetch bound, not a claim that
+// this many active projects is expected. Same "CAP + 1 so the caller can
+// tell 'exactly CAP rows' apart from 'there are MORE than CAP and this
+// silently dropped some'" reasoning as dashboard.repository.ts's own
+// DASHBOARD_PROJECT_FETCH_CAP (both are called together inside
+// getDashboardSummary(), so both share the same cap value for consistency)
+// — see timesheetPending.service.ts's own overflow check, which throws
+// rather than ever silently returning an incomplete Pending calculation.
+export const TIMESHEET_PENDING_PROJECT_FETCH_CAP = 50_000;
+
 export function findActiveProjectsForPendingCheck(callerUserId?: string): Promise<ActiveProjectForPendingCheck[]> {
   const ownershipOr = projectOwnershipWhereOr(callerUserId);
   return prisma.project.findMany({
@@ -45,6 +55,7 @@ export function findActiveProjectsForPendingCheck(callerUserId?: string): Promis
       pmoCoordinator: true,
       timesheetPendingTrackingStartedAt: true,
     },
+    take: TIMESHEET_PENDING_PROJECT_FETCH_CAP + 1,
   });
 }
 

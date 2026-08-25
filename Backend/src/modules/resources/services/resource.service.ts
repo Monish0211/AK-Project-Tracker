@@ -4,11 +4,13 @@ import { findEmployeeByEmployeeNo } from "../../employees/repository/employee.re
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type { ResourceDto, ResourceListDto } from "../dto/resource.dto.js";
 import {
+  countAllResourcesForAuthorizedProjects,
   createResource as createResourceInRepository,
   countResourcesByEmployeeNo,
   deleteResource as deleteResourceInRepository,
   findResourceByProjectAndEmployee,
   getAllResourcesForAuthorizedProjects,
+  getAllResourcesForAuthorizedProjectsPage,
   getResourceById,
   getResourcesByEmployeeNo,
   getResourcesByProjectId,
@@ -16,7 +18,7 @@ import {
   updateResource as updateResourceInRepository,
 } from "../repository/resource.repository.js";
 import type { ProjectResourceData } from "../resource.types.js";
-import type { CreateResourceInput, UpdateResourceInput } from "../validators/resource.validators.js";
+import type { CreateResourceInput, ListResourcesQuery, UpdateResourceInput } from "../validators/resource.validators.js";
 
 function toResourceDto(row: Awaited<ReturnType<typeof getResourceById>>): ResourceDto {
   if (!row) {
@@ -106,8 +108,26 @@ export function assertResourceCountWithinCap(rowCount: number, cap: number): voi
   }
 }
 
-export async function listAllAuthorizedResources(user: AccessTokenPayload): Promise<ResourceListDto> {
+export async function listAllAuthorizedResources(
+  user: AccessTokenPayload,
+  query?: ListResourcesQuery
+): Promise<ResourceListDto> {
   const callerUserId = user.roleName === "Administrator" ? undefined : user.sub;
+
+  // P2-02 — a real paginated path, taken only when the caller explicitly
+  // asks for a page. Every existing caller (today: only
+  // fetchAllProjectsFromApi()) that sends neither param falls through to
+  // the original full-fetch-with-safety-cap behavior below, unchanged.
+  if (query?.page !== undefined || query?.pageSize !== undefined) {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 500;
+    const [rows, total] = await Promise.all([
+      getAllResourcesForAuthorizedProjectsPage(callerUserId, (page - 1) * pageSize, pageSize),
+      countAllResourcesForAuthorizedProjects(callerUserId),
+    ]);
+    return { items: rows.map((row) => toResourceDto(row)), total, page, pageSize };
+  }
+
   const rows = await getAllResourcesForAuthorizedProjects(callerUserId);
 
   // Fail loudly rather than ever silently truncating: this single

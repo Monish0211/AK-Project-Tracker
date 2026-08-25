@@ -11,7 +11,11 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const updateUser = asyncHandler(async (req: Request, res: Response) => {
-  const updated = await userService.updateUser(req.params.id as string, req.body as UpdateUserInput);
+  if (!req.user) {
+    throw new AppError("Authentication required.", 401);
+  }
+
+  const updated = await userService.updateUser(req.params.id as string, req.body as UpdateUserInput, req.user.sub);
   res.status(200).json({ success: true, data: updated, message: "User updated successfully." });
 });
 

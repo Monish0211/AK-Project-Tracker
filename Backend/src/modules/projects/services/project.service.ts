@@ -1,6 +1,7 @@
 import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccess } from "../../../shared/utils/projectAccess.js";
+import { validatePrCategoryPrNoRule } from "../project.constants.js";
 import { reconcileUnassignedEntriesForProject } from "../../timesheets/services/timesheet.service.js";
 import { notify, resolveProjectEventRecipients } from "../../notifications/notification.service.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
@@ -93,6 +94,23 @@ async function assertPrNoAvailable(prNo: string, excludingProjectId?: string): P
 }
 
 /**
+ * Region -> PR Category -> PR Number prefix business rule, enforced
+ * server-side so it can never be bypassed by a direct API call — the
+ * frontend's own mirror of this same rule (createEmptyProject.ts) only
+ * blocks the UI, never the API. See project.constants.ts's
+ * validatePrCategoryPrNoRule() for the single shared mapping this reads
+ * from. This is a plain input-shape check (no DB access), so it runs before
+ * assertPrNoAvailable()'s DB round-trip in both createProject() and
+ * updateProject() below.
+ */
+function assertPrCategoryPrNoRule(prCategory: string, prNo: string): void {
+  const error = validatePrCategoryPrNoRule(prCategory, prNo);
+  if (error) {
+    throw new AppError(error, 400);
+  }
+}
+
+/**
  * P1-17 — this pre-check alone cannot close the race between two
  * concurrent requests for the same prNo (both can pass the check before
  * either commits); the actual guarantee is the DB's partial unique index
@@ -173,6 +191,7 @@ function toGeneralInfoData(input: GeneralInfoInput): ProjectGeneralInfoData {
  * client, so there is nothing to strip or validate against spoofing.
  */
 export async function createProject(input: CreateProjectInput, creatorUserId: string): Promise<ProjectDto> {
+  assertPrCategoryPrNoRule(input.prCategory, input.prNo);
   await assertPrNoAvailable(input.prNo);
 
   let created;
@@ -338,6 +357,24 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
     throw new AppError("Project not found.", 404);
   }
   assertProjectAccess(user, existing);
+
+  // Region -> PR Category -> PR Number prefix rule — only re-checked when
+  // this request actually touches prCategory and/or prNo. Neither field
+  // being present here means neither is changing, so a pre-existing
+  // mismatched historical record (see project.constants.ts's comment on
+  // never mass-rewriting historical data) is left completely untouched by
+  // an unrelated field edit (e.g. changing just projectTitle). The moment
+  // either field IS part of the request, the resulting (possibly merged
+  // with the untouched other field's existing value) combination must be
+  // valid — this is what stops "change prCategory but leave the old prNo
+  // prefix behind" and "type a conflicting prNo prefix while prCategory
+  // stays the same" alike, without ever rewriting the field the caller
+  // didn't ask to change.
+  if (input.prCategory !== undefined || input.prNo !== undefined) {
+    const effectivePrCategory = input.prCategory ?? existing.prCategory;
+    const effectivePrNo = input.prNo ?? existing.prNo;
+    assertPrCategoryPrNoRule(effectivePrCategory, effectivePrNo);
+  }
 
   const prNoChanged = Boolean(input.prNo && input.prNo !== existing.prNo);
   if (prNoChanged) {

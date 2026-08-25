@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
 
 /**
  * Required fields mirror validatePaymentMilestonesTab() in
@@ -80,14 +81,11 @@ export type IngestMilestonesInput = z.infer<typeof ingestMilestonesSchema>;
  * `validate()` middleware only covers req.body (same manual-safeParse
  * convention as quantity.validators.ts's param schemas).
  */
-export const projectIdParamSchema = z.object({
-  projectId: z.string().trim().min(1, "Project ID is required."),
-});
+// P2-07 — Project.id/PaymentMilestone.id are real UUID surrogate keys.
+export const projectIdParamSchema = uuidParamSchema("projectId", "Project ID");
 
 export type ProjectIdParam = z.infer<typeof projectIdParamSchema>;
 
-export const milestoneIdParamSchema = z.object({
-  id: z.string().trim().min(1, "Milestone ID is required."),
-});
+export const milestoneIdParamSchema = uuidParamSchema("id", "Milestone ID");
 
 export type MilestoneIdParam = z.infer<typeof milestoneIdParamSchema>;

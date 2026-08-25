@@ -10,7 +10,7 @@ import type { ApiErrorResponse } from "../types/apiResponse.types.js";
  * only ever reported to the client as a generic 500 — internals must never
  * leak in a response body.
  */
-export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
+export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
   if (err instanceof AppError) {
     const body: ApiErrorResponse = { success: false, message: err.message };
     res.status(err.statusCode).json(body);
@@ -29,7 +29,10 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     return;
   }
 
-  console.error("Unhandled error:", err);
+  // P2-08 — correlates this log line with requestLogger.ts's own line for
+  // the same request (both carry the same requestId), without changing
+  // what's logged otherwise.
+  console.error(`Unhandled error [req=${req.requestId ?? "unknown"}]:`, err);
   const body: ApiErrorResponse = { success: false, message: "Something went wrong. Please try again." };
   res.status(500).json(body);
 }

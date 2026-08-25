@@ -34,6 +34,23 @@ export function findUserAccessById(id: string) {
   });
 }
 
+/**
+ * Existing-JWT session invalidation fix — the minimal, purpose-built lookup
+ * authenticate.ts's per-request account-status check uses. Selects only the
+ * two fields that decision needs (a plain indexed-PK lookup, not a join),
+ * deliberately lighter than findUserById()'s `include: { role: true }` or
+ * findUserAccessById()'s much larger include set — neither of which this
+ * check needs. Returns null if the user row no longer exists at all (e.g.
+ * deleted while a still-valid JWT was in the caller's hands), which
+ * authenticate.ts treats the same as a deactivated account.
+ */
+export function findUserAccountStatusById(id: string) {
+  return prisma.portalUser.findUnique({
+    where: { id },
+    select: { isActive: true, accountLocked: true },
+  });
+}
+
 export function updateLastLogin(id: string, lastLogin: Date) {
   return prisma.portalUser.update({
     where: { id },

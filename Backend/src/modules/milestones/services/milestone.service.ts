@@ -221,12 +221,34 @@ export async function updateMilestoneItem(
  * schema.prisma's InvoiceLine comment), so a stale/renamed reference is a
  * normal, expected case the caller decides how to handle, not this
  * function's concern.
+ *
+ * P13 — optional `tx` so invoice.service.ts can read this INSIDE its own
+ * project-scoped advisory-locked transaction (the SAME lock key
+ * lockProjectForMilestoneWrite() below uses), closing the race where a
+ * milestone delete and an invoice-line create referencing that milestone
+ * could otherwise both read "still exists" / "not yet referenced" and both
+ * commit.
  */
-export async function getMilestonePercentageById(milestoneId: string): Promise<number | null> {
-  const milestone = await getMilestoneById(milestoneId);
+export async function getMilestonePercentageById(
+  milestoneId: string,
+  tx?: Prisma.TransactionClient
+): Promise<number | null> {
+  const milestone = await getMilestoneById(milestoneId, tx);
   return milestone ? milestone.paymentPercentage : null;
 }
 
+/**
+ * P13 — same lock-then-check-then-write transaction shape as
+ * createMilestoneForProject()/updateMilestoneItem() above, keyed by the
+ * SAME projectId lock — this closes the race where a concurrent
+ * createInvoiceLineForQuantityItem()/updateInvoiceLine() call referencing
+ * this milestone (which now also takes this same project-scoped lock, see
+ * invoice.service.ts) could otherwise read "0 invoice lines reference this
+ * milestone yet" and "this milestone still exists" moments before this
+ * delete commits, then insert an InvoiceLine pointing at a milestone that
+ * no longer exists (InvoiceLine.milestoneId is a plain, unenforced string —
+ * no DB FK — so nothing would ever catch that at the database level).
+ */
 export async function deleteMilestoneItem(id: string, user: AccessTokenPayload): Promise<void> {
   const existing = await getMilestoneById(id);
   if (!existing) {
@@ -234,15 +256,22 @@ export async function deleteMilestoneItem(id: string, user: AccessTokenPayload):
   }
   await assertProjectAccessById(existing.projectId, user);
 
-  const invoiceLineCount = await countNonCancelledLinesForMilestone(id);
-  if (invoiceLineCount > 0) {
-    throw new AppError(
-      `This payment milestone has ${invoiceLineCount} invoice line(s) raised against it and cannot be deleted.`,
-      409
-    );
-  }
+  await prisma.$transaction(
+    async (tx) => {
+      await lockProjectForMilestoneWrite(tx, existing.projectId);
 
-  await deleteMilestoneInRepository(id);
+      const invoiceLineCount = await countNonCancelledLinesForMilestone(id, tx);
+      if (invoiceLineCount > 0) {
+        throw new AppError(
+          `This payment milestone has ${invoiceLineCount} invoice line(s) raised against it and cannot be deleted.`,
+          409
+        );
+      }
+
+      await deleteMilestoneInRepository(id, tx);
+    },
+    { timeout: 30_000, maxWait: 10_000 }
+  );
 }
 
 /**

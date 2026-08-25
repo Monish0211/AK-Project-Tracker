@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import cron from "node-cron";
 import { env } from "../utils/env.js";
 import type { PollResult } from "../../modules/mailIngestion/mailIngestion.types.js";
@@ -39,11 +40,18 @@ function logPollResult(result: PollResult): void {
  * schedule regardless of what happened this time).
  */
 async function runDailyPoll(): Promise<void> {
-  console.log(`[TimesheetPollScheduler] Daily KEKA poll starting at ${new Date().toISOString()}.`);
+  // P2-08/P2-09 — a real, generated correlation id for this specific poll
+  // run, sent as x-request-id on the loopback call so requestLogger.ts's
+  // own line for /internal/timesheets/poll (and, on failure,
+  // errorHandler.ts's line) can be tied back to this exact scheduled run —
+  // the only change here is an outgoing header; the protected poll/
+  // reconciliation logic itself is untouched.
+  const runId = randomUUID();
+  console.log(`[TimesheetPollScheduler] Daily KEKA poll starting at ${new Date().toISOString()} (runId=${runId}).`);
 
   if (!env.INTERNAL_POLL_SECRET) {
     console.error(
-      "[TimesheetPollScheduler] Skipped — INTERNAL_POLL_SECRET is not set, so POST /internal/timesheets/poll would reject the call with 503. Set it in Backend/.env to enable the daily poll."
+      `[TimesheetPollScheduler] Skipped (runId=${runId}) — INTERNAL_POLL_SECRET is not set, so POST /internal/timesheets/poll would reject the call with 503. Set it in Backend/.env to enable the daily poll.`
     );
     return;
   }
@@ -51,20 +59,20 @@ async function runDailyPoll(): Promise<void> {
   try {
     const response = await fetch(`http://localhost:${env.PORT}/internal/timesheets/poll`, {
       method: "POST",
-      headers: { "x-internal-secret": env.INTERNAL_POLL_SECRET },
+      headers: { "x-internal-secret": env.INTERNAL_POLL_SECRET, "x-request-id": runId },
     });
 
     const body = (await response.json().catch(() => null)) as { success?: boolean; data?: PollResult; message?: string } | null;
 
     if (!response.ok || !body?.success || !body.data) {
-      console.error(`[TimesheetPollScheduler] Poll request failed (HTTP ${response.status}): ${body?.message ?? "Unknown error."}`);
+      console.error(`[TimesheetPollScheduler] Poll request failed (runId=${runId}, HTTP ${response.status}): ${body?.message ?? "Unknown error."}`);
       return;
     }
 
     logPollResult(body.data);
-    console.log("[TimesheetPollScheduler] Daily KEKA poll finished.");
+    console.log(`[TimesheetPollScheduler] Daily KEKA poll finished (runId=${runId}).`);
   } catch (err) {
-    console.error("[TimesheetPollScheduler] Daily KEKA poll failed with an unexpected error:", err instanceof Error ? err.message : err);
+    console.error(`[TimesheetPollScheduler] Daily KEKA poll failed with an unexpected error (runId=${runId}):`, err instanceof Error ? err.message : err);
   }
 }
 

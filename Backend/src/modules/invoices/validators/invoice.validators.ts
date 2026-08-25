@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
 
 /**
  * The 5 statuses a line can carry — mirrors
@@ -134,20 +135,16 @@ export type IngestInvoiceLinesInput = z.infer<typeof ingestInvoiceLinesSchema>;
  * manual-safeParse convention as quantity.validators.ts/milestone.
  * validators.ts's param schemas).
  */
-export const projectIdParamSchema = z.object({
-  projectId: z.string().trim().min(1, "Project ID is required."),
-});
+// P2-07 — Project.id/QuantityItem.id/InvoiceLine.id are real UUID surrogate
+// keys.
+export const projectIdParamSchema = uuidParamSchema("projectId", "Project ID");
 
 export type ProjectIdParam = z.infer<typeof projectIdParamSchema>;
 
-export const quantityItemIdParamSchema = z.object({
-  quantityItemId: z.string().trim().min(1, "Quantity Item ID is required."),
-});
+export const quantityItemIdParamSchema = uuidParamSchema("quantityItemId", "Quantity Item ID");
 
 export type QuantityItemIdParam = z.infer<typeof quantityItemIdParamSchema>;
 
-export const invoiceLineIdParamSchema = z.object({
-  id: z.string().trim().min(1, "Invoice Line ID is required."),
-});
+export const invoiceLineIdParamSchema = uuidParamSchema("id", "Invoice Line ID");
 
 export type InvoiceLineIdParam = z.infer<typeof invoiceLineIdParamSchema>;
