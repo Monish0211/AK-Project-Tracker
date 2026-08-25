@@ -17,10 +17,10 @@ import {
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/authContext";
 import { hasModuleAccess } from "../../auth/permissions";
-import { getEmployees } from "../../services/employeeService";
+import { getEmployees, loadEmployeesForApp } from "../../services/employeeService";
 import { getCustomers, loadCustomersForApp } from "../../services/customerService";
-import { getProjects } from "../../services/projectService";
-import { getAllTimesheetImports } from "../../services/timesheetService";
+import { getProjects, fetchAllProjectsFromApi } from "../../services/projectService";
+import { getAllTimesheetImports, waitForTimesheetHydration } from "../../services/timesheetService";
 import { PmoAssistantOrb } from "./PmoAssistantOrb";
 
 type ViewMode = "home" | "employee" | "customer" | "project" | "timesheet" | "help";
@@ -30,6 +30,9 @@ export const PmoAssistant: React.FC = () => {
   const [activeView, setActiveView] = useState<ViewMode>("home");
   const [searchQuery, setSearchQuery] = useState("");
   const [customers, setCustomers] = useState(() => getCustomers());
+  const [employees, setEmployees] = useState(() => getEmployees());
+  const [projects, setProjects] = useState(() => getProjects());
+  const [timesheetImports, setTimesheetImports] = useState(() => getAllTimesheetImports());
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -66,19 +69,85 @@ export const PmoAssistant: React.FC = () => {
     };
   }, [isOpen, canAccessCustomerMaster]);
 
+  // getEmployees() is a pure localStorage read (see employeeService.ts) —
+  // it only has data once something has already called loadEmployeesForApp()
+  // to hydrate that mirror from PostgreSQL. Manpower.tsx does that on its
+  // own mount, but the assistant can be opened from any page (e.g.
+  // Dashboard) before the user ever visits Manpower in this session, so
+  // without its own load here "Find Employee" silently searches an empty
+  // cache and always reports no matches — same reasoning as the customer
+  // load effect above, mirrored for employees.
+  useEffect(() => {
+    if (!isOpen || !canAccessManpower) return;
+    let isMounted = true;
+    loadEmployeesForApp()
+      .then((result) => {
+        if (isMounted) setEmployees(result.employees);
+      })
+      .catch(() => {
+        /* keep cache / empty — assistant search is best-effort */
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, canAccessManpower]);
+
+  // getProjects() is the same pure-localStorage-mirror pattern as
+  // getEmployees() — it only has data once fetchProjectsFromApi() (the
+  // Projects page) or fetchAllProjectsFromApi() (Reports) has already
+  // written through in this session. Loads the FULL set via
+  // fetchAllProjectsFromApi() (the same bulk loop Reports already uses),
+  // not the Projects page's own paginated fetchProjectsFromApi(), since
+  // the assistant needs to search everything, not one filtered page.
+  useEffect(() => {
+    if (!isOpen || !canAccessProjects) return;
+    let isMounted = true;
+    fetchAllProjectsFromApi()
+      .then((items) => {
+        if (isMounted) setProjects(items);
+      })
+      .catch(() => {
+        /* keep cache / empty — assistant search is best-effort */
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, canAccessProjects]);
+
+  // getAllTimesheetImports() self-triggers its own IndexedDB hydration and
+  // doesn't require visiting Timesheets first (unlike Employees/Projects
+  // above), but hydration finishing doesn't itself trigger a re-render —
+  // if the assistant is opened and searched moments after the app loads,
+  // before that background hydration settles, this re-reads once it does
+  // via waitForTimesheetHydration() instead of leaving a stale/incomplete
+  // snapshot on screen until the user happens to type again.
+  useEffect(() => {
+    if (!isOpen || !canAccessTimesheets) return;
+    let isMounted = true;
+    waitForTimesheetHydration()
+      .then((months) => {
+        if (isMounted) setTimesheetImports(months);
+      })
+      .catch(() => {
+        /* keep cache / empty — assistant search is best-effort */
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, canAccessTimesheets]);
+
   // ─────────────────────────────────────────────────────────────────────────────
   // 2. SEARCH & LOOKUP RESULTS (Consuming existing services)
   // ─────────────────────────────────────────────────────────────────────────────
   const employeeResults = useMemo(() => {
     if (!searchQuery.trim() || !canAccessManpower) return [];
     const q = searchQuery.trim().toLowerCase();
-    const employees = getEmployees();
     return employees.filter(
       (emp) =>
         emp.employeeNo?.toLowerCase().includes(q) ||
         emp.employeeName?.toLowerCase().includes(q)
     );
-  }, [searchQuery, canAccessManpower]);
+  }, [searchQuery, canAccessManpower, employees]);
 
   const customerResults = useMemo(() => {
     if (!searchQuery.trim() || !canAccessCustomerMaster) return [];
@@ -94,19 +163,18 @@ export const PmoAssistant: React.FC = () => {
   const projectResults = useMemo(() => {
     if (!searchQuery.trim() || !canAccessProjects) return [];
     const q = searchQuery.trim().toLowerCase();
-    const projects = getProjects();
     return projects.filter(
       (p) =>
         p.prNo?.toLowerCase().includes(q) ||
         p.projectTitle?.toLowerCase().includes(q) ||
         p.client?.toLowerCase().includes(q)
     );
-  }, [searchQuery, canAccessProjects]);
+  }, [searchQuery, canAccessProjects, projects]);
 
   const timesheetResults = useMemo(() => {
     if (!searchQuery.trim() || !canAccessTimesheets) return [];
     const q = searchQuery.trim().toLowerCase();
-    const imports = getAllTimesheetImports();
+    const imports = timesheetImports;
 
     const matches: Array<{
       employeeNo: string;
@@ -143,7 +211,7 @@ export const PmoAssistant: React.FC = () => {
     });
 
     return matches.slice(0, 10); // Display top 10 relevant matches
-  }, [searchQuery, canAccessTimesheets]);
+  }, [searchQuery, canAccessTimesheets, timesheetImports]);
   const [anchorPos, setAnchorPos] = useState<{ left: number; top: number }>({ left: 24, top: 120 });
 
   const handleOrbTogglePanel = (rect: DOMRect) => {

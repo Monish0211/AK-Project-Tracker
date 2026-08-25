@@ -164,6 +164,24 @@ export function getAllTimesheetImports(): TimesheetImportMonth[] {
   return cachedMonths;
 }
 
+/**
+ * Resolves once this tab's IndexedDB hydration has genuinely settled —
+ * kicking it off first (via getAllTimesheetImports()) if nothing in this
+ * tab has read the cache yet. For a consumer that needs the FULLY
+ * hydrated set rather than whatever legacy-bridge/still-empty snapshot
+ * getAllTimesheetImports() might synchronously return on this tab's very
+ * first call (e.g. the PMO Assistant's Timesheet search, opened moments
+ * after the app loaded, before background hydration finishes) — awaiting
+ * this instead avoids showing incomplete/empty results with no signal
+ * that a real refresh is still in flight. Never rejects: ensureHydrated()
+ * already resolves its promise even when idbGetMonths() itself failed
+ * (caught internally, logged, treated as "nothing in IndexedDB yet").
+ */
+export function waitForTimesheetHydration(): Promise<TimesheetImportMonth[]> {
+  getAllTimesheetImports();
+  return (hydrationPromise ?? Promise.resolve()).then(() => cachedMonths ?? []);
+}
+
 export function saveAllTimesheetImports(months: TimesheetImportMonth[]): void {
   cachedMonths = months;
   hasSavedSinceHydrationStarted = true;
