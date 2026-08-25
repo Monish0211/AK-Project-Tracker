@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
 
 /** Empty string → null so optional email fields from the UI validate cleanly. */
 const optionalEmail = z
@@ -82,8 +83,8 @@ export const importCustomersSchema = z.object({
 
 export type ImportCustomersInput = z.infer<typeof importCustomersSchema>;
 
-export const customerIdParamSchema = z.object({
-  id: z.string().trim().min(1, "Customer ID is required."),
-});
+// P2-07 — Customer.id is a real UUID surrogate key (no business identifier
+// like customerCode is ever used as this route's :id).
+export const customerIdParamSchema = uuidParamSchema("id", "Customer ID");
 
 export type CustomerIdParam = z.infer<typeof customerIdParamSchema>;

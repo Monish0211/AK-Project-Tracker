@@ -3,24 +3,32 @@ import jwt from "jsonwebtoken";
 import { AppError } from "../utils/AppError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { verifyAccessToken } from "../utils/jwt.util.js";
+import { findUserAccountStatusById } from "../../modules/auth/repository/auth.repository.js";
+import type { AccessTokenPayload } from "../types/auth.types.js";
 
 /**
  * Verifies the `Authorization: Bearer <token>` header and attaches the
- * decoded payload to `req.user`. Deliberately does NOT re-check
- * isActive/accountLocked against the database on every request — that
- * would mean a DB hit per request just for auth. `GET /auth/me` and any
- * write-path service that cares about current account state re-reads the
- * user row itself.
+ * decoded payload to `req.user`.
  *
- * Session-lifetime note: deactivating/locking a user (user.service.ts's
- * updateUser()) immediately revokes every refresh token for that user, and
- * refreshAccessToken() independently re-checks isActive/accountLocked
- * before issuing a new access token — so a deactivated/locked account can
- * never extend a session past its already-issued access token's natural
- * expiry (JWT_EXPIRES_IN). The frontend today doesn't even use the refresh
- * flow (see authService.ts), so in practice that expiry is the real,
- * already-short bound. Closing that residual window down to zero would
- * mean re-checking the DB here on every request — deliberately not done.
+ * Existing-JWT session invalidation — this now also re-checks the caller's
+ * CURRENT isActive/accountLocked state on every request, via a single
+ * indexed-PK lookup (findUserAccountStatusById() — deliberately not
+ * findUserById()'s heavier `include: { role: true }`, which this check
+ * doesn't need). This supersedes the previous "deliberately does not
+ * re-check the DB" design: an Administrator/PMO Manager disabling or
+ * locking a user must take effect immediately on that user's
+ * ALREADY-ISSUED access token too, not just block future logins/refreshes
+ * — previously, a still-valid (unexpired) access token kept working
+ * against every protected route until it naturally expired, since only
+ * refreshAccessToken() re-checked account state. A missing user row (e.g.
+ * deleted while a still-valid JWT was in the caller's hands) is treated the
+ * same as deactivated, rather than crashing on a null read.
+ *
+ * Everything else about session lifetime is unchanged: deactivating/
+ * locking a user (user.service.ts's updateUser()) still immediately
+ * revokes every refresh token for that user, and refreshAccessToken()
+ * still independently re-checks isActive/accountLocked before issuing a
+ * new access token.
  */
 export const authenticate = asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
   const header = req.headers.authorization;
@@ -31,8 +39,9 @@ export const authenticate = asyncHandler(async (req: Request, _res: Response, ne
 
   const token = header.slice("Bearer ".length).trim();
 
+  let payload: AccessTokenPayload;
   try {
-    req.user = verifyAccessToken(token);
+    payload = verifyAccessToken(token);
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
       throw new AppError("Session expired. Please log in again.", 401);
@@ -40,5 +49,14 @@ export const authenticate = asyncHandler(async (req: Request, _res: Response, ne
     throw new AppError("Invalid authentication token.", 401);
   }
 
+  const status = await findUserAccountStatusById(payload.sub);
+  if (!status || !status.isActive) {
+    throw new AppError("Your account is inactive. Please contact your administrator.", 403);
+  }
+  if (status.accountLocked) {
+    throw new AppError("Your account is locked. Please contact your administrator.", 403);
+  }
+
+  req.user = payload;
   next();
 });

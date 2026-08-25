@@ -16,6 +16,7 @@ import { pdfImportRoutes } from "./modules/pdfImport/index.js";
 import { dashboardRoutes } from "./modules/dashboard/index.js";
 import { notificationRoutes } from "./modules/notifications/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
+import { requestLogger } from "./shared/middleware/requestLogger.js";
 import { AppError } from "./shared/utils/AppError.js";
 import { env } from "./shared/utils/env.js";
 import projectNoteRoutes from "./modules/projects/routes/projectNote.routes.js";
@@ -36,6 +37,11 @@ app.use(cors(env.CORS_ALLOWED_ORIGIN ? { origin: env.CORS_ALLOWED_ORIGIN } : und
 // payloads are tiny by comparison, so this is a safe, generous ceiling
 // rather than a per-route override.
 app.use(express.json({ limit: "5mb" }));
+
+// P2-08 — before every route (including the 404 fallback and /health
+// itself, which requestLogger.ts explicitly skips logging for) so every
+// real request is covered.
+app.use(requestLogger);
 
 app.get("/health", (_req, res) => {
   res.status(200).json({ success: true, data: { status: "ok" } });

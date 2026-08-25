@@ -1,7 +1,9 @@
+import { AppError } from "../../../shared/utils/AppError.js";
 import {
   findActiveProjectsForPendingCheck,
   findLatestWorkDatesByProjectIds,
   setTrackingStartDatesIfUnset,
+  TIMESHEET_PENDING_PROJECT_FETCH_CAP,
 } from "../repository/timesheetPending.repository.js";
 import type { TimesheetPendingProjectDto } from "../dto/timesheetPending.dto.js";
 import { daysBetween, isTimesheetPending, toIsoDate } from "./timesheetPending.rules.js";
@@ -27,8 +29,31 @@ import { daysBetween, isTimesheetPending, toIsoDate } from "./timesheetPending.r
  * projects/entries and persists the one-time tracking-start date.
  */
 
+/**
+ * P2-01 — pure boundary check, extracted so the exact off-by-one threshold
+ * (`cap` rows is fine, `cap + 1` is not) is unit-testable without seeding
+ * TIMESHEET_PENDING_PROJECT_FETCH_CAP+1 real rows into Postgres. Same
+ * "CAP+1 fetch, throw if we actually got more than CAP" reasoning as
+ * resource.service.ts's assertResourceCountWithinCap() (P2-06).
+ */
+export function assertActiveProjectCountWithinCap(rowCount: number, cap: number): void {
+  if (rowCount > cap) {
+    throw new AppError(
+      `Timesheet Pending cannot be calculated: more than ${cap} active authorized projects exist. ` +
+        "This exceeds the current safe fetch limit — contact support before this figure is trusted.",
+      500
+    );
+  }
+}
+
 export async function getTimesheetPendingProjects(callerUserId?: string): Promise<TimesheetPendingProjectDto[]> {
   const projects = await findActiveProjectsForPendingCheck(callerUserId);
+
+  // P2-01 — fail loudly rather than ever silently computing Timesheet
+  // Pending (and, by extension, Dashboard's own timesheetPending section)
+  // from an incomplete active-project set.
+  assertActiveProjectCountWithinCap(projects.length, TIMESHEET_PENDING_PROJECT_FETCH_CAP);
+
   if (projects.length === 0) {
     return [];
   }

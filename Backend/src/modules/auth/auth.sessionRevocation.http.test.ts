@@ -10,6 +10,13 @@ import { updateUser } from "../users/services/user.service.js";
 
 const TAG = `session-revoke-${Date.now()}`;
 
+// This test calls updateUser() directly as a stand-in for "an Administrator
+// acting via the API" (see the existing comment below) — it never edits a
+// user's OWN account, so any id that's guaranteed not to equal the target
+// user's id satisfies updateUser()'s P0-01 self-role-change guard as a
+// harmless no-op. Not a real user row; never touches the database itself.
+const SIMULATED_ADMIN_CALLER_ID = `${TAG}-simulated-admin-caller`;
+
 async function listen(): Promise<{ url: string; close: () => Promise<void> }> {
   const server = createServer(app);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -64,7 +71,7 @@ test("Deactivating/locking a user revokes refresh tokens and blocks refresh — 
     // ---- Deactivating revokes it: the rotated token (still unexpired,
     // never explicitly revoked by anything else) must stop working the
     // instant the account is deactivated. ----
-    await updateUser(userToDeactivate.id, { isActive: false });
+    await updateUser(userToDeactivate.id, { isActive: false }, SIMULATED_ADMIN_CALLER_ID);
 
     const afterDeactivate = await fetch(`${url}/auth/refresh-token`, refreshBody(rotatedDeactivateUserToken));
     assert.equal(afterDeactivate.status, 401);
@@ -76,7 +83,7 @@ test("Deactivating/locking a user revokes refresh tokens and blocks refresh — 
     // it (same as deactivation above), so this is rejected as a revoked
     // token (401), not reaching the accountLocked check at all. ----
     const lockUserTokenBeforeLock = await issueRefreshToken(userToLock.id);
-    await updateUser(userToLock.id, { accountLocked: true });
+    await updateUser(userToLock.id, { accountLocked: true }, SIMULATED_ADMIN_CALLER_ID);
 
     const afterLock = await fetch(`${url}/auth/refresh-token`, refreshBody(lockUserTokenBeforeLock));
     assert.equal(afterLock.status, 401);
@@ -101,7 +108,7 @@ test("Deactivating/locking a user revokes refresh tokens and blocks refresh — 
     // ---- Administrator (proxy: the service itself) can still manage
     // users normally — an unrelated field update on a different user
     // succeeds without being affected by this change. ----
-    const renamed = await updateUser(unrelatedUser.id, { fullName: "Revoke Test Unrelated (Renamed)" });
+    const renamed = await updateUser(unrelatedUser.id, { fullName: "Revoke Test Unrelated (Renamed)" }, SIMULATED_ADMIN_CALLER_ID);
     assert.equal(renamed.fullName, "Revoke Test Unrelated (Renamed)");
 
     // ---- Re-activating/unlocking must NOT revoke tokens (matches the
@@ -109,7 +116,7 @@ test("Deactivating/locking a user revokes refresh tokens and blocks refresh — 
     // user.service.ts) — issue a fresh token, unlock, confirm it still
     // works. ----
     const relockThenUnlockToken = await issueRefreshToken(userToLock.id);
-    await updateUser(userToLock.id, { accountLocked: false });
+    await updateUser(userToLock.id, { accountLocked: false }, SIMULATED_ADMIN_CALLER_ID);
     const afterUnlock = await fetch(`${url}/auth/refresh-token`, refreshBody(relockThenUnlockToken));
     assert.equal(afterUnlock.status, 200);
   } finally {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
 
 /**
  * GET /timesheets/imports query params — parsed directly in the controller
@@ -12,9 +13,10 @@ export const listImportsQuerySchema = z.object({
 });
 export type ListImportsQuery = z.infer<typeof listImportsQuerySchema>;
 
-export const importIdParamSchema = z.object({
-  id: z.string().trim().min(1, "Import ID is required."),
-});
+// P2-07 (production hardening — read-path param validation only, no
+// reconciliation logic touched) — TimesheetImport.id/TimesheetEntry.id are
+// real UUID surrogate keys.
+export const importIdParamSchema = uuidParamSchema("id", "Import ID");
 export type ImportIdParam = z.infer<typeof importIdParamSchema>;
 
 /**
@@ -60,9 +62,7 @@ export const findEntriesQuerySchema = z.object({
 });
 export type FindEntriesQuery = z.infer<typeof findEntriesQuerySchema>;
 
-export const entryIdParamSchema = z.object({
-  id: z.string().trim().min(1, "Timesheet Entry ID is required."),
-});
+export const entryIdParamSchema = uuidParamSchema("id", "Timesheet Entry ID");
 export type EntryIdParam = z.infer<typeof entryIdParamSchema>;
 
 /**

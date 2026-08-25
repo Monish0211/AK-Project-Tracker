@@ -86,8 +86,18 @@ export function findEntriesForPair(
   return tx.timesheetEntry.findMany({ where: { employeeNo, projectId } });
 }
 
+/**
+ * P5 — includes the linked Project's createdByUserId (null when the entry
+ * itself is Unassigned, i.e. projectId is null) so getEntryHistory() can
+ * apply the exact same project-ownership rule findEntries() above already
+ * enforces, instead of returning any entry's history to any caller who
+ * merely knows/guesses its id.
+ */
 export function findEntryById(id: string) {
-  return prisma.timesheetEntry.findUnique({ where: { id } });
+  return prisma.timesheetEntry.findUnique({
+    where: { id },
+    include: { project: { select: { createdByUserId: true } } },
+  });
 }
 
 export interface FindEntriesFilters {
@@ -107,10 +117,18 @@ export interface FindEntriesResult {
 }
 
 /** The one findMany() shape shared by the count and the page fetch below — kept as its own function purely so TypeScript can infer FindEntriesResult's item type from a single source. */
+// P2-03 (production scalability hardening) — `id` added as a secondary,
+// always-unique sort key. `workDate` alone is not unique (many entries
+// routinely share the exact same date across employees/projects), and
+// skip/take pagination over a non-unique sort key can silently duplicate or
+// skip rows across page boundaries — the exact class of bug already fixed
+// for timesheetImportRowLog.repository.ts's own pagination (P1-11). Same
+// fix here: purely a read-path determinism correction, touches no
+// reconciliation logic and no stored data.
 function queryEntries(where: Prisma.TimesheetEntryWhereInput, skip: number, take: number) {
   return prisma.timesheetEntry.findMany({
     where,
-    orderBy: { workDate: "asc" },
+    orderBy: [{ workDate: "asc" }, { id: "asc" }],
     include: { project: { select: { prNo: true, projectTitle: true } } },
     skip,
     take,

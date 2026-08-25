@@ -1,5 +1,8 @@
+import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import type { InvoiceLineData } from "../invoice.types.js";
+
+type Client = Prisma.TransactionClient | typeof prisma;
 
 /**
  * All Prisma access for Invoices lives here — the service layer never
@@ -10,8 +13,15 @@ import type { InvoiceLineData } from "../invoice.types.js";
  * invoice.service.ts.
  */
 
-export function createLine(quantityItemId: string, data: InvoiceLineData) {
-  return prisma.invoiceLine.create({ data: { ...data, quantityItemId } });
+/**
+ * P2/P3 — optional `tx` (defaults to the plain client, so every pre-existing
+ * caller is unaffected) so createInvoiceLineForQuantityItem() can run this
+ * INSIDE the same advisory-locked transaction its own financial-authority
+ * and duplicate-milestone-billing checks now run in — same convention as
+ * milestone.repository.ts's createMilestone().
+ */
+export function createLine(quantityItemId: string, data: InvoiceLineData, client: Client = prisma) {
+  return client.invoiceLine.create({ data: { ...data, quantityItemId } });
 }
 
 /**
@@ -46,8 +56,9 @@ export function getLinesByQuantityItemIds(quantityItemIds: string[]) {
   });
 }
 
-export function updateLine(id: string, data: Partial<InvoiceLineData>) {
-  return prisma.invoiceLine.update({ where: { id }, data });
+/** P2/P3 — optional `tx`, same reasoning as createLine() above. */
+export function updateLine(id: string, data: Partial<InvoiceLineData>, client: Client = prisma) {
+  return client.invoiceLine.update({ where: { id }, data });
 }
 
 export function deleteLine(id: string) {
@@ -91,8 +102,9 @@ export function countNonCancelledLinesForQuantityItem(quantityItemId: string) {
  * reason as the Quantity guard — a cancelled invoice line represents
  * billing that was undone, not history that should still block deletion.
  */
-export function countNonCancelledLinesForMilestone(milestoneId: string) {
-  return prisma.invoiceLine.count({
+/** P13 — optional `tx` so deleteMilestoneItem() can run this INSIDE its own advisory-locked transaction, same convention as findConflictingLineForMilestone() above. */
+export function countNonCancelledLinesForMilestone(milestoneId: string, client: Client = prisma) {
+  return client.invoiceLine.count({
     where: { milestoneId, status: { not: "Cancelled" } },
   });
 }
@@ -142,14 +154,26 @@ export function countNonCancelledLinesForMilestone(milestoneId: string) {
  * larger and riskier schema change than this single-operator tool's actual
  * concurrency profile justifies today.
  */
-export function findConflictingLineForMilestone(params: {
-  milestoneId: string;
-  invoiceNo: string;
-  setIndex: number | null;
-  quantityItemId: string;
-  excludeLineId?: string;
-}) {
-  return prisma.invoiceLine.findFirst({
+/**
+ * P3 — now takes an optional `tx` so the read happens INSIDE the same
+ * advisory-locked transaction as the actual create/update it's guarding
+ * (see invoice.service.ts's assertNoDuplicateMilestoneBilling() and its
+ * callers). The doc comment above describing this as "a plain
+ * check-then-insert... not wrapped in a transaction" describes the
+ * PRE-FIX behavior — it now is, exactly closing the race that paragraph
+ * warned about.
+ */
+export function findConflictingLineForMilestone(
+  params: {
+    milestoneId: string;
+    invoiceNo: string;
+    setIndex: number | null;
+    quantityItemId: string;
+    excludeLineId?: string;
+  },
+  client: Client = prisma
+) {
+  return client.invoiceLine.findFirst({
     where: {
       milestoneId: params.milestoneId,
       status: { not: "Cancelled" },
@@ -158,6 +182,32 @@ export function findConflictingLineForMilestone(params: {
       ...(params.excludeLineId ? { id: { not: params.excludeLineId } } : {}),
     },
   });
+}
+
+/**
+ * P2 — the authoritative "how much has already been invoiced against this
+ * QuantityItem" figure, read fresh inside the same advisory-locked
+ * transaction as the write it's guarding (see invoice.service.ts's
+ * assertInvoiceAmountWithinLimit()). Excludes Cancelled lines, matching
+ * every other "how much is really billed" query in this file
+ * (sumBilledQuantityByQuantityItemIds, countNonCancelledLinesFor...).
+ * excludeLineId lets an UPDATE re-check without double-counting its own
+ * pre-update row.
+ */
+export async function sumInvoicedAmountForQuantityItem(
+  quantityItemId: string,
+  excludeLineId?: string,
+  client: Client = prisma
+): Promise<number> {
+  const result = await client.invoiceLine.aggregate({
+    where: {
+      quantityItemId,
+      status: { not: "Cancelled" },
+      ...(excludeLineId ? { id: { not: excludeLineId } } : {}),
+    },
+    _sum: { invoiceAmountINR: true },
+  });
+  return result._sum.invoiceAmountINR ?? 0;
 }
 
 /**

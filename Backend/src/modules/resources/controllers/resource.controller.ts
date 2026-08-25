@@ -3,7 +3,7 @@ import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { requireUser } from "../../../shared/utils/requireUser.js";
 import * as resourceService from "../services/resource.service.js";
-import { employeeNoParamSchema, projectIdParamSchema, resourceIdParamSchema } from "../validators/resource.validators.js";
+import { employeeNoParamSchema, listResourcesQuerySchema, projectIdParamSchema, resourceIdParamSchema } from "../validators/resource.validators.js";
 import type { CreateResourceInput, UpdateResourceInput } from "../validators/resource.validators.js";
 
 // Path params aren't covered by the shared `validate()` middleware (body
@@ -41,7 +41,15 @@ export const createResource = asyncHandler(async (req: Request, res: Response) =
 
 export const getAllAuthorizedResources = asyncHandler(async (req: Request, res: Response) => {
   const user = requireUser(req);
-  const result = await resourceService.listAllAuthorizedResources(user);
+  // P2-02 — query params are optional; the shared validate() middleware
+  // only covers req.body, same manual-safeParse convention as the path
+  // params above.
+  const queryResult = listResourcesQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    const firstIssue = queryResult.error.issues[0];
+    throw new AppError(firstIssue ? `${firstIssue.path.join(".")}: ${firstIssue.message}` : "Invalid query parameters.", 400);
+  }
+  const result = await resourceService.listAllAuthorizedResources(user, queryResult.data);
   res.status(200).json({ success: true, data: result });
 });
 

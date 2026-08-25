@@ -52,7 +52,15 @@ export interface ResourceDto {
   updatedAt: Date;
 }
 
-/** GET /projects/:projectId/resources or /employees/:employeeNo/assignments response. */
+/**
+ * GET /projects/:projectId/resources or /employees/:employeeNo/assignments
+ * response. total/page/pageSize are present only when the caller requested
+ * a paginated GET /projects/resources page (P2-02) — undefined otherwise,
+ * preserving the exact original `{ items }` shape for every existing caller.
+ */
 export interface ResourceListDto {
   items: ResourceDto[];
+  total?: number;
+  page?: number;
+  pageSize?: number;
 }

@@ -37,6 +37,30 @@ export function getAllResourcesForAuthorizedProjects(callerUserId?: string) {
   });
 }
 
+// P2-02 (production scalability hardening) — a real, cursor-free offset
+// pagination path alongside the existing full-fetch-with-safety-cap one
+// above (kept for exact backward compatibility with any caller that omits
+// page/pageSize). Same deterministic `orderBy: createdAt asc` as the
+// unpaginated query, so pages never skip/duplicate rows as long as no row's
+// createdAt changes between page requests (createdAt is set once, at
+// creation, and never updated — see resource.repository.ts's updateResource()).
+export function getAllResourcesForAuthorizedProjectsPage(
+  callerUserId: string | undefined,
+  skip: number,
+  take: number
+) {
+  return prisma.projectResource.findMany({
+    where: { project: authorizedProjectWhere(callerUserId) },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    skip,
+    take,
+  });
+}
+
+export function countAllResourcesForAuthorizedProjects(callerUserId?: string) {
+  return prisma.projectResource.count({ where: { project: authorizedProjectWhere(callerUserId) } });
+}
+
 export function createResource(projectId: string, data: ProjectResourceData) {
   return prisma.projectResource.create({ data: { ...data, projectId } });
 }

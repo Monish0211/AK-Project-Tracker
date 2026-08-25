@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
 
 /**
  * Phase 3.7 — backend-only, ready for a future Timesheet integration (see
@@ -63,17 +64,32 @@ export const updateResourceSchema = z.object({
 export type UpdateResourceInput = z.infer<typeof updateResourceSchema>;
 
 /**
+ * P2-02 — GET /projects/resources query. Both fields are optional and
+ * default to undefined (not a page-1 default) specifically so an existing
+ * caller that sends neither param keeps getting today's exact
+ * full-fetch-with-safety-cap behavior (see resource.service.ts's
+ * listAllAuthorizedResources()) — only a caller that explicitly asks for a
+ * page gets the paginated response shape. pageSize's 2000 ceiling matches
+ * this module's own RESOURCE_FETCH_CAP order of magnitude reasoning, not an
+ * arbitrary number.
+ */
+export const listResourcesQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().positive().max(2000, "pageSize cannot exceed 2000.").optional(),
+});
+export type ListResourcesQuery = z.infer<typeof listResourcesQuerySchema>;
+
+/**
  * Path-param validation — the shared `validate()` middleware only covers
  * req.body (same manual-safeParse convention as quantity.validators.ts).
  */
-export const projectIdParamSchema = z.object({
-  projectId: z.string().trim().min(1, "Project ID is required."),
-});
+// P2-07 — Project.id/ProjectResource.id are real UUID surrogate keys.
+// employeeNoParamSchema below is deliberately UNCHANGED — employeeNo is a
+// genuine business identifier (Employee Master's natural key), never a UUID.
+export const projectIdParamSchema = uuidParamSchema("projectId", "Project ID");
 export type ProjectIdParam = z.infer<typeof projectIdParamSchema>;
 
-export const resourceIdParamSchema = z.object({
-  id: z.string().trim().min(1, "Resource ID is required."),
-});
+export const resourceIdParamSchema = uuidParamSchema("id", "Resource ID");
 export type ResourceIdParam = z.infer<typeof resourceIdParamSchema>;
 
 export const employeeNoParamSchema = z.object({

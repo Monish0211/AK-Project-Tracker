@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
 
 /**
  * category/description/quantity/unitCost/remarks mirror
@@ -44,14 +45,12 @@ export type UpdateExpenseInput = z.infer<typeof updateExpenseSchema>;
  * `validate()` middleware only covers req.body (same manual-safeParse
  * convention as quantity.validators.ts).
  */
-export const projectIdParamSchema = z.object({
-  projectId: z.string().trim().min(1, "Project ID is required."),
-});
+// P2-07 — both Project.id and ProjectExpense.id are real UUID surrogate
+// keys (prNo, the business identifier, is never used as a route param).
+export const projectIdParamSchema = uuidParamSchema("projectId", "Project ID");
 
 export type ProjectIdParam = z.infer<typeof projectIdParamSchema>;
 
-export const expenseIdParamSchema = z.object({
-  id: z.string().trim().min(1, "Expense ID is required."),
-});
+export const expenseIdParamSchema = uuidParamSchema("id", "Expense ID");
 
 export type ExpenseIdParam = z.infer<typeof expenseIdParamSchema>;

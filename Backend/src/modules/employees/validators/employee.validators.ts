@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
 
 /**
  * Every required field here matches EmployeeModal.tsx's own client-side
@@ -109,8 +110,8 @@ export const importEmployeesSchema = z.object({
 
 export type ImportEmployeesInput = z.infer<typeof importEmployeesSchema>;
 
-export const employeeIdParamSchema = z.object({
-  id: z.string().trim().min(1, "Employee ID is required."),
-});
+// P2-07 — Employee.id is the real UUID surrogate key; employeeNo (a
+// business identifier) is never used as this route's :id.
+export const employeeIdParamSchema = uuidParamSchema("id", "Employee ID");
 
 export type EmployeeIdParam = z.infer<typeof employeeIdParamSchema>;

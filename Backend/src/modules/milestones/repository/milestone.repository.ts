@@ -68,6 +68,7 @@ export function updateMilestone(
   return tx.paymentMilestone.update({ where: { id }, data });
 }
 
-export function deleteMilestone(id: string) {
-  return prisma.paymentMilestone.delete({ where: { id } });
+/** P13 — optional `tx` so deleteMilestoneItem() can run this INSIDE the same advisory-locked transaction as its own duplicate/invoice-line-reference check, same convention as getMilestoneById() above. */
+export function deleteMilestone(id: string, tx: Prisma.TransactionClient | typeof prisma = prisma) {
+  return tx.paymentMilestone.delete({ where: { id } });
 }

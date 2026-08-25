@@ -651,13 +651,37 @@ export async function fetchAllProjectsFromApi(): Promise<Project[]> {
     );
   }
 
-  // Single surgical batch fetch for all authorized ProjectResource records (Zero N+1)
+  // P2-02 — paginated batch fetch for all authorized ProjectResource
+  // records (still zero N+1: bounded page requests, not one-per-project),
+  // mirroring the project-fetch loop immediately above instead of relying
+  // on the backend's RESOURCE_FETCH_CAP safety net to ever be enough on
+  // its own. Same "throw loudly, never silently truncate" contract.
   try {
-    const resourceRes = await apiClient.get<{ items: BackendResourceDto[] }>("/projects/resources");
+    const allResources: BackendResourceDto[] = [];
+    let resourcePage = 1;
+    const resourcePageSize = 500;
+    let resourceTotal = 0;
+
+    do {
+      const resourceRes = await apiClient.get<{ items: BackendResourceDto[]; total?: number }>(
+        `/projects/resources?page=${resourcePage}&pageSize=${resourcePageSize}`
+      );
+      allResources.push(...(resourceRes.items || []));
+      resourceTotal = resourceRes.total ?? allResources.length;
+      resourcePage += 1;
+    } while (allResources.length < resourceTotal && resourcePage <= 200); // 100,000-resource runaway-loop safety bound, not an intended ceiling — see fetchAllProjectsFromApi()'s own P1-02 comment for the identical reasoning.
+
+    if (allResources.length < resourceTotal) {
+      throw new Error(
+        `Project resource data fetch was incomplete: received ${allResources.length} of ${resourceTotal} total resources ` +
+          `(stopped after ${resourcePage - 1} pages).`
+      );
+    }
+
     const employees = getEmployees();
     const resourcesByProjectId = new Map<string, ProjectResource[]>();
 
-    (resourceRes.items || []).forEach((r) => {
+    allResources.forEach((r) => {
       const mapped = mapBackendResourceDto(r, employees);
       const list = resourcesByProjectId.get(r.projectId) || [];
       list.push(mapped);

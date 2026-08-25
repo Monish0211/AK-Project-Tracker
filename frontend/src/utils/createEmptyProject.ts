@@ -11,10 +11,21 @@ export const PR_CATEGORIES = [
   "Qatar",
 ] as const;
 
+/**
+ * Region -> PR Category -> PR Number prefix business rule. Single frontend
+ * mirror of the backend's authoritative PR_CATEGORY_PREFIX_MAP
+ * (Backend/src/modules/projects/project.constants.ts) — kept in sync by
+ * hand since the two run in separate languages/processes; the backend
+ * enforces this same mapping server-side regardless of what this file sends,
+ * so this map only ever controls the UI experience, never the actual rule.
+ * Malaysia and Oman are deliberately WITHOUT a trailing hyphen (MYPR123,
+ * EE123 — not MYPR-123/EE-123), per the confirmed business rule; every other
+ * category's prefix already ends in its own hyphen.
+ */
 export const PR_NUMBER_PREFIX_MAP: Record<string, string> = {
   India: "PR-",
-  Malaysia: "MYPR-",
-  Oman: "EE-",
+  Malaysia: "MYPR",
+  Oman: "EE",
   "Abu Dhabi": "PRAD-",
   FZI: "PRI-",
   "Elixir Qatar": "EE-Q-",

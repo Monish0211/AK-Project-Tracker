@@ -189,8 +189,35 @@ export async function getUsers(): Promise<UserListItemDto[]> {
  * can never leave the profile fields committed with stale access rows (or
  * vice versa). Password fields are deliberately out of scope here — Auth's
  * own endpoints and the admin-reset endpoint above own those.
+ *
+ * P0-01 — self-role-change guard, same shape as deleteUser()'s self-delete
+ * guard below: checked first, before any DB read/write, so a rejected
+ * request never applies even its own non-role fields (no partial update).
+ * "PMO Manager" and "Administrator" share every user-management route
+ * (see user.routes.ts's authorize("Administrator","PMO Manager")), but the
+ * role NAME itself independently gates real capability elsewhere (company-
+ * wide project/data ownership bypass, audit-log access, manual Timesheet
+ * Excel import, Timesheet delete/clear, milestone/invoice ingest — see
+ * projectAccess.ts, dashboard/timesheet/resource controllers' own
+ * `roleName === "Administrator"` checks, and the Administrator-only routes
+ * in timesheet.routes.ts/milestone.routes.ts/invoice.routes.ts/
+ * auth.routes.ts). Without this guard, any PMO Manager could set their own
+ * roleId to Administrator's and gain all of that immediately — a genuine
+ * privilege escalation, not merely a cosmetic role-name change. Editing
+ * ANY OTHER user's role (by an Administrator or a PMO Manager, per the
+ * existing, unchanged authorize() gate) is completely unaffected — this
+ * guard fires only when the caller and the target are the same account AND
+ * the request includes a roleId.
  */
-export async function updateUser(targetUserId: string, input: UpdateUserInput): Promise<UserListItemDto> {
+export async function updateUser(
+  targetUserId: string,
+  input: UpdateUserInput,
+  requestingUserId: string
+): Promise<UserListItemDto> {
+  if (targetUserId === requestingUserId && input.roleId !== undefined) {
+    throw new AppError("You cannot change your own role.", 400);
+  }
+
   const existingUser = await findUserById(targetUserId);
   if (!existingUser) {
     throw new AppError("User not found.", 404);
