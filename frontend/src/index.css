@@ -128,12 +128,21 @@ html.dark {
   transition: background-color 0.15s ease;
 }
 
-/* Base style transition for all elements to make theme transitions silky smooth */
-*, *::before, *::after {
-  transition-property: background-color, border-color, color, fill, stroke, transform, box-shadow;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 250ms;
-}
+/* A universal-selector transition (`*, *::before, *::after`) previously
+   lived here, applying a 250ms, 7-property (background-color, border-color,
+   color, fill, stroke, transform, box-shadow) transition to every element
+   and pseudo-element in the app — including every SVG path/rect inside
+   every chart. Toggling html.dark forces the browser to recompute styles
+   for the whole tree and then animate all of those changed properties on
+   every affected node at once, which is the actual cause of the felt delay
+   when switching Dark/Light Mode on data-dense pages (not a React
+   re-render problem — see ThemeContext.tsx's own comment; the theme
+   toggle itself only flips one class + one localStorage write).
+   Removed rather than narrowed: an instant, non-animated theme swap is
+   the explicit goal here, not a smaller animation. Every OTHER, purposeful,
+   scoped transition already declared elsewhere in this file (hover/press
+   effects, sticky-column backgrounds, dark-mode input borders, etc.) is
+   untouched and still animates exactly as before. */
 
 /* Custom premium styling for Sidebar in dark mode */
 html.dark aside {
@@ -263,6 +272,21 @@ html.dark textarea:focus {
   border-color: #3B82F6 !important;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25) !important;
   outline: none !important;
+}
+
+/* Dashboard toolbar search input — scoped exception to the global dark-mode
+   input styling above. This input is deliberately borderless/transparent by
+   design (its own wrapper div is the single visible search box), but the
+   global `html.dark input` rule still matched it and forced its own
+   background + border onto it too, producing a visible double box. Only
+   this one input is exempted; every other input in the app keeps the
+   global dark-mode styling untouched. */
+html.dark .nu-toolbar-search-input,
+html.dark .nu-toolbar-search-input:hover,
+html.dark .nu-toolbar-search-input:focus {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 /* Form grid spacing layout overrides in dark mode */
