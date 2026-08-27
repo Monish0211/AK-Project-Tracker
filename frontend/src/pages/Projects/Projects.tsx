@@ -287,15 +287,6 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     setSearch("");
   };
 
-  const rst = () => {
-    setSearch("");
-    setDepartment("All");
-    setStatus("All");
-    const newParams = new URLSearchParams(searchParams);
-    newParams.delete("status");
-    setSearchParams(newParams);
-  };
-
   // Filtered & Sorted Projects
   const processedProjects = useMemo(() => {
     let result = projects.filter((p) => {
@@ -843,14 +834,6 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                   accept=".xlsx, .csv"
                   className="hidden"
                 />
-
-                {/* Reset Filters */}
-                <button
-                  onClick={rst}
-                  className="tbtn rst flex items-center gap-1 px-3 py-1.5 border border-red-200 rounded-lg text-xs bg-red-50/50 text-red-600"
-                >
-                  Reset
-                </button>
               </>
             )}
           </div>
