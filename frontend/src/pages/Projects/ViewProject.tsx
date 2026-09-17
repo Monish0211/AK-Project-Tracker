@@ -4,7 +4,11 @@ import { ArrowLeft, ArrowRight, Briefcase, CreditCard, History, LayoutGrid, Pack
 
 import "./project-workspace-theme.css";
 import type { Project } from "../../types/Project";
-import { getProjectById, fetchProjectByIdFromApi } from "../../services/projectService";
+import { getProjectById, fetchProjectByIdFromApi, normalizeProject } from "../../services/projectService";
+import { loadQuantityForProject } from "../../services/quantityService";
+import { loadMilestonesForProject } from "../../services/paymentMilestoneService";
+import { loadInvoiceForProject } from "../../services/invoiceService";
+import { loadExpensesForProject } from "../../services/otherProjectExpenseService";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import {
   getGrossProfit,
@@ -95,8 +99,47 @@ const ViewProject = () => {
     let isMounted = true;
 
     fetchProjectByIdFromApi(id)
-      .then((fetched) => {
-        if (isMounted && fetched) setProjectState(fetched);
+      .then(async (fetched) => {
+        if (!isMounted || !fetched) return;
+
+        // View Project previously only hydrated General Information +
+        // Resources on its own mount, relying on Edit Project having been
+        // opened at some point in this browser to bring in Quantity,
+        // Payment Milestones, Invoice Items, and Other Project Expenses —
+        // exactly the same four loaders EditProject.tsx already calls on
+        // its own mount. Run them here too, in parallel (independent
+        // endpoints, no ordering dependency for a plain read), so View
+        // Project is self-sufficient on a fresh session.
+        const [quantityResult, milestonesResult, invoiceResult, expensesResult] =
+          await Promise.allSettled([
+            loadQuantityForProject(id),
+            loadMilestonesForProject(id),
+            loadInvoiceForProject(id),
+            loadExpensesForProject(id),
+          ]);
+
+        if (!isMounted) return;
+
+        // localStorage writes performed by the loaders above do not, by
+        // themselves, update this component's React state — merge each
+        // fulfilled result in explicitly. A rejected loader is simply
+        // omitted here, so its field falls back to whatever `fetched`
+        // (or the mirror) already had, rather than being overwritten with
+        // empty data.
+        const merged = normalizeProject({
+          ...fetched,
+          ...(quantityResult.status === "fulfilled" ? { quantityItems: quantityResult.value } : {}),
+          ...(milestonesResult.status === "fulfilled" ? { paymentMilestones: milestonesResult.value } : {}),
+          ...(invoiceResult.status === "fulfilled" ? { invoiceItems: invoiceResult.value } : {}),
+          ...(expensesResult.status === "fulfilled" ? { nonManhourExpenses: expensesResult.value } : {}),
+        });
+
+        setProjectState(merged);
+      })
+      .catch(() => {
+        // Best-effort — a failed general fetch leaves `project` exactly as
+        // it already was (the initial synchronous getProjectById() read);
+        // isLoading still clears via finally below so the page never hangs.
       })
       .finally(() => {
         if (isMounted) setLoadedId(id);

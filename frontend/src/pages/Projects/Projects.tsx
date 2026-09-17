@@ -32,6 +32,7 @@ import {
 import { persistImportedProjectChildRecords } from "../../services/projectImportPersistenceService";
 import { ApiError } from "../../services/apiClient";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
+import { isActiveProjectStatus } from "../../constants/projectStatus";
 import { useAuth } from "../../auth/authContext";
 import { canMutateData, hasApprovalPermission } from "../../auth/permissions";
 import { usePmoToast } from "../../components/ui/usePmoToast";
@@ -63,6 +64,40 @@ const scopeProjectsByMode = (all: Project[], mode: ProjectsMode): Project[] =>
   mode === "completed"
     ? all.filter((p) => p.projectStatus === "Completed")
     : all.filter((p) => p.projectStatus !== "Completed");
+
+// Approved Repository-level Invoice Status / Pending Due business rule —
+// deliberately a DIFFERENT concept from getProjectCommercialSummary()'s own
+// invoiceStatus/pendingDue (which answer "how much of this project's
+// invoice-line history has been recorded," derived from
+// project.invoiceItems — never populated by Project Repository's own load
+// path, so it always reads "Not Started"/₹0 on a fresh session regardless of
+// real invoice activity). This one only asks "how much of the Work Order
+// Value has been invoiced," using the backend-authoritative
+// workOrderValueINR / backendPendingDueINR fields already present on every
+// project returned by GET /projects — no additional per-project invoice
+// fetch, so it works correctly even for a project Repository has never
+// individually opened. Module-level (not a component-body const) so it's
+// safely callable from useMemo hooks declared earlier in the component,
+// with no risk of a temporal-dead-zone ordering issue.
+const getRepositoryInvoiceSummary = (
+  p: Project
+): { pendingDue: number; invoiceStatus: "Not Started" | "Partially Paid" | "Paid" } => {
+  const workOrderValue = p.workOrderValueINR || 0;
+  const pendingDue =
+    typeof p.backendPendingDueINR === "number" ? p.backendPendingDueINR : workOrderValue;
+  const invoiceRaised = Math.max(workOrderValue - pendingDue, 0);
+
+  let invoiceStatus: "Not Started" | "Partially Paid" | "Paid";
+  if (invoiceRaised <= 0) {
+    invoiceStatus = "Not Started";
+  } else if (invoiceRaised >= workOrderValue) {
+    invoiceStatus = "Paid";
+  } else {
+    invoiceStatus = "Partially Paid";
+  }
+
+  return { pendingDue, invoiceStatus };
+};
 
 const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const navigate = useNavigate();
@@ -189,7 +224,15 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   // runs. Mirrors Dashboard's getProjectStatusData(), which counts
   // Completed from getProjects() directly for the same reason.
   const stats = useMemo(() => {
-    const active = projects.filter((p) => p.projectStatus === "Active").length;
+    // Sept 2026 — Project Status Workflow Expansion. "Active Projects" is a
+    // classification, not a literal status match: a project on any active
+    // workflow stage (KoM Completed, Data Request Shared, Draft Report
+    // Submitted, ...) still counts here even though its displayed Project
+    // Status is not literally "Active". See constants/projectStatus.ts's
+    // isActiveProjectStatus() — the single centralized definition every
+    // Active-Projects count in this app should use, so this rule is never
+    // duplicated as a second hard-coded status array.
+    const active = projects.filter((p) => isActiveProjectStatus(p.projectStatus)).length;
     const onHold = projects.filter((p) => p.projectStatus === "On Hold").length;
     const completed = allProjects.filter((p) => p.projectStatus === "Completed").length;
     const cancelled = projects.filter((p) => p.projectStatus === "Cancelled").length;
@@ -309,11 +352,11 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       let valB: any = b[sortField as keyof Project] ?? "";
 
       if (sortField === "pendingDue") {
-        valA = getProjectCommercialSummary(a).pendingDue;
-        valB = getProjectCommercialSummary(b).pendingDue;
+        valA = getRepositoryInvoiceSummary(a).pendingDue;
+        valB = getRepositoryInvoiceSummary(b).pendingDue;
       } else if (sortField === "invoiceStatus") {
-        valA = getProjectCommercialSummary(a).invoiceStatus;
-        valB = getProjectCommercialSummary(b).invoiceStatus;
+        valA = getRepositoryInvoiceSummary(a).invoiceStatus;
+        valB = getRepositoryInvoiceSummary(b).invoiceStatus;
       }
 
       if (typeof valA === "string") {
@@ -491,7 +534,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const renderInvoiceStatusBadge = (status: string) => {
     let cls = "bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-300";
     let dot = "bg-orange-500";
-    if (status === "Completed") {
+    if (status === "Paid") {
       cls = "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300";
       dot = "bg-emerald-500";
     } else if (status === "Not Started") {
@@ -912,7 +955,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                 </tr>
               ) : (
                 paginatedProjects.map((p) => {
-                  const comm = getProjectCommercialSummary(p);
+                  const comm = getRepositoryInvoiceSummary(p);
                   return (
                     <tr
                       key={p.id}

@@ -47,15 +47,23 @@ export const formatNoteTime = (isoString: string): string => {
 };
 
 /**
- * Fetches project notes directly from the backend API GET /projects/:projectId/notes
+ * Fetches project notes directly from the backend API GET /projects/:projectId/notes.
+ *
+ * Bug fix (Sep 2026): this used to catch every failure and return [] —
+ * structurally indistinguishable from "this project genuinely has no
+ * notes yet." A real failure (network error, session issue, anything) and
+ * a true empty result both rendered as the identical "No Project Notes
+ * Yet" empty state, with no way for the caller to tell them apart. Errors
+ * now propagate to the caller (ProjectWorkspaceDrawer.tsx), which shows a
+ * distinct, non-destructive error state instead of the empty state.
+ * Console logging still happens at the point of failure for debugging.
  */
 export async function fetchProjectNotes(projectId: string): Promise<ProjectNote[]> {
   try {
-    const res = await apiClient.get<ProjectNote[]>(`/projects/${projectId}/notes`);
-    return res;
+    return await apiClient.get<ProjectNote[]>(`/projects/${projectId}/notes`);
   } catch (error) {
     console.error("Failed to fetch project notes from API:", error);
-    return [];
+    throw error;
   }
 }
 

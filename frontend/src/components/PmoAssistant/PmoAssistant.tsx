@@ -13,6 +13,9 @@ import {
   ExternalLink,
   ShieldAlert,
   ChevronRight,
+  ChevronDown,
+  CheckCircle2,
+  Bell,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/authContext";
@@ -21,9 +24,30 @@ import { getEmployees, loadEmployeesForApp } from "../../services/employeeServic
 import { getCustomers, loadCustomersForApp } from "../../services/customerService";
 import { getProjects, fetchAllProjectsFromApi } from "../../services/projectService";
 import { getAllTimesheetImports, waitForTimesheetHydration } from "../../services/timesheetService";
+import { reminderService } from "../../services/reminders/ReminderService";
+import type { SnoozeOption } from "../../services/reminders/ReminderService";
+import type { ProjectReminder } from "../../types/ProjectReminder";
+import { formatHumanDateString, formatHumanTime, getReminderDueDateTime, getReminderStatusDisplay, reminderStatusTone } from "../../utils/reminderDisplay";
+import { Badge } from "../ui/Badge";
+import { usePmoToast } from "../ui/usePmoToast";
 import { PmoAssistantOrb } from "./PmoAssistantOrb";
 
-type ViewMode = "home" | "employee" | "customer" | "project" | "timesheet" | "help";
+// Same options/labels as ReminderToast.tsx's own SNOOZE_OPTIONS — reusing
+// reminderService.snoozeReminder() exactly as-is (it already exists, is
+// already used from the Toast, and is safe: it creates a new "next
+// occurrence" reminder via addReminder() and leaves the original reminder
+// completely untouched as history). Duplicated here as a small constant
+// rather than exporting it from ReminderToast.tsx, to keep this feature's
+// footprint to this one file.
+const SNOOZE_OPTIONS: { option: SnoozeOption; label: string }[] = [
+  { option: "5m", label: "5 Minutes" },
+  { option: "10m", label: "10 Minutes" },
+  { option: "30m", label: "30 Minutes" },
+  { option: "1h", label: "1 Hour" },
+  { option: "tomorrow", label: "Tomorrow" },
+];
+
+type ViewMode = "home" | "employee" | "customer" | "project" | "timesheet" | "reminders" | "help";
 
 export const PmoAssistant: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -33,8 +57,21 @@ export const PmoAssistant: React.FC = () => {
   const [employees, setEmployees] = useState(() => getEmployees());
   const [projects, setProjects] = useState(() => getProjects());
   const [timesheetImports, setTimesheetImports] = useState(() => getAllTimesheetImports());
+  // reminderService.getPendingReminders() reads the local mirror (see
+  // ReminderService.ts) — backend-authoritative once refreshAllReminders()
+  // (called once per session by GlobalReminderProvider, and again below
+  // every time this panel opens) has populated it. Never localStorage as
+  // the source of truth; localStorage here is only the write-through cache
+  // that same service already maintains for the Reminder Scheduler.
+  const [reminders, setReminders] = useState(() => reminderService.getPendingReminders());
+  // Per-reminder in-flight guard (Complete/Snooze) and which row's snooze
+  // menu is currently open — Active Reminders-local UI state only, no new
+  // reminder architecture.
+  const [busyReminderIds, setBusyReminderIds] = useState<Set<string>>(new Set());
+  const [openSnoozeId, setOpenSnoozeId] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { showToast } = usePmoToast();
 
   const handleOpenView = (view: ViewMode) => {
     setActiveView(view);
@@ -136,6 +173,127 @@ export const PmoAssistant: React.FC = () => {
     };
   }, [isOpen, canAccessTimesheets]);
 
+  // Reminders are a Projects sub-resource (same as the backend's own
+  // requireModuleAccess("Projects") gate on every /reminders route — see
+  // Backend/src/modules/reminders/routes/reminder.routes.ts) — gated behind
+  // canAccessProjects, not a separate module check.
+  //
+  // GET /reminders already scopes its result to only the projects this
+  // caller may access (assertProjectAccess/projectOwnershipWhereOr, the
+  // same rule GET /projects itself uses) — so no additional client-side
+  // authorization filtering is needed or added here; this call simply
+  // refreshes the same shared mirror reminderScheduler.ts already reads.
+  useEffect(() => {
+    if (!isOpen || !canAccessProjects) return;
+    let isMounted = true;
+    reminderService
+      .refreshAllReminders()
+      .then(() => {
+        if (isMounted) setReminders(reminderService.getPendingReminders());
+      })
+      .catch(() => {
+        /* keep cache — assistant search is best-effort, same as every other Find X loader above */
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, canAccessProjects]);
+
+  // Sept 2026 — Assistant/ReminderCard consistency fix. Without this, an
+  // already-open Assistant panel kept showing stale Active Reminders data
+  // if a reminder was Completed/Snoozed/Rescheduled from a DIFFERENT
+  // surface (ReminderCard in the Workspace drawer, which already listens
+  // for this exact event) while the panel stayed open — it only picked up
+  // the change on its next open (the effect above only runs on the isOpen
+  // false->true transition). Subscribes to the SAME "pmo:reminders-changed"
+  // event reminderService.emitChange() already dispatches on every
+  // Complete/Snooze/Update/Delete (see ReminderService.ts) — no new event,
+  // no new synchronization mechanism. The handler does a synchronous
+  // re-read of the existing shared local mirror
+  // (reminderService.getPendingReminders(), the exact same call the effect
+  // above already uses) — never a fresh network refresh — mirroring
+  // ProjectWorkspaceDrawer.tsx's own loadReminders() reaction to this same
+  // event. Gated on [isOpen, canAccessProjects] exactly like the effect
+  // above, so the listener is added once per genuine "panel opened"
+  // transition and removed on close/unmount — repeatedly opening/closing
+  // the panel can never accumulate duplicate listeners.
+  useEffect(() => {
+    if (!isOpen || !canAccessProjects) return;
+    const handleRemindersChanged = () => {
+      setReminders(reminderService.getPendingReminders());
+    };
+    window.addEventListener("pmo:reminders-changed", handleRemindersChanged);
+    return () => {
+      window.removeEventListener("pmo:reminders-changed", handleRemindersChanged);
+    };
+  }, [isOpen, canAccessProjects]);
+
+  // Closes the currently-open per-row snooze menu on an outside click —
+  // same click-away idiom ReminderToast.tsx already uses for its own
+  // snooze menu, generalized to one shared listener since only one row's
+  // menu can be open at a time.
+  useEffect(() => {
+    if (!openSnoozeId) return;
+    const handleClickAway = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest(`[data-snooze-menu="${openSnoozeId}"]`)) {
+        setOpenSnoozeId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickAway);
+    return () => document.removeEventListener("mousedown", handleClickAway);
+  }, [openSnoozeId]);
+
+  // Complete — the existing ReminderService.updateReminder() PATCHes
+  // status: "Pending" -> "Completed" through the existing backend endpoint
+  // (see ReminderService.ts / Backend's reminder.service.ts). The database
+  // row is never deleted; it simply stops matching the status === "Pending"
+  // filter activeReminderResults already applies, so it disappears from
+  // Active Reminders the moment `reminders` state is refreshed below, while
+  // remaining in Postgres as history.
+  const handleCompleteReminder = async (reminderId: string) => {
+    setBusyReminderIds((prev) => new Set(prev).add(reminderId));
+    try {
+      await reminderService.updateReminder(reminderId, { status: "Completed" });
+      setReminders(reminderService.getPendingReminders());
+    } catch (error) {
+      console.error("Failed to complete reminder:", error);
+      showToast({ type: "error", message: "Unable to complete the reminder. Please try again." });
+    } finally {
+      setBusyReminderIds((prev) => {
+        const next = new Set(prev);
+        next.delete(reminderId);
+        return next;
+      });
+    }
+  };
+
+  // Snooze — reuses reminderService.snoozeReminder() exactly as ReminderToast.tsx
+  // already does: it creates a new "next occurrence" reminder and leaves
+  // THIS reminder's own status untouched (still "Pending"). If this
+  // reminder was already Due Now/Overdue, it therefore continues to appear
+  // in Active Reminders alongside the new upcoming occurrence until it is
+  // separately Completed — the exact same behavior the Toast's own Snooze
+  // already has today; not a new inconsistency introduced here.
+  const handleSnoozeReminder = async (reminder: ProjectReminder, option: SnoozeOption) => {
+    setOpenSnoozeId(null);
+    setBusyReminderIds((prev) => new Set(prev).add(reminder.id));
+    try {
+      await reminderService.snoozeReminder(reminder, option);
+      setReminders(reminderService.getPendingReminders());
+      showToast({ type: "success", message: "Reminder snoozed." });
+    } catch (error) {
+      console.error("Failed to snooze reminder:", error);
+      showToast({ type: "error", message: "Unable to snooze the reminder. Please try again." });
+    } finally {
+      setBusyReminderIds((prev) => {
+        const next = new Set(prev);
+        next.delete(reminder.id);
+        return next;
+      });
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────────────────
   // 2. SEARCH & LOOKUP RESULTS (Consuming existing services)
   // ─────────────────────────────────────────────────────────────────────────────
@@ -212,6 +370,40 @@ export const PmoAssistant: React.FC = () => {
 
     return matches.slice(0, 10); // Display top 10 relevant matches
   }, [searchQuery, canAccessTimesheets, timesheetImports]);
+
+  // Resolves each reminder's PR No. / project title live from the Projects
+  // mirror (Reminder -> Project -> prNo) rather than trusting
+  // ProjectReminder.projectCode, which is only a point-in-time snapshot
+  // taken when the reminder was created — this avoids ever showing a PR
+  // number that's gone stale since (e.g. a corrected PR No.). Falls back to
+  // the snapshot only if the project can't be found in the currently
+  // loaded set (e.g. still loading), so a PR number is never left blank.
+  const projectsById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+
+  // "Active" reuses the exact lifecycle rule already governing every other
+  // reminder surface (ReminderCard's own isActive check, the Scheduler's
+  // getPendingReminders() filter): status === "Pending" is the only
+  // non-terminal state — Completed/Dismissed/Cancelled are all excluded.
+  // There is no separate "Overdue" status in the model: an overdue
+  // reminder simply stays "Pending" with a live-computed trigger status
+  // (see reminderDisplay.ts's getReminderTriggerStatus), so it is included
+  // here exactly like every other still-pending reminder, no new rule
+  // invented. Sorted by actual due date+time ascending — this alone
+  // satisfies "overdue first, then nearest upcoming, then later" without a
+  // second explicit tier, since an overdue reminder's due instant is
+  // necessarily earlier than "now", which is earlier than any upcoming one.
+  const activeReminderResults = useMemo(() => {
+    if (!canAccessProjects) return [];
+    return reminders
+      .filter((r) => r.status === "Pending")
+      .map((r) => ({ reminder: r, project: projectsById.get(r.projectId) }))
+      .sort(
+        (a, b) =>
+          getReminderDueDateTime(a.reminder.reminderDate, a.reminder.reminderTime).getTime() -
+          getReminderDueDateTime(b.reminder.reminderDate, b.reminder.reminderTime).getTime()
+      );
+  }, [reminders, canAccessProjects, projectsById]);
+
   const [anchorPos, setAnchorPos] = useState<{ left: number; top: number }>({ left: 24, top: 120 });
 
   const handleOrbTogglePanel = (rect: DOMRect) => {
@@ -391,6 +583,20 @@ export const PmoAssistant: React.FC = () => {
                       <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Find Timesheet</span>
                     </div>
                     <ChevronRight size={14} className="text-slate-400 group-hover:text-amber-600 transition" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenView("reminders")}
+                    className="w-full p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 hover:border-blue-500 dark:hover:border-blue-500 text-left flex items-center justify-between group transition cursor-pointer shadow-xs"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center">
+                        <Bell size={16} />
+                      </div>
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Active Reminders</span>
+                    </div>
+                    <ChevronRight size={14} className="text-slate-400 group-hover:text-red-600 transition" />
                   </button>
 
                   <button
@@ -691,6 +897,119 @@ export const PmoAssistant: React.FC = () => {
                       ))}
                     </div>
                   </>
+                )}
+              </div>
+            )}
+
+            {/* ── ACTIVE REMINDERS VIEW ── */}
+            {activeView === "reminders" && (
+              <div className="space-y-3.5">
+                <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Active Reminders
+                </h4>
+
+                {!canAccessProjects ? (
+                  <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-200 text-xs font-semibold flex items-center gap-2.5">
+                    <ShieldAlert size={18} className="shrink-0 text-amber-600" />
+                    <span>Projects access is not enabled for your account.</span>
+                  </div>
+                ) : activeReminderResults.length === 0 ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 py-4 text-center">
+                    No active reminders
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {activeReminderResults.map(({ reminder, project }) => {
+                      const trigger = getReminderStatusDisplay(reminder);
+                      const prNo = project?.prNo || reminder.projectCode;
+                      // Complete/Snooze are only offered once a reminder is
+                      // actually due — an Upcoming reminder only gets Open,
+                      // per the required per-state action list.
+                      const isActionable = trigger.status === "due-now" || trigger.status === "overdue";
+                      const isBusy = busyReminderIds.has(reminder.id);
+
+                      return (
+                        <div
+                          key={reminder.id}
+                          className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 space-y-1.5 shadow-xs"
+                        >
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-extrabold text-red-600 dark:text-red-400 uppercase tracking-wider block">
+                                {prNo ? `PR ${prNo}` : "—"}
+                              </span>
+                              {(project?.projectTitle || project?.client) && (
+                                <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">
+                                  {project?.projectTitle || project?.client}
+                                </p>
+                              )}
+                            </div>
+                            <Badge tone={reminderStatusTone(trigger.status)} dot>
+                              {trigger.label}
+                            </Badge>
+                          </div>
+                          <h5 className="text-xs font-bold text-slate-900 dark:text-slate-100 line-clamp-1">
+                            {reminder.title}
+                          </h5>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {formatHumanDateString(reminder.reminderDate)} · {formatHumanTime(reminder.reminderTime)}
+                          </p>
+
+                          <div className="flex items-center gap-3 pt-1.5 border-t border-slate-100 dark:border-slate-800 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsOpen(false);
+                                navigate(`/projects/view/${reminder.projectId}`);
+                              }}
+                              className="text-[11px] font-bold text-red-600 dark:text-red-400 hover:underline flex items-center gap-1"
+                            >
+                              Open <ExternalLink size={10} />
+                            </button>
+
+                            {isActionable && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => handleCompleteReminder(reminder.id)}
+                                  className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <CheckCircle2 size={11} /> Complete
+                                </button>
+
+                                <div className="relative" data-snooze-menu={reminder.id}>
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => setOpenSnoozeId(openSnoozeId === reminder.id ? null : reminder.id)}
+                                    className="text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:underline flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    Snooze <ChevronDown size={10} />
+                                  </button>
+
+                                  {openSnoozeId === reminder.id && (
+                                    <div className="absolute bottom-full left-0 mb-1 w-32 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl overflow-hidden z-10">
+                                      {SNOOZE_OPTIONS.map(({ option, label }) => (
+                                        <button
+                                          key={option}
+                                          type="button"
+                                          onClick={() => handleSnoozeReminder(reminder, option)}
+                                          className="w-full text-left px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                        >
+                                          {label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             )}

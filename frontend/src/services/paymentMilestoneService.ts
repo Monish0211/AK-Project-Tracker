@@ -194,27 +194,43 @@ export async function loadMilestonesForProject(projectId: string): Promise<Payme
  * for adopting a not-yet-backend-known record on first load, above. Always
  * ends with a fresh GET so the caller displays exactly what the backend now
  * holds — never a value assembled from the individual write responses.
+ *
+ * Bug fix (Sep 2026): deletes now run BEFORE creates/updates — they used to
+ * run last. The backend's total-percentage check (assertMilestoneTotalWithinLimit)
+ * sums every milestone still in Postgres for this project; if a stale row's
+ * delete hadn't been sent yet, a surviving row's new percentage was checked
+ * against a total that still included that stale row, so replacing e.g. two
+ * 30% milestones with one 100% milestone (same total, reusing the first
+ * row's id) incorrectly failed with "would total 160%, exceeding 100%" —
+ * the update for the surviving row ran while the other row it was replacing
+ * still existed. Deleting stale rows first means the backend's own check
+ * always sees the truly-intended final set.
  */
 export async function syncMilestonesWithApi(projectId: string, localItems: PaymentMilestone[]): Promise<PaymentMilestone[]> {
   const existingResult = await apiClient.get<BackendMilestoneListDto>(`/projects/${projectId}/milestones`);
   const backendById = new Map(existingResult.items.map((dto) => [dto.id, dto]));
+  const localIds = new Set(localItems.map((item) => item.id));
+
+  // Anything in backendById with no matching local id was present in
+  // Postgres but no longer in the local list — the user removed (or
+  // replaced) that row before Save. Delete it first, before any
+  // create/update below is validated against the total.
+  for (const [staleId] of backendById) {
+    if (!localIds.has(staleId)) {
+      await apiClient.delete(`/milestones/${staleId}`);
+      backendById.delete(staleId);
+    }
+  }
 
   for (const item of localItems) {
     const existing = backendById.get(item.id);
     if (existing) {
-      backendById.delete(item.id);
       if (hasMilestoneChanged(existing, item)) {
         await apiClient.patch<BackendMilestoneDto>(`/milestones/${item.id}`, toMilestonePayload(item));
       }
     } else {
       await apiClient.post<BackendMilestoneDto>(`/projects/${projectId}/milestones`, toMilestonePayload(item));
     }
-  }
-
-  // Anything still in backendById was present in Postgres but no longer in
-  // the local list — the user removed that row before Save.
-  for (const staleId of backendById.keys()) {
-    await apiClient.delete(`/milestones/${staleId}`);
   }
 
   return fetchMilestonesFromApi(projectId);

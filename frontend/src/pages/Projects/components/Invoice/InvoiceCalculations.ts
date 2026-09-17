@@ -219,12 +219,32 @@ export function getInvoiceWorkflowMode(milestones: BillingMilestone[]): InvoiceW
  * defaulting to Lump Sum.
  */
 export function getInvoiceMethod(project: Project): InvoiceMethod | undefined {
-  return project.invoiceMethod === "invoice_line_items" ||
+  if (
+    project.invoiceMethod === "invoice_line_items" ||
     project.invoiceMethod === "lump_sum" ||
     project.invoiceMethod === "mlmp" ||
     project.invoiceMethod === "amount_based"
-    ? project.invoiceMethod
-    : undefined;
+  ) {
+    return project.invoiceMethod;
+  }
+
+  // Bug fix (Aug 2026) — invoiceMethod is a frontend-only preference (never
+  // persisted to the backend, see this file's own "not stored" note
+  // elsewhere), so it only ever survives in the browser/session that
+  // originally chose it. Any other session opening an already-invoiced
+  // project — including, since PMO Manager now sees every user's projects,
+  // a PMO Manager opening a project a different user set up billing for —
+  // saw real invoice history silently hidden behind "Select an Invoice
+  // Method," even though project.invoiceItems (loaded fresh from the
+  // backend on every Edit Project open) already has it. Once any real,
+  // non-cancelled invoice line has actually been raised, infer
+  // "invoice_line_items" — the original, default, by far most common
+  // workflow — instead of asking again. A genuinely never-invoiced project
+  // still shows the selector unchanged.
+  const hasRealInvoiceHistory = (project.invoiceItems ?? []).some(
+    (item) => Array.isArray(item.invoices) && item.invoices.length > 0
+  );
+  return hasRealInvoiceHistory ? "invoice_line_items" : undefined;
 }
 
 export interface LumpSumMilestoneRow {

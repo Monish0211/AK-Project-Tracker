@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { reminderScheduler } from "./reminderScheduler";
 import { ReminderToastContainer } from "./ReminderToastContainer";
+import { reminderService } from "../services/reminders/ReminderService";
 
 interface Props {
   children: React.ReactNode;
@@ -21,7 +22,18 @@ interface Props {
  */
 export const GlobalReminderProvider: React.FC<Props> = ({ children }) => {
   useEffect(() => {
-    reminderScheduler.start();
+    // Reminders are now backend-persisted and shared across accounts (see
+    // ReminderService.ts) — this pulls every reminder the logged-in user may
+    // see, across every project, exactly once per session so the scheduler
+    // below can evaluate them without requiring each project's workspace to
+    // have been opened first. Starts the scheduler regardless of whether
+    // this succeeds (same as before) so a transient network failure on
+    // mount never stops reminders already in the local mirror from firing.
+    reminderService
+      .refreshAllReminders()
+      .catch((error) => console.error("Failed to refresh reminders from server:", error))
+      .finally(() => reminderScheduler.start());
+
     return () => reminderScheduler.stop();
   }, []);
 

@@ -4,7 +4,8 @@ import type { ChangeEvent, Dispatch, SetStateAction } from "react";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 import type { Project } from "../../../types/Project";
 import type { QuantityItem } from "../../../types/QuantityItem";
-import { getEmployees } from "../../../services/employeeService";
+import type { Employee } from "../../../types/EmployeeModel";
+import { getEmployees, loadEmployeesForApp } from "../../../services/employeeService";
 import {
   calculateQuantity,
   canRemoveQuantityItem,
@@ -165,27 +166,57 @@ const AssignedToInput = ({ value, onChange, ariaLabel }: AssignedToInputProps) =
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const reportingManagers = useMemo<string[]>(() => {
-    try {
-      const list = getEmployees()
-        .map((emp) => emp.reportingManager?.trim())
-        .filter((name): name is string => typeof name === "string" && name !== "");
-      return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b));
-    } catch (e) {
-      console.error(e);
-      return [];
-    }
-  }, [isOpen]);
+  // Bug fix (Aug 2026): getEmployees() is a pure localStorage read — it only
+  // has data once something has already called loadEmployeesForApp() to
+  // hydrate that mirror from PostgreSQL. This field can be reached without
+  // the user ever having visited Manpower in this session, so it must
+  // trigger its own load — same fix as ProjectLeadershipCard.tsx and
+  // PmoAssistant.tsx for the identical symptom. Seeded from getEmployees()
+  // so an already-hydrated mirror renders immediately.
+  const [masterEmployees, setMasterEmployees] = useState<Employee[]>(() => getEmployees());
+
+  useEffect(() => {
+    let isMounted = true;
+    loadEmployeesForApp()
+      .then((result) => {
+        if (isMounted) setMasterEmployees(result.employees);
+      })
+      .catch(() => {
+        /* keep whatever the mirror already had — best-effort */
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Bug fix (Aug 2026): used to suggest the distinct set of
+  // Employee.reportingManager VALUES (i.e. "people who happen to already be
+  // listed as someone else's manager") — never the actual employee roster.
+  // Now sources real employeeName values from the full Employee Master —
+  // NOT restricted to Manager/Team Lead designations. Quantity Assigned To
+  // answers "who is doing this engineering activity," a different question
+  // from Project Leadership's "who manages/leads the project" (see
+  // ProjectLeadershipCard.tsx's isEligibleManagerDesignation() usage for
+  // that separate, intentionally-restricted field) — any legitimate active
+  // employee (Trainee, Engineer, Senior Engineer, Manager, ... ) must be
+  // assignable here, same unfiltered roster Project Coordinator/Project
+  // Engineer already use.
+  const assigneeNames = useMemo<string[]>(() => {
+    const list = masterEmployees
+      .map((emp) => emp.employeeName?.trim())
+      .filter((name): name is string => typeof name === "string" && name !== "");
+    return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b));
+  }, [masterEmployees]);
 
   const suggestions = useMemo(() => {
     const q = filterQuery.trim().toLowerCase();
     if (!q) {
       return [];
     }
-    return reportingManagers
+    return assigneeNames
       .filter((name) => name.toLowerCase().includes(q))
       .slice(0, 5); // Capped at 5 suggestions, no scrollbars needed
-  }, [filterQuery, reportingManagers]);
+  }, [filterQuery, assigneeNames]);
 
   const showDropdown = isOpen && filterQuery.trim() !== "" && suggestions.length > 0;
 

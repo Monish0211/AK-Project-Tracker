@@ -113,8 +113,25 @@ export function normalizeProject(project: Project): Project {
     totalInvoiceQty: totals.totalInvoiceQty,
     totalPendingQty: totals.totalPendingQty,
     workOrderValue: totals.workOrderValue,
-    workOrderValueINR: totals.workOrderValueINR,
-    pendingAmount: totals.pendingAmount,
+    // Bug fix (Aug 2026): when this project's real quantityItems haven't
+    // been loaded into this browser yet — e.g. the Project Repository list,
+    // for any account that hasn't personally opened Edit Project on this
+    // project before — totals.workOrderValueINR is always 0 (computed from
+    // an empty array). Falls back to the backend-supplied aggregate in that
+    // exact case only; the moment real quantityItems ARE present, this is
+    // always totals.workOrderValueINR exactly as before.
+    workOrderValueINR:
+      normalizedQuantityItems.length === 0 && typeof project.backendWorkOrderValueINR === "number"
+        ? project.backendWorkOrderValueINR
+        : totals.workOrderValueINR,
+    // Same fallback, mirrored for Pending Due — previously missing
+    // entirely, which is why Pending Due kept showing 0/"—" even once the
+    // WO Value fallback above was in place and the backend was returning
+    // the correct aggregate.
+    pendingAmount:
+      normalizedQuantityItems.length === 0 && typeof project.backendPendingDueINR === "number"
+        ? project.backendPendingDueINR
+        : totals.pendingAmount,
     pendingInvoicePercentage: totals.pendingInvoicePercentage,
     paymentMilestones,
     invoiceItems: syncInvoiceItemsWithQuantity(
@@ -157,9 +174,25 @@ export const saveProjects = (projects: Project[]): void => {
   window.dispatchEvent(new Event("pmo:data-changed"));
 };
 
+/**
+ * Bug fix (Aug 2026): previously a blind `projects.push(project)` — if a
+ * project with this id was already written into the mirror by an earlier
+ * step in the SAME save (e.g. createProjectGeneralInfo()'s own
+ * writeThroughProjectsMirror() call), this created a SECOND entry with the
+ * same id rather than replacing the first. getProjectById()'s
+ * .find() then silently returned whichever (possibly stale/incomplete)
+ * entry came first, instead of this one. Upserts by id now, the same way
+ * writeThroughProjectsMirror() already does, so there is never more than
+ * one entry per project id in the mirror.
+ */
 export const addProject = (project: Project): void => {
   const projects = getProjects();
-  projects.push(project);
+  const index = projects.findIndex((p) => p.id === project.id);
+  if (index === -1) {
+    projects.push(project);
+  } else {
+    projects[index] = project;
+  }
   saveProjects(projects);
 };
 
@@ -311,6 +344,16 @@ interface BackendProjectDto {
   contractType: string;
   pmoCoordinator: string | null;
   paymentType: string;
+  // Commercial Summary GST toggle — see Backend's ProjectDto/schema.prisma
+  // comment. GST Rate/GST Amount/Grand Total are NOT part of this
+  // interface — those stay derived client-side.
+  gstApplicable: boolean;
+  // Quantity Details project-level currency defaults — see Backend's
+  // ProjectDto/schema.prisma comment. Each QuantityItem's own currency/
+  // exchangeRate fields are separate and untouched by these.
+  currency: string;
+  currentExchangeRate: number;
+  contractExchangeRate: number;
   // Expense Budget — Phase 3.5. Flat fields on Project, same as everything
   // else in this DTO — see Backend's ProjectDto.
   manhourBudgetAmount: number | null;
@@ -329,6 +372,10 @@ interface BackendProjectDto {
   createdByUserId: string | null;
   createdAt: string;
   updatedAt: string;
+  // Work Order Value / Pending Due — Aug 2026 bug fix. See Backend's
+  // ProjectDto and this file's writeThroughProjectsMirror() comment.
+  workOrderValueINR: number;
+  pendingDueINR: number;
 }
 
 interface BackendPaginatedProjectList {
@@ -365,6 +412,16 @@ interface ProjectGeneralInfoPayload {
   contractType: string;
   pmoCoordinator: string | null;
   paymentType: string;
+  // Commercial Summary GST toggle — see Backend's ProjectDto/schema.prisma
+  // comment. GST Rate/GST Amount/Grand Total are NOT part of this
+  // interface — those stay derived client-side.
+  gstApplicable: boolean;
+  // Quantity Details project-level currency defaults — see Backend's
+  // ProjectDto/schema.prisma comment. Each QuantityItem's own currency/
+  // exchangeRate fields are separate and untouched by these.
+  currency: string;
+  currentExchangeRate: number;
+  contractExchangeRate: number;
   // Expense Budget — Phase 3.5. Same 5 flat fields as BackendProjectDto.
   manhourBudgetAmount: number | null;
   manhourBudgetHours: number | null;
@@ -411,6 +468,21 @@ function toGeneralInfoPayload(project: Project): ProjectGeneralInfoPayload {
     contractType: project.contractType || "LUMP SUM",
     pmoCoordinator: orNull(project.pmoCoordinator),
     paymentType: project.paymentType || "Single",
+    // Bug fix (Sep 2026): Commercial Summary's GST Applicability was
+    // frontend/localStorage-only — never sent to the backend, so it could
+    // never survive to a different account opening the same project. GST
+    // Rate/GST Amount/Grand Total are deliberately NOT included here — they
+    // stay derived client-side from quantityItems + this flag via the
+    // existing calculateQuantity(), exactly as before.
+    gstApplicable: typeof project.gstApplicable === "boolean" ? project.gstApplicable : false,
+    // Bug fix (Sep 2026): same never-persisted gap gstApplicable had —
+    // these three drive the Quantity tab's currency header and Business
+    // Information's Contract/Current Exchange Rate, but were never sent to
+    // the backend. QuantityItem's own currency/exchangeRate columns are
+    // untouched — this only persists the project-level defaults.
+    currency: project.currency || "INR",
+    currentExchangeRate: typeof project.currentExchangeRate === "number" ? project.currentExchangeRate : 1,
+    contractExchangeRate: typeof project.contractExchangeRate === "number" ? project.contractExchangeRate : 1,
     manhourBudgetAmount: typeof project.manhourBudgetAmount === "number" ? project.manhourBudgetAmount : null,
     manhourBudgetHours: typeof project.manhourBudgetHours === "number" ? project.manhourBudgetHours : null,
     manhourBudgetRemarks: orNull(project.manhourBudgetRemarks),
@@ -452,6 +524,17 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
 
   return normalizeProject({
     ...base,
+    // Bug fix (Aug 2026 bug fix, part 2): createEmptyProject()'s
+    // quantityItems is a ONE-ITEM placeholder row (so Add Project always
+    // has a blank row to edit), never a genuinely empty array — so when
+    // there's no existingLocal cache for this project yet, that placeholder
+    // was silently defeating normalizeProject()'s own
+    // `quantityItems.length === 0` fallback check (the length was always 1,
+    // never 0), which is exactly the "never loaded this project's real
+    // Quantity Details in this browser" case that check exists to catch.
+    // Only overridden here, on this read/merge path — createEmptyProject()
+    // itself, and Add Project's own direct use of it, are untouched.
+    quantityItems: existingLocal ? base.quantityItems : [],
     id: dto.id,
     poMonth: dto.poMonth,
     prCategory: dto.prCategory,
@@ -478,6 +561,19 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     contractType: dto.contractType,
     pmoCoordinator: dto.pmoCoordinator || undefined,
     paymentType: (dto.paymentType as Project["paymentType"]) || "Single",
+    // Bug fix (Sep 2026): direct pass-through, never `dto.gstApplicable ||
+    // fallback` — the backend's column is NOT NULL with a real boolean, and
+    // `false || x` would wrongly fall through to `x` when the authoritative
+    // value genuinely is false. This is the fix: the backend value must
+    // always win here, in both directions (true and false).
+    gstApplicable: dto.gstApplicable,
+    // Bug fix (Sep 2026): direct pass-through, same reasoning as
+    // gstApplicable above — the backend's columns are NOT NULL with real
+    // values, so they must always win here rather than being silently
+    // overridden by whatever local/default state this browser had before.
+    currency: dto.currency,
+    currentExchangeRate: dto.currentExchangeRate,
+    contractExchangeRate: dto.contractExchangeRate,
     manhourBudgetAmount: dto.manhourBudgetAmount ?? undefined,
     manhourBudgetHours: dto.manhourBudgetHours ?? undefined,
     manhourBudgetRemarks: dto.manhourBudgetRemarks || undefined,
@@ -493,11 +589,30 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     isDeleted: dto.isDeleted,
     deletedAt: dto.deletedAt,
     createdByUserId: dto.createdByUserId,
+    // Work Order Value / Pending Due — Aug 2026 bug fix. Always taken from
+    // this fresh dto (never preserved from `base`) — the backend recomputes
+    // this aggregate from the real, current QuantityItem/InvoiceLine rows on
+    // every single call site now (see project.service.ts's
+    // computeCommercialTotalsByProjectId()), so it's never stale here either.
+    backendWorkOrderValueINR: dto.workOrderValueINR,
+    backendPendingDueINR: dto.pendingDueINR,
   });
 }
 
-/** Upserts by id into the same localStorage array getProjects() reads, via the existing saveProjects() — so pmo:data-changed fires and every other module refreshes with no code of its own to change. */
-function writeThroughProjectsMirror(projects: Project[]): void {
+/**
+ * Upserts by id into the same localStorage array getProjects() reads, via the existing saveProjects() — so pmo:data-changed fires and every other module refreshes with no code of its own to change.
+ *
+ * Exported (previously module-private) so EditProject.tsx's Quantity/Milestones/
+ * Invoice/Expense loading effect can write its freshly-fetched project back into
+ * this SAME shared mirror the Project Repository list reads from — see that
+ * effect's own comment for why this was missing: without it, only the account
+ * that originally built a project through Add Project (whose full state,
+ * including quantityItems, is already in ITS OWN local cache) ever saw a
+ * correct Work Order Value/Pending Due in the list; any other account only
+ * saw the correct figures inside Edit Project itself (component state), never
+ * back in the list, because nothing persisted that fetch to the shared cache.
+ */
+export function writeThroughProjectsMirror(projects: Project[]): void {
   const current = getProjects();
   const byId = new Map(current.map((p) => [p.id, p]));
   projects.forEach((p) => byId.set(p.id, p));
@@ -549,6 +664,18 @@ export async function queryProjectsFromApi(params: ProjectListParams = {}): Prom
   const result = await apiClient.get<BackendPaginatedProjectList>(`/projects?${buildProjectListQuery(params).toString()}`);
   const items = result.items.map((dto) => mergeBackendGeneralInfoIntoLocalProject(dto));
   return { items, total: result.total, page: result.page, pageSize: result.pageSize };
+}
+
+/**
+ * Sidebar "Quick Summary" counts (Active/On Hold/Completed/Cancelled) in one
+ * request — GET /projects/status-counts — replacing what used to be 4
+ * separate queryProjectsFromApi({ projectStatus, pageSize: 1 }) calls (one
+ * per status, run in parallel via Promise.all). Same backend authorization
+ * scoping as every other /projects read; this is purely a transport change,
+ * not a change to what counts as Active/On Hold/Completed/Cancelled.
+ */
+export async function fetchProjectStatusCountsFromApi(): Promise<Record<string, number>> {
+  return apiClient.get<Record<string, number>>("/projects/status-counts");
 }
 
 /** The real, paginated/searchable/sortable/filterable Project List — GET /projects. */
@@ -752,7 +879,16 @@ export async function fetchProjectByIdFromApi(id: string): Promise<Project | und
 /** Creates a project's General Information via the real backend — POST /projects. */
 export async function createProjectGeneralInfo(project: Project): Promise<Project> {
   const dto = await apiClient.post<BackendProjectDto>("/projects", toGeneralInfoPayload(project));
-  const merged = mergeBackendGeneralInfoIntoLocalProject(dto);
+  // Bug fix (Aug 2026): explicitBase was previously omitted here, so a
+  // brand-new project's id (not yet in the local mirror) made this fall
+  // back to createEmptyProject() — discarding whatever Quantity Details/
+  // Payment Milestones/etc. the user had already typed into `project`
+  // before this General Info save fired, and writing that stripped-down
+  // version into localStorage below. Passing `project` as explicitBase (the
+  // same mechanism Excel import already relies on — see this function's
+  // own doc comment) keeps every already-entered field intact; only the id
+  // and the General Information fields dto actually carries are replaced.
+  const merged = mergeBackendGeneralInfoIntoLocalProject(dto, project);
   writeThroughProjectsMirror([merged]);
   return merged;
 }

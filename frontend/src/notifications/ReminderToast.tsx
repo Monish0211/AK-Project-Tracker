@@ -65,7 +65,9 @@ export const ReminderToast: React.FC<Props> = ({ toast, onDismiss }) => {
   };
 
   const handleSnooze = (option: SnoozeOption) => {
-    reminderService.snoozeReminder(reminder, option);
+    reminderService.snoozeReminder(reminder, option).catch((error) => {
+      console.error("Failed to snooze reminder:", error);
+    });
     setShowSnoozeMenu(false);
     startExit(() => onDismiss(toast.id));
   };

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
 
 import Sidebar from "../components/Sidebar/Sidebar";
@@ -5,6 +6,7 @@ import Navbar from "../components/Navbar/Navbar";
 import { GlobalReminderProvider } from "../notifications/GlobalReminderProvider";
 import { ModuleRoute } from "../auth/ModuleRoute";
 import { PmoAssistant } from "../components/PmoAssistant/PmoAssistant";
+import { loadEmployeesForApp } from "../services/employeeService";
 
 import Dashboard from "../pages/Dashboard/Dashboard";
 
@@ -15,9 +17,13 @@ import ArchivedProjects from "../pages/Projects/ArchivedProjects";
 import FinancialLossProjects from "../pages/Projects/FinancialLossProjects";
 import TimelineAlertProjects from "../pages/Projects/TimelineAlertProjects";
 import TimesheetPendingProjects from "../pages/Projects/TimesheetPendingProjects";
+import TeamLeadsWorkloadProjects from "../pages/Projects/TeamLeadsWorkloadProjects";
 import AddProject from "../pages/Projects/AddProject";
 import ViewProject from "../pages/Projects/ViewProject";
 import EditProject from "../pages/Projects/EditProject";
+
+/* Notes — dedicated, read-only Notes register (Sept 2026) */
+import Notes from "../pages/Notes/Notes";
 
 /* Customer Master */
 import CustomerMaster from "../pages/CustomerMaster/CustomerMaster";
@@ -29,6 +35,19 @@ import ReportsPage from "../pages/ReportsPage";
 import Settings from "../pages/Settings/Settings";
 
 const MainLayout = () => {
+  // Central Employee Master hydration — MainLayout mounts exactly once per
+  // authenticated session (it sits inside ProtectedRoute, and route changes
+  // only swap its children), so this is the one place that guarantees
+  // employees_v6 starts hydrating as early as possible, without every
+  // rate-dependent consumer (Team Assigned, Expense Budget) needing its own
+  // copy of this same load call. loadEmployeesForApp() already de-dupes
+  // concurrent callers and never throws — a failed hydration here leaves
+  // the cache exactly as it was, same best-effort contract every other
+  // caller already relies on.
+  useEffect(() => {
+    loadEmployeesForApp().catch(() => {});
+  }, []);
+
   return (
     <GlobalReminderProvider>
     <div className="flex min-h-screen bg-slate-100 animate-pmo-fade-up">
@@ -111,6 +130,15 @@ const MainLayout = () => {
               />
 
               <Route
+                path="/projects/team-leads-workload"
+                element={
+                  <ModuleRoute module="Projects">
+                    <TeamLeadsWorkloadProjects />
+                  </ModuleRoute>
+                }
+              />
+
+              <Route
                 path="/projects/add"
                 element={<ModuleRoute module="Projects"><AddProject /></ModuleRoute>}
               />
@@ -123,6 +151,19 @@ const MainLayout = () => {
               <Route
                 path="/projects/edit/:id"
                 element={<ModuleRoute module="Projects"><EditProject /></ModuleRoute>}
+              />
+
+              {/* Dedicated read-only Notes register — gated by the same
+                  "Projects" module access as everything else above, since
+                  a note only ever exists under a project. No separate
+                  Notes module/permission. */}
+              <Route
+                path="/notes"
+                element={
+                  <ModuleRoute module="Projects">
+                    <Notes />
+                  </ModuleRoute>
+                }
               />
 
               {/* ===========================

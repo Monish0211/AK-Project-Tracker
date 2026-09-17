@@ -174,13 +174,7 @@ const InsightIcon = ({ tier }: { tier: BudgetUtilizationTier }) => {
 };
 
 export default function ExpenseBudgetView({ project }: Props) {
-  const [, forceTick] = useState(0);
   const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    const interval = setInterval(() => forceTick((tick) => tick + 1), 3000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Trigger CSS entrance animations after first paint
   useEffect(() => {
@@ -188,7 +182,40 @@ export default function ExpenseBudgetView({ project }: Props) {
     return () => clearTimeout(t);
   }, []);
 
-  const analysis = calculateBudgetExecution(project.id);
+  // Bug fix (Sep 2026) — Actual Man-Hour Expense showing ₹0 in a fresh
+  // browser/session. calculateBudgetExecution() below resolves each
+  // timesheet-logged employee's hourly rate via getEmployees() (see
+  // timesheetProcessingService.ts's rateForEmployee()), which is a pure
+  // localStorage read against the shared `employees_v6` mirror. That mirror
+  // is now hydrated centrally, once per session, by MainLayout.tsx (see its
+  // own comment) — this component no longer triggers its own
+  // loadEmployeesForApp() call (that would just be a second, redundant
+  // fetch trigger for the same shared cache). What this effect does instead
+  // is listen for "pmo:data-changed" — the same signal
+  // writeThroughEmployeesMirror()/saveEmployees() already dispatches once
+  // that central load (or any other employee-data change, e.g. a Manpower
+  // edit) lands — and bump a tick so this component re-renders. Nothing
+  // here changes the calculation itself: calculateBudgetExecution() (and
+  // rateForEmployee() underneath it) already re-reads getEmployees() fresh
+  // on every call — deliberately never cached, see that function's own
+  // comment — so once the mirror is hydrated, this re-render is all that's
+  // needed for the existing formula to recompute with the real rate.
+  const [, setEmployeesLoadTick] = useState(0);
+  useEffect(() => {
+    const handleDataChanged = () => setEmployeesLoadTick((n) => n + 1);
+    window.addEventListener("pmo:data-changed", handleDataChanged);
+    return () => {
+      window.removeEventListener("pmo:data-changed", handleDataChanged);
+    };
+  }, []);
+
+  // Bug fix (Sep 2026): now passes the already-fetched `project` prop
+  // straight through instead of letting calculateBudgetExecution() re-read
+  // localStorage on its own — this component previously had no way to know
+  // when that independent read became stale/complete, hence the 3-second
+  // forceTick poll below (removed) papering over it. With the real prop,
+  // React's normal re-render on prop change is enough.
+  const analysis = calculateBudgetExecution(project.id, project);
   if (!analysis) return null;
 
   const tier = getBudgetUtilizationTier(analysis.budgetUtilizationPercent);

@@ -240,6 +240,28 @@ interface BackendTimesheetEntryPage {
 }
 
 /**
+ * Issue #2 perf fix (bounded parallel fetch) — how many `/timesheets/entries`
+ * page requests fetchAllTimesheetEntriesFromApi() below keeps in flight at
+ * once, instead of the old one-at-a-time sequential loop. Kept conservative
+ * rather than "fire all pages at once":
+ *
+ * - The production backend runs as a single Node process (PM2 fork mode, no
+ *   cluster — see prod audit), and its one process-wide PrismaClient (see
+ *   Backend/src/shared/utils/prismaClient.ts) uses node-postgres's default
+ *   connection pool — no explicit `max` override, so it defaults to 10.
+ * - Each single page request already issues 2 queries in parallel
+ *   server-side (the page's rows + a `count()` — see
+ *   Backend/src/modules/timesheets/repository/timesheet.repository.ts's
+ *   findEntries()), so N concurrent page requests from here consume up to
+ *   2×N of that pool's connections.
+ * - At N=4, that's up to 8 of 10 pool connections for this fetch alone,
+ *   leaving headroom for other concurrent requests the same shared backend
+ *   process is handling — rather than N=5-10 potentially saturating the
+ *   whole pool by itself.
+ */
+const TIMESHEET_FETCH_CONCURRENCY = 4;
+
+/**
  * Priority #4 (scalability) — fetches the SAME complete authorized
  * TimesheetEntry dataset refreshTimesheetImportsFromBackend() has always
  * fetched, via bounded paginated requests instead of one unbounded request.
@@ -252,21 +274,64 @@ interface BackendTimesheetEntryPage {
  * calculations. Mirrors fetchAllProjectsFromApi()'s existing accumulation
  * pattern in projectService.ts (do/while + safety cap), scaled up for
  * Timesheet's larger expected row count.
+ *
+ * Issue #2 perf fix — this used to be a single do/while loop awaiting one
+ * page at a time (page 1, wait, page 2, wait, ... page ~93), which is why a
+ * full history load cost ~93 sequential round trips. Page 1 is still
+ * fetched alone first (it's the only way to learn the authoritative
+ * `total`), but every remaining page is now fetched in bounded batches of
+ * TIMESHEET_FETCH_CONCURRENCY concurrent requests instead of one at a time.
+ * `pagesByIndex` is written by page NUMBER (`page - 1`), never by
+ * completion order, so `Promise.all`'s per-batch results — which are
+ * already guaranteed to be in the same order as the request array passed to
+ * it, regardless of which one resolves first over the network — land in
+ * the right slot even if, say, page 6 happens to answer before page 5. The
+ * final flatten is therefore identical page-1-then-2-then-3…-then-last
+ * order as before. Nothing about *what* is fetched, *how* it's transformed,
+ * or the stopping/error/safety behavior below changed — only how many
+ * requests are ever outstanding at once.
  */
 async function fetchAllTimesheetEntriesFromApi(): Promise<BackendTimesheetEntryDto[]> {
-  const all: BackendTimesheetEntryDto[] = [];
   const pageSize = 200;
-  let page = 1;
-  let total = 0;
 
-  do {
-    const result = await apiClient.get<BackendTimesheetEntryPage>(
-      `/timesheets/entries?page=${page}&pageSize=${pageSize}`
-    );
-    all.push(...result.items);
-    total = result.total;
-    page += 1;
-  } while (all.length < total && page <= 2000);
+  const fetchPage = (page: number) =>
+    apiClient.get<BackendTimesheetEntryPage>(`/timesheets/entries?page=${page}&pageSize=${pageSize}`);
+
+  // Page 1 alone, first — this is the only request that can tell us `total`,
+  // so it can never be part of a concurrent batch with pages whose existence
+  // depends on it.
+  const first = await fetchPage(1);
+  const total = first.total;
+  const totalPages = Math.min(Math.ceil(total / pageSize), 2000);
+
+  const pagesByIndex: BackendTimesheetEntryDto[][] = [];
+  pagesByIndex[0] = first.items;
+
+  // Remaining pages (2..totalPages), fetched in bounded batches: each batch
+  // fires at most TIMESHEET_FETCH_CONCURRENCY requests via Promise.all, and
+  // the next batch never starts until the current one has fully resolved —
+  // so at most TIMESHEET_FETCH_CONCURRENCY requests from this loop are ever
+  // in flight at the same time. A rejection anywhere in a batch (any one
+  // page's request failing) rejects that Promise.all immediately, which
+  // propagates straight out of this function exactly like the old loop
+  // throwing on its single in-flight request — the caller
+  // (refreshTimesheetImportsFromBackend()) never reaches its save step in
+  // that case, so no partial page ever overwrites the existing good
+  // IndexedDB/in-memory data.
+  for (let batchStart = 2; batchStart <= totalPages; batchStart += TIMESHEET_FETCH_CONCURRENCY) {
+    const batchEnd = Math.min(batchStart + TIMESHEET_FETCH_CONCURRENCY - 1, totalPages);
+    const batchPageNumbers: number[] = [];
+    for (let page = batchStart; page <= batchEnd; page++) batchPageNumbers.push(page);
+
+    const batchResults = await Promise.all(batchPageNumbers.map(fetchPage));
+
+    batchResults.forEach((result, offsetInBatch) => {
+      const page = batchPageNumbers[offsetInBatch];
+      pagesByIndex[page - 1] = result.items;
+    });
+  }
+
+  const all = pagesByIndex.flat();
 
   // P1-01 (production hardening) — this loop's own safety cap (page <= 2000,
   // i.e. 400,000 rows) exists to guarantee it can never spin forever against
@@ -293,7 +358,7 @@ async function fetchAllTimesheetEntriesFromApi(): Promise<BackendTimesheetEntryD
   if (all.length < total) {
     throw new Error(
       `Timesheet data fetch was incomplete: received ${all.length} of ${total} total entries from the server ` +
-        `(stopped after ${page - 1} pages). No local data was overwritten with this incomplete result.`
+        `(stopped after ${totalPages} pages). No local data was overwritten with this incomplete result.`
     );
   }
 

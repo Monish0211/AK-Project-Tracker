@@ -4,7 +4,7 @@ import type { Customer } from "../../types/CustomerModel";
 import { getProjects, fetchAllProjectsFromApi } from "../../services/projectService";
 import { getCustomers, loadCustomersForApp } from "../../services/customerService";
 import { getTotalNonManhourCost } from "../../services/expenseService";
-import { getTotalPaymentReceived } from "../../services/invoiceProgressService";
+import { fetchAllInvoiceLinesForCaller, type ReportInvoiceLine } from "../../services/invoiceService";
 
 export interface ReportFilterState {
   dateRange: { start: string; end: string };
@@ -34,6 +34,17 @@ export function useReportsData() {
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [filters, setFilters] = useState<ReportFilterState>(INITIAL_REPORT_FILTERS);
+
+  // Issue #4 fix — Reports/Dashboard Invoice Raised discrepancy. Every
+  // invoice line across every authorized project, fetched from the SAME
+  // backend source Dashboard's own Invoice Raised KPI (and the previously
+  // unrouted frontend/src/pages/Reports/Reports.tsx implementation) already
+  // use — never read from, or derived from, the per-project localStorage
+  // `invoiceItems` mirror below, which only ever reflects whichever
+  // projects have actually been opened in THIS browser and was the root
+  // cause of this page showing ₹0 while Dashboard showed the correct total.
+  // See fetchAllInvoiceLinesForCaller()'s own comment in invoiceService.ts.
+  const [authoritativeInvoiceLines, setAuthoritativeInvoiceLines] = useState<ReportInvoiceLine[]>([]);
 
   const loadData = () => {
     setAllProjects(getProjects());
@@ -67,6 +78,36 @@ export function useReportsData() {
       window.removeEventListener("storage", handleDataChanged);
     };
   }, []);
+
+  // Same trigger condition frontend/src/pages/Reports/Reports.tsx's own
+  // (already-correct) fetch used — re-fetch whenever the project list
+  // changes, which covers both the initial fetchAllProjectsFromApi()
+  // resolving above and every subsequent pmo:data-changed (loadData()
+  // produces a new allProjects reference each time). Preserving that exact
+  // trigger, not introducing a new refresh mechanism.
+  useEffect(() => {
+    let isMounted = true;
+    fetchAllInvoiceLinesForCaller()
+      .then((lines) => {
+        if (isMounted) setAuthoritativeInvoiceLines(lines);
+      })
+      .catch((err) => {
+        console.warn("Failed to load authoritative invoice lines for Reports:", err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [allProjects]);
+
+  const linesByProjectId = useMemo(() => {
+    const map = new Map<string, ReportInvoiceLine[]>();
+    for (const line of authoritativeInvoiceLines) {
+      const bucket = map.get(line.projectId);
+      if (bucket) bucket.push(line);
+      else map.set(line.projectId, [line]);
+    }
+    return map;
+  }, [authoritativeInvoiceLines]);
 
   // Filter options lists
   const filterOptions = useMemo(() => {
@@ -207,66 +248,79 @@ export function useReportsData() {
       else if (st.includes("cancelled")) cancelledCount++;
       else activeCount++;
 
-      // Invoices
+      // Invoices — authoritative backend lines only (Issue #4 fix), never
+      // project.invoiceItems for anything invoice-derived below. Ordered
+      // quantity (totalOrderedQty) is a QuantityItem-level figure with no
+      // equivalent on ReportInvoiceLine, so — and only so — it stays
+      // sourced from project.invoiceItems, unchanged; Quantity Analytics is
+      // not part of this fix.
       const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      let projectInvoiceRaised = 0;
-
       items.forEach((item: any) => {
         totalOrderedQty += item.qty || 0;
-
-        (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
-          const statusStr = String(line.status || "");
-          if (statusStr !== "Cancelled") {
-            const amt = line.invoiceAmountINR || 0;
-            projectInvoiceRaised += amt;
-            totalInvoicedQty += line.quantityBilled || 0;
-
-            if (statusStr === "Paid") {
-              paidInvoiceVal += amt;
-              paidCount++;
-            } else if (statusStr === "Raised" || statusStr === "Submitted") {
-              raisedInvoiceVal += amt;
-              submittedInvoiceVal += amt;
-              raisedCount++;
-              submittedCount++;
-
-              if (line.invoiceDate) {
-                const days = Math.floor((new Date().getTime() - new Date(line.invoiceDate).getTime()) / (1000 * 3600 * 24));
-                if (days <= 30) ageing0to30 += amt;
-                else if (days <= 60) ageing31to60 += amt;
-                else if (days <= 90) ageing61to90 += amt;
-                else ageing90Plus += amt;
-              } else {
-                ageing0to30 += amt;
-              }
-            } else if (statusStr === "PartiallyPaid") {
-              partiallyPaidInvoiceVal += amt;
-              partiallyPaidCount++;
-              raisedInvoiceVal += amt;
-              raisedCount++;
-
-              if (line.invoiceDate) {
-                const days = Math.floor((new Date().getTime() - new Date(line.invoiceDate).getTime()) / (1000 * 3600 * 24));
-                if (days <= 30) ageing0to30 += amt;
-                else if (days <= 60) ageing31to60 += amt;
-                else if (days <= 90) ageing61to90 += amt;
-                else ageing90Plus += amt;
-              } else {
-                ageing0to30 += amt;
-              }
-            } else if (statusStr === "Draft") {
-              draftInvoiceVal += amt;
-              draftCount++;
-            }
-          } else {
-            cancelledInvoiceVal += line.invoiceAmountINR || 0;
-          }
-        });
       });
 
-      totalInvoiceRaised += projectInvoiceRaised;
+      const projectLines = linesByProjectId.get(p.id) ?? [];
+      let projectInvoiceRaised = 0;
+      let projectPaidRaw = 0;
 
-      const pReceived = Math.min(getTotalPaymentReceived(items), projectInvoiceRaised);
+      projectLines.forEach((line) => {
+        const statusStr = String(line.status || "");
+        if (statusStr !== "Cancelled") {
+          const amt = line.invoiceAmountINR || 0;
+          projectInvoiceRaised += amt;
+          totalInvoicedQty += line.quantityBilled || 0;
+
+          if (statusStr === "Paid") {
+            paidInvoiceVal += amt;
+            paidCount++;
+            projectPaidRaw += amt;
+          } else if (statusStr === "Raised" || statusStr === "Submitted") {
+            raisedInvoiceVal += amt;
+            submittedInvoiceVal += amt;
+            raisedCount++;
+            submittedCount++;
+
+            if (line.invoiceDate) {
+              const days = Math.floor((new Date().getTime() - new Date(line.invoiceDate).getTime()) / (1000 * 3600 * 24));
+              if (days <= 30) ageing0to30 += amt;
+              else if (days <= 60) ageing31to60 += amt;
+              else if (days <= 90) ageing61to90 += amt;
+              else ageing90Plus += amt;
+            } else {
+              ageing0to30 += amt;
+            }
+          } else if (statusStr === "PartiallyPaid") {
+            partiallyPaidInvoiceVal += amt;
+            partiallyPaidCount++;
+            raisedInvoiceVal += amt;
+            raisedCount++;
+
+            if (line.invoiceDate) {
+              const days = Math.floor((new Date().getTime() - new Date(line.invoiceDate).getTime()) / (1000 * 3600 * 24));
+              if (days <= 30) ageing0to30 += amt;
+              else if (days <= 60) ageing31to60 += amt;
+              else if (days <= 90) ageing61to90 += amt;
+              else ageing90Plus += amt;
+            } else {
+              ageing0to30 += amt;
+            }
+          } else if (statusStr === "Draft") {
+            draftInvoiceVal += amt;
+            draftCount++;
+          }
+        } else {
+          cancelledInvoiceVal += line.invoiceAmountINR || 0;
+        }
+      });
+
+      // Per-project aggregate Payment Received — same rule as before this
+      // fix: capped at this project's own Invoice Raised (a payment can
+      // never exceed what was actually invoiced), never at Work Order
+      // Value. No new cap introduced here — only the per-line data source
+      // above changed (project.invoiceItems -> authoritative backend lines).
+      const pReceived = Math.min(projectPaidRaw, projectInvoiceRaised);
+
+      totalInvoiceRaised += projectInvoiceRaised;
       totalPaymentReceived += pReceived;
 
       // Customer map aggregation
@@ -367,7 +421,7 @@ export function useReportsData() {
       customerList: Object.values(customerMap).sort((a, b) => b.raised - a.raised),
       departmentList: Object.values(deptMap).sort((a, b) => b.raised - a.raised),
     };
-  }, [filteredProjects]);
+  }, [filteredProjects, linesByProjectId]);
 
   return {
     allProjects,

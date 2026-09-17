@@ -60,6 +60,7 @@ const PROJECTS_COLUMNS: ColumnDef[] = [
   { header: "Invoice Raised", key: "invoiceRaised", width: 16, validationType: "number", align: "right" },
   { header: "Payment Received", key: "paymentReceived", width: 16, validationType: "number", align: "right" },
   { header: "Outstanding", key: "outstanding", width: 16, align: "right" },
+  { header: "Budget Hours", key: "manhourBudgetHours", width: 14, validationType: "number", align: "right" },
   { header: "Start Date", key: "startDate", width: 14, validationType: "date", numFmt: "dd-mmm-yyyy" },
   { header: "Estimated End Date", key: "endDate", width: 14, validationType: "date", numFmt: "dd-mmm-yyyy" },
   { header: "Actual Completion Date", key: "actualCompletionDate", width: 18, validationType: "date", numFmt: "dd-mmm-yyyy" },
@@ -363,6 +364,7 @@ function projectToRow(p: Project) {
     invoiceRaised: comm.totalInvoiceRaised || 0,
     paymentReceived: p.paymentReceived || 0,
     outstanding: comm.pendingDue || 0,
+    manhourBudgetHours: p.manhourBudgetHours || 0,
     startDate: p.projectStartDate ? new Date(p.projectStartDate) : undefined,
     endDate: p.projectEndDate ? new Date(p.projectEndDate) : undefined,
     actualCompletionDate: p.actualCompletionDate ? new Date(p.actualCompletionDate) : undefined,
@@ -443,6 +445,7 @@ function buildSampleProject(): Project {
     currentExchangeRate: 1,
     contractExchangeRate: 1,
     workOrderValue: 1000000,
+    manhourBudgetHours: 480,
     workOrderValueINR: 1000000,
     paymentReceived: 250000,
     paymentReceivedINR: 250000,
@@ -588,6 +591,18 @@ const COLUMN_ALIASES: Record<string, string[]> = {
   "invoice raised": ["invoice raised", "invoice_raised", "invoiced", "total invoiced", "billed"],
   "payment received": ["payment received", "payment_received", "collected", "total collected", "received"],
   "outstanding": ["outstanding", "pending due", "balance", "balance due"],
+  "budget hours": [
+    "budget hours",
+    "budget_hours",
+    "manhour budget hours",
+    "man-hour budget hours",
+    "man hour budget hours",
+    "approved hours",
+    "approved engineering hours",
+    "budgeted hours",
+    "budgeted engineering hours",
+    "engineering budget hours",
+  ],
   "start date": ["start date", "start_date", "project start date", "commencement date"],
   "end date": ["end date", "end_date", "project end date", "completion date"],
   "remarks": ["remarks", "remark", "notes", "comments"],
@@ -693,6 +708,7 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
     const projectStatus = cellText(get("Project Status"));
     const pmoCoordinator = cellText(get("PMO Coordinator"));
     const workOrderValue = cellNumber(get("Work Order Value"));
+    const manhourBudgetHours = cellNumber(get("Budget Hours"));
 
     if (!prNo) errors.push(`Projects, Row ${r}: PR Number is missing.`);
     if (!client) errors.push(`Projects, Row ${r}: Client Name is missing.`);
@@ -749,6 +765,7 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
         currency,
         exchangeRate,
         workOrderValue,
+        manhourBudgetHours,
         invoiceRaised: cellNumber(get("Invoice Raised")),
         paymentReceived: cellNumber(get("Payment Received")),
         startDate,
@@ -955,6 +972,7 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
       contractExchangeRate: exchangeRate,
       workOrderValue,
       workOrderValueINR: workOrderValue * exchangeRate,
+      manhourBudgetHours: draft.fields.manhourBudgetHours as number,
       paymentReceived,
       paymentReceivedINR: currency === "INR" ? paymentReceived : paymentReceived * exchangeRate,
       paymentTerms: draft.fields.paymentTerms || "",

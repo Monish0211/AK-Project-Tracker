@@ -175,6 +175,42 @@ function writeInvoiceItemsIntoMirror(projectId: string, items: InvoiceItem[]): v
   saveProjects(updated);
 }
 
+/** One row of GET /invoice-items — see Backend's invoice.service.ts::listAllInvoiceLinesForCaller() / ReportInvoiceLineListDto. */
+export interface ReportInvoiceLine {
+  id: string;
+  projectId: string;
+  quantityItemId: string;
+  status: string;
+  invoiceAmountINR: number;
+  invoiceDate: string;
+  invoiceNo: string;
+  quantityBilled: number;
+}
+
+interface ReportInvoiceLineListDto {
+  items: ReportInvoiceLine[];
+}
+
+/**
+ * Sept 2026 — Reports/Dashboard Invoice Raised discrepancy fix. Every
+ * invoice line across every project the caller is authorized to see, in one
+ * request — GET /invoice-items, the same authorized-project + InvoiceLine
+ * query the Dashboard's own Invoice Raised KPI is built from (see Backend's
+ * dashboard.service.ts::getDashboardSummary()). Used by Reports.tsx instead
+ * of each project's own browser-local invoiceItems mirror (only ever
+ * populated by actually opening that project's Edit/View page at least once
+ * in this browser, so a project never opened here was silently under-
+ * counted). Never written to localStorage — a pure read for the caller's
+ * own in-memory React state; business rules (which statuses count toward
+ * Invoice Raised vs. Cash Realized, the per-project Work Order Value cap)
+ * are applied by the caller, not here — see dashboard.formulas.ts's
+ * invoiceRaisedFromLines()/paymentReceivedFromLines() for the exact rule.
+ */
+export async function fetchAllInvoiceLinesForCaller(): Promise<ReportInvoiceLine[]> {
+  const result = await apiClient.get<ReportInvoiceLineListDto>("/invoice-items");
+  return result.items;
+}
+
 /** Fresh Invoice Items list for a project — GET /projects/:projectId/invoice-items. One entry per QuantityItem belonging to the project (id === that QuantityItem's id), each carrying its own InvoiceLine history. */
 export async function fetchInvoiceItemsFromApi(projectId: string): Promise<InvoiceItem[]> {
   const result = await apiClient.get<BackendInvoiceItemListDto>(`/projects/${projectId}/invoice-items`);

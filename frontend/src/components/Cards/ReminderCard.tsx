@@ -4,6 +4,7 @@ import type { ProjectReminder } from "../../types/ProjectReminder";
 import { reminderService } from "../../services/reminders/ReminderService";
 import { useNavigate } from "react-router-dom";
 import { NotificationRoutes } from "../../notifications/notificationRoutes";
+import { usePmoToast } from "../ui/usePmoToast";
 import { Badge } from "../ui/Badge";
 import { ReminderTypeIcon } from "../ui/ReminderTypeIcon";
 import {
@@ -36,6 +37,7 @@ const STATUS_TEXT_TONE: Record<string, string> = {
 
 export const ReminderCard: React.FC<Props> = ({ reminder, onEdit, readOnly }) => {
   const navigate = useNavigate();
+  const { showToast } = usePmoToast();
 
   // Re-renders every 30s so the trigger-status badge and countdown text
   // (Upcoming -> Due Soon -> Due Now -> Overdue) stay live without a reload.
@@ -45,20 +47,35 @@ export const ReminderCard: React.FC<Props> = ({ reminder, onEdit, readOnly }) =>
     return () => clearInterval(id);
   }, []);
 
-  const handleComplete = (e: React.MouseEvent) => {
+  const handleComplete = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    reminderService.updateReminder(reminder.id, { status: "Completed" });
+    try {
+      await reminderService.updateReminder(reminder.id, { status: "Completed" });
+    } catch (error) {
+      console.error("Failed to complete reminder:", error);
+      showToast({ type: "error", message: "Unable to update the reminder. Please try again." });
+    }
   };
 
-  const handleReopen = (e: React.MouseEvent) => {
+  const handleReopen = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    reminderService.updateReminder(reminder.id, { status: "Pending" });
+    try {
+      await reminderService.updateReminder(reminder.id, { status: "Pending" });
+    } catch (error) {
+      console.error("Failed to reopen reminder:", error);
+      showToast({ type: "error", message: "Unable to update the reminder. Please try again." });
+    }
   };
 
-  const handleDelete = (e: React.MouseEvent) => {
+  const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm("Are you sure you want to delete this reminder?")) {
-      reminderService.deleteReminder(reminder.id);
+      try {
+        await reminderService.deleteReminder(reminder.id);
+      } catch (error) {
+        console.error("Failed to delete reminder:", error);
+        showToast({ type: "error", message: "Unable to delete the reminder. Please try again." });
+      }
     }
   };
 

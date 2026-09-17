@@ -3,6 +3,7 @@ import { getAllTimesheetImports } from "./timesheetService";
 import { getProcessedLifetimeActualHours, getProcessedTeamMembers } from "./timesheetProcessingService";
 import { getTotalNonManhourCost } from "./expenseService";
 import type { Tone } from "../components/ui/Badge";
+import type { Project } from "../types/Project";
 
 /**
  * THE single shared calculation for a project's budget execution. Execution
@@ -77,9 +78,22 @@ export const UTILIZATION_BADGE: Record<BudgetUtilizationTier, { label: string; t
   over: { label: "Over Budget", tone: "danger" },
 };
 
-/** Returns null if no project with this id exists. */
-export function calculateBudgetExecution(projectId: string): BudgetExecution | null {
-  const project = getProjectById(projectId);
+/**
+ * Returns null if no project with this id exists.
+ *
+ * Bug fix (Sep 2026): `projectOverride` lets a caller that already has the
+ * freshly-fetched Project (e.g. ViewProject.tsx's own load chain, passed
+ * down as a prop) use that directly instead of this function's own
+ * `getProjectById(projectId)` localStorage read — which could be stale or
+ * genuinely empty (e.g. right after a fresh login, before any page's fetch
+ * has written this project into the shared mirror yet) even while the
+ * caller's own in-memory data is already correct. Every existing/future
+ * caller that only has a projectId (Dashboard, Reports) is unaffected —
+ * omitting the second argument keeps the exact same localStorage-read
+ * behavior as before.
+ */
+export function calculateBudgetExecution(projectId: string, projectOverride?: Project): BudgetExecution | null {
+  const project = projectOverride ?? getProjectById(projectId);
   if (!project) return null;
 
   const plannedBudgetHours = project.manhourBudgetHours || 0;

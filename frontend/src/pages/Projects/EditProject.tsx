@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import type { Project } from "../../types/Project";
-import { getProjectById, normalizeProject, fetchProjectByIdFromApi } from "../../services/projectService";
+import { getProjectById, normalizeProject, fetchProjectByIdFromApi, writeThroughProjectsMirror } from "../../services/projectService";
 import { loadQuantityForProject } from "../../services/quantityService";
 import { loadMilestonesForProject } from "../../services/paymentMilestoneService";
 import { loadInvoiceForProject } from "../../services/invoiceService";
@@ -65,10 +65,25 @@ const EditProject = () => {
         // Quantity data — a failure here still shows the project (General
         // Information already loaded); Quantity simply falls back to
         // whatever normalizeProject() already carried over.
+        //
+        // Bug fix (Sep 2026): Quantity used to be the one step of this
+        // chain NOT wrapped in its own try/catch — a Quantity failure fell
+        // all the way to the outer catch below, which skipped Milestones/
+        // Invoices/Expenses entirely (never even attempted) and discarded
+        // the final setProject/writeThroughProjectsMirror write. Now
+        // isolated exactly like the other three below: a Quantity failure
+        // no longer prevents Milestones/Invoices/Expenses from being
+        // attempted or the mirror from being written with whatever loaded.
         try {
-          const quantityItems = await loadQuantityForProject(id);
-          if (!isMounted) return;
-          let nextProject = normalizeProject({ ...fetched, quantityItems });
+          let nextProject = fetched;
+
+          try {
+            const quantityItems = await loadQuantityForProject(id);
+            if (!isMounted) return;
+            nextProject = normalizeProject({ ...nextProject, quantityItems });
+          } catch {
+            // Fall through with nextProject as already set above.
+          }
 
           // Payment Milestones load the same way, immediately after
           // Quantity — this failure is isolated from Quantity's: if General
@@ -119,6 +134,19 @@ const EditProject = () => {
           }
 
           setProject(nextProject);
+          // Bug fix: this effect fetches real Quantity/Milestones/Invoice/
+          // Expense data from the backend, but was only ever storing it in
+          // this component's own state — never in the shared localStorage
+          // mirror the Project Repository LIST reads from (getProjects()).
+          // Any account other than the one that originally built this
+          // project via Add Project (whose full state was already cached)
+          // saw the correct Work Order Value/Pending Due here in Edit, but
+          // "—" back in the list, because nothing persisted this fetch to
+          // that shared cache. Writing it through here, the same way
+          // fetchProjectByIdFromApi()/createProjectGeneralInfo() already do,
+          // closes that gap without changing how WO Value/Pending Due are
+          // calculated at all.
+          writeThroughProjectsMirror([nextProject]);
         } catch {
           if (isMounted) setProject(fetched);
         }

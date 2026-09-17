@@ -68,17 +68,45 @@ export interface TimelineAlerts {
   onTrackCount: number;
 }
 
+export interface TeamLeadWorkloadProjectRef {
+  id: string;
+  prNo: string;
+}
+
+/**
+ * Aug 2026 — `reportingManager` now holds the assigned person's name,
+ * sourced from QuantityItem.assignedTo (see Backend's buildTeamLeads()), not
+ * Employee.reportingManager. Field name kept as-is to match the backend DTO
+ * exactly — only where the value comes from changed. `projects` is additive.
+ */
 export interface TeamLeadWorkload {
   reportingManager: string;
   activeProjectsCount: number;
   totalWorkOrderValue: number;
   formattedWorkOrderValue: string;
   status: "High" | "Medium" | "Normal";
+  projects: TeamLeadWorkloadProjectRef[];
+}
+
+/** One active project with at least one Quantity Details row missing an Assigned To — see Backend's buildTeamLeads(). */
+export interface MissingAssigneeProject {
+  id: string;
+  prNo: string;
+  projectTitle: string;
 }
 
 export interface TeamLeads {
   totalReportingManagers: number;
   top5: TeamLeadWorkload[];
+  // Phase 2.2 — same authoritative list top5 is sliced from; the dedicated
+  // Team Leads Workload drill-down (TeamLeadsWorkloadProjects.tsx) renders
+  // this instead of recomputing its own list, mirroring HoursOverrun's own
+  // top5/allMatching split for the Financial Loss drill-down.
+  allAssigned: TeamLeadWorkload[];
+  // Sept 2026 — Missing Assignee. Same active-project scope as the rest of
+  // this object; purely derived server-side, never a second client-side
+  // recomputation of this rule.
+  missingAssignee: MissingAssigneeProject[];
 }
 
 export interface TimesheetPendingItem {

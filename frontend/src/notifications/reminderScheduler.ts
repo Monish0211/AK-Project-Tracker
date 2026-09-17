@@ -35,6 +35,37 @@ const computeTriggerTime = (reminder: ProjectReminder): Date => {
  */
 class ReminderScheduler {
   private timerId: number | null = null;
+  // Sept 2026 — duplicate reminder notification fix. fire() marks a
+  // reminder notificationGenerated:true on the BACKEND asynchronously
+  // (reminderService.updateReminder's PATCH); until that round trip
+  // resolves, the local mirror this scheduler reads (getPendingReminders())
+  // still shows notificationGenerated:false. Without this guard, a slow
+  // PATCH (any tick within ~15s of the first fire) or a failed one (forever,
+  // since fire()'s .catch() only logs and never retries) let the exact same
+  // reminder be handed to fire() again — the same toast/notification
+  // repeating, exactly what the reported screenshot showed.
+  //
+  // Keyed by id -> the exact (reminderDate, reminderTime) it was fired for,
+  // NOT a plain id Set — this is what lets a genuinely RESCHEDULED reminder
+  // (same id, new date/time — reminderService.updateReminder() resets
+  // notificationGenerated to false for exactly this case, see
+  // SCHEDULING_FIELDS there) fire again for its new occurrence, while still
+  // fully suppressing a repeat fire for the SAME occurrence regardless of
+  // how long/whether the confirming PATCH lands. A plain Set would have
+  // permanently blocked every future reschedule of an already-fired
+  // reminder for the rest of the browser session — verified during a
+  // regression pass and fixed here before it ever shipped.
+  //
+  // Tracked per-session (reset on page reload) rather than persisted, since
+  // a reload already re-reads the true backend-persisted state first (see
+  // GlobalReminderProvider's refreshAllReminders() before start()) — this
+  // map only needs to prevent a second fire from THIS running scheduler
+  // instance before the first one's PATCH has had a chance to land.
+  private firedOccurrenceById = new Map<string, string>();
+
+  private static occurrenceKey(reminder: ProjectReminder): string {
+    return `${reminder.reminderDate}T${reminder.reminderTime}`;
+  }
   private onDataChanged = (): void => {
     // Deferred rather than called inline: this listener also fires as a
     // side effect of this scheduler's own fire() (via updateReminder ->
@@ -70,7 +101,18 @@ class ReminderScheduler {
     // Only pending, not-yet-triggered reminders are ever evaluated — a
     // reminder marked notificationGenerated never re-enters this check, so
     // refreshing the app (or any later tick) can never fire it twice.
-    const candidates = reminderService.getPendingReminders().filter((r) => !r.notificationGenerated);
+    // firedOccurrenceById additionally excludes anything THIS scheduler
+    // instance has already fired FOR ITS CURRENT (reminderDate,
+    // reminderTime) — even if the backend hasn't confirmed
+    // notificationGenerated yet — see that field's own comment above. A
+    // reminder whose date/time no longer matches what was recorded at fire
+    // time (i.e. rescheduled since) is not excluded by this, and remains a
+    // candidate.
+    const candidates = reminderService
+      .getPendingReminders()
+      .filter(
+        (r) => !r.notificationGenerated && this.firedOccurrenceById.get(r.id) !== ReminderScheduler.occurrenceKey(r)
+      );
 
     let firedCount = 0;
     candidates.forEach((reminder) => {
@@ -87,6 +129,11 @@ class ReminderScheduler {
   }
 
   private fire(reminder: ProjectReminder, now: Date): void {
+    // Recorded synchronously, before anything async below starts — closes
+    // the exact window that let a slow/failed notificationGenerated PATCH
+    // cause a repeat fire (see firedOccurrenceById's own comment above).
+    this.firedOccurrenceById.set(reminder.id, ReminderScheduler.occurrenceKey(reminder));
+
     const dueAt = parseDueDateTime(reminder);
     const isDueNow = now.getTime() >= dueAt.getTime();
 
@@ -122,10 +169,12 @@ class ReminderScheduler {
       createdAt: now.toISOString(),
     });
 
-    reminderService.updateReminder(reminder.id, {
-      notificationGenerated: true,
-      triggeredAt: now.toISOString(),
-    });
+    reminderService
+      .updateReminder(reminder.id, {
+        notificationGenerated: true,
+        triggeredAt: now.toISOString(),
+      })
+      .catch((error) => console.error("Failed to persist reminder trigger state:", error));
   }
 }
 

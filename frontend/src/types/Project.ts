@@ -86,6 +86,18 @@ export interface Project {
 
   workOrderValueINR: number;
 
+  // Work Order Value / Pending Due — Aug 2026 bug fix. Server-computed
+  // fallback aggregate from GET/POST/PATCH /projects (see Backend's
+  // ProjectDto), carried through untouched by normalizeProject()'s own
+  // recompute. Used ONLY when this project's real quantityItems/invoiceItems
+  // haven't been loaded into this browser yet (e.g. the Project Repository
+  // list, before Edit Project has ever been opened here) — see
+  // normalizeProject() in projectService.ts and getProjectCommercialSummary()
+  // in invoiceProgressService.ts for where each is consumed. Never a second
+  // source of truth once the real item arrays ARE populated.
+  backendWorkOrderValueINR?: number;
+  backendPendingDueINR?: number;
+
   contractType: string;
 
   // ==========================

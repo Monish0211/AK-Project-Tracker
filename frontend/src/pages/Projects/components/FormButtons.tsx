@@ -40,7 +40,7 @@ const FormButtons = ({
   project,
   setProject,
   mode,
-  activeTab: _activeTab,
+  activeTab,
   isLastTab,
   isFirstTab,
   onSaveAndNext,
@@ -105,6 +105,23 @@ const FormButtons = ({
         });
         return false;
       }
+    } else if (activeTab === "quantity" || isLastTab) {
+      // Bug fix (Aug 2026): this validation gate existed only to decide
+      // whether to attempt the sync above — when it failed, the whole save
+      // still silently proceeded and reported success, even though Quantity
+      // Details were never persisted to the backend. Every OTHER tab's Save
+      // & Next click still skips silently here exactly as before (e.g. the
+      // very first click on the General tab of a brand-new project, before
+      // Quantity has ever been visited — createEmptyProject()'s own
+      // placeholder row is expected to fail this check at that point, and
+      // that is not an error). Only surfaced when the user is actually on
+      // the Quantity tab, or is completing the final Save — the two moments
+      // where silently discarding this data would be genuinely misleading.
+      showToast({
+        type: "error",
+        message: "Quantity Details are incomplete and were not saved. Please review the Quantity tab before saving.",
+      });
+      return false;
     }
 
     // Phase 3.4: Payment Milestones round-trip through the real backend the
@@ -130,6 +147,16 @@ const FormButtons = ({
         });
         return false;
       }
+    } else if (activeTab === "payments" || isLastTab) {
+      // Bug fix (Aug 2026) — same reasoning as the Quantity Details branch
+      // above: only surfaced when the user is actually on the Payments tab,
+      // or is completing the final Save, never on an earlier tab's click
+      // before Payments has been visited.
+      showToast({
+        type: "error",
+        message: "Payment Milestones are incomplete and were not saved. Please review the Payments tab before saving.",
+      });
+      return false;
     }
 
     // Phase 3.5: Other Project Expenses round-trip through the real backend

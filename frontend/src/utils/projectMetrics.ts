@@ -40,107 +40,35 @@ export function getActualTimesheetEmployeeCount(project: Project): number {
 /**
  * Calculates the dynamic Completion % for a project.
  *
- * 1. For Quantity Billing (invoiceMethod === "invoice_line_items" or Quantity Items present):
- *    Completion % = Completed Quantity ÷ Order Quantity × 100
- * 2. For Lump Sum (invoiceMethod === "lump_sum" or Payment Milestones present):
- *    Completion % = Completed Milestones % ÷ Total Milestone % × 100
- * 3. For MLMP (invoiceMethod === "mlmp"):
- *    Completion % = Completed Milestones % across all Sets ÷ Total Milestones % across all Sets × 100
- * 4. For Amount Based (fallback):
- *    Completion % = Invoice Raised ÷ Contract Value × 100
+ * Bug fix (Sep 2026): a project's invoiceMethod is a single, frontend-only
+ * preference (never persisted to the backend — see InvoiceCalculations.ts's
+ * getInvoiceMethod() comment) and is always undefined on a fresh fetch. This
+ * function used to branch on that field, falling back to "does this array
+ * happen to be non-empty" when it was unset — Quantity Billing first, Lump
+ * Sum second, MLMP only on an exact (near-unreachable) method match. Real
+ * projects routinely carry Quantity Details (physical/activity tracking)
+ * alongside Lump Sum/MLMP/Amount Based commercial billing, and a single
+ * project/PR can even bill different activities under different methods
+ * simultaneously. The old Quantity branch fired merely because
+ * quantityItems/totalWOQty existed — even on a Lump-Sum-billed project — and
+ * returned 0% (quantityBilled/invoiceQty is never populated by non-quantity
+ * billing) even when real money had been invoiced via milestones.
+ *
+ * Fixed to reuse getProjectCommercialSummary().invoiceCompletionPercent —
+ * already-existing, already-tested logic (getTotalInvoiceRaised() sums every
+ * InvoiceLine's own invoiceAmountINR, which every method populates
+ * regardless of whether it came from a Quantity line, a Lump Sum/MLMP
+ * milestone line, or an Amount Based line — see InvoiceLine's own type
+ * comment) divided by the project's total contracted value. Money is the
+ * only unit every method already records in a mutually comparable way, so
+ * this combines mixed-method projects correctly with no per-method weighting
+ * to invent: a project billing partly by Quantity and partly by Lump Sum
+ * contributes its real invoiced ₹ from both simultaneously, automatically.
  */
 export function calculateProjectCompletionPercentage(project: Project): number {
   if (!project) return 0;
 
-  const method = project.invoiceMethod;
-
-  // 1. QUANTITY BILLING
-  if (
-    method === "invoice_line_items" ||
-    (project.totalWOQty > 0 && Array.isArray(project.quantityItems) && project.quantityItems.length > 0)
-  ) {
-    const totalWOQty = project.totalWOQty || (project.quantityItems || []).reduce((sum: number, q: any) => sum + (q.woQty || 0), 0);
-    const totalInvoiceQty = project.totalInvoiceQty || (project.quantityItems || []).reduce((sum: number, q: any) => sum + (q.invoiceQty || 0), 0);
-
-    if (totalWOQty > 0) {
-      const pct = (totalInvoiceQty / totalWOQty) * 100;
-      return clampPercentage(pct);
-    }
-  }
-
-  // 2. LUMP SUM BILLING
-  if (
-    method === "lump_sum" ||
-    (Array.isArray(project.paymentMilestones) && project.paymentMilestones.length > 0)
-  ) {
-    const milestones = project.paymentMilestones || [];
-    const totalMilestonePct = milestones.reduce((sum: number, m: any) => sum + (m.paymentPercentage || 0), 0);
-
-    const invoicedMilestoneIds = new Set<string>();
-    (project.invoiceItems || []).forEach((item: any) => {
-      (item.invoices || []).forEach((line: any) => {
-        if (line.status !== "Cancelled" && line.milestoneId) {
-          invoicedMilestoneIds.add(line.milestoneId);
-        }
-      });
-    });
-
-    let completedMilestonePct = 0;
-    milestones.forEach((m: any) => {
-      if (invoicedMilestoneIds.has(m.id)) {
-        completedMilestonePct += m.paymentPercentage || 0;
-      }
-    });
-
-    const targetTotal = totalMilestonePct > 0 ? totalMilestonePct : 100;
-    const pct = (completedMilestonePct / targetTotal) * 100;
-    if (completedMilestonePct > 0) {
-      return clampPercentage(pct);
-    }
-  }
-
-  // 3. MLMP (Multi-Level Milestone Progress)
-  if (method === "mlmp") {
-    const invoiceItems = project.invoiceItems || [];
-    let totalMlmpPctSum = 0;
-    let completedMlmpPctSum = 0;
-
-    invoiceItems.forEach((item: any) => {
-      const mlmpMs: any[] = item.mlmpMilestones || [];
-      const itemTotalPct = mlmpMs.reduce((sum: number, m: any) => sum + (m.paymentPercentage || 0), 0);
-      totalMlmpPctSum += itemTotalPct;
-
-      const invoicedMsIds = new Set<string>();
-      (item.invoices || []).forEach((line: any) => {
-        if (line.status !== "Cancelled" && line.milestoneId) {
-          invoicedMsIds.add(line.milestoneId);
-        }
-      });
-
-      mlmpMs.forEach((m: any) => {
-        if (invoicedMsIds.has(m.id)) {
-          completedMlmpPctSum += m.paymentPercentage || 0;
-        }
-      });
-    });
-
-    if (totalMlmpPctSum > 0) {
-      const pct = (completedMlmpPctSum / totalMlmpPctSum) * 100;
-      return clampPercentage(pct);
-    }
-  }
-
-  // 4. AMOUNT BASED FALLBACK (Invoice Raised ÷ Work Order Value × 100)
-  const workOrderValue = project.workOrderValueINR || project.workOrderValue || 0;
-  const commSummary = getProjectCommercialSummary(project);
-  const totalInvoiceRaised = commSummary.totalInvoiceRaised || 0;
-
-  if (workOrderValue > 0) {
-    const pct = (totalInvoiceRaised / workOrderValue) * 100;
-    return clampPercentage(pct);
-  }
-
-  return 0;
+  return clampPercentage(getProjectCommercialSummary(project).invoiceCompletionPercent);
 }
 
 function clampPercentage(value: number): number {

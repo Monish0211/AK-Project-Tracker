@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { X, BookOpen, MessageSquarePlus, Bell, Plus } from "lucide-react";
+import type { Dispatch, SetStateAction } from "react";
+import { X, BookOpen, MessageSquarePlus, Bell, Plus, AlertTriangle } from "lucide-react";
 import type { Project } from "../../types/Project";
 import type { ProjectReminder } from "../../types/ProjectReminder";
 import { ProjectNoteCard } from "../Cards/ProjectNoteCard";
@@ -15,7 +16,15 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   project: Project;
-  setProject: (project: Project) => void;
+  // Every real caller (EditProject.tsx, ViewProject.tsx, both via
+  // ProjectForm.tsx) actually passes a genuine useState setter — widened
+  // from a plain `(project: Project) => void` so handleDataChange below can
+  // use the functional-updater form (setProject(prev => ...)) instead of
+  // merging onto a possibly-stale projectRef.current snapshot. Type-only
+  // change; every existing call site (including the plain-value
+  // setProject(updatedProject) call in handleSaveNote below) already
+  // satisfies this wider type unchanged.
+  setProject: Dispatch<SetStateAction<Project>>;
   readOnly?: boolean;
 }
 
@@ -27,7 +36,11 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
   const [noteText, setNoteText] = useState("");
   const [characterCount, setCharacterCount] = useState(0);
   const [isSavingNote, setIsSavingNote] = useState(false);
-  
+  // Bug fix (Sep 2026): distinct from "loaded successfully, zero notes" —
+  // see fetchProjectNotes()'s own comment for why these must never be
+  // conflated. null = no error (either still loading, or loaded fine).
+  const [notesLoadError, setNotesLoadError] = useState<string | null>(null);
+
   // Reminders State
   const [reminders, setReminders] = useState<ProjectReminder[]>([]);
   const [isEditingReminder, setIsEditingReminder] = useState(false);
@@ -36,18 +49,44 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
   const [animateShow, setAnimateShow] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load live notes from backend API when drawer opens
+  // projectRef mirrors `project` on every render — declared here (before
+  // its first use below) and reused by the pmo:* listener effect further
+  // down. Needed because both effects below only depend on
+  // [isOpen, project.id] / [project.id, setProject] — neither re-creates
+  // its closure when some OTHER field of `project` changes in between, so
+  // reading `project` directly inside either would risk building the next
+  // update from a stale snapshot instead of whatever's truly current.
+  const projectRef = useRef(project);
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
+
+  // Load live notes from backend API when drawer opens.
+  //
+  // Bug fix (Sep 2026): fetchProjectNotes() no longer swallows a failed
+  // request into an empty array (see that function's own comment) — a
+  // real failure is now caught here and surfaced via notesLoadError,
+  // rendered as a distinct state below instead of silently looking
+  // identical to "no notes yet". Also now builds off projectRef.current
+  // instead of the closure's `project`, so a Note saved (or anything else
+  // updated) between this effect starting and the fetch resolving is never
+  // discarded by this merge.
   useEffect(() => {
     if (isOpen && project.id) {
-      fetchProjectNotes(project.id).then((apiNotes) => {
-        if (apiNotes && apiNotes.length >= 0) {
+      setNotesLoadError(null);
+      fetchProjectNotes(project.id)
+        .then((apiNotes) => {
           // Merge API notes with existing project notes, avoiding duplicate IDs
           const existingIds = new Set(apiNotes.map((n) => n.id));
-          const legacyNotes = (project.notes || []).filter((n) => !existingIds.has(n.id));
+          const current = projectRef.current;
+          const legacyNotes = (current.notes || []).filter((n) => !existingIds.has(n.id));
           const combined = [...apiNotes, ...legacyNotes];
-          setProject({ ...project, notes: combined });
-        }
-      });
+          setProject({ ...current, notes: combined });
+        })
+        .catch((error) => {
+          console.error("Failed to load Workspace notes:", error);
+          setNotesLoadError("Unable to load notes from the server. Please try again.");
+        });
     }
   }, [isOpen, project.id]);
 
@@ -55,7 +94,17 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => setAnimateShow(true), 50);
-      loadReminders();
+      // Backend-authoritative load (also migrates any legacy local-only
+      // reminders for this project on first open) — see
+      // ReminderService.ts's loadRemindersForProject(). Falls back to
+      // whatever's already in the local mirror on failure rather than
+      // leaving the tab blank.
+      reminderService
+        .loadRemindersForProject(project.id)
+        .catch((error) => {
+          console.error("Failed to load reminders from server:", error);
+          loadReminders();
+        });
     } else {
       setAnimateShow(false);
       setIsEditingReminder(false);
@@ -63,13 +112,61 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
     }
   }, [isOpen]);
 
+  // handleDataChange below used to read `project` (and `notes`) from this
+  // effect's own closure, but this effect's dependency array only
+  // re-creates that closure when `id`/`notes` change — never when
+  // quantityItems/invoiceItems/paymentMilestones/nonManhourExpenses/General
+  // Information fields change (e.g. Quantity's own Add Activity). Reuses
+  // the same projectRef declared above (kept in sync on every render) so
+  // handleDataChange always has the truly current in-memory project —
+  // including any not-yet-saved edit — to merge onto, no matter which
+  // field last changed.
   useEffect(() => {
     const handleDataChange = () => {
       loadReminders();
       const latest = getProjectById(project.id);
       if (latest) {
-        // Preserve live API-backed notes so legacy localStorage project sync never overwrites live notes
-        setProject({ ...latest, notes: project.notes });
+        // Bug fix (Sep 2026): this used to spread ALL of `latest` (a stale
+        // localStorage read) onto the project, discarding any unsaved edit
+        // in every OTHER tab (Quantity, Payment Milestones, Invoices, Other
+        // Project Expenses, General Information) the instant ANY of these
+        // three events fired anywhere in the app — not just when this
+        // project's own completion status changed. Concretely: adding a
+        // Quantity row mounts a fresh AssignedToInput, which fetches the
+        // employee list; that fetch's own write-through dispatches
+        // pmo:data-changed globally, which this listener (mounted
+        // unconditionally by ProjectForm.tsx regardless of whether this
+        // drawer is even open) picked up and used to wipe the just-added
+        // row before it was ever saved. This listener's only genuine need
+        // is to pick up the completion fields completeProject() sets
+        // (projectService.ts) when a completion happens elsewhere while
+        // this project is open — every other field now keeps whatever the
+        // user currently has in memory, saved or not.
+        //
+        // Bug fix (Sep 2026, part 2): spreading `projectRef.current` here
+        // raced with same-tick callers like InvoiceDashboard's
+        // persistProjectChange(), which calls setProject(updatedProject)
+        // immediately followed by updateProject() — and updateProject()
+        // dispatches this exact "pmo:data-changed" event SYNCHRONOUSLY,
+        // before React has committed the prior setProject() and re-run the
+        // effect that keeps projectRef.current current. This handler was
+        // firing with a projectRef.current snapshot from BEFORE that
+        // update, so its setProject() call — landing after the fresh one
+        // in the same batch — silently reverted the just-applied
+        // quantityItems/invoiceItems/etc. back to the stale snapshot. Using
+        // the functional updater form instead means React always hands
+        // this `prev` the true latest state at the moment the update is
+        // actually applied (including any update from earlier in the same
+        // batch), never a stale ref — closing the race without changing
+        // when this listener runs or which fields it merges.
+        setProject((prev) => ({
+          ...prev,
+          projectStatus: latest.projectStatus,
+          actualCompletionDate: latest.actualCompletionDate,
+          completionRemarks: latest.completionRemarks,
+          completedBy: latest.completedBy,
+          completedTimestamp: latest.completedTimestamp,
+        }));
       }
     };
     window.addEventListener("pmo:reminders-changed", handleDataChange);
@@ -80,7 +177,7 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
       window.removeEventListener("pmo:data-changed", handleDataChange);
       window.removeEventListener("pmo:project-completed", handleDataChange);
     };
-  }, [project.id, project.notes, setProject]);
+  }, [project.id, setProject]);
 
   const loadReminders = () => {
     setReminders(reminderService.getRemindersByProject(project.id));
@@ -121,11 +218,19 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
     }
   };
 
-  const handleSaveReminder = (reminderData: Partial<ProjectReminder>) => {
-    if (editingReminder) {
-      reminderService.updateReminder(editingReminder.id, reminderData);
-    } else {
-      reminderService.addReminder(reminderData as any);
+  const handleSaveReminder = async (reminderData: Partial<ProjectReminder>) => {
+    try {
+      if (editingReminder) {
+        await reminderService.updateReminder(editingReminder.id, reminderData);
+      } else {
+        await reminderService.addReminder(reminderData as any);
+      }
+      loadReminders();
+      showToast({ type: "success", message: editingReminder ? "Reminder updated successfully." : "Reminder created successfully." });
+    } catch (error) {
+      console.error("Failed to save reminder:", error);
+      showToast({ type: "error", message: "Unable to save the reminder. Please try again." });
+      return;
     }
     setIsEditingReminder(false);
     setEditingReminder(null);
@@ -270,7 +375,18 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
 
                   {/* Notes Feed */}
                   <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#0F172A] p-4 custom-scrollbar-timeline">
-                    {groupKeys.length > 0 ? (
+                    {notesLoadError ? (
+                      // Bug fix (Sep 2026): a failed load must never look
+                      // identical to "this project genuinely has no notes"
+                      // — see fetchProjectNotes()'s own comment.
+                      <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 space-y-3 px-6 text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/30 flex items-center justify-center text-red-600 dark:text-red-400 mb-4">
+                          <AlertTriangle size={32} strokeWidth={1.5} />
+                        </div>
+                        <p className="text-sm font-medium text-red-600 dark:text-red-400">Unable to load notes</p>
+                        <p className="text-xs max-w-[240px]">{notesLoadError}</p>
+                      </div>
+                    ) : groupKeys.length > 0 ? (
                       <div className="space-y-6">
                         {groupKeys.map((dateString) => (
                           <div key={dateString} className="relative">

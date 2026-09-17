@@ -10,6 +10,7 @@ import {
   Droplet,
   FolderKanban,
   LayoutDashboard,
+  NotebookText,
   PauseCircle,
   PlayCircle,
   Settings,
@@ -18,7 +19,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as XLSX from "xlsx";
-import { queryProjectsFromApi } from "../../services/projectService";
+import { fetchProjectStatusCountsFromApi, queryProjectsFromApi } from "../../services/projectService";
 import { useAuth } from "../../auth/authContext";
 import { hasModuleAccess } from "../../auth/permissions";
 import { usePmoToast } from "../ui/usePmoToast";
@@ -53,6 +54,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Project Repository", to: "/projects", icon: FolderKanban },
       { label: "Completed Projects", to: "/projects/completed", icon: CheckCircle2 },
       { label: "Archived Projects", to: "/projects/archived", icon: Archive },
+      { label: "Notes", to: "/notes", icon: NotebookText },
     ],
   },
   { label: "Customer Master", to: "/customers", icon: Building2 },
@@ -163,11 +165,13 @@ const Sidebar = () => {
   // project opened from either of those.
   const isCompletedProjectsActive = location.pathname.startsWith("/projects/completed") || cameFromCompleted;
   const isArchivedProjectsActive = location.pathname.startsWith("/projects/archived") || cameFromArchived;
+  const isNotesActive = location.pathname === "/notes";
   const isRepositoryActive =
     !isCompletedProjectsActive &&
     !isArchivedProjectsActive &&
     (location.pathname === "/projects" || location.pathname.startsWith("/projects/"));
-  const isProjectsSectionActive = isRepositoryActive || isCompletedProjectsActive || isArchivedProjectsActive;
+  const isProjectsSectionActive =
+    isRepositoryActive || isCompletedProjectsActive || isArchivedProjectsActive || isNotesActive;
 
   // Dropdown starts expanded whenever a Projects sub-page is already active,
   // and otherwise toggles manually.
@@ -177,22 +181,21 @@ const Sidebar = () => {
     if (!hasModuleAccess(user, "Projects")) return;
 
     let cancelled = false;
+    // Perf fix (Issue #3) — one GET /projects/status-counts request instead
+    // of 4 parallel per-status queryProjectsFromApi(pageSize: 1) calls. Same
+    // authorization scoping, same 4 status keys, same displayed meaning —
+    // only the transport changed. See project.service.ts's
+    // getProjectStatusCounts() for the backend side.
     const loadCounts = () => {
-      Promise.all(
-        (["Active", "On Hold", "Completed", "Cancelled"] as const).map((status) =>
-          queryProjectsFromApi({ projectStatus: status, page: 1, pageSize: 1 }).then((result) => [status, result.total] as const)
-        )
-      )
-        .then((rows) => {
+      fetchProjectStatusCountsFromApi()
+        .then((counts) => {
           if (cancelled) return;
-          const next: Record<string, number | null> = {
-            Active: 0,
-            "On Hold": 0,
-            Completed: 0,
-            Cancelled: 0,
-          };
-          for (const [status, total] of rows) next[status] = total;
-          setStatusCounts(next);
+          setStatusCounts({
+            Active: counts.Active ?? 0,
+            "On Hold": counts["On Hold"] ?? 0,
+            Completed: counts.Completed ?? 0,
+            Cancelled: counts.Cancelled ?? 0,
+          });
         })
         .catch(() => {
           if (!cancelled) {
@@ -369,7 +372,10 @@ const Sidebar = () => {
                       transform 260ms ease;
         }
         .pmo-dropdown-panel.pmo-dropdown-open {
-          max-height: 140px;
+          /* Was 140px (sized for exactly 3 children); Notes is a 4th child
+             now, so this must cover 4 rows or it gets clipped by this
+             element's own overflow: hidden above. */
+          max-height: 190px;
           opacity: 1;
           transform: translateY(0);
         }
@@ -563,7 +569,9 @@ const Sidebar = () => {
                             ? isRepositoryActive
                             : child.to === "/projects/completed"
                               ? isCompletedProjectsActive
-                              : isArchivedProjectsActive;
+                              : child.to === "/projects/archived"
+                                ? isArchivedProjectsActive
+                                : isNotesActive;
                         return (
                           <li key={child.to}>
                             <NavLink
@@ -646,7 +654,14 @@ const Sidebar = () => {
           height and stays anchored to the bottom, right after Navigation's
           flexible space, never compressed or pushed below the viewport. */}
       <div className="shrink-0 hidden min-[1440px]:block p-4 pt-1">
-        <div className="pmo-qs-card rounded-2xl border border-white/10 bg-white/[0.06] backdrop-blur-sm p-4 shadow-xl">
+        {/* id="pmo-qs-anchor" — Sept 2026 PMO Assistant peek redesign. The
+            ONLY change made to this file for that feature: PmoAssistantOrb.tsx
+            reads this element's getBoundingClientRect() (via
+            document.getElementById) to anchor the "peeking from behind
+            Quick Summary" character, entirely from outside this file. Purely
+            an id addition — no visual/behavioral change to Quick Summary
+            itself. */}
+        <div id="pmo-qs-anchor" className="pmo-qs-card rounded-2xl border border-white/10 bg-white/[0.06] backdrop-blur-sm p-4 shadow-xl">
           <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-slate-400">
             Quick Summary
           </h3>
