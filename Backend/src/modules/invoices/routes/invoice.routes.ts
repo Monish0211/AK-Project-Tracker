@@ -7,6 +7,7 @@ import { validate } from "../../../shared/middleware/validate.js";
 import {
   createInvoiceLine,
   deleteInvoiceLine,
+  getAllInvoiceItemsForCaller,
   getInvoiceItemsByProject,
   ingestInvoiceLines,
   updateInvoiceLine,
@@ -21,6 +22,16 @@ const router = Router();
 // — including the one-hop InvoiceLine -> QuantityItem -> Project lookup for
 // routes that only carry an invoice-line id.
 router.get("/projects/:projectId/invoice-items", authenticate, requireModuleAccess("Invoices"), getInvoiceItemsByProject);
+// Sept 2026 — Reports/Dashboard Invoice Raised discrepancy fix. Every
+// invoice line across every project this caller is authorized to see, in
+// one request — used by Reports (useReportsData.ts) so it computes Invoice
+// Raised from the same live, complete backend data the Dashboard KPI
+// already uses, instead of from whatever's cached in each project's
+// browser-local mirror. Declared before the "/projects/:projectId/..."
+// route above only to keep every /projects/... route grouped together —
+// it can never collide with it (different path shape entirely: "/invoice-
+// items" has one fewer segment than "/projects/:projectId/invoice-items").
+router.get("/invoice-items", authenticate, requireModuleAccess("Invoices"), getAllInvoiceItemsForCaller);
 // Ingest — legacy-migration only, preserves caller-supplied ids and raw
 // historical amounts; see invoice.service.ts's ingestInvoiceLinesForProject().
 // Administrator-only: this is the one path that accepts a client-chosen id

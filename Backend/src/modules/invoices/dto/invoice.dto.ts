@@ -95,6 +95,34 @@ export interface InvoiceItemListDto {
 }
 
 /**
+ * One raw invoice line, scoped across every project a caller is authorized
+ * to see — unlike InvoiceLineDto (always read within one already-known
+ * project), this one carries its own projectId so a flat, cross-project
+ * list can be grouped back by project on the client. Sept 2026 — Reports/
+ * Dashboard Invoice Raised discrepancy fix: GET /invoice-items reuses this
+ * shape so Reports can compute Invoice Raised from the same live,
+ * authoritative InvoiceLine data the Dashboard KPI already uses, instead of
+ * from whatever happens to already be cached in the browser's local
+ * Projects mirror (see invoice.service.ts's listAllInvoiceLinesForCaller()).
+ */
+export interface ReportInvoiceLineDto {
+  id: string;
+  projectId: string;
+  /** The QuantityItem this line bills against — id === InvoiceItemDto.id, so a caller merging this into an already-loaded InvoiceItem list can match by id rather than guessing. */
+  quantityItemId: string;
+  status: string;
+  invoiceAmountINR: number;
+  invoiceDate: Date;
+  invoiceNo: string;
+  quantityBilled: number;
+}
+
+/** GET /invoice-items response. */
+export interface ReportInvoiceLineListDto {
+  items: ReportInvoiceLineDto[];
+}
+
+/**
  * One row of a bulk Ingest request — the ONLY invoice-line-creation shape
  * that carries its own `id` and its own historical snapshot fields
  * (unitPriceINR/calculatedAmountINR/commercialAdjustmentINR), preserved

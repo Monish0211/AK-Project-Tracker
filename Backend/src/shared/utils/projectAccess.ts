@@ -3,24 +3,46 @@ import { AppError } from "./AppError.js";
 import { prisma } from "./prismaClient.js";
 
 /**
+ * Roles with unrestricted project visibility — every "may this caller see
+ * projects they didn't create" decision in the codebase (this file's own
+ * canAccessProject() below, plus every callerUserId derivation ahead of
+ * projectOwnershipWhereOr() in the Projects/Dashboard/Timesheets/Resources
+ * modules) must resolve through this one function, never re-derive its own
+ * roleName check, so the set of unrestricted-visibility roles can never
+ * drift out of sync between call sites.
+ *
+ * Business rule: PMO Manager sees every user's projects, the same as
+ * Administrator — not just what they personally created. This is a
+ * project-visibility rule only; it does not touch any Administrator-only
+ * *action* gate (audit logs, user role management, invoice/milestone/
+ * timesheet admin routes) — those keep using authorize("Administrator")
+ * exactly as before.
+ */
+export function hasUnrestrictedProjectVisibility(roleName: string): boolean {
+  return roleName === "Administrator" || roleName === "PMO Manager";
+}
+
+/**
  * Project-ownership authorization — the single source of truth for "may
  * this caller touch this project." Reused by the Project module itself and
  * by every project-scoped child-resource module (Quantity, Milestones,
  * Invoices, Expenses, Resources) so there is never a second, independently
  * drifting authorization implementation.
  *
- * Rule: Administrator always passes. A project with no recorded creator
- * (createdByUserId: null — every project that existed before this field was
- * introduced, since the concept didn't exist yet) is "unclaimed" and
- * accessible to every normal user, never locked to Administrator-only.
- * Otherwise, only the creator may access it.
+ * Rule: a role with unrestricted project visibility (see
+ * hasUnrestrictedProjectVisibility() above) always passes. A project with no
+ * recorded creator (createdByUserId: null — every project that existed
+ * before this field was introduced, since the concept didn't exist yet) is
+ * "unclaimed" and accessible to every normal user, never locked to an
+ * unrestricted-visibility role only. Otherwise, only the creator may access
+ * it.
  */
 export interface ProjectOwnershipCheck {
   createdByUserId: string | null;
 }
 
 export function canAccessProject(user: AccessTokenPayload, project: ProjectOwnershipCheck): boolean {
-  if (user.roleName === "Administrator") return true;
+  if (hasUnrestrictedProjectVisibility(user.roleName)) return true;
   if (project.createdByUserId === null) return true;
   return project.createdByUserId === user.sub;
 }

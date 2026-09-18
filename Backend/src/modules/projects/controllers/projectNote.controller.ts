@@ -1,6 +1,24 @@
 import type { Request, Response, NextFunction } from "express";
 import { requireUser } from "../../../shared/utils/requireUser.js";
-import { createNoteForProjectService, getNotesForProjectService } from "../services/projectNote.service.js";
+import {
+  createNoteForProjectService,
+  getNotesForProjectService,
+  listAllNotesForCaller,
+} from "../services/projectNote.service.js";
+
+// GET /projects/notes — the dedicated read-only Notes register page.
+export async function getAllNotesController(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const user = requireUser(req);
+    const notes = await listAllNotesForCaller(user);
+    res.status(200).json({
+      success: true,
+      data: notes,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
 
 export async function getProjectNotesController(
   req: Request,

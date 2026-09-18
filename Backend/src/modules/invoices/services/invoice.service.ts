@@ -1,13 +1,31 @@
 import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
-import { assertProjectAccessById, getProjectCreatorUserId } from "../../../shared/utils/projectAccess.js";
+import {
+  assertProjectAccessById,
+  getProjectCreatorUserId,
+  hasUnrestrictedProjectVisibility,
+} from "../../../shared/utils/projectAccess.js";
 import { getUserDisplayName } from "../../../shared/utils/userDisplayName.js";
 import { notify, resolveProjectEventRecipients } from "../../notifications/notification.service.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { getMilestonePercentageById } from "../../milestones/services/milestone.service.js";
 import { getQuantityItemById, listQuantityForProject } from "../../quantity/services/quantity.service.js";
-import type { IngestInvoiceLinesResultDto, InvoiceItemDto, InvoiceItemListDto, InvoiceLineDto } from "../dto/invoice.dto.js";
+// Sept 2026 — Reports/Dashboard Invoice Raised discrepancy fix. Reuses the
+// EXACT SAME authorized-project lookup and InvoiceLine query the
+// Dashboard's own Invoice Raised KPI already uses
+// (dashboard.service.ts's getDashboardSummary()) — never a second,
+// independently-drifting invoice aggregation. See
+// listAllInvoiceLinesForCaller() below.
+import { findAuthorizedProjects, findInvoiceLinesForProjects } from "../../dashboard/repository/dashboard.repository.js";
+import type { InvoiceLineRow as DashboardInvoiceLineRow } from "../../dashboard/repository/dashboard.repository.js";
+import type {
+  IngestInvoiceLinesResultDto,
+  InvoiceItemDto,
+  InvoiceItemListDto,
+  InvoiceLineDto,
+  ReportInvoiceLineListDto,
+} from "../dto/invoice.dto.js";
 import type { InvoiceLineData } from "../invoice.types.js";
 import {
   createLine as createLineInRepository,
@@ -716,4 +734,48 @@ export async function ingestInvoiceLinesForProject(
   });
 
   return { items };
+}
+
+function toReportInvoiceLineDto(row: DashboardInvoiceLineRow): ReportInvoiceLineListDto["items"][number] {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    quantityItemId: row.quantityItemId,
+    status: row.status,
+    invoiceAmountINR: row.invoiceAmountINR,
+    invoiceDate: row.invoiceDate,
+    invoiceNo: row.invoiceNo,
+    quantityBilled: row.quantityBilled,
+  };
+}
+
+/**
+ * Every invoice line across every project this caller is authorized to
+ * see — GET /invoice-items. Reuses findAuthorizedProjects()/
+ * findInvoiceLinesForProjects() from dashboard.repository.ts verbatim: the
+ * SAME project-visibility rule (hasUnrestrictedProjectVisibility()) and the
+ * SAME QuantityItem-anchored InvoiceLine query the Dashboard's own Invoice
+ * Raised KPI is built from (dashboard.service.ts's getDashboardSummary()) —
+ * never a second, independently-drifting implementation.
+ *
+ * Sept 2026 — added specifically so Reports (frontend useReportsData.ts)
+ * can compute Invoice Raised (and every other invoice-line-derived figure:
+ * Cash Realized, status breakdowns, ageing) from this same live, complete
+ * backend data, instead of from whatever happens to already be cached in
+ * each project's browser-local invoiceItems mirror — which was only ever
+ * populated by actually opening that project's Edit/View page at least
+ * once in that browser, silently under-counting every project that never
+ * was. Business rules (which statuses count, how amounts are capped) are
+ * NOT reimplemented here — this returns raw lines only; the caller applies
+ * the exact same rules dashboard.formulas.ts already documents
+ * (invoiceRaisedFromLines() / paymentReceivedFromLines(): every
+ * non-Cancelled line counts toward Invoice Raised; only Paid lines count
+ * toward Cash Realized — PartiallyPaid never invents a partial cash
+ * amount).
+ */
+export async function listAllInvoiceLinesForCaller(user: AccessTokenPayload): Promise<ReportInvoiceLineListDto> {
+  const callerUserId = hasUnrestrictedProjectVisibility(user.roleName) ? undefined : user.sub;
+  const projects = await findAuthorizedProjects(callerUserId);
+  const lines = await findInvoiceLinesForProjects(projects.map((p) => p.id));
+  return { items: lines.map(toReportInvoiceLineDto) };
 }

@@ -44,6 +44,15 @@ export const getInvoiceItemsByProject = asyncHandler(async (req: Request, res: R
   res.status(200).json({ success: true, data: result });
 });
 
+// Sept 2026 — Reports/Dashboard Invoice Raised discrepancy fix. See
+// invoice.service.ts's listAllInvoiceLinesForCaller() for why this reuses
+// the Dashboard's own authorized-project + InvoiceLine query verbatim.
+export const getAllInvoiceItemsForCaller = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  const result = await invoiceService.listAllInvoiceLinesForCaller(user);
+  res.status(200).json({ success: true, data: result });
+});
+
 export const createInvoiceLine = asyncHandler(async (req: Request, res: Response) => {
   const user = requireUser(req);
   const quantityItemId = parseQuantityItemIdParam(req);
