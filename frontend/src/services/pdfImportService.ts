@@ -113,12 +113,24 @@ export interface PdfDocumentSetResult {
  * see the approved cost/architecture reasoning: N independent Claude
  * calls plus a separate merge call was explicitly rejected).
  */
+// 100s override (default is 30s) — up to MAX_PDF_FILE_COUNT (20) files at up
+// to MAX_PDF_FILE_SIZE_BYTES (20MB) each, uploaded in ONE request, cross-
+// checked together by the backend's Claude AI leg. This is comfortably an
+// LLM-plus-multi-file-upload operation, not a normal CRUD call — every
+// failure mode (including a timeout) is already caught by this function's
+// own caller (extractPdfDocumentSet()'s inner try/catch) and falls back to
+// the OCR/rule-engine result, so a slightly generous timeout here costs
+// nothing but time on the rare occasions it's actually needed.
+const PDF_AI_EXTRACT_TIMEOUT_MS = 100_000;
+
 async function callClaudeForDocumentSet(files: File[]): Promise<PdfImportAiCandidate> {
   const formData = new FormData();
   for (const file of files) {
     formData.append("files", file);
   }
-  return apiClient.postFormData<PdfImportAiCandidate>("/pdf-import/ai-extract", formData);
+  return apiClient.postFormData<PdfImportAiCandidate>("/pdf-import/ai-extract", formData, {
+    timeoutMs: PDF_AI_EXTRACT_TIMEOUT_MS,
+  });
 }
 
 /**

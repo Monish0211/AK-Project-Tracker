@@ -72,12 +72,25 @@ export const TimesheetHistoricalResetModal = ({ open, onClose, onCleared }: Prop
     setError(null);
     try {
       const data = await apiClient.delete<ClearResult>(
-        `/timesheets/entries/historical?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`
+        `/timesheets/entries/historical?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+        undefined,
+        { timeoutMs: 60_000 }
       );
       setResult(data);
       onCleared();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to clear the historical timesheet data. Please try again.");
+      // A timed-out DELETE is not a confirmed failure — the server-side
+      // recompute may have already completed. Never claim it definitely
+      // failed; tell the admin to check before retrying (retrying a delete
+      // that already succeeded is harmless, but re-clearing an already-clear
+      // range is a wasted admin action worth avoiding when we can).
+      setError(
+        err instanceof ApiError && err.isTimeout
+          ? "Request timed out. The server may still be processing this operation. Please verify the result before retrying."
+          : err instanceof ApiError
+            ? err.message
+            : "Failed to clear the historical timesheet data. Please try again."
+      );
     } finally {
       setPending(false);
     }

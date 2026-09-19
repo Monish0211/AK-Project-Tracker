@@ -30,6 +30,7 @@ import CommercialCard from "./PaymentMilestoneCard";
 import ProjectLeadershipCard from "./ProjectLeadershipCard";
 import ExpandableTeamMembersCard from "./ExpandableTeamMembersCard";
 import FormButtons from "./FormButtons";
+import type { SubresourceLoadStatus } from "./FormButtons";
 import ExpenseBudgetCard from "./ExpenseBudgetCard";
 import InvoiceCard from "./InvoiceCard";
 import NonManhourExpenseCard from "./ExpenseInformation/NonManhourExpenseCard";
@@ -89,9 +90,11 @@ interface Props {
   initialActivityId?: string | null;
   /** Deep-linked from a notification — forwarded to InvoiceCard to highlight the right invoice line in Invoice History. */
   initialInvoiceLineId?: string | null;
+  /** P0 fix — forwarded to FormButtons, which blocks Save entirely if any flag is true. Only EditProject.tsx passes this; AddProject.tsx never does. */
+  resourceLoadFailed?: SubresourceLoadStatus;
 }
 
-const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId, initialInvoiceLineId }: Props) => {
+const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId, initialInvoiceLineId, resourceLoadFailed }: Props) => {
   const [isNotesOpen, setIsNotesOpen] = useState(false);
   const TABS = mode === "add" ? TABS_ADD : TABS_EDIT;
   const [activeTab, setActiveTab] = useState<TabKey>(
@@ -365,6 +368,7 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
         onValidate={() => validateActiveTab(activeTab)}
         onSaveAndNext={goToNextTab}
         onBack={goToPreviousTab}
+        resourceLoadFailed={resourceLoadFailed}
       />
 
       {/* Project Notes Slide-over Drawer */}

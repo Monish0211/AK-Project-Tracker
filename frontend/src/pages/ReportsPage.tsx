@@ -58,6 +58,7 @@ export function ReportsPage() {
     filterOptions,
     resetFilters,
     analytics,
+    authoritativeInvoiceLines,
   } = useReportsData();
 
   const handleDrillDown = (target: string) => {
@@ -108,10 +109,18 @@ export function ReportsPage() {
           <ProjectPerformance projects={filteredProjects} analytics={analytics} />
         )}
         {activeTab === "invoice" && (
-          <InvoiceAnalytics projects={filteredProjects} analytics={analytics} />
+          <InvoiceAnalytics
+            projects={filteredProjects}
+            analytics={analytics}
+            invoiceLines={authoritativeInvoiceLines}
+          />
         )}
         {activeTab === "collection" && (
-          <CollectionAnalytics projects={filteredProjects} analytics={analytics} />
+          <CollectionAnalytics
+            projects={filteredProjects}
+            analytics={analytics}
+            invoiceLines={authoritativeInvoiceLines}
+          />
         )}
         {activeTab === "expense" && (
           <ExpenseAnalytics projects={filteredProjects} analytics={analytics} />

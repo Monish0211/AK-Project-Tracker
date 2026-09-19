@@ -325,12 +325,18 @@ export async function importEmployeesFromExcel(
     return { added: 0, updated: 0, totalImported: 0, invalid, blank };
   }
 
+  // 60s override (default 30s) — a batch import of parsed spreadsheet rows.
   const result = await apiClient.post<{ added: number; updated: number; totalImported: number; invalid: number }>(
     "/employees/import",
-    { employees: parsedRows }
+    { employees: parsedRows },
+    { timeoutMs: 60_000 }
   );
 
-  await fetchEmployeesFromApi({ pageSize: 200 });
+  // Phase 1 #2 — was a single capped fetchEmployeesFromApi({ pageSize: 200 })
+  // call, which would silently re-truncate the mirror back to 200 after an
+  // import that pushed the real count past it. See fetchAllEmployeesFromApi's
+  // own comment.
+  await fetchAllEmployeesFromApi();
 
   return {
     added: result.added,
@@ -499,6 +505,65 @@ export async function fetchEmployeesFromApi(params: EmployeeListParams = {}): Pr
   writeThroughEmployeesMirror(items);
 
   return { items, total: result.total, page: result.page, pageSize: result.pageSize };
+}
+
+// =============================================================================
+// PHASE 1 RELIABILITY #2 — EMPLOYEE PAGINATION >200
+// =============================================================================
+// GET /employees enforces an intentional, unchanged server-side ceiling of
+// pageSize<=200 (see Backend's listEmployeesQuerySchema) — deliberate
+// scalability hardening, not a bug. Every caller in this file used to request
+// exactly page 1 at pageSize=200 and stop, silently discarding the backend's
+// own accurate `total` whenever the real employee count exceeded 200. Since
+// this is the ONE shared source that populates the localStorage mirror every
+// other module (Project Leadership, Quantity Assigned To, Timesheets,
+// Expense rate lookups, PMO Assistant, etc.) reads via getEmployees(),
+// that truncation was effectively silently dropping employees app-wide, not
+// just in Manpower's own table.
+
+const EMPLOYEE_PAGE_SIZE = 200;
+
+export type FetchAllEmployeesParams = Omit<EmployeeListParams, "page" | "pageSize">;
+
+export interface FetchAllEmployeesResult {
+  items: Employee[];
+  total: number;
+}
+
+/**
+ * Fetches every employee matching the given filters, transparently paging
+ * through the backend's 200-per-request cap rather than raising it. Page 1
+ * supplies the authoritative `total`; only as many further pages as that
+ * total actually requires are requested, sequentially (never Promise.all —
+ * keeps this to at most one in-flight employee request at a time, matching
+ * this app's existing "sequential, never parallel" convention for batch
+ * network work, e.g. pdfImportService.ts's per-file extraction loop), and
+ * every page carries the SAME filters as page 1 — search/filter narrowing
+ * always happens server-side, on every page, never "fetch everything then
+ * filter in the browser."
+ *
+ * If any page fails, the whole call rejects rather than returning a partial
+ * list — a partial employee set must never be mistaken for the complete one,
+ * given how many other screens treat this as authoritative. Pages that DID
+ * succeed before the failure are still merged into the localStorage mirror
+ * (each fetchEmployeesFromApi() call writes through immediately and
+ * independently), so no already-fetched progress is lost — only the
+ * caller's own combined-list promise reflects the incomplete result.
+ */
+export async function fetchAllEmployeesFromApi(
+  params: FetchAllEmployeesParams = {}
+): Promise<FetchAllEmployeesResult> {
+  const first = await fetchEmployeesFromApi({ ...params, page: 1, pageSize: EMPLOYEE_PAGE_SIZE });
+
+  const items = [...first.items];
+  const totalPages = Math.ceil(first.total / EMPLOYEE_PAGE_SIZE);
+
+  for (let page = 2; page <= totalPages; page++) {
+    const next = await fetchEmployeesFromApi({ ...params, page, pageSize: EMPLOYEE_PAGE_SIZE });
+    items.push(...next.items);
+  }
+
+  return { items, total: first.total };
 }
 
 /** Creates an employee via the real backend — POST /employees. */
@@ -694,7 +759,11 @@ export function loadEmployeesForApp(): Promise<LoadEmployeesResult> {
  * real empty state, never demo data.
  */
 async function loadEmployeesForAppOnce(): Promise<LoadEmployeesResult> {
-  const backendResult = await fetchEmployeesFromApi({ pageSize: 200 });
+  // Phase 1 #2 — was fetchEmployeesFromApi({ pageSize: 200 }), capped at the
+  // backend's per-request maximum. fetchAllEmployeesFromApi() pages through
+  // that cap transparently so Manpower (and every other reader of the shared
+  // mirror) sees every employee regardless of total count.
+  const backendResult = await fetchAllEmployeesFromApi();
 
   if (backendResult.items.length > 0) {
     if (!isMigrationCompleted()) markMigrationCompleted();
@@ -712,7 +781,7 @@ async function loadEmployeesForAppOnce(): Promise<LoadEmployeesResult> {
   }
 
   const migration = await migrateLegacyEmployees(legacyItems);
-  const finalList = await fetchEmployeesFromApi({ pageSize: 200 });
+  const finalList = await fetchAllEmployeesFromApi();
   return { employees: finalList.items, migration };
 }
 

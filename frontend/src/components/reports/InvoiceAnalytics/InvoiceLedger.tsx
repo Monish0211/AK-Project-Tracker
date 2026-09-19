@@ -3,49 +3,58 @@ import { Search } from "lucide-react";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
+import type { ReportInvoiceLine } from "../../../services/invoiceService";
 
 interface Props {
   projects: any[];
+  // Reports drill-down fix (Sep 2026) — see MonthlyBillingChart.tsx's own
+  // identical comment; same authoritative source, same reason. Activity
+  // Description below is looked up via project.quantityItems (matched by
+  // quantityItemId) since the authoritative /invoice-items line itself
+  // carries no description — best-effort only, same as this column's own
+  // prior "-" fallback; never blocks a row from appearing.
+  invoiceLines: ReportInvoiceLine[];
 }
 
-export function InvoiceLedger({ projects }: Props) {
+export function InvoiceLedger({ projects, invoiceLines }: Props) {
   const [search, setSearch] = useState("");
 
-  const invoiceLines = useMemo(() => {
+  const ledgerRows = useMemo(() => {
+    const projectById = new Map(projects.map((p) => [p.id, p]));
     const lines: any[] = [];
-    projects.forEach((p) => {
-      const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      items.forEach((item: any) => {
-        (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
-          lines.push({
-            id: line.id,
-            invoiceNo: line.invoiceNo,
-            invoiceDate: line.invoiceDate || "-",
-            prNo: p.prNo || "-",
-            client: p.client || "-",
-            projectTitle: p.projectTitle || "-",
-            activityName: item.description || "-",
-            quantityBilled: line.quantityBilled || 0,
-            amountINR: line.invoiceAmountINR || 0,
-            status: line.status || "Draft",
-          });
-        });
+    invoiceLines.forEach((line) => {
+      const p = projectById.get(line.projectId);
+      if (!p) return;
+      const quantityItem = (Array.isArray(p.quantityItems) ? p.quantityItems : []).find(
+        (qi: any) => qi.id === line.quantityItemId
+      );
+      lines.push({
+        id: line.id,
+        invoiceNo: line.invoiceNo,
+        invoiceDate: line.invoiceDate || "-",
+        prNo: p.prNo || "-",
+        client: p.client || "-",
+        projectTitle: p.projectTitle || "-",
+        activityName: quantityItem?.description || "-",
+        quantityBilled: line.quantityBilled || 0,
+        amountINR: line.invoiceAmountINR || 0,
+        status: line.status || "Draft",
       });
     });
     return lines.sort((a, b) => b.invoiceNo.localeCompare(a.invoiceNo));
-  }, [projects]);
+  }, [projects, invoiceLines]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return invoiceLines;
+    if (!search.trim()) return ledgerRows;
     const term = search.toLowerCase();
-    return invoiceLines.filter(
+    return ledgerRows.filter(
       (l) =>
         l.invoiceNo.toLowerCase().includes(term) ||
         l.prNo.toLowerCase().includes(term) ||
         l.client.toLowerCase().includes(term) ||
         l.activityName.toLowerCase().includes(term)
     );
-  }, [invoiceLines, search]);
+  }, [ledgerRows, search]);
 
   return (
     <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-2xl space-y-3 p-4 shadow-xs">

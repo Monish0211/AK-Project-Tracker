@@ -24,6 +24,21 @@ import { validateQuantityTab, validatePaymentMilestonesTab, validateOtherExpense
 
 import { createEmptyProject } from "../../../utils/createEmptyProject";
 
+/**
+ * P0 fix — EditProject data-loss protection. `true` means that subresource's
+ * initial load either failed or hasn't been confirmed yet this session;
+ * `false` means it genuinely finished loading (including a legitimate empty
+ * result). See EditProject.tsx's own comment on why the safe default is
+ * `true`, never `false`. Only relevant in "edit" mode — "add" mode has no
+ * pre-existing subresources to have failed loading, so its caller
+ * (AddProject.tsx) never passes this prop at all.
+ */
+export interface SubresourceLoadStatus {
+  quantity: boolean;
+  milestones: boolean;
+  expenses: boolean;
+}
+
 interface Props {
   project: Project;
   setProject: Dispatch<SetStateAction<Project>>;
@@ -34,6 +49,7 @@ interface Props {
   onSaveAndNext: () => void;
   onBack: () => void;
   onValidate?: () => boolean;
+  resourceLoadFailed?: SubresourceLoadStatus;
 }
 
 const FormButtons = ({
@@ -46,6 +62,7 @@ const FormButtons = ({
   onSaveAndNext,
   onBack,
   onValidate,
+  resourceLoadFailed,
 }: Props) => {
   const navigate = useNavigate();
   const { showToast } = usePmoToast();
@@ -65,6 +82,25 @@ const FormButtons = ({
    * while the server has no record of it.
    */
   const saveProjectData = async (): Promise<boolean> => {
+    // P0 fix — EditProject data-loss protection. If Quantity/Milestones/
+    // Expenses failed to load this session, their local state cannot be
+    // trusted as "the complete desired set" — syncQuantityItemsWithApi() (and
+    // its Milestones/Expenses equivalents) diff a FRESH server read against
+    // whatever is in this state, so an untrustworthy/empty state here would
+    // make every real server row look like something the user deleted. Block
+    // the entire Save before General Information (or anything else) even
+    // starts — never let it partially execute and discover the problem
+    // later. Only ever set when mode === "edit" (see SubresourceLoadStatus's
+    // own comment) — "add" mode's caller never passes this prop, so this
+    // check is always a no-op there.
+    if (resourceLoadFailed && (resourceLoadFailed.quantity || resourceLoadFailed.milestones || resourceLoadFailed.expenses)) {
+      showToast({
+        type: "error",
+        message: "Some project data could not be loaded. Please reload the project before saving.",
+      });
+      return false;
+    }
+
     const timestamp = new Date().toISOString();
     const existing = getProjectById(project.id);
     let projectToSave = project;

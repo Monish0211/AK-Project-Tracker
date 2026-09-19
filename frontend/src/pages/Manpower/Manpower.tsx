@@ -27,7 +27,7 @@ import {
   importEmployeesFromExcel,
   downloadEmployeeTemplate,
   loadEmployeesForApp,
-  fetchEmployeesFromApi,
+  fetchAllEmployeesFromApi,
   type EmployeeMigrationResult,
 } from "../../services/employeeService";
 import { ApiError } from "../../services/apiClient";
@@ -43,6 +43,13 @@ const Manpower = () => {
 
   // Live employee database state
   const [employees, setEmployees] = useState<Employee[]>(getEmployees());
+
+  // Phase 1 #2 — request-generation guard for the search/filter sync effect
+  // below: a multi-page fetchAllEmployeesFromApi() call can take longer than
+  // a single-page one, so a newer search/filter change can resolve before an
+  // older one does. Incremented once per debounced request; a `.then()`/
+  // `.catch()` only applies its result if it's still the latest.
+  const searchRequestSeqRef = useRef(0);
 
   // Phase 3.7.1: migration result surfaced to the user when (and only when)
   // a one-time legacy-localStorage migration actually ran this load — see
@@ -132,22 +139,42 @@ const Manpower = () => {
 
   // Phase 3.7: background sync with the real backend — mirrors Projects.tsx's
   // own debounced fetchProjectsFromApi effect exactly. The local mirror it
-  // writes into (via fetchEmployeesFromApi's write-through) is what this
-  // page's existing client-side filter/sort/paginate logic already reads
-  // from above — no other logic here changes.
+  // writes into (via fetchEmployeesFromApi's write-through, called
+  // internally by fetchAllEmployeesFromApi) is what this page's existing
+  // client-side filter/sort/paginate logic already reads from above — no
+  // other logic here changes.
+  //
+  // Phase 1 #2 — was a single capped fetchEmployeesFromApi({ page: 1,
+  // pageSize: 200 }) call, silently dropping any employee past #200 (or past
+  // the 200th SEARCH MATCH, when filters narrowed the results but the match
+  // count still exceeded 200). fetchAllEmployeesFromApi() now pages through
+  // the backend's cap transparently, passing these same filters to every
+  // page so search/filter narrowing stays server-side throughout — never
+  // "fetch everything, then filter in the browser."
+  //
+  // requestSeqRef guards against a stale result: fetchAllEmployeesFromApi()
+  // can now take several round trips when a search matches many employees,
+  // so a newer keystroke's request can resolve before an older one does. The
+  // existing apiClient architecture deliberately has no external
+  // AbortSignal support (see Priority 1 timeout work), so a request-
+  // generation counter is the smallest safe way to ignore a result that's
+  // no longer the latest, rather than wiring cancellation through it.
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchEmployeesFromApi({
+      const seq = ++searchRequestSeqRef.current;
+      fetchAllEmployeesFromApi({
         search: search || undefined,
         department: deptFilter !== "All" ? deptFilter : undefined,
         status: statusFilter !== "All" ? statusFilter : undefined,
         grade: gradeFilter !== "All" ? gradeFilter : undefined,
         location: locFilter !== "All" ? locFilter : undefined,
-        page: 1,
-        pageSize: 200,
       })
-        .then((result) => setEmployees(result.items))
+        .then((result) => {
+          if (seq !== searchRequestSeqRef.current) return; // a newer search/filter request has since started
+          setEmployees(result.items);
+        })
         .catch((err) => {
+          if (seq !== searchRequestSeqRef.current) return;
           console.error("Failed to sync employees from backend:", err);
         });
     }, 300);

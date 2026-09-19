@@ -432,5 +432,15 @@ export function useReportsData() {
     filterOptions,
     resetFilters: () => setFilters(INITIAL_REPORT_FILTERS),
     analytics,
+    // Reports drill-down detail-section fix (Sep 2026) — the same
+    // authoritative backend invoice lines analytics above is already built
+    // from (see linesByProjectId's own comment). Exposed additively so
+    // per-line detail components (Monthly Billing, Invoice Ledger,
+    // Collection Trend, Overdue Table) can stop reading the legacy,
+    // browser-local-only project.invoiceItems mirror — the same staleness
+    // Issue #4 fixed for the aggregate totals, never migrated in these four
+    // components. No new fetch: this is the single request already made
+    // above: fetchAllInvoiceLinesForCaller().
+    authoritativeInvoiceLines,
   };
 }

@@ -980,7 +980,10 @@ export async function bulkImportProjectGeneralInfo(parsedProjects: Project[]): P
       })
     ),
   };
-  const result = await apiClient.post<ImportProjectsResponse>("/projects/import", payload);
+  // 60s override (default 30s) — a whole-workbook batch of parsed Project
+  // rows in one request; a normal CRUD-sized timeout risks a false failure
+  // on a large import even though the batch may still complete server-side.
+  const result = await apiClient.post<ImportProjectsResponse>("/projects/import", payload, { timeoutMs: 60_000 });
 
   const merged = result.items.map((dto, index) => mergeBackendGeneralInfoIntoLocalProject(dto, parsedProjects[index]));
   writeThroughProjectsMirror(merged);

@@ -2,35 +2,36 @@ import { useMemo } from "react";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { EmptyState } from "../Shared/EmptyState";
+import type { ReportInvoiceLine } from "../../../services/invoiceService";
 
 interface Props {
   projects: any[];
+  // Reports drill-down fix (Sep 2026) — see MonthlyBillingChart.tsx's own
+  // identical comment; same authoritative source, same reason.
+  invoiceLines: ReportInvoiceLine[];
 }
 
-export function CollectionTrend({ projects }: Props) {
+export function CollectionTrend({ projects, invoiceLines }: Props) {
   const collectionTrendData = useMemo(() => {
+    const projectIds = new Set(projects.map((p) => p.id));
     const monthMap: Record<string, { month: string; collection: number }> = {};
 
-    projects.forEach((p) => {
-      const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      items.forEach((item: any) => {
-        (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
-          if (line.status === "Paid" && line.invoiceDate) {
-            const mKey = line.invoiceDate.slice(0, 7);
-            if (!monthMap[mKey]) {
-              const d = new Date(line.invoiceDate);
-              const mLabel = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
-              monthMap[mKey] = { month: mLabel, collection: 0 };
-            }
-            monthMap[mKey].collection += line.invoiceAmountINR || 0;
-          }
-        });
-      });
+    invoiceLines.forEach((line) => {
+      if (!projectIds.has(line.projectId)) return;
+      if (line.status === "Paid" && line.invoiceDate) {
+        const mKey = line.invoiceDate.slice(0, 7);
+        if (!monthMap[mKey]) {
+          const d = new Date(line.invoiceDate);
+          const mLabel = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+          monthMap[mKey] = { month: mLabel, collection: 0 };
+        }
+        monthMap[mKey].collection += line.invoiceAmountINR || 0;
+      }
     });
 
     const sortedKeys = Object.keys(monthMap).sort();
     return sortedKeys.map((k) => monthMap[k]);
-  }, [projects]);
+  }, [projects, invoiceLines]);
 
   return (
     <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] p-4 rounded-2xl space-y-3">

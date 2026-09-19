@@ -2,36 +2,41 @@ import { useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { EmptyState } from "../Shared/EmptyState";
+import type { ReportInvoiceLine } from "../../../services/invoiceService";
 
 interface Props {
   projects: any[];
+  // Reports drill-down fix (Sep 2026) — authoritative backend invoice
+  // lines (same source as analytics), replacing the legacy
+  // project.invoiceItems traversal this used to read. Scoped to `projects`
+  // below (the already-filtered list) so every existing filter — date
+  // range, department, client, PR, region, project manager — keeps working
+  // exactly as before; only the per-line data source changed.
+  invoiceLines: ReportInvoiceLine[];
 }
 
-export function MonthlyBillingChart({ projects }: Props) {
+export function MonthlyBillingChart({ projects, invoiceLines }: Props) {
   const billingData = useMemo(() => {
+    const projectIds = new Set(projects.map((p) => p.id));
     const monthMap: Record<string, { month: string; amount: number; count: number }> = {};
 
-    projects.forEach((p) => {
-      const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      items.forEach((item: any) => {
-        (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
-          if (line.status !== "Cancelled" && line.invoiceDate) {
-            const mKey = line.invoiceDate.slice(0, 7);
-            if (!monthMap[mKey]) {
-              const d = new Date(line.invoiceDate);
-              const mLabel = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
-              monthMap[mKey] = { month: mLabel, amount: 0, count: 0 };
-            }
-            monthMap[mKey].amount += line.invoiceAmountINR || 0;
-            monthMap[mKey].count += 1;
-          }
-        });
-      });
+    invoiceLines.forEach((line) => {
+      if (!projectIds.has(line.projectId)) return;
+      if (line.status !== "Cancelled" && line.invoiceDate) {
+        const mKey = line.invoiceDate.slice(0, 7);
+        if (!monthMap[mKey]) {
+          const d = new Date(line.invoiceDate);
+          const mLabel = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+          monthMap[mKey] = { month: mLabel, amount: 0, count: 0 };
+        }
+        monthMap[mKey].amount += line.invoiceAmountINR || 0;
+        monthMap[mKey].count += 1;
+      }
     });
 
     const sortedKeys = Object.keys(monthMap).sort();
     return sortedKeys.map((k) => monthMap[k]);
-  }, [projects]);
+  }, [projects, invoiceLines]);
 
   return (
     <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] p-4 rounded-2xl space-y-3">

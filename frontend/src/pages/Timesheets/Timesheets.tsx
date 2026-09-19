@@ -322,16 +322,23 @@ const Timesheets = () => {
   const handleDeleteAllMonths = async () => {
     setActionPending(true);
     try {
-      await apiClient.delete("/timesheets/entries");
+      await apiClient.delete("/timesheets/entries", undefined, { timeoutMs: 60_000 });
       saveAllTimesheetImports([]);
       await refreshTimesheetImportsFromBackend();
       setAllMonths(timesheetStorage.getMonths());
       setSelectedMonth("");
       showToast({ type: "success", message: "All timesheet records deleted successfully." });
     } catch (err) {
+      // A timed-out DELETE is not a confirmed failure — the server-side
+      // ProjectResource recompute may have already completed.
       showToast({
         type: "error",
-        message: err instanceof ApiError ? err.message : "Failed to delete all timesheet records. Please try again.",
+        message:
+          err instanceof ApiError && err.isTimeout
+            ? "Request timed out. The server may still be processing this operation. Please verify the result before retrying."
+            : err instanceof ApiError
+              ? err.message
+              : "Failed to delete all timesheet records. Please try again.",
       });
     } finally {
       setActionPending(false);

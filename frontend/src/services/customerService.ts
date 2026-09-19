@@ -354,14 +354,25 @@ export async function importCustomersFromFile(file: File): Promise<FileImportRes
   }
 
   try {
-    const result = await apiClient.post<{ imported: number; skipped: number }>("/customers/import", {
-      customers: validatedInputs.map((input) => toCustomerPayload(input)),
-    });
+    // 60s override (default 30s) — a batch import of parsed spreadsheet rows.
+    const result = await apiClient.post<{ imported: number; skipped: number }>(
+      "/customers/import",
+      { customers: validatedInputs.map((input) => toCustomerPayload(input)) },
+      { timeoutMs: 60_000 }
+    );
     await fetchCustomersFromApi({ page: 1, pageSize: 1000, sortField: "customerName", sortDirection: "asc" });
     notifyCustomersChanged();
     return { imported: result.imported, skipped: result.skipped, errors: [] };
   } catch (err) {
-    const message = err instanceof ApiError ? err.message : "Import failed. Please try again.";
+    // A timed-out import is not a confirmed failure — some/all rows may have
+    // already been committed server-side. Don't tell the admin it failed
+    // outright; tell them to check before re-running the import.
+    const message =
+      err instanceof ApiError && err.isTimeout
+        ? "Request timed out. The import may have partially or fully completed on the server. Please check the customer list before retrying."
+        : err instanceof ApiError
+          ? err.message
+          : "Import failed. Please try again.";
     return { imported: 0, skipped: 0, errors: [message] };
   }
 }

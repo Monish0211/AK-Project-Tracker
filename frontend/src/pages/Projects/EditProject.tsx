@@ -9,7 +9,22 @@ import { loadExpensesForProject } from "../../services/otherProjectExpenseServic
 import { createEmptyProject } from "../../utils/createEmptyProject";
 import ProjectForm from "./components/ProjectForm";
 import type { TabKey } from "./components/ProjectForm";
+import type { SubresourceLoadStatus } from "./components/FormButtons";
 import { Button } from "../../components/ui/Button";
+
+// P0 fix — EditProject data-loss protection. A resource that failed to load
+// must never be indistinguishable from one that genuinely loaded empty (see
+// FormButtons.tsx's own comment on SubresourceLoadStatus for why this
+// matters). `true` = failed-or-not-yet-loaded, the SAFE default — only a
+// resource's own successful load (even an empty one) ever flips its key to
+// `false`. Starting every key `true` means a fresh EditProject session can
+// never accidentally look "safe to save" before its fetches have actually
+// resolved.
+const ALL_RESOURCES_UNCONFIRMED: SubresourceLoadStatus = {
+  quantity: true,
+  milestones: true,
+  expenses: true,
+};
 
 const EditProject = () => {
   const navigate = useNavigate();
@@ -42,6 +57,10 @@ const EditProject = () => {
     const cached = id ? getProjectById(id) : undefined;
     return cached ? normalizeProject(cached) : createEmptyProject();
   });
+  // P0 fix — tracks whether each editable subresource that Save can DELETE
+  // rows for (Quantity/Milestones/Expenses) has been CONFIRMED loaded this
+  // session. See ALL_RESOURCES_UNCONFIRMED's comment above.
+  const [resourceLoadFailed, setResourceLoadFailed] = useState<SubresourceLoadStatus>(ALL_RESOURCES_UNCONFIRMED);
   const isLoading = !!id && loadedId !== id;
 
   useEffect(() => {
@@ -59,6 +78,17 @@ const EditProject = () => {
         }
 
         setNotFound(false);
+
+        // P0 fix — reset per-project BEFORE starting this project's
+        // subresource fetches, so a previous project's successful load can
+        // never leak into this one (e.g. Project A's Quantity loaded fine,
+        // then switching straight to Project B's edit route must not let B
+        // start out looking "confirmed loaded" before B's own fetch has even
+        // begun). Safe to do here rather than earlier in this effect: the
+        // page renders nothing but `null` for the entire duration isLoading
+        // is true (see this component's isLoading-gated render below), so
+        // there is no window where a stale flag could be visibly acted on.
+        if (isMounted) setResourceLoadFailed(ALL_RESOURCES_UNCONFIRMED);
 
         // Immediately load Quantity from the backend once General
         // Information resolves, so the form never renders with stale
@@ -81,8 +111,16 @@ const EditProject = () => {
             const quantityItems = await loadQuantityForProject(id);
             if (!isMounted) return;
             nextProject = normalizeProject({ ...nextProject, quantityItems });
+            // P0 fix — only a genuine successful load (even one that
+            // legitimately returns zero rows) ever clears this flag. The
+            // catch below intentionally does NOT touch it, so it stays at
+            // its safe `true` default on any failure (timeout, network
+            // error, HTTP error, or a malformed response apiClient.ts
+            // already converts into a thrown error).
+            if (isMounted) setResourceLoadFailed((prev) => ({ ...prev, quantity: false }));
           } catch {
-            // Fall through with nextProject as already set above.
+            // Fall through with nextProject as already set above. quantity
+            // stays flagged as failed — Save will be blocked (FormButtons.tsx).
           }
 
           // Payment Milestones load the same way, immediately after
@@ -96,8 +134,11 @@ const EditProject = () => {
             const paymentMilestones = await loadMilestonesForProject(id);
             if (!isMounted) return;
             nextProject = normalizeProject({ ...nextProject, paymentMilestones });
+            // P0 fix — see the Quantity block above for the exact rule.
+            if (isMounted) setResourceLoadFailed((prev) => ({ ...prev, milestones: false }));
           } catch {
-            // Fall through with nextProject as already set above.
+            // Fall through with nextProject as already set above. milestones
+            // stays flagged as failed — Save will be blocked (FormButtons.tsx).
           }
 
           // Invoice data loads the same way, immediately after Payment
@@ -129,8 +170,11 @@ const EditProject = () => {
             const nonManhourExpenses = await loadExpensesForProject(id);
             if (!isMounted) return;
             nextProject = normalizeProject({ ...nextProject, nonManhourExpenses });
+            // P0 fix — see the Quantity block above for the exact rule.
+            if (isMounted) setResourceLoadFailed((prev) => ({ ...prev, expenses: false }));
           } catch {
-            // Fall through with nextProject as already set above.
+            // Fall through with nextProject as already set above. expenses
+            // stays flagged as failed — Save will be blocked (FormButtons.tsx).
           }
 
           setProject(nextProject);
@@ -181,15 +225,34 @@ const EditProject = () => {
     );
   }
 
+  const hasResourceLoadFailure =
+    resourceLoadFailed.quantity || resourceLoadFailed.milestones || resourceLoadFailed.expenses;
+
   return (
-    <ProjectForm
-      project={project}
-      setProject={setProject}
-      mode="edit"
-      initialTab={initialTab}
-      initialActivityId={initialActivityId}
-      initialInvoiceLineId={initialInvoiceLineId}
-    />
+    <>
+      {hasResourceLoadFailure && (
+        <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-xl p-4 mb-3 text-sm text-red-700 dark:text-red-300">
+          <p className="font-bold">Some project data could not be loaded.</p>
+          <p className="mt-1">
+            Saving is temporarily blocked to prevent data loss. Please reload this page before saving.
+          </p>
+          <ul className="mt-2 list-disc list-inside">
+            {resourceLoadFailed.quantity && <li>Quantity Details failed to load</li>}
+            {resourceLoadFailed.milestones && <li>Payment Milestones failed to load</li>}
+            {resourceLoadFailed.expenses && <li>Other Project Expenses failed to load</li>}
+          </ul>
+        </div>
+      )}
+      <ProjectForm
+        project={project}
+        setProject={setProject}
+        mode="edit"
+        initialTab={initialTab}
+        initialActivityId={initialActivityId}
+        initialInvoiceLineId={initialInvoiceLineId}
+        resourceLoadFailed={resourceLoadFailed}
+      />
+    </>
   );
 };
 

@@ -3,45 +3,47 @@ import { Search } from "lucide-react";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
+import type { ReportInvoiceLine } from "../../../services/invoiceService";
 
 interface Props {
   projects: any[];
+  // Reports drill-down fix (Sep 2026) — see MonthlyBillingChart.tsx's own
+  // identical comment; same authoritative source, same reason.
+  invoiceLines: ReportInvoiceLine[];
 }
 
-export function OverdueTable({ projects }: Props) {
+export function OverdueTable({ projects, invoiceLines }: Props) {
   const [search, setSearch] = useState("");
 
   const pendingLines = useMemo(() => {
+    const projectById = new Map(projects.map((p) => [p.id, p]));
     const list: any[] = [];
 
-    projects.forEach((p) => {
-      const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      items.forEach((item: any) => {
-        (Array.isArray(item.invoices) ? item.invoices : []).forEach((line: any) => {
-          if (line.status === "Raised" || line.status === "Submitted" || line.status === "PartiallyPaid") {
-            let ageDays = 0;
-            if (line.invoiceDate) {
-              ageDays = Math.floor((new Date().getTime() - new Date(line.invoiceDate).getTime()) / (1000 * 3600 * 24));
-            }
-            list.push({
-              id: line.id,
-              invoiceNo: line.invoiceNo,
-              invoiceDate: line.invoiceDate || "-",
-              status: line.status === "PartiallyPaid" ? "Partially Paid" : "Raised",
-              statusCode: line.status,
-              prNo: p.prNo || "-",
-              client: p.client || "-",
-              projectTitle: p.projectTitle || "-",
-              amountINR: line.invoiceAmountINR || 0,
-              ageDays: Math.max(0, ageDays),
-            });
-          }
+    invoiceLines.forEach((line) => {
+      const p = projectById.get(line.projectId);
+      if (!p) return;
+      if (line.status === "Raised" || line.status === "Submitted" || line.status === "PartiallyPaid") {
+        let ageDays = 0;
+        if (line.invoiceDate) {
+          ageDays = Math.floor((new Date().getTime() - new Date(line.invoiceDate).getTime()) / (1000 * 3600 * 24));
+        }
+        list.push({
+          id: line.id,
+          invoiceNo: line.invoiceNo,
+          invoiceDate: line.invoiceDate || "-",
+          status: line.status === "PartiallyPaid" ? "Partially Paid" : "Raised",
+          statusCode: line.status,
+          prNo: p.prNo || "-",
+          client: p.client || "-",
+          projectTitle: p.projectTitle || "-",
+          amountINR: line.invoiceAmountINR || 0,
+          ageDays: Math.max(0, ageDays),
         });
-      });
+      }
     });
 
     return list.sort((a, b) => b.ageDays - a.ageDays);
-  }, [projects]);
+  }, [projects, invoiceLines]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return pendingLines;

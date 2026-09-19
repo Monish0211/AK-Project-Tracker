@@ -10,6 +10,7 @@ import { getProjectCommercialSummary } from "./invoiceProgressService";
 import { getAllTimesheetImports } from "./timesheetService";
 import { getProjectActualHours } from "./timesheetSyncService";
 import { getEmployees } from "./employeeService";
+import { isActiveProjectStatus } from "../constants/projectStatus";
 
 export interface DashboardMetrics {
   totalProjects: number;
@@ -684,7 +685,10 @@ export const calculateTimelineAlert = (
 export const getProjectTimelineAlerts = (): ProjectTimelineAlertWidgetResult => {
   // Only active projects remain eligible for schedule monitoring. Completed
   // and Cancelled projects are excluded before any timeline calculation.
-  const projects = getProjects().filter((project) => project.projectStatus === "Active");
+  // Sept 2026 — Project Status Workflow Expansion. "Active" means the active
+  // classification (any in-progress workflow stage), not the literal
+  // "Active" status value — see isActiveProjectStatus().
+  const projects = getProjects().filter((project) => isActiveProjectStatus(project.projectStatus));
 
   const alerts: DurationOverrunProjectSummary[] = [];
   let dueSoonCount = 0;
