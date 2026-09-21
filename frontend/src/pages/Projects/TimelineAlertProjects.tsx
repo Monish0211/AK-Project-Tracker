@@ -7,7 +7,7 @@ import {
   ChevronDown,
   Clock,
 } from "lucide-react";
-import { getProjects } from "../../services/projectService";
+import { getProjects, fetchAllProjectsFromApi } from "../../services/projectService";
 import {
   getProjectTimelineAlerts,
   type DurationOverrunProjectSummary,
@@ -31,6 +31,7 @@ export default function TimelineAlertProjects() {
   const [alertProjects, setAlertProjects] = useState<DurationOverrunProjectSummary[]>(
     () => getProjectTimelineAlerts().allAlertProjects
   );
+  const [isLoading, setIsLoading] = useState(true);
 
   // Search and repository status filter state.
   const [search, setSearch] = useState("");
@@ -49,6 +50,34 @@ export default function TimelineAlertProjects() {
     window.addEventListener("pmo:data-changed", handleDataChange);
     return () => {
       window.removeEventListener("pmo:data-changed", handleDataChange);
+    };
+  }, []);
+
+  // getProjectTimelineAlerts() above only reads the localStorage projects
+  // mirror — it never hits the network itself. On a fresh sign-in that
+  // mirror is empty until something else (Edit Project, Reports, the PMO
+  // Assistant) happens to populate it, which is why this page could render
+  // zero alerts on first visit even though the Dashboard widget (backed by
+  // its own GET /dashboard/summary call) already showed data. Fetch the
+  // authoritative project list directly, same as Reports' useReportsData —
+  // writeThroughProjectsMirror() inside fetchAllProjectsFromApi() fires
+  // pmo:data-changed, which the listener above already picks up.
+  useEffect(() => {
+    let isMounted = true;
+    fetchAllProjectsFromApi()
+      .then(() => {
+        if (isMounted) {
+          setAlertProjects(getProjectTimelineAlerts().allAlertProjects);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to fetch projects for Timeline Alert Projects:", err);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
     };
   }, []);
 
@@ -362,7 +391,9 @@ export default function TimelineAlertProjects() {
               ) : (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-slate-400">
-                    No timeline alert projects found matching search.
+                    {isLoading
+                      ? "Loading timeline alert projects…"
+                      : "No timeline alert projects found matching search."}
                   </td>
                 </tr>
               )}
