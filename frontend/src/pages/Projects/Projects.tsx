@@ -32,7 +32,7 @@ import {
 import { persistImportedProjectChildRecords } from "../../services/projectImportPersistenceService";
 import { ApiError } from "../../services/apiClient";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
-import { isActiveProjectStatus } from "../../constants/projectStatus";
+import { isActiveProjectStatus, PROJECT_STATUS_OPTIONS } from "../../constants/projectStatus";
 import { useAuth } from "../../auth/authContext";
 import { canMutateData, hasApprovalPermission } from "../../auth/permissions";
 import { usePmoToast } from "../../components/ui/usePmoToast";
@@ -832,9 +832,11 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                 className="flt py-1.5 px-3 pr-8 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 outline-none cursor-pointer"
               >
                 <option value="All">All Statuses</option>
-                <option value="Active">Active</option>
-                <option value="On Hold">On Hold</option>
-                <option value="Cancelled">Cancelled</option>
+                {PROJECT_STATUS_OPTIONS.filter((s) => s !== "Completed").map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
               </select>
             )}
 
