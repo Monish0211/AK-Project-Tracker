@@ -28,7 +28,7 @@ import {
 } from "../../services/timesheetService";
 import { syncTimesheetToProjects } from "../../services/timesheetSyncService";
 import { getProjects, updateProject } from "../../services/projectService";
-import { getEmployees } from "../../services/employeeService";
+import { getEmployees, loadEmployeesForApp } from "../../services/employeeService";
 import { apiClient, ApiError } from "../../services/apiClient";
 import { useAuth } from "../../auth/authContext";
 import type { Employee } from "../../types/EmployeeModel";
@@ -175,7 +175,31 @@ const Timesheets = () => {
   // failed backend call instead of silently pretending it succeeded.
   const [actionPending, setActionPending] = useState(false);
 
-  const masterEmployees = useMemo(() => getEmployees(), []);
+  // Bug fix (Sep 2026): getEmployees() is a pure localStorage read — it only
+  // has data once something has already called loadEmployeesForApp() to
+  // hydrate that mirror from PostgreSQL. MainLayout.tsx does trigger that
+  // hydration once per session, but it's an async fetch racing this page's
+  // own mount; a direct/deep-link visit to Timesheets right after sign-in
+  // can render before that fetch resolves, and the old `useMemo(..., [])`
+  // snapshot never updated afterward even once the mirror was populated —
+  // same fix already applied to QuantityCard.tsx/ProjectLeadershipCard.tsx
+  // for the identical symptom. Seeded from getEmployees() so an
+  // already-hydrated mirror still renders immediately.
+  const [masterEmployees, setMasterEmployees] = useState<Employee[]>(() => getEmployees());
+
+  useEffect(() => {
+    let isMounted = true;
+    loadEmployeesForApp()
+      .then((result) => {
+        if (isMounted) setMasterEmployees(result.employees);
+      })
+      .catch(() => {
+        /* keep whatever the mirror already had — best-effort */
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Connects Timesheet Records to the real backend TimesheetEntry data
   // (KEKA import pipeline) instead of only whatever was last uploaded in
