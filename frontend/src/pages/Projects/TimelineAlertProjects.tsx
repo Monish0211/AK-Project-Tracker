@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import {
   FolderKanban,
@@ -6,6 +7,7 @@ import {
   Download,
   ChevronDown,
   Clock,
+  StickyNote,
 } from "lucide-react";
 import { getProjects, fetchAllProjectsFromApi } from "../../services/projectService";
 import {
@@ -21,6 +23,64 @@ import { usePmoToast } from "../../components/ui/usePmoToast";
 
 const TIMELINE_FILTERS = ["All", "Due Soon", "Upcoming", "On Track", "Overdue"] as const;
 type TimelineStatusFilter = (typeof TIMELINE_FILTERS)[number];
+
+/**
+ * Compact Remarks indicator + popover — same portal/positioning mechanics as
+ * MoneyTooltip.tsx (hover/focus-triggered, rendered to document.body so it
+ * can never be clipped by this table's own overflow-x-auto), adapted for
+ * text instead of a money value. Renders "—" when a project has no remarks,
+ * matching this table's existing empty-value convention elsewhere. Stops
+ * propagation so opening it never triggers the row's own onClick navigation.
+ */
+function RemarksIndicator({ remarks }: { remarks: string }) {
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+
+  if (!remarks) {
+    return <span className="text-slate-400">—</span>;
+  }
+
+  const open = () => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setCoords({ top: rect.top - 10, left: rect.left + rect.width / 2 });
+  };
+  const close = () => setCoords(null);
+
+  return (
+    <span
+      ref={triggerRef}
+      className="inline-flex items-center justify-center cursor-help text-orange-500 hover:text-orange-600 dark:text-orange-400"
+      onMouseEnter={open}
+      onMouseLeave={close}
+      onFocus={open}
+      onBlur={close}
+      onClick={(e) => e.stopPropagation()}
+      tabIndex={0}
+      aria-label="View project remarks"
+    >
+      <StickyNote size={15} />
+      {coords &&
+        createPortal(
+          <span
+            role="tooltip"
+            className="fixed z-[999] w-72 -translate-x-1/2 -translate-y-full rounded-[var(--nu-radius-lg)] border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-left shadow-xl"
+            style={{ top: coords.top, left: coords.left, animation: "tooltipFadeIn 150ms ease-out" }}
+          >
+            <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-400">Project Remarks</p>
+            <p className="mt-1 text-xs leading-snug text-slate-700 dark:text-slate-200 whitespace-pre-wrap">
+              {remarks}
+            </p>
+            <span
+              className="absolute left-1/2 top-full -mt-[5px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 border-b border-r border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+              aria-hidden="true"
+            />
+          </span>,
+          document.body
+        )}
+    </span>
+  );
+}
 
 export default function TimelineAlertProjects() {
   const navigate = useNavigate();
@@ -338,10 +398,12 @@ export default function TimelineAlertProjects() {
                 <th className="py-3 px-4">PR NO.</th>
                 <th className="py-3 px-4">CLIENT</th>
                 <th className="py-3 px-4">PROJECT</th>
+                <th className="py-3 px-4">PROJECT MANAGER</th>
                 <th className="py-3 px-4">DAYS REMAINING / OVERDUE</th>
                 <th className="py-3 px-4">START DATE</th>
                 <th className="py-3 px-4">END DATE</th>
                 <th className="py-3 px-4 text-right">STATUS</th>
+                <th className="py-3 px-2 text-center w-10">REMARKS</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
@@ -369,6 +431,10 @@ export default function TimelineAlertProjects() {
                       </div>
                     </td>
 
+                    <td className="py-3 px-4 text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap">
+                      {item.projectManager}
+                    </td>
+
                     <td className="py-3 px-4 whitespace-nowrap">
                       <span className={getDaysDisplayClass(item.priority)}>
                         {item.daysDisplay}
@@ -386,11 +452,15 @@ export default function TimelineAlertProjects() {
                     <td className="py-3 px-4 text-right whitespace-nowrap">
                       {renderStatusBadge(item.priority, item.status)}
                     </td>
+
+                    <td className="py-3 px-2 text-center">
+                      <RemarksIndicator remarks={item.remarks} />
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
                     {isLoading
                       ? "Loading timeline alert projects…"
                       : "No timeline alert projects found matching search."}

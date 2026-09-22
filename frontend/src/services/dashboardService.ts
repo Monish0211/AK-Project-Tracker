@@ -619,6 +619,10 @@ export interface DurationOverrunProjectSummary {
   priority: TimelineAlertPriority;
   status: string;
   sortRank: number;
+  // Project Remarks — informational only, never used in the timeline
+  // calculation/sort above. Carried straight from the already-fetched
+  // project row, same as startDate/endDate — no extra API call.
+  remarks: string;
 }
 
 export interface ProjectTimelineAlertWidgetResult {
@@ -719,6 +723,8 @@ export const getProjectTimelineAlerts = (): ProjectTimelineAlertWidgetResult => 
       // Kept only for the existing table column; it does not affect timeline logic.
       startDate: p.projectStartDate,
       endDate: p.projectEndDate,
+      // Informational only — see this interface's own comment.
+      remarks: p.remarks || "",
       ...timeline,
     });
   });

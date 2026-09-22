@@ -53,6 +53,9 @@ export interface ProjectGeneralInfoData {
   projectCoordinator?: string | null;
   clientCoordinator?: string | null;
 
+  // Project Remarks — optional free-text timeline/delay explanation.
+  remarks?: string | null;
+
   // Project-ownership authorization — see shared/utils/projectAccess.ts.
   // Set once at creation, from the authenticated caller's own JWT; never
   // accepted from the request body.

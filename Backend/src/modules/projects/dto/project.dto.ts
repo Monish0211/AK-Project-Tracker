@@ -55,6 +55,9 @@ export interface ProjectDto {
   projectCoordinator: string | null;
   clientCoordinator: string | null;
 
+  // Project Remarks — optional free-text timeline/delay explanation.
+  remarks: string | null;
+
   isDeleted: boolean;
   deletedAt: Date | null;
   createdByUserId: string | null;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Building2, CalendarCheck, CalendarRange, Clock, FileSignature, FileText, Hash, LayoutGrid, Timer } from "lucide-react";
+import { Building2, CalendarCheck, CalendarRange, Clock, FileSignature, FileText, Hash, LayoutGrid, Plus, StickyNote, Timer } from "lucide-react";
 import type { Project } from "../../../types/Project";
 import { getCustomers, loadCustomersForApp } from "../../../services/customerService";
 import type { Customer } from "../../../types/CustomerModel";
@@ -221,6 +221,11 @@ const PmoCoordinatorAutocomplete = ({
 
 const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props) => {
   const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false);
+  // Project Remarks — collapsed by default in both Add and Edit; whether
+  // remarks already exist only changes the toggle's own label/icon below
+  // ("+ Add..." vs. "Remarks Added"), never auto-expands the textarea.
+  const [isRemarksOpen, setIsRemarksOpen] = useState(false);
+  const REMARKS_MAX_LENGTH = 1000;
   const clientDropdownRef = useRef<HTMLDivElement>(null);
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
   const [isOtherDepartment, setIsOtherDepartment] = useState(
@@ -583,6 +588,50 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
               }
             />
           </Field>
+
+          <div className="sm:col-span-2">
+            {!isRemarksOpen ? (
+              <button
+                type="button"
+                onClick={() => setIsRemarksOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--nu-accent)] hover:underline cursor-pointer"
+              >
+                {project.remarks ? (
+                  <>
+                    <StickyNote size={13} />
+                    Remarks Added
+                  </>
+                ) : (
+                  <>
+                    <Plus size={13} />
+                    Add Project Remarks (Optional)
+                  </>
+                )}
+              </button>
+            ) : (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <FormLabel>Project Remarks (Optional)</FormLabel>
+                  <span className="text-[10.5px] text-[var(--nu-text-muted)]">
+                    {(project.remarks || "").length}/{REMARKS_MAX_LENGTH}
+                  </span>
+                </div>
+                <textarea
+                  rows={3}
+                  value={project.remarks || ""}
+                  maxLength={REMARKS_MAX_LENGTH}
+                  onChange={(e) =>
+                    setProject((prev) => ({
+                      ...prev,
+                      remarks: e.target.value,
+                    }))
+                  }
+                  placeholder="Explain a delay or timeline-related issue — e.g. Client-side delay, pending approval..."
+                  className="w-full p-2.5 bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-xl text-xs text-[var(--nu-text)] whitespace-pre-wrap"
+                />
+              </div>
+            )}
+          </div>
 
           {project.projectStatus === "Completed" && (
             <>

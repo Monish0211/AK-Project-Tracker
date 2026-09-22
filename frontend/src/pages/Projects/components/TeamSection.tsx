@@ -35,11 +35,6 @@ const TeamSection = ({ project }: Props) => {
         label="Client Reference No"
         value={project.clientReferenceNo}
       />
-
-      <InfoField
-        label="Remarks"
-        value={project.remarks}
-      />
     </InfoSection>
   );
 };

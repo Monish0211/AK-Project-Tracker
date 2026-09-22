@@ -367,6 +367,8 @@ interface BackendProjectDto {
   projectEngineer: string | null;
   projectCoordinator: string | null;
   clientCoordinator: string | null;
+  // Project Remarks — optional free-text timeline/delay explanation.
+  remarks: string | null;
   isDeleted: boolean;
   deletedAt: string | null;
   createdByUserId: string | null;
@@ -434,6 +436,8 @@ interface ProjectGeneralInfoPayload {
   projectEngineer: string | null;
   projectCoordinator: string | null;
   clientCoordinator: string | null;
+  // Project Remarks — optional free-text timeline/delay explanation.
+  remarks: string | null;
 }
 
 /** Empty string -> null. The backend's optional string fields reject "" (min(1) once present) — omit-or-null is what they expect, matching Users module's own validator style. */
@@ -493,6 +497,7 @@ function toGeneralInfoPayload(project: Project): ProjectGeneralInfoPayload {
     projectEngineer: orNull(project.projectEngineer),
     projectCoordinator: orNull(project.projectCoordinator),
     clientCoordinator: orNull(project.clientCoordinator),
+    remarks: orNull(project.remarks),
   };
 }
 
@@ -584,6 +589,7 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     projectEngineer: dto.projectEngineer || "",
     projectCoordinator: dto.projectCoordinator || "",
     clientCoordinator: dto.clientCoordinator || "",
+    remarks: dto.remarks || "",
     createdAt: dto.createdAt,
     updatedAt: dto.updatedAt,
     isDeleted: dto.isDeleted,

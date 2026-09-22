@@ -73,6 +73,16 @@ const GeneralView = ({ project }: Props) => {
               <InfoField label="Completion Remarks" value={project.completionRemarks} />
             </div>
           )}
+          {project.remarks && (
+            <div className="sm:col-span-2 bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] p-3">
+              <p className="text-[10.5px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)] mb-1">
+                Remarks
+              </p>
+              <p className="text-[13.5px] font-medium text-[var(--nu-text)] whitespace-pre-wrap break-words">
+                {project.remarks}
+              </p>
+            </div>
+          )}
         </CardBody>
       </Card>
 

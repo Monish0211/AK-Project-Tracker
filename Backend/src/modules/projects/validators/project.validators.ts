@@ -69,6 +69,14 @@ export const createProjectSchema = z.object({
   projectEngineer: z.string().trim().optional().nullable(),
   projectCoordinator: z.string().trim().optional().nullable(),
   clientCoordinator: z.string().trim().optional().nullable(),
+
+  // Project Remarks — optional free-text timeline/delay explanation.
+  // Capped at 1000 characters here (the one authoritative enforcement
+  // point — see schema.prisma's own comment on why this isn't a
+  // @db.VarChar). Same optional/nullable treatment as every other
+  // free-text field above (primaryProjectManager etc.) — no reason to
+  // already have this on create.
+  remarks: z.string().trim().max(1000, "Remarks cannot exceed 1000 characters.").optional().nullable(),
 });
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
@@ -131,6 +139,9 @@ export const updateProjectSchema = z.object({
   projectEngineer: z.string().trim().optional().nullable(),
   projectCoordinator: z.string().trim().optional().nullable(),
   clientCoordinator: z.string().trim().optional().nullable(),
+
+  // Project Remarks — same field/limit as createProjectSchema.
+  remarks: z.string().trim().max(1000, "Remarks cannot exceed 1000 characters.").optional().nullable(),
 });
 
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;

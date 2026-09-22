@@ -73,6 +73,7 @@ function toProjectDto(project: Awaited<ReturnType<typeof findProjectById>>): Pro
     projectEngineer: project.projectEngineer,
     projectCoordinator: project.projectCoordinator,
     clientCoordinator: project.clientCoordinator,
+    remarks: project.remarks,
     isDeleted: project.isDeleted,
     deletedAt: project.deletedAt,
     createdByUserId: project.createdByUserId,
@@ -181,6 +182,7 @@ function toGeneralInfoData(input: GeneralInfoInput): ProjectGeneralInfoData {
     projectEngineer: input.projectEngineer ?? null,
     projectCoordinator: input.projectCoordinator ?? null,
     clientCoordinator: input.clientCoordinator ?? null,
+    remarks: input.remarks ?? null,
   };
 }
 
@@ -341,6 +343,7 @@ function toUpdateData(input: UpdateProjectInput): Partial<ProjectGeneralInfoData
     ...(input.projectEngineer !== undefined && { projectEngineer: input.projectEngineer }),
     ...(input.projectCoordinator !== undefined && { projectCoordinator: input.projectCoordinator }),
     ...(input.clientCoordinator !== undefined && { clientCoordinator: input.clientCoordinator }),
+    ...(input.remarks !== undefined && { remarks: input.remarks }),
   };
 }
 

@@ -374,6 +374,17 @@ model Project {
   projectCoordinator      String?
   clientCoordinator       String?
 
+  // Project Remarks — optional free-text explanation for a project's
+  // timeline (e.g. "Client-side delay — pending approval"). Flat,
+  // nullable, same 1:1-attribute treatment as every other General
+  // Information scalar field above — informational only, never read by
+  // the overdue/timeline-alert calculation or any sorting/filtering logic.
+  // Capped at 1000 characters, enforced at the Zod validation boundary
+  // (not @db.VarChar) so the same limit is checked before the query ever
+  // reaches Postgres, consistent with every other length-bounded field in
+  // this schema.
+  remarks String?
+
   // Quantity Information
   quantityItems QuantityItem[]
 
