@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import ExcelJS from "exceljs";
 import {
   FolderKanban,
   Search,
@@ -7,15 +8,11 @@ import {
   Download,
   AlertTriangle,
 } from "lucide-react";
-import { getProjects } from "../../services/projectService";
 import {
   fetchDashboardSummary,
   type HoursOverrunProject,
 } from "../../services/dashboardSummaryService";
-import {
-  buildExportWorkbook,
-  downloadWorkbook,
-} from "../../services/projectWorkbookService";
+import { downloadWorkbook } from "../../services/projectWorkbookService";
 import { usePmoToast } from "../../components/ui/usePmoToast";
 import { useLiveRefresh } from "../../hooks/useLiveRefresh";
 import { ApiError } from "../../services/apiClient";
@@ -123,17 +120,58 @@ export default function FinancialLossProjects() {
     }
   };
 
+  // Audit fix (Sep 2026): this used to reconstruct rows via getProjects()
+  // (the localStorage projects mirror) filtered by id — but this page never
+  // populates that mirror itself, so a project present in the
+  // server-authoritative lossProjects list could be silently missing from
+  // the mirror and therefore silently omitted from the export, even though
+  // it was correctly shown on screen. Export the already-fetched
+  // server-authoritative rows directly instead — no localStorage read, and
+  // the exported rows are guaranteed to match what's on screen exactly.
   const handleExport = async () => {
-    const allProjects = getProjects();
-    const lossIds = new Set(lossProjects.map((p) => p.id));
-    const exportData = allProjects.filter((p) => lossIds.has(p.id));
-
-    if (exportData.length === 0) {
+    if (lossProjects.length === 0) {
       showToast({ type: "info", message: "No financial loss project data available to export." });
       return;
     }
-    const workbook = await buildExportWorkbook(exportData);
-    await downloadWorkbook(workbook, "financial_loss_projects_export.xlsx");
+
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Financial Loss Projects");
+
+      sheet.columns = [
+        { header: "PR No.", key: "prNumber", width: 18 },
+        { header: "Project", key: "projectName", width: 32 },
+        { header: "Project Manager", key: "projectManager", width: 22 },
+        { header: "Budget Hours", key: "budgetHours", width: 16 },
+        { header: "Actual Hours", key: "actualHours", width: 16 },
+        { header: "Hours Overrun", key: "hoursOverrun", width: 16 },
+        { header: "% Overrun", key: "percentOverrun", width: 14 },
+        { header: "Status", key: "status", width: 12 },
+      ];
+      sheet.getRow(1).font = { bold: true };
+
+      lossProjects.forEach((item) => {
+        sheet.addRow({
+          prNumber: item.prNumber,
+          projectName: item.projectName,
+          projectManager: item.projectManager || "Unassigned",
+          budgetHours: item.budgetHours,
+          actualHours: item.actualHours,
+          hoursOverrun: item.hoursOverrun,
+          percentOverrun: item.percentOverrun,
+          status: item.status,
+        });
+      });
+
+      ["budgetHours", "actualHours", "hoursOverrun"].forEach((key) => {
+        sheet.getColumn(key).numFmt = "#,##0.00";
+      });
+      sheet.getColumn("percentOverrun").numFmt = "0.00";
+
+      await downloadWorkbook(workbook, "financial_loss_projects_export.xlsx");
+    } catch {
+      showToast({ type: "error", message: "Failed to export Financial Loss data. Please try again." });
+    }
   };
 
   return (
