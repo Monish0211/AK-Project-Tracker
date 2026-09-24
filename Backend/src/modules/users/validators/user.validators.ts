@@ -19,6 +19,13 @@ export const createUserSchema = z.object({
   moduleIds: z.array(z.string().uuid("Each moduleId must be a valid UUID.")).default([]),
   regionIds: z.array(z.string().uuid("Each regionId must be a valid UUID.")).default([]),
   approvalIds: z.array(z.string().uuid("Each approvalId must be a valid UUID.")).default([]),
+
+  // Project Manager Scope (User-Based Project Visibility) — only meaningful
+  // when roleId resolves to the "Project Manager" role; the service layer
+  // ignores this for every other role rather than rejecting it outright, so
+  // a client that always sends [] regardless of the currently-selected role
+  // isn't treated as an error.
+  scopedUserIds: z.array(z.string().uuid("Each scopedUserId must be a valid UUID.")).default([]),
 });
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;
@@ -47,6 +54,13 @@ export const updateUserSchema = z.object({
   moduleIds: z.array(z.string().uuid("Each moduleId must be a valid UUID.")).optional(),
   regionIds: z.array(z.string().uuid("Each regionId must be a valid UUID.")).optional(),
   approvalIds: z.array(z.string().uuid("Each approvalId must be a valid UUID.")).optional(),
+
+  // Project Manager Scope — undefined means "don't touch existing grants"
+  // (same omission-is-a-no-op convention as moduleIds/regionIds/approvalIds
+  // above); an explicit [] clears every grant. See user.service.ts for the
+  // additional role-changed-away-from-Project-Manager clearing rule, which
+  // fires independently of whatever this field was set to.
+  scopedUserIds: z.array(z.string().uuid("Each scopedUserId must be a valid UUID.")).optional(),
 
   forcePasswordChange: z.boolean().optional(),
   accountLocked: z.boolean().optional(),

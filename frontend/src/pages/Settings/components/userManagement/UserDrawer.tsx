@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, User as UserIcon, Shield, CheckSquare, Settings2, KeyRound, Camera, Save, Info, MapPin } from "lucide-react";
+import { X, User as UserIcon, Shield, CheckSquare, Settings2, KeyRound, Camera, Save, Info, MapPin, Users } from "lucide-react";
 import type {
   User,
   SystemRole,
@@ -100,6 +100,7 @@ function buildLocalUserFromBackendResponse(
     moduleAccess: form.moduleAccess,
     projectRegionAccess: form.projectRegionAccess,
     approvalRights: form.approvalRights,
+    scopedUserIds: created.scopedUserIds,
     accountSecurity: {
       forcePasswordChangeOnFirstLogin: created.forcePasswordChange,
       accountLocked: form.accountLocked,
@@ -120,6 +121,7 @@ const formatDateTime = (iso?: string | null): string => {
 };
 
 const DEFAULT_ROLE: SystemRole = "Engineer";
+const PROJECT_MANAGER_ROLE: SystemRole = "Project Manager";
 
 export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestResetPassword, existingUsers, lookups }: UserDrawerProps) => {
   const { showToast } = usePmoToast();
@@ -140,6 +142,15 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
   const [moduleAccess, setModuleAccess] = useState<UserModuleAccess>(ROLE_MODULE_DEFAULTS[DEFAULT_ROLE]);
   const [projectRegionAccess, setProjectRegionAccess] = useState<UserProjectRegionAccess>(ROLE_REGION_DEFAULTS[DEFAULT_ROLE]);
   const [approvalRights, setApprovalRights] = useState<UserApprovalRights>(ROLE_APPROVAL_DEFAULTS[DEFAULT_ROLE]);
+  // Project Manager Scope (User-Based Project Visibility) — only ever read
+  // or submitted while role === "Project Manager"; see PROJECT_MANAGER_ROLE
+  // below. Not reset on every role change (unlike the three access objects
+  // above, which reset in Add mode) — kept in memory as-is so briefly
+  // clicking another role and clicking back to Project Manager before Save
+  // never loses the selection. The backend authoritatively clears any saved
+  // grants if the role you actually submit isn't Project Manager, so no
+  // frontend-side clearing is required for rule D to hold.
+  const [scopedUserIds, setScopedUserIds] = useState<string[]>([]);
 
   const [forcePasswordChange, setForcePasswordChange] = useState(true);
   const [accountLocked, setAccountLocked] = useState(false);
@@ -175,6 +186,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
         setModuleAccess(user.moduleAccess);
         setProjectRegionAccess(user.projectRegionAccess);
         setApprovalRights(user.approvalRights);
+        setScopedUserIds(user.scopedUserIds);
         setForcePasswordChange(user.accountSecurity.forcePasswordChangeOnFirstLogin);
         setAccountLocked(user.accountSecurity.accountLocked);
         setLastPasswordResetAt(user.accountSecurity.lastPasswordResetAt);
@@ -193,6 +205,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
         setModuleAccess(ROLE_MODULE_DEFAULTS[DEFAULT_ROLE]);
         setProjectRegionAccess(ROLE_REGION_DEFAULTS[DEFAULT_ROLE]);
         setApprovalRights(ROLE_APPROVAL_DEFAULTS[DEFAULT_ROLE]);
+        setScopedUserIds([]);
         setForcePasswordChange(true);
         setAccountLocked(false);
         setLastPasswordResetAt(null);
@@ -234,6 +247,10 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
 
   const handleToggleApproval = (key: keyof UserApprovalRights) => {
     setApprovalRights((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleToggleScopedUser = (userId: string) => {
+    setScopedUserIds((prev) => (prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -298,6 +315,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
           moduleIds,
           regionIds,
           approvalIds,
+          scopedUserIds,
         });
 
         onSaved(
@@ -360,6 +378,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
           moduleIds,
           regionIds,
           approvalIds,
+          scopedUserIds,
           forcePasswordChange,
           accountLocked,
         });
@@ -719,6 +738,71 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
                 })}
               </div>
             </div>
+
+            {/* SECTION 5B: Project Manager Scope — only shown for the Project Manager role */}
+            {role === PROJECT_MANAGER_ROLE && (
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center gap-2 pb-2 border-b border-[var(--nu-border)]">
+                  <Users size={16} className="text-[var(--nu-accent)]" />
+                  <h3 className="text-[14px] font-bold text-[var(--nu-text)]">Projects Visible To This Project Manager</h3>
+                </div>
+                <p className="text-[11px] text-[var(--nu-text-muted)] -mt-1.5">
+                  In addition to projects this Project Manager creates themselves, select any other users whose created
+                  projects they should also be able to view.
+                </p>
+                {(() => {
+                  const eligibleUsers = existingUsers
+                    .filter((candidate) => candidate.id !== user?.id)
+                    .sort((a, b) => {
+                      const aInactive = a.status !== "Active";
+                      const bInactive = b.status !== "Active";
+                      if (aInactive !== bInactive) return aInactive ? 1 : -1;
+                      return a.employeeName.localeCompare(b.employeeName);
+                    });
+
+                  if (eligibleUsers.length === 0) {
+                    return (
+                      <p className="text-[12px] text-[var(--nu-text-muted)] p-2.5 rounded-[var(--nu-radius-md)] bg-[var(--nu-surface-alt)] border border-[var(--nu-border)]">
+                        No other users exist yet to select.
+                      </p>
+                    );
+                  }
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-64 overflow-y-auto nu-scrollbar pr-1">
+                      {eligibleUsers.map((candidate) => {
+                        const isSelected = scopedUserIds.includes(candidate.id);
+                        const isInactive = candidate.status !== "Active";
+                        return (
+                          <button
+                            key={candidate.id}
+                            type="button"
+                            onClick={() => handleToggleScopedUser(candidate.id)}
+                            className={`flex items-center justify-between p-2.5 rounded-[var(--nu-radius-md)] border text-left transition-all cursor-pointer ${
+                              isSelected
+                                ? "border-[var(--nu-accent)]/40 bg-[var(--nu-surface-alt)] text-[var(--nu-text)]"
+                                : "border-[var(--nu-border)] bg-[var(--nu-surface)] text-[var(--nu-text-muted)]"
+                            }`}
+                          >
+                            <span className="text-[12px] font-medium truncate">
+                              {candidate.employeeName}
+                              {isInactive && <span className="text-[10px] font-normal text-[var(--nu-text-muted)]"> (Inactive)</span>}
+                            </span>
+                            <span
+                              className={`w-4 h-4 shrink-0 rounded-sm border flex items-center justify-center transition-colors ${
+                                isSelected ? "bg-[var(--nu-accent)] border-[var(--nu-accent)] text-white" : "border-[var(--nu-border)] bg-transparent"
+                              }`}
+                            >
+                              {isSelected && <span className="text-[10px] font-bold">✓</span>}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
 
             {/* SECTION 6: Approval Rights */}
             <div className="space-y-3 pt-2">

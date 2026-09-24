@@ -106,6 +106,15 @@ export interface User {
   approvalRights: UserApprovalRights;
   accountSecurity: UserAccountSecurity;
 
+  /**
+   * Project Manager Scope (User-Based Project Visibility) — ids of other
+   * users whose created projects this user can also see, on top of their
+   * own. Only meaningful when role === "Project Manager"; always [] for
+   * every other role (the backend clears it automatically when a user's
+   * role changes away from Project Manager — see user.service.ts).
+   */
+  scopedUserIds: string[];
+
   // ── Account Information (audit) ─────────────────────────────────────
   createdAt: string;
   createdBy: string;

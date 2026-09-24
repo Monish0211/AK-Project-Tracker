@@ -4,9 +4,9 @@ import { projectOwnershipWhereOr } from "../../../shared/utils/projectAccess.js"
 import type { ProjectResourceData } from "../resource.types.js";
 
 /** Same ownership-where shape as getAllResourcesForAuthorizedProjects — kept in one place so the two never drift. */
-function authorizedProjectWhere(callerUserId: string | undefined): Prisma.ProjectWhereInput {
+async function authorizedProjectWhere(callerUserId: string | undefined): Promise<Prisma.ProjectWhereInput> {
   const projectWhere: Prisma.ProjectWhereInput = { isDeleted: false };
-  const ownershipOr = projectOwnershipWhereOr(callerUserId);
+  const ownershipOr = await projectOwnershipWhereOr(callerUserId);
   if (ownershipOr) {
     projectWhere.OR = ownershipOr;
   }
@@ -29,9 +29,9 @@ function authorizedProjectWhere(callerUserId: string | undefined): Prisma.Projec
 // incomplete resource list (this feeds Reports' per-project resource costs).
 export const RESOURCE_FETCH_CAP = 50_000;
 
-export function getAllResourcesForAuthorizedProjects(callerUserId?: string) {
+export async function getAllResourcesForAuthorizedProjects(callerUserId?: string) {
   return prisma.projectResource.findMany({
-    where: { project: authorizedProjectWhere(callerUserId) },
+    where: { project: await authorizedProjectWhere(callerUserId) },
     orderBy: { createdAt: "asc" },
     take: RESOURCE_FETCH_CAP + 1,
   });
@@ -44,21 +44,21 @@ export function getAllResourcesForAuthorizedProjects(callerUserId?: string) {
 // unpaginated query, so pages never skip/duplicate rows as long as no row's
 // createdAt changes between page requests (createdAt is set once, at
 // creation, and never updated — see resource.repository.ts's updateResource()).
-export function getAllResourcesForAuthorizedProjectsPage(
+export async function getAllResourcesForAuthorizedProjectsPage(
   callerUserId: string | undefined,
   skip: number,
   take: number
 ) {
   return prisma.projectResource.findMany({
-    where: { project: authorizedProjectWhere(callerUserId) },
+    where: { project: await authorizedProjectWhere(callerUserId) },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     skip,
     take,
   });
 }
 
-export function countAllResourcesForAuthorizedProjects(callerUserId?: string) {
-  return prisma.projectResource.count({ where: { project: authorizedProjectWhere(callerUserId) } });
+export async function countAllResourcesForAuthorizedProjects(callerUserId?: string) {
+  return prisma.projectResource.count({ where: { project: await authorizedProjectWhere(callerUserId) } });
 }
 
 export function createResource(projectId: string, data: ProjectResourceData) {
@@ -109,9 +109,9 @@ export function getResourcesByProjectId(projectId: string) {
  * of its own, since one employee can be assigned across projects owned by
  * different users.
  */
-export function getResourcesByEmployeeNo(employeeNo: string, callerUserId: string | undefined) {
+export async function getResourcesByEmployeeNo(employeeNo: string, callerUserId: string | undefined) {
   return prisma.projectResource.findMany({
-    where: { employeeNo, project: authorizedProjectWhere(callerUserId) },
+    where: { employeeNo, project: await authorizedProjectWhere(callerUserId) },
     orderBy: { createdAt: "asc" },
   });
 }

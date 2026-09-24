@@ -135,7 +135,7 @@ export const getEntryHistory = asyncHandler(async (req: Request, res: Response) 
     throw new AppError("Timesheet entry not found.", 404);
   }
   if (entry.projectId) {
-    assertProjectAccess(user, entry.project!);
+    await assertProjectAccess(user, entry.project!);
   }
 
   const history = await rowLogRepo.findHistoryForEntry(id);

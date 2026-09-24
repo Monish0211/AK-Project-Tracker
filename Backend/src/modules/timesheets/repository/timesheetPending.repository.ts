@@ -38,8 +38,8 @@ export interface ActiveProjectForPendingCheck {
 // rather than ever silently returning an incomplete Pending calculation.
 export const TIMESHEET_PENDING_PROJECT_FETCH_CAP = 50_000;
 
-export function findActiveProjectsForPendingCheck(callerUserId?: string): Promise<ActiveProjectForPendingCheck[]> {
-  const ownershipOr = projectOwnershipWhereOr(callerUserId);
+export async function findActiveProjectsForPendingCheck(callerUserId?: string): Promise<ActiveProjectForPendingCheck[]> {
+  const ownershipOr = await projectOwnershipWhereOr(callerUserId);
   return prisma.project.findMany({
     where: {
       isDeleted: false,

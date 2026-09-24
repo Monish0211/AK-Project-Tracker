@@ -16,6 +16,7 @@ export interface CreateUserRequestDto {
   moduleIds: string[];
   regionIds: string[];
   approvalIds: string[];
+  scopedUserIds: string[];
 }
 
 /**
@@ -40,6 +41,7 @@ export interface CreatedUserDto {
   isActive: boolean;
   forcePasswordChange: boolean;
   createdAt: Date;
+  scopedUserIds: string[];
 }
 
 export interface LookupItem {

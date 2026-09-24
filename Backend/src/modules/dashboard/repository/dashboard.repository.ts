@@ -67,8 +67,8 @@ export interface MilestoneRow {
   paymentPercentage: number;
 }
 
-export function authorizedNonDeletedProjectWhere(callerUserId: string | undefined): Prisma.ProjectWhereInput {
-  const ownershipOr = projectOwnershipWhereOr(callerUserId);
+export async function authorizedNonDeletedProjectWhere(callerUserId: string | undefined): Promise<Prisma.ProjectWhereInput> {
+  const ownershipOr = await projectOwnershipWhereOr(callerUserId);
   if (!ownershipOr) {
     return { isDeleted: false };
   }
@@ -89,9 +89,9 @@ export function authorizedNonDeletedProjectWhere(callerUserId: string | undefine
 // silently-incomplete project set.
 export const DASHBOARD_PROJECT_FETCH_CAP = 50_000;
 
-export function findAuthorizedProjects(callerUserId: string | undefined): Promise<DashboardProjectRow[]> {
+export async function findAuthorizedProjects(callerUserId: string | undefined): Promise<DashboardProjectRow[]> {
   return prisma.project.findMany({
-    where: authorizedNonDeletedProjectWhere(callerUserId),
+    where: await authorizedNonDeletedProjectWhere(callerUserId),
     take: DASHBOARD_PROJECT_FETCH_CAP + 1,
     select: {
       id: true,

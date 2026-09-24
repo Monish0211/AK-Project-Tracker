@@ -11,16 +11,19 @@ import type { CreatedUserDto, UserLookupsDto } from "../dto/createUser.dto.js";
 import type { UserListItemDto } from "../dto/userList.dto.js";
 import {
   createPortalUser,
+  createProjectManagerScope,
   createUserApprovalPermissions,
   createUserModuleAccess,
   createUserRegionAccess,
   deleteUserById,
   findAllUsers,
+  findExistingUserIds,
   findRoleById,
   findUserByEmail,
   findUserById,
   findUserWithAccessById,
   getLookups as getLookupsFromRepository,
+  replaceProjectManagerScope,
   replaceUserApprovalPermissions,
   replaceUserModuleAccess,
   replaceUserRegionAccess,
@@ -30,8 +33,40 @@ import {
 } from "../repository/user.repository.js";
 import type { CreateUserInput, UpdateUserInput } from "../validators/user.validators.js";
 
+/** The one role name this whole feature is gated on — kept as a single constant so "Project Manager" can never be spelled two different ways across this file. */
+const PROJECT_MANAGER_ROLE_NAME = "Project Manager";
+
+/**
+ * Validates a proposed Project Manager Scope grant list before it's ever
+ * persisted: rejects an attempt to grant a Project Manager visibility into
+ * their own projects (redundant — they already see those by default, see
+ * projectAccess.ts), dedupes the input, and rejects any id that isn't a real
+ * PortalUser. Throws AppError(400) on any violation — never silently drops
+ * an invalid id, so a caller gets clear feedback instead of a silent no-op.
+ */
+async function validateScopedUserIds(projectManagerId: string | null, scopedUserIds: string[]): Promise<string[]> {
+  const uniqueIds = Array.from(new Set(scopedUserIds));
+
+  if (projectManagerId && uniqueIds.includes(projectManagerId)) {
+    throw new AppError(
+      "A Project Manager cannot be granted visibility into their own projects — they already see those by default.",
+      400
+    );
+  }
+
+  if (uniqueIds.length === 0) return uniqueIds;
+
+  const existingIds = await findExistingUserIds(uniqueIds);
+  if (existingIds.length !== uniqueIds.length) {
+    throw new AppError("One or more selected users for Project Manager Scope do not exist.", 400);
+  }
+
+  return uniqueIds;
+}
+
 function toCreatedUserDto(
-  user: Awaited<ReturnType<typeof createPortalUser>>
+  user: Awaited<ReturnType<typeof createPortalUser>>,
+  scopedUserIds: string[]
 ): CreatedUserDto {
   return {
     id: user.id,
@@ -46,6 +81,7 @@ function toCreatedUserDto(
     isActive: user.isActive,
     forcePasswordChange: user.forcePasswordChange,
     createdAt: user.createdAt,
+    scopedUserIds,
   };
 }
 
@@ -81,6 +117,14 @@ export async function createUser(input: CreateUserInput): Promise<CreateUserResu
   const passwordHash = await hashPassword(input.temporaryPassword);
   const passwordExpiresAt = addDays(new Date(), env.PASSWORD_EXPIRY_DAYS);
 
+  // Project Manager Scope only ever applies to the Project Manager role — a
+  // brand-new user can't yet appear in their own grant list (their id
+  // doesn't exist until after creation), so the self-grant check is skipped
+  // here (pass null) and only enforced in updateUser, where editing an
+  // existing Project Manager's own scope is actually possible.
+  const scopedUserIds =
+    role.name === PROJECT_MANAGER_ROLE_NAME ? await validateScopedUserIds(null, input.scopedUserIds) : [];
+
   const createdUser = await prisma.$transaction(async (tx) => {
     const user = await createPortalUser(tx, {
       fullName: input.fullName,
@@ -100,6 +144,7 @@ export async function createUser(input: CreateUserInput): Promise<CreateUserResu
     await createUserModuleAccess(tx, user.id, input.moduleIds);
     await createUserRegionAccess(tx, user.id, input.regionIds);
     await createUserApprovalPermissions(tx, user.id, input.approvalIds);
+    await createProjectManagerScope(tx, user.id, scopedUserIds);
 
     return user;
   });
@@ -108,7 +153,7 @@ export async function createUser(input: CreateUserInput): Promise<CreateUserResu
   // Sent exactly once, here, and nowhere else in the create-user path.
   const emailSent = await sendAccountCreatedEmail(createdUser, input.temporaryPassword);
 
-  return { user: toCreatedUserDto(createdUser), emailSent };
+  return { user: toCreatedUserDto(createdUser, scopedUserIds), emailSent };
 }
 
 /**
@@ -174,6 +219,7 @@ function toUserListItemDto(user: Awaited<ReturnType<typeof findAllUsers>>[number
     modules: user.moduleAccess.map((grant) => grant.module.name),
     regions: user.regionAccess.map((grant) => grant.region.name),
     approvals: user.approvalPermissions.map((grant) => grant.approvalType.name),
+    scopedUserIds: user.projectManagerScopes.map((grant) => grant.grantedUserId),
   };
 }
 
@@ -218,7 +264,7 @@ export async function updateUser(
     throw new AppError("You cannot change your own role.", 400);
   }
 
-  const existingUser = await findUserById(targetUserId);
+  const existingUser = await findUserWithAccessById(targetUserId);
   if (!existingUser) {
     throw new AppError("User not found.", 404);
   }
@@ -230,12 +276,37 @@ export async function updateUser(
     }
   }
 
+  let newRoleName = existingUser.role.name;
   if (input.roleId) {
     const role = await findRoleById(input.roleId);
     if (!role) {
       throw new AppError("Selected role does not exist.", 400);
     }
+    newRoleName = role.name;
   }
+
+  // Project Manager Scope — resolved before the transaction, same as every
+  // other pre-transaction validation in this function.
+  //
+  // Rule: role changed away from Project Manager clears every grant this
+  // user holds, regardless of whether the request even touched
+  // scopedUserIds — a role change to e.g. Engineer must not leave stale
+  // Project Manager Scope rows behind that would matter again if the role
+  // is ever switched back. This fires unconditionally whenever the
+  // EFFECTIVE new role isn't Project Manager (covers both "was PM, now
+  // isn't" and "wasn't PM, still isn't" — the latter is just a no-op delete
+  // against rows that already don't exist).
+  //
+  // When the effective role IS Project Manager, scopedUserIds follows the
+  // same omission-is-a-no-op convention as moduleIds/regionIds/approvalIds:
+  // undefined preserves whatever grants already exist; an explicit array
+  // (including []) replaces them, after validation.
+  const isProjectManager = newRoleName === PROJECT_MANAGER_ROLE_NAME;
+  const scopedUserIds = !isProjectManager
+    ? []
+    : input.scopedUserIds !== undefined
+      ? await validateScopedUserIds(targetUserId, input.scopedUserIds)
+      : undefined;
 
   // Decided before the transaction, against the pre-update row — only a
   // transition INTO deactivated/locked revokes sessions; toggling either
@@ -261,6 +332,7 @@ export async function updateUser(
     await replaceUserModuleAccess(tx, targetUserId, input.moduleIds);
     await replaceUserRegionAccess(tx, targetUserId, input.regionIds);
     await replaceUserApprovalPermissions(tx, targetUserId, input.approvalIds);
+    await replaceProjectManagerScope(tx, targetUserId, scopedUserIds);
   });
 
   // Deactivating or locking a user must end their existing session, not

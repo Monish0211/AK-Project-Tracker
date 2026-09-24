@@ -1,5 +1,6 @@
 import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
+import { projectOwnershipWhereOr } from "../../../shared/utils/projectAccess.js";
 
 /**
  * All Prisma access for Projects lives here — the service layer never
@@ -167,7 +168,7 @@ export interface ProjectListFilters {
   callerUserId?: string | undefined;
 }
 
-function buildWhereClause(filters: ProjectListFilters): Prisma.ProjectWhereInput {
+async function buildWhereClause(filters: ProjectListFilters): Promise<Prisma.ProjectWhereInput> {
   const where: Prisma.ProjectWhereInput = { isDeleted: filters.isDeleted ?? false };
 
   if (filters.projectStatus) where.projectStatus = filters.projectStatus;
@@ -185,11 +186,15 @@ function buildWhereClause(filters: ProjectListFilters): Prisma.ProjectWhereInput
 
   // Project-ownership scoping — composed via a separate AND'd OR-group (not
   // the `where.OR` key above, already used for search) so the two
-  // independent OR-conditions can never collide. A null createdByUserId
-  // (every project that existed before ownership was introduced) is always
-  // visible; otherwise only the caller's own projects are.
-  if (filters.callerUserId) {
-    where.AND = [{ OR: [{ createdByUserId: null }, { createdByUserId: filters.callerUserId }] }];
+  // independent OR-conditions can never collide. Delegates to the shared
+  // projectAccess.ts primitive (same one Dashboard/Timesheets/Resources use)
+  // rather than reimplementing the OR shape here a second time — a null
+  // createdByUserId (every project that existed before ownership was
+  // introduced) is always visible; otherwise the caller's own projects,
+  // plus any Project Manager Scope grants they hold, are.
+  const ownershipOr = await projectOwnershipWhereOr(filters.callerUserId);
+  if (ownershipOr) {
+    where.AND = [{ OR: ownershipOr }];
   }
 
   return where;
@@ -202,7 +207,7 @@ export async function findProjectsPage(
   page: number,
   pageSize: number
 ) {
-  const where = buildWhereClause(filters);
+  const where = await buildWhereClause(filters);
 
   const [items, total] = await Promise.all([
     prisma.project.findMany({

@@ -161,7 +161,7 @@ function queryEntries(where: Prisma.TimesheetEntryWhereInput, skip: number, take
  * receiving every matching row in one response.
  */
 export async function findEntries(filters: FindEntriesFilters, callerUserId?: string): Promise<FindEntriesResult> {
-  const ownershipOr = projectOwnershipWhereOr(callerUserId);
+  const ownershipOr = await projectOwnershipWhereOr(callerUserId);
 
   let workDateFilter: Prisma.TimesheetEntryWhereInput["workDate"] | undefined;
   if (filters.startDate || filters.endDate) {

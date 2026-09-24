@@ -53,6 +53,8 @@ export interface CreateUserPayload {
   moduleIds: string[];
   regionIds: string[];
   approvalIds: string[];
+  /** Project Manager Scope — only meaningful when the selected role is "Project Manager"; the backend ignores this for every other role. */
+  scopedUserIds: string[];
 }
 
 export interface CreatedPortalUser {
@@ -68,6 +70,7 @@ export interface CreatedPortalUser {
   isActive: boolean;
   forcePasswordChange: boolean;
   createdAt: string;
+  scopedUserIds: string[];
 }
 
 /** Creates a new portal login via the real backend (POST /users). */
@@ -97,6 +100,7 @@ interface BackendUserListItem {
   modules: string[];
   regions: string[];
   approvals: string[];
+  scopedUserIds: string[];
 }
 
 /**
@@ -126,6 +130,7 @@ function toLocalUser(u: BackendUserListItem): User {
     moduleAccess: buildModuleAccess(u.modules),
     projectRegionAccess: buildRegionAccess(u.regions),
     approvalRights: buildApprovalRights(u.approvals),
+    scopedUserIds: u.scopedUserIds,
     accountSecurity: {
       forcePasswordChangeOnFirstLogin: u.forcePasswordChange,
       accountLocked: u.accountLocked,
@@ -157,6 +162,8 @@ export interface UpdateUserPayload {
   moduleIds?: string[];
   regionIds?: string[];
   approvalIds?: string[];
+  /** Omit to leave existing Project Manager Scope grants untouched; send an array (including []) to replace them. Only meaningful when role is/becomes "Project Manager". */
+  scopedUserIds?: string[];
   forcePasswordChange?: boolean;
   accountLocked?: boolean;
 }

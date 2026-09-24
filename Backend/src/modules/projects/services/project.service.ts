@@ -296,7 +296,7 @@ export async function getProjectById(id: string, user: AccessTokenPayload): Prom
   if (!project) {
     throw new AppError("Project not found.", 404);
   }
-  assertProjectAccess(user, project);
+  await assertProjectAccess(user, project);
   return toProjectDto(project);
 }
 
@@ -359,7 +359,7 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
   if (!existing) {
     throw new AppError("Project not found.", 404);
   }
-  assertProjectAccess(user, existing);
+  await assertProjectAccess(user, existing);
 
   // Region -> PR Category -> PR Number prefix rule — only re-checked when
   // this request actually touches prCategory and/or prNo. Neither field
@@ -423,7 +423,7 @@ export async function archiveProject(id: string, user: AccessTokenPayload): Prom
   if (!existing) {
     throw new AppError("Project not found.", 404);
   }
-  assertProjectAccess(user, existing);
+  await assertProjectAccess(user, existing);
 
   await archiveProjectInRepository(id);
 
@@ -457,7 +457,7 @@ export async function restoreProject(id: string, user: AccessTokenPayload): Prom
   if (!existing) {
     throw new AppError("Project not found.", 404);
   }
-  assertProjectAccess(user, existing);
+  await assertProjectAccess(user, existing);
 
   if (!existing.isDeleted) {
     throw new AppError("This project is not archived.", 409);
@@ -511,7 +511,7 @@ export async function permanentlyDeleteProject(id: string, user: AccessTokenPayl
   if (!existing) {
     throw new AppError("Project not found.", 404);
   }
-  assertProjectAccess(user, existing);
+  await assertProjectAccess(user, existing);
 
   await hardDeleteProjectInRepository(id);
 

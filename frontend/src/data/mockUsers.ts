@@ -56,6 +56,7 @@ function buildUser(seed: SeedUser): User {
     projectRegionAccess: seed.regionOverride ?? ROLE_REGION_DEFAULTS[seed.role],
     approvalRights: ROLE_APPROVAL_DEFAULTS[seed.role],
     accountSecurity: { ...DEFAULT_SECURITY(seed.isFirstLogin), ...seed.security },
+    scopedUserIds: [],
     createdAt: seed.createdAt,
     createdBy: "Administrator",
   };

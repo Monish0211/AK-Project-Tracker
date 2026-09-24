@@ -37,6 +37,7 @@ export function findAllUsers() {
       moduleAccess: { include: { module: true } },
       regionAccess: { include: { region: true } },
       approvalPermissions: { include: { approvalType: true } },
+      projectManagerScopes: { select: { grantedUserId: true } },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -52,8 +53,21 @@ export function findUserWithAccessById(id: string) {
       moduleAccess: { include: { module: true } },
       regionAccess: { include: { region: true } },
       approvalPermissions: { include: { approvalType: true } },
+      projectManagerScopes: { select: { grantedUserId: true } },
     },
   });
+}
+
+/**
+ * Existence check for a proposed Project Manager Scope grant list — used by
+ * the service layer to reject any scopedUserIds that don't correspond to a
+ * real PortalUser before persisting. Returns only the ids that actually
+ * exist, so the caller can diff against what it asked for.
+ */
+export async function findExistingUserIds(ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const rows = await prisma.portalUser.findMany({ where: { id: { in: ids } }, select: { id: true } });
+  return rows.map((row) => row.id);
 }
 
 export function findRoleById(roleId: string) {
@@ -104,6 +118,18 @@ export function createUserApprovalPermissions(tx: Prisma.TransactionClient, user
   if (approvalTypeIds.length === 0) return Promise.resolve(null);
   return tx.userApprovalPermission.createMany({
     data: approvalTypeIds.map((approvalTypeId) => ({ userId, approvalTypeId })),
+  });
+}
+
+/**
+ * Project Manager Scope — User-Based Project Visibility. Same shape as
+ * createUserRegionAccess above, just self-referential on PortalUser
+ * (projectManagerId -> grantedUserId) instead of pointing at a lookup table.
+ */
+export function createProjectManagerScope(tx: Prisma.TransactionClient, projectManagerId: string, grantedUserIds: string[]) {
+  if (grantedUserIds.length === 0) return Promise.resolve(null);
+  return tx.projectManagerScope.createMany({
+    data: grantedUserIds.map((grantedUserId) => ({ projectManagerId, grantedUserId })),
   });
 }
 
@@ -158,6 +184,28 @@ export async function replaceUserApprovalPermissions(
   if (approvalTypeIds.length > 0) {
     await tx.userApprovalPermission.createMany({
       data: approvalTypeIds.map((approvalTypeId) => ({ userId, approvalTypeId })),
+    });
+  }
+}
+
+/**
+ * Replaces a Project Manager's full grant list — same delete-then-recreate
+ * shape as replaceUserRegionAccess above. `grantedUserIds === undefined`
+ * means the caller didn't touch this field at all (no-op, preserves
+ * whatever grants already exist) — a real empty array `[]` means "clear
+ * every grant," which is exactly what the role-changed-away-from-Project-
+ * Manager rule in user.service.ts passes explicitly.
+ */
+export async function replaceProjectManagerScope(
+  tx: Prisma.TransactionClient,
+  projectManagerId: string,
+  grantedUserIds: string[] | undefined
+) {
+  if (grantedUserIds === undefined) return;
+  await tx.projectManagerScope.deleteMany({ where: { projectManagerId } });
+  if (grantedUserIds.length > 0) {
+    await tx.projectManagerScope.createMany({
+      data: grantedUserIds.map((grantedUserId) => ({ projectManagerId, grantedUserId })),
     });
   }
 }

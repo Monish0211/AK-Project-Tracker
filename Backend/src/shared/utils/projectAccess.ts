@@ -23,6 +23,30 @@ export function hasUnrestrictedProjectVisibility(roleName: string): boolean {
 }
 
 /**
+ * Project Manager Scope (User-Based Project Visibility) — the ids of other
+ * users whose created projects `callerUserId` may additionally see, on top
+ * of their own. Deliberately keyed on `callerUserId` alone, not on the
+ * caller's `roleName`: a restricted user who isn't a Project Manager simply
+ * has zero `ProjectManagerScope` rows, so this returns `[]` for them without
+ * needing a role check of its own — one less place for a role name to drift
+ * out of sync. Joins live against `PortalUser.isActive` so a deactivated
+ * granted user immediately stops expanding visibility (rule E) without ever
+ * needing to touch or delete the grant row itself — same "always re-read
+ * fresh from the database, never trust a cached/token value" philosophy
+ * `authenticate.ts` already applies to the caller's own account state.
+ * Returns `[]` immediately (no query) for `undefined` (unrestricted roles),
+ * so Administrator/PMO Manager pay no extra cost here.
+ */
+export async function getProjectManagerGrantedUserIds(callerUserId: string | undefined): Promise<string[]> {
+  if (!callerUserId) return [];
+  const grants = await prisma.projectManagerScope.findMany({
+    where: { projectManagerId: callerUserId, grantedUser: { isActive: true } },
+    select: { grantedUserId: true },
+  });
+  return grants.map((grant) => grant.grantedUserId);
+}
+
+/**
  * Project-ownership authorization — the single source of truth for "may
  * this caller touch this project." Reused by the Project module itself and
  * by every project-scoped child-resource module (Quantity, Milestones,
@@ -34,21 +58,26 @@ export function hasUnrestrictedProjectVisibility(roleName: string): boolean {
  * recorded creator (createdByUserId: null — every project that existed
  * before this field was introduced, since the concept didn't exist yet) is
  * "unclaimed" and accessible to every normal user, never locked to an
- * unrestricted-visibility role only. Otherwise, only the creator may access
- * it.
+ * unrestricted-visibility role only. Otherwise, the creator may access it —
+ * and, additively, so may a Project Manager who has been granted visibility
+ * into that creator's projects (see getProjectManagerGrantedUserIds() above,
+ * ProjectManagerScope). This never narrows anything the caller could already
+ * see; it only ever adds.
  */
 export interface ProjectOwnershipCheck {
   createdByUserId: string | null;
 }
 
-export function canAccessProject(user: AccessTokenPayload, project: ProjectOwnershipCheck): boolean {
+export async function canAccessProject(user: AccessTokenPayload, project: ProjectOwnershipCheck): Promise<boolean> {
   if (hasUnrestrictedProjectVisibility(user.roleName)) return true;
   if (project.createdByUserId === null) return true;
-  return project.createdByUserId === user.sub;
+  if (project.createdByUserId === user.sub) return true;
+  const grantedUserIds = await getProjectManagerGrantedUserIds(user.sub);
+  return grantedUserIds.includes(project.createdByUserId);
 }
 
-export function assertProjectAccess(user: AccessTokenPayload, project: ProjectOwnershipCheck): void {
-  if (!canAccessProject(user, project)) {
+export async function assertProjectAccess(user: AccessTokenPayload, project: ProjectOwnershipCheck): Promise<void> {
+  if (!(await canAccessProject(user, project))) {
     throw new AppError("You do not have access to this project.", 403);
   }
 }
@@ -64,7 +93,7 @@ export async function assertProjectAccessById(projectId: string, user: AccessTok
   if (!project) {
     throw new AppError("Project not found.", 404);
   }
-  assertProjectAccess(user, project);
+  await assertProjectAccess(user, project);
 }
 
 /**
@@ -85,11 +114,21 @@ export async function getProjectCreatorUserId(projectId: string): Promise<string
 /**
  * The Prisma OR-clause fragment that scopes a list query to projects the
  * caller may see — pass `undefined` for an Administrator (no restriction).
- * Shared by GET /projects, GET /timesheets/pending-projects, and GET
- * /timesheets/entries so all three can never disagree on what "authorized
- * project" means.
+ * Shared by GET /projects, GET /timesheets/pending-projects, GET
+ * /timesheets/entries, Dashboard, Resources, Reminders, and every other
+ * cross-project list built on findAuthorizedProjects(), so none of them can
+ * ever disagree on what "authorized project" means. Additively includes any
+ * Project Manager Scope grants the caller holds (see
+ * getProjectManagerGrantedUserIds() above) — a plain restricted user with no
+ * grants gets back exactly the same two-branch OR as before this feature
+ * existed.
  */
-export function projectOwnershipWhereOr(callerUserId: string | undefined) {
+export async function projectOwnershipWhereOr(callerUserId: string | undefined) {
   if (!callerUserId) return undefined;
-  return [{ createdByUserId: null }, { createdByUserId: callerUserId }];
+  const grantedUserIds = await getProjectManagerGrantedUserIds(callerUserId);
+  return [
+    { createdByUserId: null },
+    { createdByUserId: callerUserId },
+    ...(grantedUserIds.length > 0 ? [{ createdByUserId: { in: grantedUserIds } }] : []),
+  ];
 }

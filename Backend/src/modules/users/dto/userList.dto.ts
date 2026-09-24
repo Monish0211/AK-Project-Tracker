@@ -29,4 +29,6 @@ export interface UserListItemDto {
   modules: string[];
   regions: string[];
   approvals: string[];
+  /** Project Manager Scope — ids of other users whose created projects this user (when Project Manager) can also see. Always [] for every other role. */
+  scopedUserIds: string[];
 }

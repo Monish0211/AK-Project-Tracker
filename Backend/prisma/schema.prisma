@@ -86,6 +86,13 @@ model PortalUser {
   regionAccess        UserRegionAccess[]
   approvalPermissions UserApprovalPermission[]
 
+  // User-Based Project Visibility (Project Manager role only) — see
+  // ProjectManagerScope below. projectManagerScopes = grants THIS user (as a
+  // Project Manager) holds into other users' projects; grantedToScopes =
+  // grants where THIS user is the one whose created projects were shared out.
+  projectManagerScopes ProjectManagerScope[] @relation("ProjectManagerScopeOwner")
+  grantedToScopes      ProjectManagerScope[] @relation("ProjectManagerScopeGrantee")
+
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
   authAuditLogs       AuthAuditLog[]
@@ -247,6 +254,36 @@ model UserRegionAccess {
   createdAt DateTime @default(now())
 
   @@unique([userId, regionId])
+}
+
+// =============================================================================
+// PROJECT MANAGER SCOPE (User-Based Project Visibility)
+// =============================================================================
+// Extends Project.createdByUserId ownership (see projectAccess.ts) for the
+// "Project Manager" role only: an Administrator can grant a Project Manager
+// visibility into OTHER users' created projects, additive to their own.
+// Deliberately NOT an employee-reporting or org-chart hierarchy — this is a
+// plain "PM X may also see projects created by user Y" grant, same
+// data-driven per-user shape as UserModuleAccess/UserRegionAccess above,
+// just self-referential on PortalUser instead of pointing at a lookup table.
+// grantedUserId carries no isActive check of its own — projectAccess.ts
+// joins live against PortalUser.isActive at query time, so deactivating the
+// granted user narrows visibility immediately without touching this row.
+// "Don't grant a PM their own projects redundantly" is an application-layer
+// rule (user.validators.ts), not a DB constraint — same as other business
+// rules in this schema that don't map to a SQL CHECK.
+model ProjectManagerScope {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  projectManagerId String
+  projectManager   PortalUser @relation("ProjectManagerScopeOwner", fields: [projectManagerId], references: [id], onDelete: Cascade)
+
+  grantedUserId String
+  grantedUser   PortalUser @relation("ProjectManagerScopeGrantee", fields: [grantedUserId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([projectManagerId, grantedUserId])
 }
 
 // =============================================================================
