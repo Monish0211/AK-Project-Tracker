@@ -18,7 +18,7 @@ import {
 } from "../../../services/projectService";
 import { syncQuantityItemsWithApi } from "../../../services/quantityService";
 import { syncMilestonesWithApi } from "../../../services/paymentMilestoneService";
-import { syncExpensesWithApi } from "../../../services/otherProjectExpenseService";
+import { syncExpensesWithApi, type ExpensesConcurrencySignal } from "../../../services/otherProjectExpenseService";
 import { ApiError } from "../../../services/apiClient";
 import { validateQuantityTab, validatePaymentMilestonesTab, validateOtherExpensesTab } from "../../../utils/projectValidation";
 
@@ -64,6 +64,12 @@ interface Props {
   onResetPendingDocuments?: () => void;
   /** Live "N of M" progress while onFlushPendingDocuments is running — surfaced on the Save/Save & Next button instead of a plain, indefinite "Saving...". */
   documentFlushProgress?: { completed: number; total: number } | null;
+  /** Stale-save concurrency fix — ids the user explicitly clicked Delete on this session, tracked by ProjectForm.tsx (see NonManhourExpenseCard's onExpenseRemoved). The ONLY ids syncExpensesWithApi() is allowed to delete. */
+  removedExpenseIds?: string[];
+  /** Called once Other Project Expenses sync succeeds, so ProjectForm.tsx can reset removedExpenseIds back to [] for the next save cycle. */
+  onExpensesSynced?: () => void;
+  /** Captured once when Edit Project's initial expense load resolves (see EditProject.tsx) — the "before" snapshot the concurrency-warning banner compares against at Save time. Undefined/null in Add mode (nothing existed to snapshot). */
+  expensesConcurrencyBaseline?: ExpensesConcurrencySignal | null;
 }
 
 const FormButtons = ({
@@ -80,10 +86,14 @@ const FormButtons = ({
   onFlushPendingDocuments,
   onResetPendingDocuments,
   documentFlushProgress,
+  removedExpenseIds,
+  onExpensesSynced,
+  expensesConcurrencyBaseline,
 }: Props) => {
   const navigate = useNavigate();
   const { showToast } = usePmoToast();
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   // Perf/robustness fix — Save/Save & Next previously had no in-flight
   // guard at all, so a slow save (a bulk document flush can now take a
   // couple of seconds for many staged files) could be double-clicked into
@@ -91,7 +101,6 @@ const FormButtons = ({
   // (and Reset/Cancel, which would otherwise mutate state a save is
   // still reading) for the duration of any save, not just document ones.
   const [isSaving, setIsSaving] = useState(false);
-  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 
   /**
    * Phase 3.1: General Information now round-trips through the real backend
@@ -269,9 +278,27 @@ const FormButtons = ({
     // Information save at the top of this function.
     if (Object.keys(validateOtherExpensesTab(projectToSave)).length === 0) {
       try {
-        const syncedExpenses = await syncExpensesWithApi(projectToSave.id, projectToSave.nonManhourExpenses);
+        const { items: syncedExpenses, concurrentChangeDetected } = await syncExpensesWithApi(
+          projectToSave.id,
+          projectToSave.nonManhourExpenses,
+          removedExpenseIds ?? [],
+          expensesConcurrencyBaseline
+        );
         projectToSave = { ...projectToSave, nonManhourExpenses: syncedExpenses };
         setProject(projectToSave);
+        onExpensesSynced?.();
+        // Concurrency warning (Sept 2026) — informational only, never blocks
+        // or alters the save: removedExpenseIds above already guarantees no
+        // data loss regardless of what changed concurrently. Shown AFTER the
+        // save succeeds so the user reviews the now-current (just re-fetched)
+        // expense list, not a stale one.
+        if (concurrentChangeDetected) {
+          showToast({
+            type: "warning",
+            message:
+              "⚠️ Other Project Expenses were changed by another user while you were editing this project. Please review the latest expenses before saving again.",
+          });
+        }
       } catch (err) {
         showToast({
           type: "error",

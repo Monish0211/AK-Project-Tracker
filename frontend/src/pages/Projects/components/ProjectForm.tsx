@@ -36,6 +36,7 @@ import ProjectLeadershipCard from "./ProjectLeadershipCard";
 import ExpandableTeamMembersCard from "./ExpandableTeamMembersCard";
 import FormButtons from "./FormButtons";
 import type { SubresourceLoadStatus } from "./FormButtons";
+import type { ExpensesConcurrencySignal } from "../../../services/otherProjectExpenseService";
 import ExpenseBudgetCard from "./ExpenseBudgetCard";
 import InvoiceCard from "./InvoiceCard";
 import NonManhourExpenseCard from "./ExpenseInformation/NonManhourExpenseCard";
@@ -97,9 +98,11 @@ interface Props {
   initialInvoiceLineId?: string | null;
   /** P0 fix — forwarded to FormButtons, which blocks Save entirely if any flag is true. Only EditProject.tsx passes this; AddProject.tsx never does. */
   resourceLoadFailed?: SubresourceLoadStatus;
+  /** Concurrency-warning baseline (Sept 2026) — forwarded to FormButtons. Only EditProject.tsx passes this (captured right after its initial expense load); AddProject.tsx never does, since there's nothing pre-existing to snapshot. */
+  expensesConcurrencyBaseline?: ExpensesConcurrencySignal | null;
 }
 
-const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId, initialInvoiceLineId, resourceLoadFailed }: Props) => {
+const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId, initialInvoiceLineId, resourceLoadFailed, expensesConcurrencyBaseline }: Props) => {
   const [isNotesOpen, setIsNotesOpen] = useState(false);
   const TABS = mode === "add" ? TABS_ADD : TABS_EDIT;
   const [activeTab, setActiveTab] = useState<TabKey>(
@@ -139,6 +142,20 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
   // audit note on flushPendingDocuments below for why this matters more
   // once concurrency is bounded (a large batch can take a few seconds).
   const [documentFlushProgress, setDocumentFlushProgress] = useState<{ completed: number; total: number } | null>(null);
+
+  // Stale-save concurrency fix (Other Project Expenses, Sept 2026) — explicit
+  // deletion intent, tracked ONLY here, never inferred. Deliberately a
+  // sibling of `project`/`setProject`, not a field ON Project itself: this is
+  // pure UI-session bookkeeping (which rows THIS session's user actually
+  // clicked Delete on), and Project is the persisted domain shape that gets
+  // mirrored to localStorage elsewhere in the app — this array must never
+  // risk being serialized into that mirror or leaking across a later project
+  // load. Reset to [] on a successful save (see FormButtons' onExpensesSynced
+  // below) so a fresh save cycle starts clean.
+  const [removedExpenseIds, setRemovedExpenseIds] = useState<string[]>([]);
+  const handleExpenseRemoved = (id: string) => {
+    setRemovedExpenseIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  };
 
   const stagePendingDocument = (file: File) => {
     setPendingDocuments((prev) => [...prev, { localId: crypto.randomUUID(), file, status: "pending" }]);
@@ -469,7 +486,7 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
           )}
 
           {activeTab === "expenses" && (
-            <NonManhourExpenseCard project={project} setProject={setProject} />
+            <NonManhourExpenseCard project={project} setProject={setProject} onExpenseRemoved={handleExpenseRemoved} />
           )}
 
           {activeTab === "invoices" && (
@@ -495,9 +512,12 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
         onSaveAndNext={goToNextTab}
         onBack={goToPreviousTab}
         resourceLoadFailed={resourceLoadFailed}
+        expensesConcurrencyBaseline={expensesConcurrencyBaseline}
         onFlushPendingDocuments={flushPendingDocuments}
         onResetPendingDocuments={() => setPendingDocuments([])}
         documentFlushProgress={documentFlushProgress}
+        removedExpenseIds={removedExpenseIds}
+        onExpensesSynced={() => setRemovedExpenseIds([])}
       />
 
       {/* Project Notes Slide-over Drawer */}

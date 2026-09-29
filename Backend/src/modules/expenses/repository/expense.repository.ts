@@ -12,9 +12,13 @@ export function createExpense(projectId: string, data: ProjectExpenseData) {
   return prisma.projectExpense.create({ data: { ...data, projectId } });
 }
 
+// Excel Import (Sept 2026) — isActive: true excludes superseded imported
+// versions (see ExpenseImportBatch's own schema comment) from every list/
+// total. Every existing row (manual or otherwise) already defaults to
+// isActive: true, so this is a no-op for all current data.
 export function getExpensesByProjectId(projectId: string) {
   return prisma.projectExpense.findMany({
-    where: { projectId },
+    where: { projectId, isActive: true },
     orderBy: { createdAt: "asc" },
   });
 }

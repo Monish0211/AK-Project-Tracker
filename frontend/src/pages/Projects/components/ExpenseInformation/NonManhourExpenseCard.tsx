@@ -17,9 +17,11 @@ import NonManhourExpenseTable from "./NonManhourExpenseTable";
 interface Props {
   project: Project;
   setProject: Dispatch<SetStateAction<Project>>;
+  /** Stale-save concurrency fix — called with the expense's own id the moment the user confirms Delete, BEFORE it's filtered out of local state. This is the only place deletion intent is ever recorded; see ProjectForm.tsx's removedExpenseIds. */
+  onExpenseRemoved: (id: string) => void;
 }
 
-const NonManhourExpenseCard = ({ project, setProject }: Props) => {
+const NonManhourExpenseCard = ({ project, setProject, onExpenseRemoved }: Props) => {
   const expenses = project.nonManhourExpenses || [];
 
   const [showModal, setShowModal] = useState(false);
@@ -41,6 +43,7 @@ const NonManhourExpenseCard = ({ project, setProject }: Props) => {
   };
 
   const handleDelete = (id: string) => {
+    onExpenseRemoved(id);
     setProject((prev) => ({
       ...prev,
       nonManhourExpenses: prev.nonManhourExpenses.filter(

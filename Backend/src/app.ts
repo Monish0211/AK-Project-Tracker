@@ -8,7 +8,7 @@ import { quantityRoutes } from "./modules/quantity/index.js";
 import { milestoneRoutes } from "./modules/milestones/index.js";
 import { reminderRoutes } from "./modules/reminders/index.js";
 import { invoiceRoutes } from "./modules/invoices/index.js";
-import { expenseRoutes } from "./modules/expenses/index.js";
+import { expenseRoutes, expenseImportRoutes } from "./modules/expenses/index.js";
 import { employeeRoutes } from "./modules/employees/index.js";
 import { customerRoutes } from "./modules/customers/index.js";
 import { resourceRoutes } from "./modules/resources/index.js";
@@ -83,6 +83,13 @@ app.use(invoiceRoutes);
 // module only — Expense Budget's 5 flat fields ride on projectRoutes above,
 // with no separate router of their own.
 app.use(expenseRoutes);
+// Other Project Expenses — Excel Import (Sept 2026). Own full paths
+// (/projects/expenses/import, /projects/expenses/import/preview) — mounted
+// alongside expenseRoutes above, same "no collision with projectRoutes'
+// GET/PATCH /:id" reasoning already established for that router (these are
+// POST-only, two path segments past /projects, matching neither /:id nor
+// projectRoutes' own POST / or POST /import).
+app.use(expenseImportRoutes);
 // Manpower / Employee Master — Phase 3.7. Declares only relative paths
 // (/, /:id, /import), same convention as /users and the base /projects
 // routes above, so it's mounted under its own prefix rather than at root.

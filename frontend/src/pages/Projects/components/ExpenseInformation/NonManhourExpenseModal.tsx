@@ -2,26 +2,13 @@ import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 
 import type { NonManhourExpense } from "../../../../types/NonManhourExpense";
+import { EXPENSE_CATEGORIES, isKnownExpenseCategory } from "../../../../types/expenseCategories";
 
 interface Props {
   expense?: NonManhourExpense | null;
   onClose: () => void;
   onSave: (expense: NonManhourExpense) => void;
 }
-
-const EXPENSE_CATEGORIES = [
-  "Flight Tickets",
-  "Hotel Accommodation",
-  "Travel Allowance",
-  "Printing & Stationery",
-  "Courier / Shipping",
-  "Consultancy Fee",
-  "Cab Expenses",
-  "Food Expenses",
-  "Equipment Rental",
-  "Software License",
-  "Miscellaneous",
-];
 
 const NonManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
   useEffect(() => {
@@ -138,6 +125,22 @@ const NonManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
                 <option value="">
                   Select Category
                 </option>
+
+                {/* Legacy safe-display (Sept 2026 category refresh) — category
+                    is free-text, not an enum, so an existing row saved under
+                    an old category (e.g. "Flight Tickets") keeps that exact
+                    string in the database. Without this option, the <select>
+                    would silently show no selection at all for such a row,
+                    and saving it back would blank the category out entirely.
+                    Rendering it here, once, keeps the stored value visible
+                    and re-selectable until the user deliberately picks one of
+                    the current 14 — it is never added back as a normal,
+                    always-available choice. */}
+                {category && !isKnownExpenseCategory(category) && (
+                  <option value={category}>
+                    {category} (legacy category)
+                  </option>
+                )}
 
                 {EXPENSE_CATEGORIES.map((item) => (
 

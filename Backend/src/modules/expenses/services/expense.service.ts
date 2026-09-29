@@ -26,6 +26,7 @@ function toExpenseDto(row: Awaited<ReturnType<typeof getExpenseById>>): ExpenseD
     unitCost: row.unitCost,
     totalCost: row.totalCost,
     remarks: row.remarks,
+    importBatchId: row.importBatchId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -60,7 +61,13 @@ export async function listExpensesForProject(projectId: string, user: AccessToke
   await assertProjectExists(projectId, user);
 
   const rows = await getExpensesByProjectId(projectId);
-  return { items: rows.map((row) => toExpenseDto(row)) };
+  // Concurrency-warning signal (see ExpenseListDto's own comment) — derived
+  // from the same rows already fetched above, no extra query.
+  const latestUpdatedAt = rows.reduce<Date | null>(
+    (latest, row) => (latest === null || row.updatedAt > latest ? row.updatedAt : latest),
+    null
+  );
+  return { items: rows.map((row) => toExpenseDto(row)), count: rows.length, latestUpdatedAt };
 }
 
 export async function updateExpenseItem(

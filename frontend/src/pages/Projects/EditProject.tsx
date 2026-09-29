@@ -5,7 +5,8 @@ import { getProjectById, normalizeProject, fetchProjectByIdFromApi, writeThrough
 import { loadQuantityForProject } from "../../services/quantityService";
 import { loadMilestonesForProject } from "../../services/paymentMilestoneService";
 import { loadInvoiceForProject } from "../../services/invoiceService";
-import { loadExpensesForProject } from "../../services/otherProjectExpenseService";
+import { loadExpensesForProject, getLastKnownExpensesMeta } from "../../services/otherProjectExpenseService";
+import type { ExpensesConcurrencySignal } from "../../services/otherProjectExpenseService";
 import { createEmptyProject } from "../../utils/createEmptyProject";
 import ProjectForm from "./components/ProjectForm";
 import type { TabKey } from "./components/ProjectForm";
@@ -61,6 +62,13 @@ const EditProject = () => {
   // rows for (Quantity/Milestones/Expenses) has been CONFIRMED loaded this
   // session. See ALL_RESOURCES_UNCONFIRMED's comment above.
   const [resourceLoadFailed, setResourceLoadFailed] = useState<SubresourceLoadStatus>(ALL_RESOURCES_UNCONFIRMED);
+  // Concurrency-warning baseline (Sept 2026) — snapshot of Other Project
+  // Expenses' count/latestUpdatedAt captured the moment this session's
+  // initial load resolves; compared again at Save time (see FormButtons.tsx)
+  // purely to decide whether to show an informational banner. Never used
+  // for data safety — removedExpenseIds (otherProjectExpenseService.ts) is
+  // the actual protection, unconditionally, regardless of this value.
+  const [expensesConcurrencyBaseline, setExpensesConcurrencyBaseline] = useState<ExpensesConcurrencySignal | null>(null);
   const isLoading = !!id && loadedId !== id;
 
   useEffect(() => {
@@ -172,6 +180,9 @@ const EditProject = () => {
             nextProject = normalizeProject({ ...nextProject, nonManhourExpenses });
             // P0 fix — see the Quantity block above for the exact rule.
             if (isMounted) setResourceLoadFailed((prev) => ({ ...prev, expenses: false }));
+            // Baseline capture is free — loadExpensesForProject() above
+            // already just ran the GET that populates this.
+            if (isMounted) setExpensesConcurrencyBaseline(getLastKnownExpensesMeta(id));
           } catch {
             // Fall through with nextProject as already set above. expenses
             // stays flagged as failed — Save will be blocked (FormButtons.tsx).
@@ -251,6 +262,7 @@ const EditProject = () => {
         initialActivityId={initialActivityId}
         initialInvoiceLineId={initialInvoiceLineId}
         resourceLoadFailed={resourceLoadFailed}
+        expensesConcurrencyBaseline={expensesConcurrencyBaseline}
       />
     </>
   );

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Briefcase, Pencil, Trash2 } from "lucide-react";
+import { Briefcase, Pencil, Trash2, FileSpreadsheet } from "lucide-react";
 
 import type { NonManhourExpense } from "../../../../types/NonManhourExpense";
 
@@ -101,6 +101,22 @@ const NonManhourExpenseTable = ({ expenses, onEdit, onDelete }: Props) => {
 
                 <td className="px-4 py-3 font-medium text-gray-800 dark:text-slate-100 sticky left-0 z-10 bg-white dark:bg-[#1E293B]">
                   {expense.category}
+                  {/* Excel Import (Sept 2026) — imported rows remain fully
+                      editable through this same UI (not read-only); this
+                      badge only distinguishes their source. importBatchId
+                      is preserved across a manual edit (see
+                      otherProjectExpenseService.ts), so the badge stays
+                      visible even if the row's amount/category/description
+                      is later changed by hand. */}
+                  {expense.importBatchId && (
+                    <div
+                      className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-normal text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 rounded-full px-2 py-0.5"
+                      title={`Imported from Excel — Batch #${expense.importBatchId}`}
+                    >
+                      <FileSpreadsheet size={10} />
+                      Excel Import · Batch #{expense.importBatchId.slice(0, 8)}
+                    </div>
+                  )}
                 </td>
 
                 <td className="px-4 py-3">

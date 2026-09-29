@@ -131,6 +131,10 @@ model PortalUser {
   // as the PR Request relations above.
   uploadedDocuments Document[]
 
+  // Other Project Expenses — Excel Import (Sept 2026). Same onDelete:
+  // Restrict / audit-preservation treatment as uploadedDocuments above.
+  uploadedExpenseImportBatches ExpenseImportBatch[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -887,10 +891,73 @@ model ProjectExpense {
   totalCost   Float
   remarks     String?
 
+  // Other Project Expenses — Excel Import (Sept 2026). NULL for every
+  // manually-entered row (existing rows included — this is a plain additive
+  // column, no backfill needed) — this single field is what makes manual vs.
+  // imported rows distinguishable at all. `onDelete: Restrict` matches
+  // ExpenseImportBatch's own audit-trail-preservation reasoning: a batch can
+  // never be hard-deleted while rows still reference it (batches aren't
+  // deleted at all in this design anyway — see ExpenseImportBatch's comment
+  // — but Restrict is the correct declared intent regardless).
+  importBatchId String?
+  importBatch   ExpenseImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+
+  // Soft-supersede flag, same idiom as Project.isDeleted elsewhere in this
+  // schema. TRUE for every existing row (manual or otherwise) by default —
+  // only an import that supersedes a PR's previously-active imported rows
+  // ever sets this to FALSE, and only on rows that already carry a non-null
+  // importBatchId (manual rows, importBatchId = null, are never touched by
+  // that logic at all). Every total/report query must filter on this.
+  isActive Boolean @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([projectId])
+  @@index([importBatchId])
+  @@index([projectId, isActive])
+}
+
+// =============================================================================
+// EXPENSE IMPORT BATCH — Other Project Expenses Excel Import (Sept 2026).
+// Mirrors TimesheetImport's own batch-tracking pattern: one row per upload
+// attempt, never deleted, giving a permanent audit trail of who imported
+// what and when. Unlike TimesheetImport, there is deliberately no separate
+// per-row log table — ProjectExpense rows are never mutated by a later
+// import (only ever soft-superseded via isActive), so the ProjectExpense
+// rows themselves already are the permanent record; a parallel log would be
+// redundant duplication, not additional safety.
+// =============================================================================
+model ExpenseImportBatch {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  // SHA-256 of the raw uploaded file bytes — the entire mechanism for
+  // detecting "the exact same file was already uploaded" (a single indexed
+  // lookup, no row-by-row comparison needed for that case).
+  fileHash String @unique
+  fileName String
+
+  uploadedByUserId String
+  uploadedBy       PortalUser @relation(fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  uploadedAt       DateTime   @default(now())
+
+  // Pending | Processing | Succeeded | PartiallySucceeded | Failed — plain
+  // string with a default, matching every other status-like field already
+  // in this schema (TimesheetImport.status, Employee.status), not a Prisma
+  // enum.
+  status String @default("Pending")
+
+  totalSheetsFound  Int @default(0)
+  totalRowsFound    Int @default(0)
+  totalRowsImported Int @default(0)
+  totalRowsSkipped  Int @default(0)
+
+  expenses ProjectExpense[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([uploadedByUserId])
 }
 
 // =============================================================================

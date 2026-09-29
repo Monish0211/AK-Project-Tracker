@@ -36,6 +36,7 @@ import { isActiveProjectStatus, PROJECT_STATUS_OPTIONS } from "../../constants/p
 import { useAuth } from "../../auth/authContext";
 import { canMutateData, hasApprovalPermission } from "../../auth/permissions";
 import { usePmoToast } from "../../components/ui/usePmoToast";
+import ExpenseImportModal from "./components/ExpenseInformation/ExpenseImportModal";
 
 /** Sort fields the backend's GET /projects can order by — see listProjectsQuerySchema. Anything else (Team/Commercial/Invoice columns, not modeled server-side yet) is synced with the default sort instead and left to this page's own client-side sort exactly as before. */
 const BACKEND_SORTABLE_FIELDS = new Set([
@@ -102,6 +103,7 @@ const getRepositoryInvoiceSummary = (
 const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showExpenseImportModal, setShowExpenseImportModal] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const statusParam = searchParams.get("status") || "All";
   const { user } = useAuth();
@@ -879,6 +881,19 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                   accept=".xlsx, .csv"
                   className="hidden"
                 />
+
+                {/* Other Project Expenses — Excel Import (Sept 2026). Placed
+                    at the Project Repository level, not inside a single
+                    project's Edit screen, since one workbook can span
+                    multiple PR sheets/projects at once. */}
+                <button
+                  onClick={() => setShowExpenseImportModal(true)}
+                  className="tbtn flex items-center gap-1 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400"
+                  title="Import Other Project Expenses from an Excel workbook (one sheet per PR)"
+                >
+                  <Upload size={11} />
+                  Import Expenses
+                </button>
               </>
             )}
           </div>
@@ -1129,6 +1144,8 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
           setPermanentDeleteTarget(null);
         }}
       />
+
+      {showExpenseImportModal && <ExpenseImportModal onClose={() => setShowExpenseImportModal(false)} />}
     </div>
   );
 };
