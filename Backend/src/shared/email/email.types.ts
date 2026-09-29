@@ -62,3 +62,36 @@ export interface AdminPasswordResetEmailData {
   roleName: string;
   loginUrl: string;
 }
+
+/** PR Request & Two-Level Approval Workflow — one interface per notification-worthy stage transition. Never includes internal ids beyond what the review link needs. */
+export interface PRRequestSubmittedEmailData {
+  accountsApproverName: string;
+  requesterName: string;
+  prNo: string;
+  projectTitle: string;
+  client: string;
+  reviewUrl: string;
+}
+
+export interface PRRequestAccountsApprovedEmailData {
+  pmoManagerName: string;
+  requesterName: string;
+  prNo: string;
+  projectTitle: string;
+  reviewUrl: string;
+}
+
+export interface PRRequestApprovedEmailData {
+  requesterName: string;
+  prNo: string;
+  projectTitle: string;
+  projectUrl: string;
+}
+
+export interface PRRequestRejectedEmailData {
+  requesterName: string;
+  prNo: string;
+  projectTitle: string;
+  rejectedByName: string;
+  reason: string;
+}

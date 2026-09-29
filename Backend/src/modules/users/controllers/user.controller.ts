@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import * as userService from "../services/user.service.js";
+import { usersByRoleQuerySchema } from "../validators/user.validators.js";
 import type { CreateUserInput, UpdateUserInput } from "../validators/user.validators.js";
 
 export const createUser = asyncHandler(async (req: Request, res: Response) => {
@@ -27,6 +28,15 @@ export const getUsers = asyncHandler(async (_req: Request, res: Response) => {
 export const getLookups = asyncHandler(async (_req: Request, res: Response) => {
   const lookups = await userService.getLookups();
   res.status(200).json({ success: true, data: lookups });
+});
+
+export const getUsersByRole = asyncHandler(async (req: Request, res: Response) => {
+  const result = usersByRoleQuerySchema.safeParse(req.query);
+  if (!result.success) {
+    throw new AppError("role is required.", 400);
+  }
+  const users = await userService.getUsersByRole(result.data.role);
+  res.status(200).json({ success: true, data: users });
 });
 
 export const resetPassword = asyncHandler(async (req: Request, res: Response) => {

@@ -8,7 +8,8 @@ export type SystemRole =
   | "Finance"
   | "Accounts"
   | "Management Viewer"
-  | "Read Only";
+  | "Read Only"
+  | "PR Request User";
 
 export const SYSTEM_ROLES: SystemRole[] = [
   "Administrator",
@@ -21,6 +22,7 @@ export const SYSTEM_ROLES: SystemRole[] = [
   "Accounts",
   "Management Viewer",
   "Read Only",
+  "PR Request User",
 ];
 
 export type AccountStatus = "Active" | "Inactive";
@@ -41,6 +43,8 @@ export interface UserModuleAccess {
   settings: boolean;
   notifications: boolean;
   reminders: boolean;
+  /** PR Request & Two-Level Approval Workflow — gates Request PR, My PR Requests, and the Approvals queue alike (one module for the whole feature area). */
+  approvals: boolean;
 }
 
 /**

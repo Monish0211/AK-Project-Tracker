@@ -26,6 +26,7 @@ const NO_MODULES: UserModuleAccess = {
   settings: false,
   notifications: false,
   reminders: false,
+  approvals: false,
 };
 
 const ALL_MODULES: UserModuleAccess = {
@@ -40,6 +41,7 @@ const ALL_MODULES: UserModuleAccess = {
   settings: true,
   notifications: true,
   reminders: true,
+  approvals: true,
 };
 
 function modules(...keys: (keyof UserModuleAccess)[]): UserModuleAccess {
@@ -100,7 +102,7 @@ export const ROLE_MODULE_DEFAULTS: Record<SystemRole, UserModuleAccess> = {
   Administrator: ALL_MODULES,
   "PMO Manager": modules(
     "dashboard", "projects", "customerMaster", "timesheets", "invoices",
-    "reports", "manpower", "documents", "notifications", "reminders"
+    "reports", "manpower", "documents", "notifications", "reminders", "approvals"
   ),
   "Project Manager": modules(
     "dashboard", "projects", "timesheets", "invoices", "reports",
@@ -113,9 +115,18 @@ export const ROLE_MODULE_DEFAULTS: Record<SystemRole, UserModuleAccess> = {
   ),
   Engineer: modules("dashboard", "projects", "timesheets", "documents", "notifications"),
   Finance: modules("dashboard", "projects", "invoices", "reports", "customerMaster", "documents", "notifications"),
-  Accounts: modules("dashboard", "invoices", "reports", "documents", "notifications"),
+  // "approvals" defaulted on for Accounts too — this is the role the single
+  // designated Accounts approver (see Settings > PR Requests) is normally
+  // chosen from, though the actual routing decision is the separate
+  // PRRequestApproverConfig row, not this role-based default.
+  Accounts: modules("dashboard", "invoices", "reports", "documents", "notifications", "approvals"),
   "Management Viewer": modules("dashboard", "projects", "reports", "notifications"),
   "Read Only": modules("dashboard", "projects", "notifications"),
+  // PR Request User — a deliberately narrow role: no Projects/Dashboard/etc
+  // access at all, only the ability to submit and track their own PR
+  // Requests via the Approvals module (see prRequests.service.ts's
+  // requireModuleAccess("Approvals") gate).
+  "PR Request User": modules("approvals"),
 };
 
 export const ROLE_APPROVAL_DEFAULTS: Record<SystemRole, UserApprovalRights> = {
@@ -129,6 +140,7 @@ export const ROLE_APPROVAL_DEFAULTS: Record<SystemRole, UserApprovalRights> = {
   Accounts: NO_APPROVALS,
   "Management Viewer": NO_APPROVALS,
   "Read Only": NO_APPROVALS,
+  "PR Request User": NO_APPROVALS,
 };
 
 /** Sensible default region scope for a brand-new user of this role — broad for senior roles, empty for the rest (an Administrator assigns regions explicitly). */
@@ -143,4 +155,6 @@ export const ROLE_REGION_DEFAULTS: Record<SystemRole, UserProjectRegionAccess> =
   Accounts: regions("india"),
   "Management Viewer": ALL_REGIONS,
   "Read Only": NO_REGIONS,
+  // No Projects module access at all — region scoping is meaningless here.
+  "PR Request User": NO_REGIONS,
 };

@@ -3,7 +3,15 @@ import { authenticate } from "../../../shared/middleware/authenticate.js";
 import { authorize } from "../../../shared/middleware/authorize.js";
 import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { validate } from "../../../shared/middleware/validate.js";
-import { createUser, deleteUser, getLookups, getUsers, resetPassword, updateUser } from "../controllers/user.controller.js";
+import {
+  createUser,
+  deleteUser,
+  getLookups,
+  getUsers,
+  getUsersByRole,
+  resetPassword,
+  updateUser,
+} from "../controllers/user.controller.js";
 import { createUserSchema, updateUserSchema } from "../validators/user.validators.js";
 
 const router = Router();
@@ -12,6 +20,16 @@ const router = Router();
 // form needs to populate its selectors — any authenticated user with
 // access to Settings can load it.
 router.get("/lookups", authenticate, getLookups);
+
+// PR Request & Two-Level Approval Workflow — deliberately NOT gated by
+// authorize("Administrator", "PMO Manager") like GET / below: a "PR Request
+// User" holds no Users module access at all and must still be able to
+// populate the Request-PR form's "Assigned PMO Manager" dropdown. Safe
+// precisely because getUsersByRole()/findActiveUsersByRoleName() return only
+// {id, fullName} for active users of the requested role — never role/module/
+// region/approval grants, unlike GET / below. Registered before "/" so it
+// can never be confused with it (distinct literal path, no :id segment).
+router.get("/by-role", authenticate, getUsersByRole);
 
 // The User Directory listing — same two roles as Create User/Reset
 // Password, since it exposes every account's role and permission grants.

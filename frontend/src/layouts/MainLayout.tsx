@@ -34,6 +34,11 @@ import Timesheets from "../pages/Timesheets/Timesheets";
 import ReportsPage from "../pages/ReportsPage";
 import Settings from "../pages/Settings/Settings";
 
+/* PR Request & Two-Level Approval Workflow */
+import RequestPR from "../pages/PRRequests/RequestPR";
+import PRRequests from "../pages/PRRequests/PRRequests";
+import PRRequestDetail from "../pages/PRRequests/PRRequestDetail";
+
 const MainLayout = () => {
   // Central Employee Master hydration — MainLayout mounts exactly once per
   // authenticated session (it sits inside ProtectedRoute, and route changes
@@ -197,6 +202,30 @@ const MainLayout = () => {
               <Route
                 path="/settings"
                 element={<ModuleRoute module="Settings"><Settings /></ModuleRoute>}
+              />
+
+              {/* ===========================
+                  PR REQUEST & TWO-LEVEL APPROVAL WORKFLOW
+              ============================ */}
+
+              <Route
+                path="/pr-requests"
+                element={<ModuleRoute module="Approvals"><PRRequests /></ModuleRoute>}
+              />
+
+              <Route
+                path="/pr-requests/new"
+                element={<ModuleRoute module="Approvals"><RequestPR /></ModuleRoute>}
+              />
+
+              <Route
+                path="/pr-requests/:id/edit"
+                element={<ModuleRoute module="Approvals"><RequestPR /></ModuleRoute>}
+              />
+
+              <Route
+                path="/pr-requests/:id"
+                element={<ModuleRoute module="Approvals"><PRRequestDetail /></ModuleRoute>}
               />
 
               {/* Wildcard Fallback */}

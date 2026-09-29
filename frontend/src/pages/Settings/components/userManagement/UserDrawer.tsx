@@ -47,6 +47,7 @@ const ROLE_DESCRIPTIONS: Record<SystemRole, string> = {
   Accounts: "Accounts & collections",
   "Management Viewer": "Read-only executive visibility",
   "Read Only": "View-only, no edit permissions",
+  "PR Request User": "Submits PR Requests for approval",
 };
 
 /** Maps this form's selected labels (module/region/approval field labels already match the backend's seeded names) to real database ids. */

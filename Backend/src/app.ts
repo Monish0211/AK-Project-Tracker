@@ -17,6 +17,7 @@ import { mailIngestionRoutes } from "./modules/mailIngestion/index.js";
 import { pdfImportRoutes } from "./modules/pdfImport/index.js";
 import { dashboardRoutes } from "./modules/dashboard/index.js";
 import { notificationRoutes } from "./modules/notifications/index.js";
+import { prRequestRoutes } from "./modules/prRequests/index.js";
 import { documentRoutes } from "./modules/documents/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { requestLogger } from "./shared/middleware/requestLogger.js";
@@ -119,6 +120,13 @@ app.use(dashboardRoutes);
 // mounted at root like dashboard/timesheet above. INFRASTRUCTURE ONLY: no
 // business module calls notification.service.ts's notify() yet (Phase 3).
 app.use(notificationRoutes);
+// PR Request & Two-Level Approval Workflow. Declares its own full paths
+// (/pr-requests[...]), mounted at root alongside the routers above. Entirely
+// additive: no existing module's routes, controllers, or services are
+// modified by this feature — see prRequest.service.ts's own comment on why
+// it calls the existing project.service.ts createProject() unchanged rather
+// than reimplementing Project creation.
+app.use(prRequestRoutes);
 // Documents feature — Sep 2026. Declares its own full paths
 // (/projects/:projectId/documents, /pr-requests/:prRequestId/documents,
 // /documents/:id[/download]), mounted at root alongside the routers above.

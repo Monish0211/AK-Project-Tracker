@@ -11,7 +11,7 @@
  * list, never accepted as a raw URL, so nothing can inject an arbitrary or
  * external link into a notification.
  */
-export type NotificationEntityType = "Project" | "TimesheetImport" | "Invoice" | "Expense";
+export type NotificationEntityType = "Project" | "TimesheetImport" | "Invoice" | "Expense" | "PRRequest";
 
 export interface NotificationCreateData {
   userId: string;

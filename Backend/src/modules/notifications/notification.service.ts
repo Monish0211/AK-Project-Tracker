@@ -36,6 +36,7 @@ import type { CreatePushSubscriptionInput } from "./notification.validators.js";
 const ENTITY_ROUTE_BUILDERS: Partial<Record<NotificationEntityType, (entityId: string) => string>> = {
   Project: (id) => `/projects/edit/${id}`,
   TimesheetImport: () => `/timesheets`,
+  PRRequest: (id) => `/pr-requests/${id}`,
   // Priority #6 Phase 3B — there is no standalone invoice URL anywhere in
   // the frontend (confirmed by inspecting ViewProject.tsx: "Invoices" is one
   // tab of the project workspace, selected via in-memory React state, never

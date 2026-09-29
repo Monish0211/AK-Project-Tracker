@@ -18,4 +18,8 @@ export const EMAIL_SUBJECTS = {
   FORGOT_PASSWORD: `Reset your ${EMAIL_BRAND.PORTAL_NAME} password`,
   RESET_SUCCESS: `Your ${EMAIL_BRAND.PORTAL_NAME} password has been changed`,
   ADMIN_PASSWORD_RESET: `Your ${EMAIL_BRAND.PORTAL_NAME} password has been reset by an Administrator`,
+  PR_REQUEST_SUBMITTED: `New PR Request awaiting Accounts approval`,
+  PR_REQUEST_ACCOUNTS_APPROVED: `PR Request awaiting your approval`,
+  PR_REQUEST_APPROVED: `Your PR Request has been approved — Project created`,
+  PR_REQUEST_REJECTED: `Your PR Request has been rejected`,
 } as const;

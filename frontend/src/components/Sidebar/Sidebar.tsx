@@ -6,6 +6,7 @@ import {
   Building2,
   CheckCircle2,
   ChevronDown,
+  ClipboardCheck,
   Clock3,
   Droplet,
   FolderKanban,
@@ -61,6 +62,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Manpower", to: "/manpower", icon: Users },
   { label: "Timesheets", to: "/timesheets", icon: Clock3 },
   { label: "Reports", to: "/reports", icon: BarChart3 },
+  // PR Request & Two-Level Approval Workflow — label doubles as the exact
+  // "Approvals" Module name, same convention as every other item here.
+  { label: "Approvals", to: "/pr-requests", icon: ClipboardCheck },
   { label: "Settings", to: "/settings", icon: Settings },
 ];
 

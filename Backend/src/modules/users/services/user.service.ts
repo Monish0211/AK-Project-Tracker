@@ -16,6 +16,7 @@ import {
   createUserModuleAccess,
   createUserRegionAccess,
   deleteUserById,
+  findActiveUsersByRoleName,
   findAllUsers,
   findExistingUserIds,
   findRoleById,
@@ -194,6 +195,18 @@ async function sendAccountCreatedEmail(
 
 export function getLookups(): Promise<UserLookupsDto> {
   return getLookupsFromRepository();
+}
+
+/**
+ * PR Request & Two-Level Approval Workflow — backs GET /users/by-role, the
+ * narrowly-scoped lookup a "PR Request User" (who has no Users module
+ * access, so cannot call getUsers() above) needs to populate the Request-PR
+ * form's "Assigned PMO Manager" and "Assigned Accounts Approver" dropdowns.
+ * Never exposes anything beyond id/fullName — see
+ * findActiveUsersByRoleName()'s own comment (roleName omitted = all users).
+ */
+export function getUsersByRole(roleName?: string) {
+  return findActiveUsersByRoleName(roleName);
 }
 
 function toUserListItemDto(user: Awaited<ReturnType<typeof findAllUsers>>[number]): UserListItemDto {

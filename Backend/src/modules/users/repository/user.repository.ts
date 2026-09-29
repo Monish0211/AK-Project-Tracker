@@ -74,6 +74,25 @@ export function findRoleById(roleId: string) {
   return prisma.portalRole.findUnique({ where: { id: roleId } });
 }
 
+/**
+ * PR Request & Two-Level Approval Workflow — backs GET /users/by-role.
+ * Deliberately the narrowest possible shape (id + fullName only, never role/
+ * module/region/approval grants) since this is reachable by any
+ * authenticated user (a "PR Request User" has no Users module access and
+ * could never call GET /users), specifically so the Request-PR form can
+ * populate its "Assigned PMO Manager" dropdown without needing Administrator
+ * privileges. `roleName` is optional — omitted for the "Assigned Accounts
+ * Approver" picker, which deliberately lists every active user regardless
+ * of role (confirmed business decision, see sendToAccountsSchema's comment).
+ */
+export function findActiveUsersByRoleName(roleName?: string) {
+  return prisma.portalUser.findMany({
+    where: { isActive: true, ...(roleName ? { role: { name: roleName } } : {}) },
+    select: { id: true, fullName: true },
+    orderBy: { fullName: "asc" },
+  });
+}
+
 export async function getLookups() {
   const [roles, modules, regions, approvalTypes] = await Promise.all([
     prisma.portalRole.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),

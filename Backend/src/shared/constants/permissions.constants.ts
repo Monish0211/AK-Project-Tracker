@@ -18,6 +18,7 @@ export const PORTAL_ROLES = [
   "Accounts",
   "Management Viewer",
   "Read Only",
+  "PR Request User",
 ] as const;
 
 export const MODULES = [
@@ -32,6 +33,7 @@ export const MODULES = [
   "Settings",
   "Notifications",
   "Reminders",
+  "Approvals",
 ] as const;
 
 export const REGIONS = [

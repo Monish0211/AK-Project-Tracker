@@ -28,6 +28,20 @@ export const createUserSchema = z.object({
   scopedUserIds: z.array(z.string().uuid("Each scopedUserId must be a valid UUID.")).default([]),
 });
 
+/**
+ * GET /users/by-role query params — parsed directly in the controller, same
+ * convention as project.validators.ts's listProjectsQuerySchema (the shared
+ * `validate()` middleware only covers req.body). `role` is optional — the PR
+ * Request "Assigned Accounts Approver" picker deliberately shows every
+ * active user regardless of role (confirmed business decision — see
+ * prRequests/validators/prRequest.validators.ts's sendToAccountsSchema),
+ * so omitting it returns the full active-user list instead of one role's.
+ */
+export const usersByRoleQuerySchema = z.object({
+  role: z.string().trim().min(1, "role is required.").optional(),
+});
+export type UsersByRoleQuery = z.infer<typeof usersByRoleQuerySchema>;
+
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 /**

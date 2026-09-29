@@ -112,10 +112,23 @@ model PortalUser {
   notifications      Notification[]
   pushSubscriptions  PushSubscription[]
 
+  // PR Request & Two-Level Approval Workflow — see PRRequest below.
+  // onDelete: Restrict on all four of these (unlike Project.createdByUserId's
+  // SetNull-to-unclaimed rule): a PR Request and its approval trail are a
+  // compliance record, not a project — a user who submitted, is assigned as
+  // approving PMO Manager on, rejected, or actioned any PR Request can never
+  // be hard-deleted while that record exists (deactivate instead), so the
+  // audit trail can never be silently orphaned.
+  prRequestsSubmitted   PRRequest[]                @relation("PRRequestRequester")
+  prRequestsAssigned    PRRequest[]                @relation("PRRequestAssignedPmoManager")
+  prRequestsAssignedAsAccountsApprover PRRequest[] @relation("PRRequestAssignedAccountsApprover")
+  prRequestsRejected    PRRequest[]                @relation("PRRequestRejectedBy")
+  prRequestApprovalActions PRRequestApprovalHistory[]
+
   // Documents feature — onDelete: Restrict on Document.uploadedBy (see that
   // model) means a user who has ever uploaded a document can never be
-  // hard-deleted while it exists (deactivate instead), so the audit trail
-  // can never be silently orphaned.
+  // hard-deleted while it exists, same audit-trail-preservation treatment
+  // as the PR Request relations above.
   uploadedDocuments Document[]
 
   createdAt DateTime @default(now())
@@ -293,9 +306,130 @@ model ProjectManagerScope {
 }
 
 // =============================================================================
-// APPROVAL PERMISSIONS (Approve Timesheets, Approve Expenses, Approve
-// Invoices, Approve Customers, Approve Budget Changes, Approve Project
-// Creation, Approve Reminders, Archive Projects)
+// PR REQUEST & TWO-LEVEL APPROVAL WORKFLOW
+// =============================================================================
+// Entirely separate from Project — a PRRequest is a proposal, never a real
+// Project, until it clears BOTH approval stages (Accounts, then the assigned
+// PMO Manager). This is deliberate: it must be structurally impossible for a
+// pending/rejected/partially-approved request to be mistaken for, or read
+// alongside, live Project data — every existing Project-consuming module
+// (Dashboard, Timesheets, Invoices, projectAccess.ts, etc.) is completely
+// unaware this table exists and requires zero changes.
+//
+// projectData carries the exact same field set createProjectSchema validates
+// on a normal POST /projects (see prRequest.validators.ts, which re-exports
+// that schema unchanged) — stored as one Json blob (see Customer.metadata /
+// TimesheetImport.metadata below for the pre-existing Json-column precedent
+// in this schema) specifically so the ONLY code path that turns a PRRequest
+// into a real Project (approvePmoManagerStage() in prRequest.service.ts)
+// calls the existing, unmodified projects/services/project.service.ts
+// createProject() function with this payload verbatim — zero risk of a
+// second, drifting copy of Add Project's field-mapping rules.
+model PRRequest {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  requestedByUserId String
+  requestedBy       PortalUser @relation("PRRequestRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+
+  // The Accounts-side approver the requester selected — chosen at Send to
+  // Accounts time, same moment and same picker pattern as
+  // assignedPmoManagerId below. Deliberately NOT restricted to users holding
+  // the "Accounts" role: any active PortalUser may be picked (confirmed
+  // business decision — the requester knows who their actual Accounts
+  // contact is better than a role label would). Replaces the earlier
+  // single-Administrator-configured "PRRequestApproverConfig" singleton
+  // design, which this feature briefly used before this per-request field
+  // replaced it entirely.
+  assignedAccountsApproverId String?
+  assignedAccountsApprover   PortalUser? @relation("PRRequestAssignedAccountsApprover", fields: [assignedAccountsApproverId], references: [id], onDelete: Restrict)
+
+  // The PMO Manager the requester selected — chosen at Send to Accounts time,
+  // NOT at Draft creation (the requester fills in General/Quantity/Payments/
+  // Expense Budget first, exactly like Add Project, with no PMO Manager
+  // field anywhere in that form; the picker lives on the separate "Send to
+  // Accounts" action). Nullable because a Draft has no assigned PMO Manager
+  // yet. The second approval stage always belongs to this specific person
+  // once set, never "any PMO Manager." Re-pointing this to someone else
+  // after submission is out of scope for this phase.
+  assignedPmoManagerId String?
+  assignedPmoManager   PortalUser? @relation("PRRequestAssignedPmoManager", fields: [assignedPmoManagerId], references: [id], onDelete: Restrict)
+
+  // Same shape createProjectSchema validates, PLUS quantityItems[]/
+  // paymentMilestones[] arrays (see prRequestProjectDataSchema in
+  // prRequest.validators.ts) — a Draft can capture everything Add Project's
+  // General/Quantity/Payments/Expense Budget tabs do, entirely client-side,
+  // since no real Project (and therefore no real QuantityItem/
+  // PaymentMilestone rows, which require a real projectId FK) exists yet.
+  // Replayed onto the real child tables via createQuantityForProject()/
+  // createMilestoneForProject() only after createProject() succeeds at
+  // pmoManagerApprove() time — see that function's own comment.
+  projectData Json
+
+  // Draft | Pending Accounts Approval | Pending PMO Manager Approval | Approved | Rejected
+  // Same plain-string-with-a-comment convention as TimesheetImportRowLog.outcome
+  // below — no Prisma enum is used anywhere in this schema. Draft is private
+  // to the requester (see prRequest.service.ts's assertCanViewPRRequest) —
+  // nobody else is notified and no approval-history row exists until
+  // sendToAccounts() moves it to "Pending Accounts Approval".
+  status String @default("Draft")
+
+  // Set exactly once, atomically with status -> "Approved", inside the
+  // advisory-locked transaction in approvePmoManagerStage() — see that
+  // function's own comment for how "approve retried" can never create a
+  // second Project. @unique both enforces "at most one PRRequest per
+  // Project" and gives Prisma the FK it needs for the relation.
+  createdProjectId String?  @unique
+  createdProject   Project? @relation(fields: [createdProjectId], references: [id], onDelete: SetNull)
+
+  rejectedByUserId String?
+  rejectedBy       PortalUser? @relation("PRRequestRejectedBy", fields: [rejectedByUserId], references: [id], onDelete: SetNull)
+  rejectionReason  String?
+  rejectedAt       DateTime?
+
+  approvalHistory PRRequestApprovalHistory[]
+
+  // Documents feature — files uploaded while this request is still a Draft
+  // (or later, before approval) live here with projectId NULL. The instant
+  // pmoManagerApprove() creates the real Project, they are re-pointed
+  // (projectId set, prRequestId cleared) onto it — see that function's own
+  // comment and Document below. A rejected/still-pending request simply
+  // keeps its documents here permanently.
+  documents Document[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([requestedByUserId])
+  @@index([assignedPmoManagerId])
+  @@index([assignedAccountsApproverId])
+  @@index([status])
+}
+
+// Append-only, one row per stage transition — never updated after creation.
+// Same precedent/shape as TimesheetImportRowLog below: this is what makes
+// "who approved this and when" a real, traceable database query rather than
+// a reconstruction exercise from PRRequest's own current-state fields alone.
+model PRRequestApprovalHistory {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  prRequestId String
+  prRequest   PRRequest @relation(fields: [prRequestId], references: [id], onDelete: Cascade)
+
+  actorUserId String
+  actor       PortalUser @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  // Submitted | Edited | AccountsApproved | PmoManagerApproved | Rejected
+  action String
+
+  remarks String?
+
+  createdAt DateTime @default(now())
+
+  @@index([prRequestId])
+}
+
+// =============================================================================
+// APPROVAL PERMISSIONS (Archive Projects, Delete Project Permanently)
 // =============================================================================
 // Same lookup-table + join-table pattern again, for consistency — approval
 // rights are just as much "per-user data" as module/region access, so they
@@ -528,6 +662,13 @@ model Project {
   // become unclaimed, never orphaned/inaccessible.
   createdByUserId String?
   createdByUser   PortalUser? @relation("ProjectCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  // Opposite side of PRRequest.createdProjectId — set only when this Project
+  // was created via the PR Request approval workflow rather than directly
+  // through Add Project. Absent (null) for every project created the normal
+  // way, including every pre-existing production Project — this relation is
+  // purely additive and never populated retroactively.
+  prRequest PRRequest?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
