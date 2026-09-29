@@ -264,8 +264,13 @@ export function PrintInvoiceModal({ project, setProject, initialInvoiceNo, onClo
                               <p className="text-[11px] text-[var(--nu-text-muted)] pl-5">
                                 {cycle.lineCount} billed activity {cycle.lineCount === 1 ? "line" : "lines"}
                               </p>
+                              {/* No literal ₹ here: formatBusinessINR() already
+                                  prefixes one (utils/formatCurrency.ts), so a
+                                  second rendered "₹ ₹ 1 K" / "₹ ₹ 0". Same
+                                  root cause as the Total row previously fixed
+                                  in InvoiceDocumentView. */}
                               <p className="text-xs font-bold text-[var(--nu-accent)] pl-5 font-mono">
-                                ₹ {formatBusinessINR(cycle.totalAmount)}
+                                {formatBusinessINR(cycle.totalAmount)}
                               </p>
                             </div>
 

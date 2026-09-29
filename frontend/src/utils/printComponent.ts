@@ -122,6 +122,45 @@ export async function printComponentElement(element: HTMLElement, title: string 
             page-break-inside: auto !important;
             break-inside: auto !important;
           }
+
+          /* ─── Print fidelity rules ────────────────────────────────────
+             These three MUST stay below the "continuous document flow"
+             block above: that block sets break-inside: auto !important on
+             tr, and the tr rule here sets avoid !important. Both are
+             !important at identical specificity (one type selector each),
+             so the CASCADE IS DECIDED BY SOURCE ORDER — moving these above
+             that block silently disables the row rule.
+
+             NOTE: never put a backtick in these comments. This whole
+             stylesheet lives inside a doc.write() template literal, so a
+             backtick would terminate it and break the file.
+           */
+
+          /* 1. Backgrounds/colors print without depending on the user
+                ticking "Background graphics" in the browser print dialog.
+                Without this, every shaded header, border tint and colored
+                cell in the invoice silently prints blank. */
+          *, *::before, *::after {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          /* 2. A line-item row is never cut in half across a page break.
+                Deliberately scoped to tr only — table, div, td and th keep
+                the auto set above, so a long line-items TABLE may still
+                flow across pages; only its individual ROWS are kept
+                intact. */
+          tr {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          /* 3. Column headers repeat at the top of every page, so page 2+
+                of a multi-page invoice is never a column-less wall of
+                numbers. */
+          thead {
+            display: table-header-group !important;
+          }
         </style>
       </head>
       <body>

@@ -227,7 +227,11 @@ export function InvoiceDocumentView({ document }: Props) {
                 Total
               </td>
               <td className="p-1.5 text-right font-mono text-xs">
-                ₹ {formatFullINR(d.grandTotalINR)}
+                {/* No literal ₹ here: formatFullINR() already prefixes one
+                    (see utils/formatCurrency.ts). Adding a second rendered
+                    "₹ ₹ 1,000". Every other amount in this document relies
+                    on the formatter for the symbol — keep it that way. */}
+                {formatFullINR(d.grandTotalINR)}
               </td>
             </tr>
           </tbody>
