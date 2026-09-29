@@ -176,6 +176,57 @@ async function requestFormData<T>(path: string, formData: FormData, requestOptio
   return body.data;
 }
 
+/**
+ * Authenticated binary download — Documents' download endpoint requires the
+ * same Bearer token every other call uses, so a plain `<a href>`/
+ * `window.open()` (which sends no Authorization header) can't be used. No
+ * existing helper does this (confirmed: this is the first authenticated
+ * binary download this frontend makes), so this is a small, additive sibling
+ * to requestFormData() above — same accessToken/timeout/abort/401 handling,
+ * `response.blob()` instead of JSON.
+ */
+async function requestBlob(path: string, requestOptions: ApiRequestOptions = {}): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers["Authorization"] = `Bearer ${accessToken}`;
+  }
+
+  const controller = new AbortController();
+  const timeoutMs = requestOptions.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, { headers, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(0, "Request timed out. Please try again.", true);
+    }
+    throw new ApiError(0, "Network error. Please check your connection and try again.");
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (response.status === 401) {
+    onUnauthorized?.();
+  }
+
+  if (!response.ok) {
+    // Error responses here are JSON (the normal ApiEnvelope shape), not the
+    // binary payload success returns.
+    let message = "Something went wrong. Please try again.";
+    try {
+      const body = (await response.json()) as ApiEnvelope<never>;
+      message = body?.message ?? message;
+    } catch {
+      // Non-JSON error body — keep the generic message.
+    }
+    throw new ApiError(response.status, message);
+  }
+
+  return response.blob();
+}
+
 export const apiClient = {
   // `options` is optional on every method — every existing call site (none
   // of which pass it) is unaffected and automatically gets DEFAULT_TIMEOUT_MS.
@@ -192,4 +243,5 @@ export const apiClient = {
     request<T>(path, { method: "DELETE", body: data !== undefined ? JSON.stringify(data) : undefined }, options),
   postFormData: <T>(path: string, formData: FormData, options?: ApiRequestOptions): Promise<T> =>
     requestFormData<T>(path, formData, options),
+  getBlob: (path: string, options?: ApiRequestOptions): Promise<Blob> => requestBlob(path, options),
 };
