@@ -5,6 +5,7 @@ import { userRoutes } from "./modules/users/index.js";
 import { projectRoutes } from "./modules/projects/index.js";
 import { quantityRoutes } from "./modules/quantity/index.js";
 import { milestoneRoutes } from "./modules/milestones/index.js";
+import { reminderRoutes } from "./modules/reminders/index.js";
 import { invoiceRoutes } from "./modules/invoices/index.js";
 import { expenseRoutes } from "./modules/expenses/index.js";
 import { employeeRoutes } from "./modules/employees/index.js";
@@ -64,6 +65,10 @@ app.use(quantityRoutes);
 // (/projects/:projectId/milestones[/ingest], /milestones/:id), mounted at
 // root alongside the two routers above.
 app.use(milestoneRoutes);
+// reminder.routes.ts follows the exact same shape — its own full paths
+// (/reminders, /projects/:projectId/reminders, /reminders/:id), mounted at
+// root alongside the routers above.
+app.use(reminderRoutes);
 // invoice.routes.ts follows the exact same shape — its own full paths
 // (/projects/:projectId/invoice-items[/ingest],
 // /quantity/:quantityItemId/invoice-lines, /invoice-lines/:id), mounted at

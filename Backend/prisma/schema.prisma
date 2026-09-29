@@ -472,6 +472,12 @@ model Project {
   // Project Notes — Phase 3.9. 1:Many append-only activity & notes ledger.
   projectNotes ProjectNote[]
 
+  // Project Reminders — Sep 2026 migration. Previously frontend/localStorage-
+  // only (a single "pmo_reminders" key covering every project, keyed by
+  // browser, never the backend) — Account A's reminder never reached
+  // Account B opening the same project. See ProjectReminder below.
+  projectReminders ProjectReminder[]
+
   // Timesheet raw rows — Phase 3.8. onDelete: SetNull is declared on
   // TimesheetEntry.project, not here — included on this side only so that
   // behavior has something to relate from. See TimesheetEntry's own comment
@@ -751,6 +757,68 @@ model ProjectNote {
 
   @@index([projectId])
   @@index([createdAt])
+}
+
+// =============================================================================
+// PROJECT REMINDER — Sep 2026 migration. Previously frontend/localStorage-
+// only (see frontend's ClientReminderRepository.ts — a single "pmo_reminders"
+// key, scoped to one browser, covering every project that browser ever
+// touched). Same shared-project-data treatment as ProjectNote above: any
+// authorized account opening this project sees the same reminders. Mirrors
+// frontend/src/types/ProjectReminder.ts's fields; priority/status/repeat/
+// reminderType/notifyOffset stay plain String (not a Prisma enum) — same
+// convention as Project.projectStatus/workOrderStatus — validated at the
+// Zod boundary instead, so an existing localStorage reminder using a legacy
+// value (see ProjectReminder.ts's NOTIFY_OFFSET_MINUTES "legacy values"
+// comment) can still migrate in without being rejected.
+// =============================================================================
+model ProjectReminder {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Denormalized PR No snapshot — same "avoid a join just to show a label"
+  // rationale as InvoiceLine.milestoneName snapshotting a milestone's name.
+  projectCode String
+
+  title        String
+  description  String?
+  reminderType String
+  priority     String
+  status       String
+
+  // reminderDate is a real DateTime (same treatment as PaymentMilestone.dueDate
+  // /Project.projectStartDate) — the frontend already has toDateOnly() to
+  // round-trip this to a plain YYYY-MM-DD string. reminderTime stays a plain
+  // "HH:mm" String — there is no existing pure time-of-day column anywhere
+  // else in this schema to mirror, and storing it as a string sidesteps any
+  // timezone-conversion risk for what the frontend only ever treats as a
+  // display/combination label, never queries or sorts by directly.
+  reminderDate DateTime
+  reminderTime String
+  notifyOffset String
+  repeat       String
+
+  // Server-derived display name — never trusted from the client, same
+  // convention as ProjectNote.createdBy above.
+  createdBy String
+
+  isCompleted           Boolean   @default(false)
+  completedDate         DateTime?
+  // Set once the frontend's ReminderScheduler has fired this reminder's
+  // toast + notification, so it never fires twice — see
+  // notifications/reminderScheduler.ts.
+  notificationGenerated Boolean   @default(false)
+  triggeredAt           DateTime?
+
+  metadata Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([status])
 }
 
 // =============================================================================
