@@ -45,6 +45,21 @@ export const createProjectSchema = z.object({
   // unchanged, same technique as contractType's own default above.
   paymentType: z.enum(["Single", "Multiple"]).default("Single"),
 
+  // Commercial Summary GST toggle. Defaults to false so a create request
+  // from any frontend caller that doesn't yet send this field keeps
+  // working unchanged — same technique as contractType/paymentType's own
+  // defaults above.
+  gstApplicable: z.boolean().default(false),
+
+  // Quantity Details project-level currency defaults. Defaults match the
+  // frontend's own pre-existing defaults (INR / rate 1) so a create request
+  // from any caller that doesn't yet send these fields keeps working
+  // unchanged — same technique as contractType/paymentType/gstApplicable's
+  // own defaults above.
+  currency: z.string().trim().min(1).default("INR"),
+  currentExchangeRate: z.coerce.number().positive().default(1),
+  contractExchangeRate: z.coerce.number().positive().default(1),
+
   // Expense Budget — Phase 3.5. Flat 1:1 fields on Project, all optional:
   // a brand-new project's General Information create request has no
   // reason to already know its budget, and ExpenseBudgetCard.tsx has no
@@ -121,6 +136,16 @@ export const updateProjectSchema = z.object({
   // No default here (unlike create) — omitting it on an update must leave
   // the existing value alone, not silently reset it to "Single".
   paymentType: z.enum(["Single", "Multiple"]).optional(),
+
+  // No default here (unlike create) — omitting it on an update must leave
+  // the existing value alone, not silently reset it to false.
+  gstApplicable: z.boolean().optional(),
+
+  // No default here either (unlike create) — omitting any of these on an
+  // update must leave the existing value alone.
+  currency: z.string().trim().min(1).optional(),
+  currentExchangeRate: z.coerce.number().positive().optional(),
+  contractExchangeRate: z.coerce.number().positive().optional(),
 
   // Expense Budget — Phase 3.5. Same 5 optional fields as createProjectSchema.
   manhourBudgetAmount: z.coerce.number().min(0, "Man-Hour Budget Amount cannot be negative.").optional().nullable(),

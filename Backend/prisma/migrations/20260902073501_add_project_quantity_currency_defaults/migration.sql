@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Project" ADD COLUMN     "contractExchangeRate" DOUBLE PRECISION NOT NULL DEFAULT 1,
+ADD COLUMN     "currency" TEXT NOT NULL DEFAULT 'INR',
+ADD COLUMN     "currentExchangeRate" DOUBLE PRECISION NOT NULL DEFAULT 1;

@@ -41,6 +41,18 @@ export interface ProjectDto {
 
   paymentType: string;
 
+  // Commercial Summary GST toggle — see schema.prisma's own comment on this
+  // column. GST Rate/GST Amount/Grand Total are NOT part of this DTO —
+  // those stay derived client-side from quantityItems + this flag.
+  gstApplicable: boolean;
+
+  // Quantity Details project-level currency defaults — see schema.prisma's
+  // own comment on these columns. Each QuantityItem's own currency/
+  // exchangeRate columns are separate and untouched by these.
+  currency: string;
+  currentExchangeRate: number;
+  contractExchangeRate: number;
+
   // Expense Budget — Phase 3.5.
   manhourBudgetAmount: number | null;
   manhourBudgetHours: number | null;

@@ -36,6 +36,10 @@ export interface ProjectGeneralInfoData {
   contractType: string;
   pmoCoordinator?: string | null;
   paymentType: string;
+  gstApplicable: boolean;
+  currency: string;
+  currentExchangeRate: number;
+  contractExchangeRate: number;
 
   // Expense Budget — Phase 3.5, flat on Project (see schema.prisma's own
   // note on this model for why it isn't a child table).

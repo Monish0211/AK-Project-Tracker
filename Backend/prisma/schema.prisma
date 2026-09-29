@@ -387,6 +387,34 @@ model Project {
   // architectural analysis.
   paymentType String @default("Single")
 
+  // Commercial Summary GST toggle (Quantity Details tab). Previously
+  // frontend/localStorage-only — Account A's selection never reached
+  // Account B opening the same project, who always saw the frontend's own
+  // "not a boolean yet" default (false / Not Applicable). GST Rate/GST
+  // Amount/Grand Total are deliberately NOT persisted here — they remain
+  // derived client-side from quantityItems + this flag via the existing
+  // calculateQuantity(), exactly as before; only the one flag that was
+  // silently non-durable needed a column. Defaults to false so every
+  // existing project (which never had a persisted GST value) keeps
+  // behaving exactly as it does today — "Not Applicable" — until a user
+  // explicitly changes it.
+  gstApplicable Boolean @default(false)
+
+  // Quantity Details project-level currency defaults (Quantity tab header,
+  // and shown separately on Business Information as Contract/Current
+  // Exchange Rate). Previously frontend/localStorage-only, same gap
+  // gstApplicable had — Account A's USD selection never reached Account B
+  // opening the same project, who always saw the frontend's own "not set
+  // yet" defaults (INR / rate 1), even though every individual
+  // QuantityItem's own currency/exchangeRate columns (see that model) were
+  // already correctly persisted and unaffected by this gap. currency
+  // defaults to "INR" and both rates default to 1 so every existing
+  // project (never had a persisted value) keeps behaving exactly as it
+  // does today until a user explicitly changes it.
+  currency             String @default("INR")
+  currentExchangeRate  Float  @default(1)
+  contractExchangeRate Float  @default(1)
+
   // Expense Budget — Phase 3.5. Deliberately flat on Project, NOT a child
   // table: this is a 1:1 attribute (exactly one Man-Hour Budget and one
   // Non-Man-Hour Budget per project, always), same treatment as every other
