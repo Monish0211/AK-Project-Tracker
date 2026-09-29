@@ -1,0 +1,183 @@
+import path from "node:path";
+import { AppError } from "../../../shared/utils/AppError.js";
+import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import { assertCanViewPRRequest } from "../../prRequests/services/prRequest.service.js";
+import { findPRRequestById } from "../../prRequests/repository/prRequest.repository.js";
+import { generateStorageKey, writeDocumentFile, deleteDocumentFile, readDocumentFilePath } from "../../../shared/utils/documentStorage.js";
+import { BLOCKED_EXTENSIONS, BLOCKED_MIME_TYPES, MAGIC_BYTE_SIGNATURES, matchesSignature } from "../documents.constants.js";
+import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
+import * as repo from "../repository/document.repository.js";
+
+interface UploadedFile {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+}
+
+function toDocumentDto(doc: {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  createdAt: Date;
+  uploadedByUserId: string;
+  uploadedBy: { fullName: string };
+}) {
+  return {
+    id: doc.id,
+    fileName: doc.fileName,
+    mimeType: doc.mimeType,
+    fileSizeBytes: doc.fileSizeBytes,
+    uploadedByUserId: doc.uploadedByUserId,
+    uploadedByName: doc.uploadedBy.fullName,
+    createdAt: doc.createdAt.toISOString(),
+  };
+}
+
+/**
+ * Denylist validation (not a business-category allowlist — see
+ * documents.constants.ts). Extension check first (cheap, catches the
+ * overwhelming majority of real cases), then a best-effort magic-byte check
+ * for the specific named formats this business requirement calls out — a
+ * mismatch there is NOT itself a rejection (many legitimate formats have no
+ * fixed signature), it only catches a renamed-executable spoofing a known
+ * extension.
+ */
+function assertFileIsSafe(file: UploadedFile): void {
+  const ext = path.extname(file.originalname).toLowerCase();
+
+  if (BLOCKED_EXTENSIONS.has(ext)) {
+    throw new AppError(`Files of type "${ext}" are not allowed.`, 400);
+  }
+  if (BLOCKED_MIME_TYPES.has(file.mimetype)) {
+    throw new AppError("This file type is not allowed.", 400);
+  }
+
+  const matchingSignatures = MAGIC_BYTE_SIGNATURES.filter((sig) => sig.extensions.includes(ext));
+  if (matchingSignatures.length > 0) {
+    const matches = matchingSignatures.some((sig) => matchesSignature(file.buffer, sig.signature));
+    if (!matches) {
+      throw new AppError(
+        `This file's contents do not match its "${ext}" extension and were rejected for safety.`,
+        400
+      );
+    }
+  }
+}
+
+async function assertPRRequestAccessById(prRequestId: string, user: AccessTokenPayload): Promise<void> {
+  const existing = await findPRRequestById(prRequestId);
+  if (!existing) {
+    throw new AppError("PR Request not found.", 404);
+  }
+  assertCanViewPRRequest(existing, user);
+}
+
+export async function uploadDocumentForProject(projectId: string, file: UploadedFile, user: AccessTokenPayload) {
+  await assertProjectAccessById(projectId, user);
+  assertFileIsSafe(file);
+  return persistDocument({ projectId, file, user });
+}
+
+export async function uploadDocumentForPRRequest(prRequestId: string, file: UploadedFile, user: AccessTokenPayload) {
+  await assertPRRequestAccessById(prRequestId, user);
+  assertFileIsSafe(file);
+  return persistDocument({ prRequestId, file, user });
+}
+
+/**
+ * Write-then-record, with cleanup on the failure path the spec calls out
+ * explicitly: if the physical write succeeds but the DB insert fails, the
+ * just-written file is deleted so it never becomes an orphan; if the write
+ * itself fails, no DB row is ever created.
+ */
+async function persistDocument(args: {
+  projectId?: string;
+  prRequestId?: string;
+  file: UploadedFile;
+  user: AccessTokenPayload;
+}) {
+  const storageKey = generateStorageKey();
+  await writeDocumentFile(storageKey, args.file.buffer);
+
+  try {
+    const created = await repo.createDocument({
+      projectId: args.projectId ?? null,
+      prRequestId: args.prRequestId ?? null,
+      fileName: args.file.originalname,
+      storageKey,
+      mimeType: args.file.mimetype,
+      fileSizeBytes: args.file.size,
+      uploadedByUserId: args.user.sub,
+    });
+    return toDocumentDto(created);
+  } catch (err) {
+    await deleteDocumentFile(storageKey).catch((cleanupErr) => {
+      console.error(`[documents] Failed to clean up orphaned file ${storageKey} after DB insert failure:`, cleanupErr);
+    });
+    throw err;
+  }
+}
+
+export async function listDocumentsForProject(projectId: string, user: AccessTokenPayload) {
+  await assertProjectAccessById(projectId, user);
+  const documents = await repo.findDocumentsByProjectId(projectId);
+  return documents.map(toDocumentDto);
+}
+
+export async function listDocumentsForPRRequest(prRequestId: string, user: AccessTokenPayload) {
+  await assertPRRequestAccessById(prRequestId, user);
+  const documents = await repo.findDocumentsByPRRequestId(prRequestId);
+  return documents.map(toDocumentDto);
+}
+
+/**
+ * Download — re-checks authorization against the document's CURRENT parent
+ * every time, never trusting a previously fetched list (a document can be
+ * re-pointed from a PR Request onto a Project between when a list was
+ * fetched and when download is clicked). Returns the physical path only
+ * after that check passes; the filesystem is never touched before it.
+ */
+export async function getDocumentForDownload(id: string, user: AccessTokenPayload) {
+  const doc = await repo.findDocumentById(id);
+  if (!doc) {
+    throw new AppError("Document not found.", 404);
+  }
+
+  if (doc.projectId) {
+    await assertProjectAccessById(doc.projectId, user);
+  } else if (doc.prRequestId) {
+    await assertPRRequestAccessById(doc.prRequestId, user);
+  } else {
+    // Should never happen (the application-layer invariant guarantees
+    // exactly one is set) — fail closed rather than serve an unowned file.
+    throw new AppError("Document has no associated Project or PR Request.", 500);
+  }
+
+  return {
+    filePath: readDocumentFilePath(doc.storageKey),
+    fileName: doc.fileName,
+    mimeType: doc.mimeType,
+  };
+}
+
+/**
+ * Delete — Administrator ONLY, per the confirmed final rule: no uploader/
+ * creator ownership check (uploadedByUserId is retained purely as audit
+ * metadata, never consulted here). The real security control is the route's
+ * own authorize("Administrator") middleware (see routes/document.routes.ts)
+ * — this function only needs to confirm the document still exists before
+ * removing it; Administrator already has unrestricted visibility into every
+ * Project and PR Request (see hasUnrestrictedProjectVisibility /
+ * assertCanViewPRRequest), so no further per-parent check narrows anything.
+ */
+export async function deleteDocument(id: string): Promise<void> {
+  const doc = await repo.findDocumentById(id);
+  if (!doc) {
+    throw new AppError("Document not found.", 404);
+  }
+
+  await repo.deleteDocumentRow(id);
+  await deleteDocumentFile(doc.storageKey);
+}

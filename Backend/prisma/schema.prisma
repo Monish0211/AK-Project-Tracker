@@ -112,6 +112,12 @@ model PortalUser {
   notifications      Notification[]
   pushSubscriptions  PushSubscription[]
 
+  // Documents feature — onDelete: Restrict on Document.uploadedBy (see that
+  // model) means a user who has ever uploaded a document can never be
+  // hard-deleted while it exists (deactivate instead), so the audit trail
+  // can never be silently orphaned.
+  uploadedDocuments Document[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -478,6 +484,13 @@ model Project {
   // Account B opening the same project. See ProjectReminder below.
   projectReminders ProjectReminder[]
 
+  // Documents feature — Sep 2026. A Project's documents are either uploaded
+  // directly here (Add/Edit Project) or re-pointed onto it from a PR
+  // Request's own documents at approval time (see Document below and
+  // pmoManagerApprove()'s own comment) — the same table serves both origins
+  // once re-pointing has happened, with no distinction kept afterward.
+  documents Document[]
+
   // Timesheet raw rows — Phase 3.8. onDelete: SetNull is declared on
   // TimesheetEntry.project, not here — included on this side only so that
   // behavior has something to relate from. See TimesheetEntry's own comment
@@ -819,6 +832,51 @@ model ProjectReminder {
 
   @@index([projectId])
   @@index([status])
+}
+
+// =============================================================================
+// DOCUMENT — Sep 2026 migration. Attachments for Projects and PR Requests
+// (invoices, quotations, drawings, specifications — any normal business
+// file). Exactly one of projectId/prRequestId is populated at any time,
+// enforced at the application layer (Prisma has no cross-column check
+// constraint short of a raw SQL CHECK, deliberately not added here — every
+// write path already only ever sets one of the two, mirroring how
+// QuantityItem/PaymentMilestone are captured under a PR Request's JSON blob
+// pre-approval and only exist as real FK-bound rows after). A document
+// uploaded during a PR Request (projectId NULL, prRequestId set) is
+// RE-POINTED — never copied — onto the real Project the instant
+// pmoManagerApprove() creates it: prRequest.service.ts's own comment on that
+// function explains the exact hook point. Rejecting or leaving a request
+// pending simply leaves its documents attached to it forever.
+//
+// storageKey is a server-generated opaque identifier for the physical file
+// on disk (see shared/utils/documentStorage.ts) — fileName is the original,
+// user-supplied name, kept ONLY as display metadata and never used to build
+// a filesystem path.
+// =============================================================================
+model Document {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  prRequestId String?
+  prRequest   PRRequest? @relation(fields: [prRequestId], references: [id], onDelete: Cascade)
+
+  fileName      String
+  storageKey    String
+  mimeType      String
+  fileSizeBytes Int
+
+  // Retained for audit/display only — deliberately NOT used to authorize
+  // deletion (Administrator-only, see documents.service.ts).
+  uploadedByUserId String
+  uploadedBy       PortalUser @relation(fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
+  @@index([prRequestId])
 }
 
 // =============================================================================

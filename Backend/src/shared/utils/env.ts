@@ -158,6 +158,25 @@ const envSchema = z.object({
   // Local Sentry evaluation only (see instrument.ts). Unset in any
   // environment means Sentry is a no-op — never a startup failure.
   SENTRY_DSN: optionalTrimmedString(z.string()),
+
+  // Documents feature — Sep 2026. Private filesystem location for uploaded
+  // Project/PR Request documents — deliberately OUTSIDE the frontend's
+  // htdocs/static root in every environment (see documentStorage.ts).
+  // Defaults to a repo-relative folder so local development works with zero
+  // .env setup; production sets this to
+  // /home/ifluids-pmodashboard/storage/documents (a sibling of htdocs/, not
+  // under it — confirmed outside every Nginx location/root/alias mapping).
+  DOCUMENT_STORAGE_PATH: z.string().default("./storage/documents"),
+
+  // Deliberately NOT a business file-size restriction — the business
+  // requirement is "no arbitrary limit" (invoices/drawings can legitimately
+  // be large). This exists only to fail fast with a clean application error
+  // instead of letting the request hang until Nginx's own
+  // client_max_body_size (64M, set globally in nginx.conf, confirmed via a
+  // read-only production check) rejects it with a raw 413. Keep this at or
+  // below that production ceiling; raising it without also raising Nginx's
+  // setting would just move the failure point, not remove it.
+  DOCUMENT_UPLOAD_MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(64),
 });
 
 const parsed = envSchema.safeParse(process.env);

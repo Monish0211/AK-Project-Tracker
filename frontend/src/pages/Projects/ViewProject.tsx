@@ -22,6 +22,7 @@ import { canMutateData } from "../../auth/permissions";
 import { Button } from "../../components/ui/Button";
 
 import GeneralView from "./components/GeneralView";
+import ProjectDocumentsCard from "./components/ProjectDocumentsCard";
 import QuantityTable from "./components/QuantityTable";
 import PaymentMilestoneView from "./components/PaymentMilestoneView";
 import ExpenseBudgetView from "./components/ExpenseBudgetView";
@@ -258,7 +259,12 @@ const ViewProject = () => {
         <ProjectTabNav tabs={TABS} activeTab={activeTab} onChange={setActiveTab} />
 
         <div className="p-6">
-          {activeTab === "general" && <GeneralView project={project} />}
+          {activeTab === "general" && (
+            <div className="space-y-3.5">
+              <GeneralView project={project} />
+              <ProjectDocumentsCard ownerType="project" ownerId={project.id} readOnly />
+            </div>
+          )}
           {activeTab === "quantity" && <QuantityTable project={project} />}
           {activeTab === "payments" && <PaymentMilestoneView project={project} />}
           {activeTab === "budget" && <ExpenseBudgetView project={project} />}

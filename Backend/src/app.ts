@@ -17,6 +17,7 @@ import { mailIngestionRoutes } from "./modules/mailIngestion/index.js";
 import { pdfImportRoutes } from "./modules/pdfImport/index.js";
 import { dashboardRoutes } from "./modules/dashboard/index.js";
 import { notificationRoutes } from "./modules/notifications/index.js";
+import { documentRoutes } from "./modules/documents/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { requestLogger } from "./shared/middleware/requestLogger.js";
 import { AppError } from "./shared/utils/AppError.js";
@@ -118,6 +119,10 @@ app.use(dashboardRoutes);
 // mounted at root like dashboard/timesheet above. INFRASTRUCTURE ONLY: no
 // business module calls notification.service.ts's notify() yet (Phase 3).
 app.use(notificationRoutes);
+// Documents feature — Sep 2026. Declares its own full paths
+// (/projects/:projectId/documents, /pr-requests/:prRequestId/documents,
+// /documents/:id[/download]), mounted at root alongside the routers above.
+app.use(documentRoutes);
 
 app.use((req, _res, next) => {
   next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));

@@ -50,6 +50,20 @@ interface Props {
   onBack: () => void;
   onValidate?: () => boolean;
   resourceLoadFailed?: SubresourceLoadStatus;
+  /**
+   * Add Project document staging (approved architecture — Option C).
+   * Called right after a real Project id is obtained (both on first
+   * creation and on any later Save & Next click that still finds
+   * unresolved staged files) — uploads every staged file via the existing
+   * Documents API and returns false if anything is still unresolved.
+   * Only ProjectForm.tsx (mode="add") passes this; Edit Project never has
+   * staged files to flush.
+   */
+  onFlushPendingDocuments?: (projectId: string) => Promise<boolean>;
+  /** Clears staged (never-uploaded) documents when the user confirms Reset — mirrors setProject(createEmptyProject()) below. */
+  onResetPendingDocuments?: () => void;
+  /** Live "N of M" progress while onFlushPendingDocuments is running — surfaced on the Save/Save & Next button instead of a plain, indefinite "Saving...". */
+  documentFlushProgress?: { completed: number; total: number } | null;
 }
 
 const FormButtons = ({
@@ -63,10 +77,20 @@ const FormButtons = ({
   onBack,
   onValidate,
   resourceLoadFailed,
+  onFlushPendingDocuments,
+  onResetPendingDocuments,
+  documentFlushProgress,
 }: Props) => {
   const navigate = useNavigate();
   const { showToast } = usePmoToast();
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  // Perf/robustness fix — Save/Save & Next previously had no in-flight
+  // guard at all, so a slow save (a bulk document flush can now take a
+  // couple of seconds for many staged files) could be double-clicked into
+  // two concurrent saveProjectData() calls. Disables Save/Save & Next
+  // (and Reset/Cancel, which would otherwise mutate state a save is
+  // still reading) for the duration of any save, not just document ones.
+  const [isSaving, setIsSaving] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 
   /**
@@ -110,8 +134,48 @@ const FormButtons = ({
         const created = await createProjectGeneralInfo(project);
         projectToSave = { ...project, id: created.id };
         setProject(projectToSave);
+
+        // Add Project document staging — flush any files picked before
+        // this Project existed, using the SAME upload API/authorization/
+        // storage Edit Project already uses (see ProjectForm.tsx's
+        // flushPendingDocuments()). A partial/total failure here must
+        // never be treated as this save failing outright: the Project is
+        // already real and legitimate (createProjectGeneralInfo() already
+        // succeeded) and must never be rolled back or deleted over a
+        // document upload problem. It only blocks ADVANCING past General,
+        // so the user can retry the failed file(s) — register the new
+        // Project in the local mirror right now (the same addProject()
+        // call the bottom of this function would otherwise make once)
+        // so the Documents card correctly treats it as unlocked instead of
+        // reverting to "locked" on the next render.
+        if (onFlushPendingDocuments) {
+          const allUploaded = await onFlushPendingDocuments(created.id);
+          if (!allUploaded) {
+            addProject({ ...projectToSave, createdAt: projectToSave.createdAt || timestamp, updatedAt: timestamp });
+            showToast({
+              type: "error",
+              message: "Some documents failed to upload. Please retry them before continuing.",
+            });
+            return false;
+          }
+        }
       } else {
         await updateProjectGeneralInfo(existing.id, project);
+
+        // Same flush, for the case where the user ignored a failed
+        // upload's Retry button and simply clicked Save & Next again —
+        // never lets the wizard advance while a staged file is still
+        // unresolved, regardless of how many times this runs.
+        if (onFlushPendingDocuments) {
+          const allUploaded = await onFlushPendingDocuments(existing.id);
+          if (!allUploaded) {
+            showToast({
+              type: "error",
+              message: "Some documents failed to upload. Please retry them before continuing.",
+            });
+            return false;
+          }
+        }
       }
     } catch (err) {
       showToast({
@@ -246,21 +310,33 @@ const FormButtons = ({
   };
 
   const handleSave = async () => {
+    if (isSaving) return;
     if (onValidate && !onValidate()) return;
-    const saved = await saveProjectData();
-    if (!saved) return;
-    showToast({
-      type: "success",
-      message: mode === "add" ? "Project saved successfully." : "Project updated successfully.",
-    });
-    navigate("/projects");
+    setIsSaving(true);
+    try {
+      const saved = await saveProjectData();
+      if (!saved) return;
+      showToast({
+        type: "success",
+        message: mode === "add" ? "Project saved successfully." : "Project updated successfully.",
+      });
+      navigate("/projects");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSaveAndNext = async () => {
+    if (isSaving) return;
     if (onValidate && !onValidate()) return;
-    const saved = await saveProjectData();
-    if (!saved) return;
-    onSaveAndNext();
+    setIsSaving(true);
+    try {
+      const saved = await saveProjectData();
+      if (!saved) return;
+      onSaveAndNext();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleBack = () => {
@@ -285,6 +361,7 @@ const FormButtons = ({
           size="sm"
           icon={<ArrowLeft size={14} />}
           onClick={handleBack}
+          disabled={isSaving}
         >
           Back
         </Button>
@@ -295,6 +372,7 @@ const FormButtons = ({
           size="sm"
           icon={<RotateCcw size={14} />}
           onClick={handleReset}
+          disabled={isSaving}
           className="text-[var(--nu-warning)] hover:bg-[var(--nu-warning-soft)]"
         >
           Reset
@@ -306,6 +384,7 @@ const FormButtons = ({
           size="sm"
           icon={<X size={14} />}
           onClick={handleCancel}
+          disabled={isSaving}
           className="text-[var(--nu-danger)] hover:bg-[var(--nu-danger-soft)]"
         >
           Cancel
@@ -321,9 +400,14 @@ const FormButtons = ({
             size="sm"
             icon={<ChevronRight size={14} />}
             onClick={handleSaveAndNext}
+            disabled={isSaving}
             className="flex-row-reverse"
           >
-            Save & Next
+            {documentFlushProgress
+              ? `Uploading documents (${documentFlushProgress.completed}/${documentFlushProgress.total})...`
+              : isSaving
+              ? "Saving..."
+              : "Save & Next"}
           </Button>
         )}
 
@@ -334,9 +418,16 @@ const FormButtons = ({
             size="sm"
             icon={<Save size={14} />}
             onClick={handleSave}
+            disabled={isSaving}
             className="save-project-btn"
           >
-            {mode === "add" ? "Save Project" : "Update Project"}
+            {documentFlushProgress
+              ? `Uploading documents (${documentFlushProgress.completed}/${documentFlushProgress.total})...`
+              : isSaving
+              ? "Saving..."
+              : mode === "add"
+              ? "Save Project"
+              : "Update Project"}
           </Button>
         )}
       </div>
@@ -351,6 +442,7 @@ const FormButtons = ({
         onConfirm={() => {
           setResetConfirmOpen(false);
           setProject(createEmptyProject());
+          onResetPendingDocuments?.();
         }}
       />
 

@@ -8,3 +8,9 @@ node_modules
 dist
 build
 *.log
+
+# Documents feature — private local storage for uploaded physical files
+# (DOCUMENT_STORAGE_PATH's default). Never belongs in version control —
+# same treatment as .env; the real production path is outside this repo
+# entirely (/home/ifluids-pmodashboard/storage/documents).
+/storage

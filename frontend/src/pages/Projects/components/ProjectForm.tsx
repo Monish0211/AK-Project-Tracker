@@ -25,6 +25,11 @@ import type { Project } from "../../../types/Project";
 import type { Dispatch, SetStateAction } from "react";
 
 import GeneralInfoCard from "./GeneralInfoCard";
+import ProjectDocumentsCard from "./ProjectDocumentsCard";
+import type { PendingDocument } from "./ProjectDocumentsCard";
+import { getProjectById } from "../../../services/projectService";
+import { uploadProjectDocument } from "../../../services/documentService";
+import { getUserFriendlyErrorMessage } from "../../../utils/errorMessage";
 import QuantityCard from "./QuantityCard";
 import CommercialCard from "./PaymentMilestoneCard";
 import ProjectLeadershipCard from "./ProjectLeadershipCard";
@@ -116,6 +121,107 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
   );
 
   const { errors, validate, clearError, clearAllErrors } = useFormValidation<Project>();
+
+  // Add Project client-side document staging (approved architecture —
+  // Option C). A file picked before the real Project id exists lives ONLY
+  // here, in memory: nothing is sent to the backend until
+  // flushPendingDocuments() runs, right after createProjectGeneralInfo()
+  // obtains a real id (see FormButtons.tsx's saveProjectData()). Abandoning
+  // the form (Cancel, Reset, browser close, logout) before that point
+  // discards this state for free — there is nothing server-side to clean
+  // up, because nothing was ever written server-side. Always declared
+  // (harmless in Edit mode too, since ownerId there is never null so
+  // nothing ever stages into it), but only ever wired into
+  // ProjectDocumentsCard's staging props in Add mode below.
+  const [pendingDocuments, setPendingDocuments] = useState<PendingDocument[]>([]);
+  // Surfaced to FormButtons so a bulk flush shows "Uploading documents
+  // (2/7)..." instead of the plain, indefinite "Saving..." — see the perf
+  // audit note on flushPendingDocuments below for why this matters more
+  // once concurrency is bounded (a large batch can take a few seconds).
+  const [documentFlushProgress, setDocumentFlushProgress] = useState<{ completed: number; total: number } | null>(null);
+
+  const stagePendingDocument = (file: File) => {
+    setPendingDocuments((prev) => [...prev, { localId: crypto.randomUUID(), file, status: "pending" }]);
+  };
+
+  const removePendingDocument = (localId: string) => {
+    setPendingDocuments((prev) => prev.filter((doc) => doc.localId !== localId));
+  };
+
+  // Shared by both the bulk flush (on first Save & Next) and the single-
+  // item Retry button — a success removes the entry entirely (it's now a
+  // real, backend-persisted Document, picked up by ProjectDocumentsCard's
+  // own list fetch the next time ownerId is non-null), never leaving a
+  // stale "succeeded" placeholder that a later flush/retry could re-send.
+  const uploadOnePendingDocument = async (projectId: string, doc: PendingDocument): Promise<boolean> => {
+    setPendingDocuments((prev) => prev.map((d) => (d.localId === doc.localId ? { ...d, status: "uploading", error: undefined } : d)));
+    try {
+      await uploadProjectDocument(projectId, doc.file);
+      setPendingDocuments((prev) => prev.filter((d) => d.localId !== doc.localId));
+      return true;
+    } catch (err) {
+      setPendingDocuments((prev) =>
+        prev.map((d) => (d.localId === doc.localId ? { ...d, status: "failed", error: getUserFriendlyErrorMessage(err, "Upload failed.") } : d))
+      );
+      return false;
+    }
+  };
+
+  // Called by FormButtons.tsx immediately after obtaining a real Project id
+  // (both the very first creation AND any later Save & Next click that
+  // still finds unresolved staged files — e.g. the user ignored a failed
+  // upload's Retry button and just clicked Save & Next again). Returns
+  // false if anything is still unresolved, which FormButtons treats as a
+  // hard stop — mirroring how a General Information save failure already
+  // blocks advancing today.
+  //
+  // Bounded concurrency (measured, Sep 2026 performance audit) — firing
+  // every staged upload at once via Promise.all was measured to be
+  // consistently SLOWER than a moderate concurrency cap on this backend
+  // (repeated local runs: unbounded parallel ~340-425ms for 10x1MB files,
+  // fully sequential ~255-585ms, a cap of 3-6 concurrent consistently
+  // fastest or tied-fastest at ~160-320ms). The likely cause: multer's
+  // memory-buffer parsing + the fs write both compete for the same
+  // single-threaded event loop, so firing everything at once adds
+  // scheduling/contention overhead instead of removing wall-clock time.
+  // A cap also bounds worst-case backend memory/connection pressure for a
+  // genuinely large bulk batch (e.g. 30+ staged files), which unbounded
+  // Promise.all does not, without meaningfully slowing the common 1-10
+  // file case this feature is actually used for.
+  const DOCUMENT_UPLOAD_CONCURRENCY = 3;
+
+  const flushPendingDocuments = async (projectId: string): Promise<boolean> => {
+    const toUpload = pendingDocuments.filter((doc) => doc.status !== "uploading");
+    if (toUpload.length === 0) return true;
+
+    setDocumentFlushProgress({ completed: 0, total: toUpload.length });
+    const results: boolean[] = [];
+    let completed = 0;
+    let nextIndex = 0;
+
+    const worker = async () => {
+      while (nextIndex < toUpload.length) {
+        const doc = toUpload[nextIndex++];
+        results.push(await uploadOnePendingDocument(projectId, doc));
+        completed += 1;
+        setDocumentFlushProgress({ completed, total: toUpload.length });
+      }
+    };
+
+    try {
+      await Promise.all(Array.from({ length: Math.min(DOCUMENT_UPLOAD_CONCURRENCY, toUpload.length) }, worker));
+    } finally {
+      setDocumentFlushProgress(null);
+    }
+    return results.every(Boolean);
+  };
+
+  const retryPendingDocument = (localId: string) => {
+    const realProjectId = getProjectById(project.id) ? project.id : null;
+    const doc = pendingDocuments.find((d) => d.localId === localId);
+    if (!realProjectId || !doc) return;
+    void uploadOnePendingDocument(realProjectId, doc);
+  };
 
   const validateActiveTab = (tab: TabKey): boolean => {
     switch (tab) {
@@ -277,11 +383,20 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
                       : undefined
                   }
                   onClick={() => {
-                    if (!isLocked) {
-                      if (validateActiveTab(activeTab)) {
-                        clearAllErrors();
-                        setActiveTab(key);
-                      }
+                    if (isLocked) return;
+                    // Add Project only: navigating BACKWARD to an
+                    // already-unlocked tab (e.g. back to General to use the
+                    // Documents card right after it unlocks) must not be
+                    // gated by the tab being LEFT failing its own
+                    // validation (e.g. Quantity's default empty row) —
+                    // exactly the same no-validation rule the footer "Back"
+                    // button already applies. Edit mode is unaffected: every
+                    // tab there is already unlocked from the start, and
+                    // forward-vs-backward has no meaning to gate on.
+                    const isBackwardInAddWizard = mode === "add" && index <= activeIndex;
+                    if (isBackwardInAddWizard || validateActiveTab(activeTab)) {
+                      clearAllErrors();
+                      setActiveTab(key);
                     }
                   }}
                   className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-medium transition-all duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--nu-accent)] ${
@@ -320,7 +435,18 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
 
         <div className="p-4">
           {activeTab === "general" && (
-            <GeneralInfoCard project={project} setProject={setProject} errors={errors} clearError={clearError} />
+            <div className="space-y-3.5">
+              <GeneralInfoCard project={project} setProject={setProject} errors={errors} clearError={clearError} />
+              <ProjectDocumentsCard
+                ownerType="project"
+                ownerId={getProjectById(project.id) ? project.id : null}
+                lockedMessage="Save General Information to enable document uploads."
+                onStageFile={mode === "add" ? stagePendingDocument : undefined}
+                pendingDocuments={pendingDocuments}
+                onRemoveStaged={mode === "add" ? removePendingDocument : undefined}
+                onRetryStaged={mode === "add" ? retryPendingDocument : undefined}
+              />
+            </div>
           )}
 
           {activeTab === "quantity" && (
@@ -369,6 +495,9 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
         onSaveAndNext={goToNextTab}
         onBack={goToPreviousTab}
         resourceLoadFailed={resourceLoadFailed}
+        onFlushPendingDocuments={flushPendingDocuments}
+        onResetPendingDocuments={() => setPendingDocuments([])}
+        documentFlushProgress={documentFlushProgress}
       />
 
       {/* Project Notes Slide-over Drawer */}
