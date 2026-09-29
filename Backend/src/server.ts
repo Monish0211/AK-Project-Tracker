@@ -1,3 +1,4 @@
+import "./instrument.js";
 import app from "./app.js";
 import { env } from "./shared/utils/env.js";
 import { verifyEmailConnection } from "./shared/email/transporter.js";

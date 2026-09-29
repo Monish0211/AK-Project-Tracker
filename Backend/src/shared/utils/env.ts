@@ -154,6 +154,10 @@ const envSchema = z.object({
   // frontend origin is confirmed; leave unset to keep today's exact
   // behavior (every origin allowed) unchanged.
   CORS_ALLOWED_ORIGIN: optionalTrimmedString(z.string()),
+
+  // Local Sentry evaluation only (see instrument.ts). Unset in any
+  // environment means Sentry is a no-op — never a startup failure.
+  SENTRY_DSN: optionalTrimmedString(z.string()),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@sentry/react": "^11.0.0",
     "@supabase/supabase-js": "^2.110.8",
     "@tailwindcss/vite": "^4.3.1",
     "@tanstack/react-virtual": "^3.14.9",

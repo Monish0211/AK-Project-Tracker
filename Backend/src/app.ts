@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import cors from "cors";
 import express from "express";
 import { authRoutes } from "./modules/auth/index.js";
@@ -121,6 +122,14 @@ app.use(notificationRoutes);
 app.use((req, _res, next) => {
   next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));
 });
+
+// Local Sentry evaluation only — a total no-op when SENTRY_DSN is unset
+// (see instrument.ts). Its own default shouldHandleError only reports
+// errors with no status or status >= 500, so it never reports AppError's
+// deliberate 4xx responses (auth denials, validation failures, etc.) —
+// exactly "uncaught/unhandled" errors, not expected business rejections.
+// Always calls next(err), so errorHandler below is completely unchanged.
+Sentry.setupExpressErrorHandler(app);
 
 app.use(errorHandler);
 
