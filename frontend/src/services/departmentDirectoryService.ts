@@ -1,5 +1,6 @@
 import { getEmployees } from "./employeeService";
 import { DEFAULT_DEPARTMENTS } from "../data/departmentMasterData";
+import { dispatchPmoDataChanged } from "../utils/pmoDataChanged";
 
 /**
  * Department master list — the Manpower module is the source of truth.
@@ -30,6 +31,6 @@ export function addDepartment(name: string): string {
   if (existing) return existing;
 
   sessionAdditions = [...sessionAdditions, trimmed];
-  window.dispatchEvent(new Event("pmo:data-changed"));
+  dispatchPmoDataChanged({ entity: "department", ids: [trimmed] });
   return trimmed;
 }

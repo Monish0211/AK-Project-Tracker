@@ -3,6 +3,7 @@ import type { ProjectNote } from "../types/ProjectNote";
 import type { InvoiceLine } from "../types/InvoiceItem";
 import { getProjectById, updateProject } from "./projectService";
 import { notificationService } from "../notifications/notificationService";
+import { dispatchPmoDataChanged } from "../utils/pmoDataChanged";
 
 export interface LogAuditOptions {
   title: string;
@@ -75,7 +76,7 @@ export function logProjectAudit(projectId: string, options: LogAuditOptions): Pr
     }
   }
 
-  window.dispatchEvent(new Event("pmo:data-changed"));
+  dispatchPmoDataChanged({ entity: "project", ids: [projectId] });
   return updatedProject;
 }
 

@@ -7,6 +7,7 @@ import type {
 } from "../../types/ProjectReminder";
 import { ClientReminderRepository } from "./ClientReminderRepository";
 import { apiClient, ApiError } from "../apiClient";
+import { dispatchPmoDataChanged } from "../../utils/pmoDataChanged";
 
 // =============================================================================
 // BACKEND-CONNECTED PROJECT REMINDERS
@@ -430,7 +431,7 @@ class ReminderServiceFacade {
 
   private emitChange() {
     // Notify the application that data changed (this triggers the Notification Engine)
-    window.dispatchEvent(new Event("pmo:data-changed"));
+    dispatchPmoDataChanged({ entity: "reminder" });
     window.dispatchEvent(new Event("pmo:reminders-changed")); // specific event if UI needs to refresh just reminders
   }
 }

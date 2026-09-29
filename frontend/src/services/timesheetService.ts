@@ -3,6 +3,7 @@ import type { ProjectResource } from "../types/Project";
 import { getCellText, parseExcelDateKey } from "./timesheetImportService";
 import { apiClient } from "./apiClient";
 import { getEmployees } from "./employeeService";
+import { dispatchPmoDataChanged } from "../utils/pmoDataChanged";
 
 const TIMESHEET_STORAGE_KEY = "timesheets_imports";
 
@@ -134,7 +135,7 @@ if (typeof window !== "undefined") {
     cachedMonths = null;
     hasSavedSinceHydrationStarted = false;
     hydrationPromise = null;
-    window.dispatchEvent(new Event("pmo:data-changed"));
+    dispatchPmoDataChanged({ entity: "timesheet" });
   });
 }
 

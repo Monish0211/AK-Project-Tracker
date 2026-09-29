@@ -9,10 +9,9 @@
  * untouched and unread so we neither overwrite backend data nor discard
  * browser-side history without an explicit migration.
  */
-import * as XLSX from "xlsx";
-
 import type { Customer } from "../types/CustomerModel";
 import { apiClient, ApiError } from "./apiClient";
+import { dispatchPmoDataChanged } from "../utils/pmoDataChanged";
 
 export interface CustomerInput {
   customerId?: string;
@@ -83,7 +82,7 @@ interface CustomerPayload {
 let customersCache: Customer[] = [];
 
 function notifyCustomersChanged(): void {
-  window.dispatchEvent(new Event("pmo:data-changed"));
+  dispatchPmoDataChanged({ entity: "customer" });
 }
 
 /**
@@ -258,6 +257,15 @@ export async function importCustomersFromFile(file: File): Promise<FileImportRes
   }
 
   const buffer = await file.arrayBuffer();
+  // F2 perf fix (Sept 2026 audit) — this file is reachable from the very
+  // first paint (PmoAssistant statically imports getCustomers/
+  // loadCustomersForApp from here, and PmoAssistant mounts on every
+  // authenticated page), so a top-of-file `import * as XLSX` put the whole
+  // library in the main chunk for every session regardless of whether
+  // Customer Master's import/export/template actions were ever used.
+  // Dynamic import here (and at the other two XLSX call sites below)
+  // fetches it only when one of those actions actually runs.
+  const XLSX = await import("xlsx");
   const workbook = XLSX.read(buffer, { type: "array" });
   const sheetName = workbook.SheetNames[0];
 
@@ -377,8 +385,9 @@ export async function importCustomersFromFile(file: File): Promise<FileImportRes
   }
 }
 
-export function downloadCustomerTemplate(): void {
+export async function downloadCustomerTemplate(): Promise<void> {
   const headers = ["Customer Name", "Status"];
+  const XLSX = await import("xlsx");
   const worksheet = XLSX.utils.aoa_to_sheet([headers]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
@@ -399,7 +408,8 @@ const toExportRows = (customers: Customer[]) =>
     "Created On": new Date(customer.createdAt).toLocaleDateString("en-IN"),
   }));
 
-export function exportCustomers(customers: Customer[], format: "xlsx" | "csv" = "xlsx"): void {
+export async function exportCustomers(customers: Customer[], format: "xlsx" | "csv" = "xlsx"): Promise<void> {
+  const XLSX = await import("xlsx");
   const worksheet = XLSX.utils.json_to_sheet(toExportRows(customers));
 
   if (format === "csv") {

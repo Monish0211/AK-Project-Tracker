@@ -1,4 +1,5 @@
 import { getEmployees } from "./employeeService";
+import { dispatchPmoDataChanged } from "../utils/pmoDataChanged";
 
 /**
  * Reporting Manager master list — the Manpower module is the source of
@@ -28,6 +29,6 @@ export function addReportingManager(name: string): string {
   if (existing) return existing;
 
   sessionAdditions = [...sessionAdditions, trimmed];
-  window.dispatchEvent(new Event("pmo:data-changed"));
+  dispatchPmoDataChanged({ entity: "reportingManager", ids: [trimmed] });
   return trimmed;
 }

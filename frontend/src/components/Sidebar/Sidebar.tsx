@@ -18,12 +18,12 @@ import {
   XCircle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import * as XLSX from "xlsx";
 import { fetchProjectStatusCountsFromApi, queryProjectsFromApi } from "../../services/projectService";
 import { useAuth } from "../../auth/authContext";
 import { hasModuleAccess } from "../../auth/permissions";
 import { usePmoToast } from "../ui/usePmoToast";
 import { Portal } from "../ui/Portal";
+import { pmoDataChangedMatches } from "../../utils/pmoDataChanged";
 
 interface NavChild {
   label: string;
@@ -209,11 +209,38 @@ const Sidebar = () => {
         });
     };
 
+    // Perf fix — "pmo:data-changed" is a broad, app-wide event dispatched by
+    // many unrelated read/write paths (project saves, timesheet/employee/
+    // customer/reminder refreshes, etc.), so a burst of unrelated activity
+    // (e.g. Reports' own initial data load) can fire it several times within
+    // the same second. A short trailing debounce collapses any such burst
+    // into a single refetch instead of one per event, without dropping any
+    // real change: the last event in a burst always still wins and re-fires
+    // loadCounts() shortly after. 500ms is imperceptible for a sidebar
+    // summary count but comfortably longer than a same-tick event burst.
+    //
+    // F6 targeting (Sept 2026 audit) — status counts are Active/On Hold/
+    // Completed/Cancelled PROJECT counts; nothing else (timesheet imports,
+    // employee/customer/reminder/user edits) can change them. Filtering to
+    // entity: "project" here means the debounce timer above isn't even
+    // scheduled for the other ~7 entity types this event carries, on top of
+    // the debounce's own burst-collapsing.
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleLoadCounts = (event: Event) => {
+      if (!pmoDataChangedMatches(event, ["project"])) return;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        loadCounts();
+      }, 500);
+    };
+
     loadCounts();
-    window.addEventListener("pmo:data-changed", loadCounts);
+    window.addEventListener("pmo:data-changed", scheduleLoadCounts);
     return () => {
       cancelled = true;
-      window.removeEventListener("pmo:data-changed", loadCounts);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener("pmo:data-changed", scheduleLoadCounts);
     };
   }, [user]);
 
@@ -273,6 +300,16 @@ const Sidebar = () => {
         "Remarks": p.remarks || "",
       }));
 
+      // F2 perf fix (Sept 2026 audit) — dynamic import, not a top-of-file
+      // eager one: Sidebar mounts on every authenticated page, but xlsx is
+      // only ever touched by this one export action. Eagerly importing it
+      // put its full weight in the MAIN chunk for every page load even
+      // though most sessions never click "Export". This `await import(...)`
+      // moves it to its own chunk, fetched only the moment a user actually
+      // exports — same library, same API, same output file, just fetched
+      // on demand instead of upfront. Browsers cache the chunk after the
+      // first export, so a second export in the same session is instant.
+      const XLSX = await import("xlsx");
       const worksheet = XLSX.utils.json_to_sheet(exportRows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Projects");

@@ -8,6 +8,7 @@ import { syncInvoiceItemsWithQuantity } from "./invoiceSyncService";
 import { notificationService } from "../notifications/notificationService";
 import { apiClient, ApiError } from "./apiClient";
 import { getEmployees } from "./employeeService";
+import { dispatchPmoDataChanged } from "../utils/pmoDataChanged";
 
 const STORAGE_KEY = "projects";
 
@@ -171,7 +172,14 @@ export const saveProjects = (projects: Project[]): void => {
     JSON.stringify(projects.map(normalizeProject))
   );
 
-  window.dispatchEvent(new Event("pmo:data-changed"));
+  // entity: "project" covers every sub-resource that persists through this
+  // one function (invoices, quantities, expenses, milestones, notes — see
+  // pmoDataChanged.ts). No `ids`: this receives the WHOLE array on every
+  // call, not just what changed, so computing which id(s) actually differ
+  // would mean diffing against the previous array on every save — real
+  // extra cost for every one of this function's ~10 call sites, for a
+  // signal none of today's listeners need (see each listener's own filter).
+  dispatchPmoDataChanged({ entity: "project" });
 };
 
 /**
@@ -280,7 +288,7 @@ export const completeProject = (
     })
   );
   window.dispatchEvent(new Event("pmo:notifications-changed"));
-  window.dispatchEvent(new Event("pmo:data-changed"));
+  dispatchPmoDataChanged({ entity: "project", ids: [id] });
 };
 
 export const deleteProject = (id: string): void => {

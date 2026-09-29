@@ -1,7 +1,6 @@
-import * as XLSX from "xlsx";
-
 import type { Employee } from "../types/EmployeeModel";
 import { apiClient, ApiError } from "./apiClient";
+import { dispatchPmoDataChanged } from "../utils/pmoDataChanged";
 
 const STORAGE_KEY = "employees_v6";
 
@@ -40,7 +39,7 @@ export function getEmployees(): Employee[] {
 
 export function saveEmployees(employees: Employee[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(employees));
-  window.dispatchEvent(new Event("pmo:data-changed"));
+  dispatchPmoDataChanged({ entity: "employee" });
 }
 
 export function addEmployee(
@@ -231,6 +230,14 @@ export async function importEmployeesFromExcel(
 ): Promise<ImportResult> {
   const buffer = await file.arrayBuffer();
 
+  // F2 perf fix (Sept 2026 audit) — this file is reachable from the very
+  // first paint (MainLayout calls loadEmployeesForApp() unconditionally on
+  // mount), so a top-of-file `import * as XLSX` put the whole library in
+  // the main chunk for every session, whether or not anyone ever imports/
+  // exports an Employee Master file. Dynamic import here (and in the two
+  // other XLSX call sites below) fetches it only when one of these actions
+  // actually runs.
+  const XLSX = await import("xlsx");
   const workbook = XLSX.read(buffer, { type: "array" });
 
   const firstSheetName = workbook.SheetNames[0];
@@ -347,7 +354,7 @@ export async function importEmployeesFromExcel(
   };
 }
 
-export function exportEmployeesToExcel(employees: Employee[]): void {
+export async function exportEmployeesToExcel(employees: Employee[]): Promise<void> {
   const rows = employees.map((employee, index) => ({
     "Sl No": index + 1,
     "Employee No": employee.employeeNo,
@@ -361,6 +368,7 @@ export function exportEmployeesToExcel(employees: Employee[]): void {
     Status: employee.status,
   }));
 
+  const XLSX = await import("xlsx");
   const worksheet = XLSX.utils.json_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
 
@@ -785,7 +793,7 @@ async function loadEmployeesForAppOnce(): Promise<LoadEmployeesResult> {
   return { employees: finalList.items, migration };
 }
 
-export function downloadEmployeeTemplate(): void {
+export async function downloadEmployeeTemplate(): Promise<void> {
   const headers = [
     "Sl No",
     "Employee No",
@@ -798,6 +806,7 @@ export function downloadEmployeeTemplate(): void {
     "Man-hour Expenses",
     "Status",
   ];
+  const XLSX = await import("xlsx");
   const worksheet = XLSX.utils.aoa_to_sheet([headers]);
   const workbook = XLSX.utils.book_new();
 

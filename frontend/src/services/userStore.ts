@@ -1,5 +1,6 @@
 import type { User, AccountStatus } from "../types/UserModel";
 import type { UserRepository } from "./userRepository";
+import { dispatchPmoDataChanged } from "../utils/pmoDataChanged";
 
 /**
  * Reactive in-memory user store — mirrors the notifications module's
@@ -56,6 +57,6 @@ export class UserStore {
     // all dispatch the same one) rather than inventing a users-only event,
     // so User Management stays consistent with every other module's
     // live-refresh wiring.
-    window.dispatchEvent(new Event("pmo:data-changed"));
+    dispatchPmoDataChanged({ entity: "user" });
   }
 }

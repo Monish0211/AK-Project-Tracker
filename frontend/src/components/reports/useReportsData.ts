@@ -5,6 +5,7 @@ import { getProjects, fetchAllProjectsFromApi } from "../../services/projectServ
 import { getCustomers, loadCustomersForApp } from "../../services/customerService";
 import { getTotalNonManhourCost } from "../../services/expenseService";
 import { fetchAllInvoiceLinesForCaller, type ReportInvoiceLine } from "../../services/invoiceService";
+import { pmoDataChangedMatches } from "../../utils/pmoDataChanged";
 
 export interface ReportFilterState {
   dateRange: { start: string; end: string };
@@ -52,6 +53,8 @@ export function useReportsData() {
   };
 
   useEffect(() => {
+    let isMounted = true;
+
     loadData();
 
     fetchAllProjectsFromApi()
@@ -70,34 +73,65 @@ export function useReportsData() {
         console.warn("Failed to load Customer Master for reports:", err);
       });
 
-    const handleDataChanged = () => loadData();
+    // Perf fix — this used to be keyed on `[allProjects]` in a separate
+    // effect, so it re-fired every time that array got a new reference
+    // (mount, loadData()'s setAllProjects, AND fetchAllProjectsFromApi()'s
+    // async setAllProjects — none of which mean the invoice lines themselves
+    // actually changed, since fetchAllInvoiceLinesForCaller() isn't filtered
+    // by the project list at all, it's every authorized invoice line for the
+    // caller). Keying directly off the same "something real changed" signal
+    // (mount + pmo:data-changed/storage) this effect already listens to for
+    // loadData() preserves the exact same real-world refresh behavior
+    // (fetch once on load, refetch after a genuine change) without refiring
+    // on every incidental reference change.
+    const loadInvoiceLines = () => {
+      fetchAllInvoiceLinesForCaller()
+        .then((lines) => {
+          if (isMounted) setAuthoritativeInvoiceLines(lines);
+        })
+        .catch((err) => {
+          console.warn("Failed to load authoritative invoice lines for Reports:", err);
+        });
+    };
+    loadInvoiceLines();
+
+    // Perf fix — "pmo:data-changed"/"storage" fire from many unrelated
+    // services (project saves, timesheet/employee/customer refreshes, etc.),
+    // and this mount's own async loads above (fetchAllProjectsFromApi,
+    // loadCustomersForApp) each dispatch it too once they resolve — measured
+    // locally at 4 real dispatches within ~1.6s of a single Reports mount.
+    // loadData() itself is a cheap synchronous localStorage read (no
+    // network), so it stays immediate; only the network-calling
+    // loadInvoiceLines() is debounced, collapsing a same-second burst into
+    // one refetch shortly after the last event instead of one per event —
+    // same rationale and window as Sidebar.tsx's status-counts debounce.
+    // F6 targeting (Sept 2026 audit) — Reports figures are built from
+    // project/customer/employee/timesheet data; reminder snoozes and
+    // Settings -> User Management edits can never change anything this page
+    // shows, so they're excluded here. The "storage" listener below shares
+    // this same handler: a plain `storage` event carries no `detail` at all,
+    // and pmoDataChangedMatches() treats a missing detail as always
+    // relevant, so cross-tab sync is completely unaffected by this filter.
+    const RELEVANT_ENTITIES = ["project", "customer", "employee", "timesheet"] as const;
+    let invoiceDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const handleDataChanged = (event: Event) => {
+      if (!pmoDataChangedMatches(event, [...RELEVANT_ENTITIES])) return;
+      loadData();
+      if (invoiceDebounceTimer) clearTimeout(invoiceDebounceTimer);
+      invoiceDebounceTimer = setTimeout(() => {
+        invoiceDebounceTimer = null;
+        loadInvoiceLines();
+      }, 500);
+    };
     window.addEventListener("pmo:data-changed", handleDataChanged);
     window.addEventListener("storage", handleDataChanged);
     return () => {
+      isMounted = false;
+      if (invoiceDebounceTimer) clearTimeout(invoiceDebounceTimer);
       window.removeEventListener("pmo:data-changed", handleDataChanged);
       window.removeEventListener("storage", handleDataChanged);
     };
   }, []);
-
-  // Same trigger condition frontend/src/pages/Reports/Reports.tsx's own
-  // (already-correct) fetch used — re-fetch whenever the project list
-  // changes, which covers both the initial fetchAllProjectsFromApi()
-  // resolving above and every subsequent pmo:data-changed (loadData()
-  // produces a new allProjects reference each time). Preserving that exact
-  // trigger, not introducing a new refresh mechanism.
-  useEffect(() => {
-    let isMounted = true;
-    fetchAllInvoiceLinesForCaller()
-      .then((lines) => {
-        if (isMounted) setAuthoritativeInvoiceLines(lines);
-      })
-      .catch((err) => {
-        console.warn("Failed to load authoritative invoice lines for Reports:", err);
-      });
-    return () => {
-      isMounted = false;
-    };
-  }, [allProjects]);
 
   const linesByProjectId = useMemo(() => {
     const map = new Map<string, ReportInvoiceLine[]>();

@@ -1,4 +1,4 @@
-import type { Prisma } from "../../../../generated/prisma/client.js";
+import { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import { projectOwnershipWhereOr } from "../../../shared/utils/projectAccess.js";
 
@@ -256,14 +256,46 @@ export function findEmployeesByNos(employeeNos: string[]): Promise<EmployeeManag
   });
 }
 
-export function findNotesForProjects(projectIds: string[]): Promise<NoteRow[]> {
+// P0 correctness fix (Sept 2026 perf/correctness audit) — this used to be a
+// single global `take: 40` ordered by createdAt desc, which silently starved
+// out every note belonging to a project whose notes all happened to be older
+// than 40 OTHER projects' combined notes (confirmed on production data: 27
+// projects had notes, only 22 were represented, 5 got zero). Replaced with a
+// per-project window function so every project with notes is guaranteed a
+// fair share of the candidate pool passed to buildActivity(), regardless of
+// how recently other projects were noted.
+//
+// The per-project cap of 10 is not arbitrary: buildActivity() (see
+// dashboard.service.ts) merges this candidate pool with Project/Invoice/
+// Payment events and slices the final combined feed to its own top 10 by
+// recency. A note ranked 11th-or-worse WITHIN its own project's notes can
+// never be one of the (at most 10) note-category slots in that final
+// top-10 merge, so a higher per-project cap here would only ever be dead
+// rows fetched and discarded — 10 already matches the true downstream
+// requirement exactly, with zero slack lost.
+//
+// Still one round trip (no N+1): the window function computes ranks across
+// all matching rows in a single query, then the outer SELECT filters to
+// rn <= 10 and re-sorts by createdAt so callers see the same
+// newest-first ordering the previous implementation returned.
+export async function findNotesForProjects(projectIds: string[]): Promise<NoteRow[]> {
   if (projectIds.length === 0) return Promise.resolve([]);
-  return prisma.projectNote.findMany({
-    where: { projectId: { in: projectIds } },
-    select: { id: true, projectId: true, message: true, createdBy: true, createdAt: true },
-    orderBy: { createdAt: "desc" },
-    take: 40,
-  });
+  return prisma.$queryRaw<NoteRow[]>(Prisma.sql`
+    SELECT id, "projectId", message, "createdBy", "createdAt"
+    FROM (
+      SELECT
+        id,
+        "projectId",
+        message,
+        "createdBy",
+        "createdAt",
+        ROW_NUMBER() OVER (PARTITION BY "projectId" ORDER BY "createdAt" DESC) AS rn
+      FROM "ProjectNote"
+      WHERE "projectId" = ANY(${projectIds}::text[])
+    ) ranked
+    WHERE rn <= 10
+    ORDER BY "createdAt" DESC
+  `);
 }
 
 export function findMilestonesForProjects(projectIds: string[]): Promise<MilestoneRow[]> {

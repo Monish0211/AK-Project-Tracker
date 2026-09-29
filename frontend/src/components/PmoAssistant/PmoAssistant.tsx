@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, Suspense, lazy } from "react";
 import { createPortal } from "react-dom";
 import {
   Bot,
@@ -30,7 +30,17 @@ import type { ProjectReminder } from "../../types/ProjectReminder";
 import { formatHumanDateString, formatHumanTime, getReminderDueDateTime, getReminderStatusDisplay, reminderStatusTone } from "../../utils/reminderDisplay";
 import { Badge } from "../ui/Badge";
 import { usePmoToast } from "../ui/usePmoToast";
-import { PmoAssistantOrb } from "./PmoAssistantOrb";
+// F2 perf fix (Sept 2026 audit) — lazy, not eager: this is the one LIVE
+// three.js import site in the app (PmoRobotMascot.tsx's own THREE import is
+// dead code, never imported by anything reachable — confirmed absent from
+// the shipped bundle already). PmoAssistantOrb mounts on every authenticated
+// page via MainLayout, so an eager import here put three.js's full weight in
+// the MAIN chunk regardless of which page a user actually visits. lazy()
+// moves it to its own chunk, fetched in parallel with everything else after
+// first paint — the orb still renders as soon as that chunk resolves
+// (typically well under a second locally), same as before to the user, but
+// three.js is no longer parsed/executed before the app is interactive.
+const PmoAssistantOrb = lazy(() => import("./PmoAssistantOrb"));
 
 // Same options/labels as ReminderToast.tsx's own SNOOZE_OPTIONS — reusing
 // reminderService.snoozeReminder() exactly as-is (it already exists, is
@@ -457,8 +467,12 @@ export const PmoAssistant: React.FC = () => {
 
   return (
     <>
-      {/* Draggable Floating Spherical PMO Assistant Orb */}
-      <PmoAssistantOrb onTogglePanel={handleOrbTogglePanel} />
+      {/* Draggable Floating Spherical PMO Assistant Orb — Suspense fallback
+          is null (no placeholder) since the orb is a floating overlay, not
+          layout-affecting; nothing shifts on screen while its chunk loads. */}
+      <Suspense fallback={null}>
+        <PmoAssistantOrb onTogglePanel={handleOrbTogglePanel} />
+      </Suspense>
 
       {/* Floating Assistant Panel (Fixed Viewport Overlay Anchored Relative to
           Draggable Orb). Portaled directly into document.body for the same
