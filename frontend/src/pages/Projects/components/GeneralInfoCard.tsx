@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { Building2, CalendarCheck, CalendarRange, Clock, FileSignature, FileText, Hash, LayoutGrid, Plus, StickyNote, Timer } from "lucide-react";
 import type { Project } from "../../../types/Project";
-import { getCustomers, loadCustomersForApp } from "../../../services/customerService";
+import { getCustomers, loadCustomersForApp, customerExistsInMaster } from "../../../services/customerService";
 import type { Customer } from "../../../types/CustomerModel";
 import { getPmoCoordinators } from "../../../services/pmoCoordinatorService";
 import { getApproxWorkingDays, getPlannedCompletionDate } from "../../../utils/projectScheduling";
@@ -20,6 +20,14 @@ interface Props {
   setProject: Dispatch<SetStateAction<Project>>;
   errors?: Record<string, string>;
   clearError?: (field: string) => void;
+  /**
+   * Customer Master Missing Warning — scoped to Project Add/Edit only
+   * (ProjectForm.tsx), NOT PR Request (RequestPRForm.tsx), even though both
+   * render this same shared card. Defaults to true so ProjectForm's two
+   * existing call sites (Add/Edit) need no change; RequestPRForm passes
+   * false explicitly.
+   */
+  showCustomerMasterWarning?: boolean;
 }
 
 import { PR_CATEGORIES as prCategories, PR_NUMBER_PREFIX_MAP as prNumberPrefixMap, applyPrCategoryToPrNo } from "../../../utils/createEmptyProject";
@@ -219,7 +227,7 @@ const PmoCoordinatorAutocomplete = ({
   );
 };
 
-const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props) => {
+const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCustomerMasterWarning = true }: Props) => {
   const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false);
   // Project Remarks — collapsed by default in both Add and Edit; whether
   // remarks already exist only changes the toggle's own label/icon below
@@ -263,6 +271,18 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
       )
       .slice(0, 8);
   }, [customers, project.client]);
+
+  // Customer Master Missing Warning — non-blocking; reuses the SAME
+  // `customers` state this card already loads for the autocomplete above
+  // (no extra API call). Recomputes whenever the client text changes OR
+  // `customers` itself refreshes (loadCustomersForApp resolving), so an
+  // Edit Project load shows it immediately and it clears the moment either
+  // the client name is changed to a real match or the newly-added customer
+  // arrives in a later Customer Master refresh.
+  const clientMissingFromCustomerMaster = useMemo(
+    () => showCustomerMasterWarning && !customerExistsInMaster(customers, project.client || ""),
+    [showCustomerMasterWarning, customers, project.client]
+  );
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -412,6 +432,11 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError }: Props
               placeholder="Enter Client Name"
             />
             <FieldError error={errors["client"]} />
+            {clientMissingFromCustomerMaster && (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                ⚠️ This customer does not exist in Customer Master. Kindly add the customer.
+              </p>
+            )}
 
             {isClientDropdownOpen && filteredCustomers.length > 0 && (
               <div className="absolute z-10 mt-1 w-full bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-md)] shadow-[var(--nu-shadow-md)] max-h-56 overflow-y-auto nu-scrollbar">

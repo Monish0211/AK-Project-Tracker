@@ -191,7 +191,13 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
         <div className="p-4">
           {activeTab === "general" && (
             <div className="space-y-3.5">
-              <GeneralInfoCard project={project} setProject={setProject} errors={errors} clearError={clearError} />
+              <GeneralInfoCard
+                project={project}
+                setProject={setProject}
+                errors={errors}
+                clearError={clearError}
+                showCustomerMasterWarning={false}
+              />
               <ProjectDocumentsCard
                 ownerType="prRequest"
                 ownerId={draftId}

@@ -154,6 +154,22 @@ export function getCustomers(): Customer[] {
   return customersCache;
 }
 
+/**
+ * Safe normalized exact match (trim + case-insensitive) — mirrors the
+ * backend's own customerName duplicate check (customer.repository.ts's
+ * findCustomerByNameInsensitive, Prisma `mode: "insensitive"`), so "does
+ * this client exist in Customer Master" agrees with "would creating a
+ * customer with this name be rejected as a duplicate." Deliberately NOT
+ * fuzzy — "ABC Engineering" must never match "ABC Engineering India Pvt
+ * Ltd". Existence ignores Active/Inactive status: a customer that exists
+ * but is Inactive is still a real Customer Master record, not a missing one.
+ */
+export function customerExistsInMaster(customers: Customer[], clientName: string): boolean {
+  const normalized = clientName.trim().toLowerCase();
+  if (!normalized) return true; // no warning on an empty Client Name — that's the separate required-field validation's job.
+  return customers.some((c) => c.customerName.trim().toLowerCase() === normalized);
+}
+
 /** GET /customers — authoritative list; refreshes the in-memory cache. */
 export async function fetchCustomersFromApi(params: CustomerListParams = {}): Promise<CustomerListResult> {
   const query = new URLSearchParams();
