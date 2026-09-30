@@ -34,6 +34,9 @@ test("POST /quantity/:quantityItemId/invoice-lines always attributes createdBy t
   try {
     const engineerRole = await prisma.portalRole.findUniqueOrThrow({ where: { name: "Engineer" } });
     const invoicesModule = await prisma.module.findUniqueOrThrow({ where: { name: "Invoices" } });
+    // Request Invoice workflow (Sept 2026) — the create route this test
+    // exercises now also requires the "Raise Invoice" approval permission.
+    const raiseInvoiceApproval = await prisma.approvalType.findUniqueOrThrow({ where: { name: "Raise Invoice" } });
     const passwordHash = await hashPassword("InvAttrTest@123");
 
     const realUser = await prisma.portalUser.create({
@@ -45,6 +48,7 @@ test("POST /quantity/:quantityItemId/invoice-lines always attributes createdBy t
         roleId: engineerRole.id,
         forcePasswordChange: false,
         moduleAccess: { create: { moduleId: invoicesModule.id } },
+        approvalPermissions: { create: { approvalTypeId: raiseInvoiceApproval.id } },
       },
     });
     createdUserIds.push(realUser.id);

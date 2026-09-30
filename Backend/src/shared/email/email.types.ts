@@ -95,3 +95,56 @@ export interface PRRequestRejectedEmailData {
   rejectedByName: string;
   reason: string;
 }
+
+/**
+ * Request Invoice workflow (Sept 2026) — Section A: sent to the chosen
+ * responsible person the moment a Request Invoice is submitted. Mirrors the
+ * team's existing manual "raise the invoice" email template's field set —
+ * client contact fields are read live from the Project (eicName/
+ * contactNumber/emailId), the rest are free-text fields captured on the
+ * request itself.
+ */
+export interface InvoiceRequestAssignedEmailData {
+  assignedToName: string;
+  requesterName: string;
+  prNo: string;
+  projectTitle: string;
+  client: string;
+  clientContactName: string | null;
+  clientContactPhone: string | null;
+  clientContactEmail: string | null;
+  invoiceAmountNote: string | null;
+  copiesRequired: string | null;
+  drawingsAvailable: string | null;
+  printingDetails: string | null;
+  address: string | null;
+  notes: string | null;
+  invoicesUrl: string;
+}
+
+/** Request Invoice workflow (Sept 2026) — Section B: sent to the original requester automatically, only after the invoice has actually, successfully been raised. */
+export interface InvoiceRaisedSuccessfullyEmailData {
+  requesterName: string;
+  prNo: string;
+  projectTitle: string;
+  invoicesUrl: string;
+}
+
+/**
+ * Request Invoice workflow (Sept 2026) — Section C: "Send Invoice To," a
+ * separate MANUAL action the responsible person takes after an invoice has
+ * already, successfully been saved — never sent before that save succeeds,
+ * and always reflects the actual saved invoice data (never a preview/draft
+ * figure).
+ */
+export interface InvoiceSharedEmailData {
+  recipientName: string;
+  sharedByName: string;
+  prNo: string;
+  projectTitle: string;
+  client: string;
+  invoiceNo: string;
+  invoiceAmountINR: number;
+  invoiceDateIso: string;
+  invoicesUrl: string;
+}

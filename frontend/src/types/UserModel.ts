@@ -67,6 +67,8 @@ export interface UserProjectRegionAccess {
 export interface UserApprovalRights {
   archiveProjects: boolean;
   deleteProjectPermanently: boolean;
+  /** Request Invoice workflow (Sept 2026) — the actual new invoice creation/raise action. See Backend's requireApprovalPermission("Raise Invoice"). */
+  raiseInvoice: boolean;
 }
 
 export interface UserAccountSecurity {

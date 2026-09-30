@@ -61,6 +61,12 @@ test("P2/P3 — invoice financial authority and milestone double-billing race", 
       prisma.portalRole.findUniqueOrThrow({ where: { name: "Engineer" } }),
       prisma.module.findUniqueOrThrow({ where: { name: "Invoices" } }),
     ]);
+    // Request Invoice workflow (Sept 2026) — the create route this test
+    // exercises now also requires the "Raise Invoice" approval permission.
+    // Granted to every user below (including `otherUser`) so that item I's
+    // 403 assertion still proves what it always proved — project-ownership
+    // rejection, not merely "lacks the new permission."
+    const raiseInvoiceApproval = await prisma.approvalType.findUniqueOrThrow({ where: { name: "Raise Invoice" } });
     const passwordHash = await hashPassword("InvFinAuthTest@123");
 
     const [owner, otherUser, adminUser] = await Promise.all([
@@ -73,6 +79,7 @@ test("P2/P3 — invoice financial authority and milestone double-billing race", 
           roleId: engineerRole.id,
           forcePasswordChange: false,
           moduleAccess: { create: { moduleId: invoicesModule.id } },
+          approvalPermissions: { create: { approvalTypeId: raiseInvoiceApproval.id } },
         },
       }),
       prisma.portalUser.create({
@@ -84,6 +91,7 @@ test("P2/P3 — invoice financial authority and milestone double-billing race", 
           roleId: engineerRole.id,
           forcePasswordChange: false,
           moduleAccess: { create: { moduleId: invoicesModule.id } },
+          approvalPermissions: { create: { approvalTypeId: raiseInvoiceApproval.id } },
         },
       }),
       prisma.portalUser.create({
@@ -95,6 +103,7 @@ test("P2/P3 — invoice financial authority and milestone double-billing race", 
           roleId: adminRole.id,
           forcePasswordChange: false,
           moduleAccess: { create: { moduleId: invoicesModule.id } },
+          approvalPermissions: { create: { approvalTypeId: raiseInvoiceApproval.id } },
         },
       }),
     ]);

@@ -290,6 +290,16 @@ export async function loadInvoiceForProject(projectId: string): Promise<InvoiceI
  * the individual write responses, matching syncQuantityItemsWithApi()'s own
  * convention.
  */
+/**
+ * Request Invoice workflow (Sept 2026) — Section C: "Send Invoice To." A
+ * separate, manual, post-raise action — never call this before the invoice
+ * line has actually, successfully been saved (see syncInvoiceLinesWithApi()
+ * above, always awaited first by every caller).
+ */
+export async function sendInvoiceLineTo(invoiceLineId: string, userIds: string[]): Promise<{ sentTo: string[] }> {
+  return apiClient.post<{ sentTo: string[] }>(`/invoice-lines/${invoiceLineId}/send-to`, { userIds });
+}
+
 export async function syncInvoiceLinesWithApi(
   projectId: string,
   previousItems: InvoiceItem[],

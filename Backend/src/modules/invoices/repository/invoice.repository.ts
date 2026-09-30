@@ -249,3 +249,16 @@ export async function sumBilledQuantityByQuantityItemIds(quantityItemIds: string
 export function deleteCancelledLinesForQuantityItem(quantityItemId: string) {
   return prisma.invoiceLine.deleteMany({ where: { quantityItemId, status: "Cancelled" } });
 }
+
+/**
+ * Request Invoice workflow (Sept 2026) — Section C: "Send Invoice To."
+ * Backs sendInvoiceLineToUsers()'s recipient re-validation: caller-supplied
+ * ids are never trusted as-is, only ids that resolve to a real, currently
+ * active PortalUser are ever notified/emailed.
+ */
+export function findActiveUsersByIds(ids: string[]) {
+  return prisma.portalUser.findMany({
+    where: { id: { in: ids }, isActive: true },
+    select: { id: true, fullName: true, email: true },
+  });
+}

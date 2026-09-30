@@ -46,7 +46,7 @@ export const REGIONS = [
   "Elixir Qatar",
 ] as const;
 
-export const APPROVAL_TYPES = ["Archive Projects", "Delete Project Permanently"] as const;
+export const APPROVAL_TYPES = ["Archive Projects", "Delete Project Permanently", "Raise Invoice"] as const;
 
 /**
  * The only departments allowed to hold a PortalUser login, per the business

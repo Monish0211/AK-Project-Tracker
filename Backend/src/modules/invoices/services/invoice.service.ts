@@ -2,12 +2,18 @@ import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import {
+  assertProjectAccess,
   assertProjectAccessById,
   getProjectCreatorUserId,
   hasUnrestrictedProjectVisibility,
 } from "../../../shared/utils/projectAccess.js";
 import { getUserDisplayName } from "../../../shared/utils/userDisplayName.js";
+import { userHasApprovalPermission } from "../../../shared/middleware/requireApprovalPermission.js";
+import { sendEmail } from "../../../shared/email/email.service.js";
+import { buildInvoiceSharedEmail } from "../../../shared/email/templates/invoiceShared.template.js";
 import { notify, resolveProjectEventRecipients } from "../../notifications/notification.service.js";
+import { fulfillOpenInvoiceRequestsForProject } from "../../invoiceRequests/services/invoiceRequest.service.js";
+import { findProjectByIdAny } from "../../projects/repository/project.repository.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { getMilestonePercentageById } from "../../milestones/services/milestone.service.js";
 import { getQuantityItemById, listQuantityForProject } from "../../quantity/services/quantity.service.js";
@@ -31,6 +37,7 @@ import {
   createLine as createLineInRepository,
   createLinesWithIds,
   deleteLine as deleteLineInRepository,
+  findActiveUsersByIds,
   findConflictingLineForMilestone,
   getLineById,
   getLinesByIds,
@@ -38,7 +45,13 @@ import {
   sumInvoicedAmountForQuantityItem,
   updateLine as updateLineInRepository,
 } from "../repository/invoice.repository.js";
-import type { CreateInvoiceLineInput, IngestInvoiceLinesInput, UpdateInvoiceLineInput } from "../validators/invoice.validators.js";
+import type {
+  CreateInvoiceLineInput,
+  IngestInvoiceLinesInput,
+  SendInvoiceLineToInput,
+  UpdateInvoiceLineInput,
+} from "../validators/invoice.validators.js";
+import { env } from "../../../shared/utils/env.js";
 
 type InvoiceLineRow = NonNullable<Awaited<ReturnType<typeof getLineById>>>;
 type IngestLineRow = IngestInvoiceLinesInput["lines"][number];
@@ -394,6 +407,17 @@ export async function createInvoiceLineForQuantityItem(
     await notifyInvoiceStatusEvent(quantityItem.projectId, created.invoiceNo, `was created as ${created.status}.`);
   }
 
+  // Request Invoice workflow (Sept 2026) — Section B. Only a genuine
+  // "Raised" outcome fulfills an Open Invoice Request for this project
+  // (never Draft, never Cancelled). Fire-and-forget — never affects the
+  // create response, and a failure here must never be mistaken for the
+  // invoice line itself failing to save (it has already committed above).
+  if (created.status === "Raised") {
+    void fulfillOpenInvoiceRequestsForProject(quantityItem.projectId, created.id).catch((error) => {
+      console.error("[invoices] fulfillOpenInvoiceRequestsForProject failed:", error instanceof Error ? error.message : error);
+    });
+  }
+
   return toInvoiceLineDto(created);
 }
 
@@ -421,6 +445,22 @@ export async function updateInvoiceLine(
   // never fetches the QuantityItem twice.
   const parentQuantityItem = await getQuantityItemById(existing.quantityItemId);
   await assertProjectAccessById(parentQuantityItem.projectId, user);
+
+  // Request Invoice workflow (Sept 2026) — bypass fix (spec point 17). The
+  // literal "Raise Invoice" action is gated only on the CREATE route (POST
+  // /quantity/:quantityItemId/invoice-lines — see invoice.routes.ts).
+  // Without this check, any Invoices-module user could still "raise" an
+  // invoice by PATCHing an existing Draft line's status to "Raised," since
+  // this route otherwise has no Raise Invoice gate at all. Only THIS
+  // specific transition (status actually changing TO "Raised" from
+  // something else) requires the permission; every other legitimate PATCH
+  // use — amount/date/description edits, Draft-to-Draft edits, and every
+  // other status transition (Raised -> PartiallyPaid/Paid/Cancelled from
+  // Invoice History) — is unaffected.
+  const isRaisingTransition = input.status === "Raised" && existing.status !== "Raised";
+  if (isRaisingTransition && !(await userHasApprovalPermission(user.sub, ["Raise Invoice"]))) {
+    throw new AppError("You do not have permission to raise this invoice.", 403);
+  }
 
   const needsRecompute =
     input.quantityBilled !== undefined || input.invoiceAmountINR !== undefined || input.milestoneId !== undefined;
@@ -534,6 +574,18 @@ export async function updateInvoiceLine(
     );
   }
 
+  // Request Invoice workflow (Sept 2026) — Section B. Fires only for the
+  // exact same transition the bypass-fix check above already gated: an
+  // existing line actually becoming "Raised" for the first time. Never for
+  // a line that was already Raised (e.g. an ordinary amount/date PATCH that
+  // happens to also resend the same status), and never for any other
+  // transition. Fire-and-forget — the PATCH has already committed above.
+  if (isRaisingTransition) {
+    void fulfillOpenInvoiceRequestsForProject(parentQuantityItem.projectId, updated.id).catch((error) => {
+      console.error("[invoices] fulfillOpenInvoiceRequestsForProject failed:", error instanceof Error ? error.message : error);
+    });
+  }
+
   return toInvoiceLineDto(updated);
 }
 
@@ -556,6 +608,132 @@ export async function deleteInvoiceLine(id: string, user: AccessTokenPayload): P
   await assertProjectAccessById(parentQuantityItem.projectId, user);
 
   await deleteLineInRepository(id);
+}
+
+/**
+ * Request Invoice workflow (Sept 2026) — Section C: "Send Invoice To." A
+ * separate, MANUAL action the responsible person takes after an invoice
+ * line has already, successfully been saved (this function only ever reads
+ * an already-committed row — there is no code path that calls it before a
+ * save succeeds). Recipients are re-validated against the database on every
+ * call — never trusted as-is from the request body — so an inactive or
+ * nonexistent id is silently dropped rather than emailed. Deliberately NOT
+ * restricted to users holding "Raise Invoice": any active user may be a
+ * recipient (this is a "share the result" action, not a raise-eligibility
+ * decision).
+ *
+ * Performance fix (independent review) — validation (line exists, project
+ * exists + caller has access, at least one recipient resolves to a real
+ * active user) is still fully awaited, since the response must reflect a
+ * genuinely valid action. Only the notification + per-recipient email work
+ * — which was previously awaited here too, measured at ~2.1s for a single
+ * recipient purely from SMTP round-trip time — is now fire-and-forget (see
+ * notifyAndEmailSharedRecipients() below), matching the same pattern
+ * already used by notifyAssignedResponsiblePerson()/
+ * notifyRequesterInvoiceRaised() in invoiceRequest.service.ts. Folded into
+ * this same change: the previous separate assertProjectAccessById() +
+ * findProjectById() calls (two separate queries against Project) are
+ * replaced by one findProjectByIdAny() + a direct assertProjectAccess()
+ * call against the row it already loaded — same authorization logic, same
+ * unfiltered-by-isDeleted behavior assertProjectAccessById itself used
+ * (deliberately NOT switched to the isDeleted-filtering findProjectById,
+ * which would have silently made this action stricter for an archived
+ * project than every other invoice action in this file), just without the
+ * second round trip.
+ */
+export async function sendInvoiceLineToUsers(
+  id: string,
+  input: SendInvoiceLineToInput,
+  user: AccessTokenPayload
+): Promise<{ sentTo: string[] }> {
+  const line = await getLineById(id);
+  if (!line) {
+    throw new AppError("Invoice line not found.", 404);
+  }
+  const parentQuantityItem = await getQuantityItemById(line.quantityItemId);
+
+  const project = await findProjectByIdAny(parentQuantityItem.projectId);
+  if (!project) {
+    throw new AppError("Project not found.", 404);
+  }
+  await assertProjectAccess(user, project);
+
+  const recipients = await findActiveUsersByIds(input.userIds);
+  if (recipients.length === 0) {
+    throw new AppError("None of the selected recipients are currently active users.", 400);
+  }
+
+  const sharedByName = await getUserDisplayName(user.sub);
+
+  // Fire-and-forget — everything the caller needs to know (which
+  // recipients are real/active) is already decided above; nothing past
+  // this point should make the HTTP response wait on SMTP delivery. Each
+  // recipient is handled completely independently inside the helper
+  // (Promise.allSettled — one recipient's failure can never affect
+  // another's), and this call is wrapped in its own .catch() so a failure
+  // here can never surface as an unhandled rejection or change the
+  // already-decided success response below.
+  void notifyAndEmailSharedRecipients(line, project, recipients, sharedByName).catch((error) => {
+    console.error(
+      "[invoices] notifyAndEmailSharedRecipients failed:",
+      error instanceof Error ? error.message : error
+    );
+  });
+
+  return { sentTo: recipients.map((r) => r.id) };
+}
+
+async function notifyAndEmailSharedRecipients(
+  line: InvoiceLineRow,
+  project: { id: string; prNo: string; client: string; projectTitle: string },
+  recipients: { id: string; fullName: string; email: string }[],
+  sharedByName: string
+): Promise<void> {
+  await notify(
+    recipients.map((r) => r.id),
+    {
+      title: "An invoice has been shared with you",
+      message: `${sharedByName} shared invoice ${line.invoiceNo} (${project.projectTitle}) with you.`,
+      type: "INVOICE_SHARED",
+      severity: "Info",
+      entityType: "Invoice",
+      entityId: project.id,
+    }
+  );
+
+  const invoicesUrl = `${env.FRONTEND_URL}/projects/edit/${project.id}`;
+
+  // Promise.allSettled, not a sequential for-await loop — every recipient's
+  // email is attempted independently and in parallel; one recipient's
+  // rejection can never delay or prevent another's send. Each iteration
+  // keeps its own try/catch (unchanged from before this fix) so a thrown
+  // error is only ever logged, never left to propagate.
+  await Promise.allSettled(
+    recipients.map(async (recipient) => {
+      try {
+        const email = buildInvoiceSharedEmail({
+          recipientName: recipient.fullName,
+          sharedByName,
+          prNo: project.prNo,
+          projectTitle: project.projectTitle,
+          client: project.client,
+          invoiceNo: line.invoiceNo,
+          invoiceAmountINR: line.invoiceAmountINR,
+          invoiceDateIso: line.invoiceDate.toISOString(),
+          invoicesUrl,
+        });
+        const result = await sendEmail({ to: recipient.email, subject: email.subject, html: email.html });
+        if (!result.success) {
+          console.error(`[invoices] Shared email failed for ${recipient.email}: ${result.error}`);
+        }
+      } catch (error) {
+        console.error(
+          "[invoices] Unexpected error while sending Shared email:",
+          error instanceof Error ? error.message : error
+        );
+      }
+    })
+  );
 }
 
 /**

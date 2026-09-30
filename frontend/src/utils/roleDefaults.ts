@@ -83,11 +83,13 @@ export function regions(...keys: (keyof UserProjectRegionAccess)[]): UserProject
 const NO_APPROVALS: UserApprovalRights = {
   archiveProjects: false,
   deleteProjectPermanently: false,
+  raiseInvoice: false,
 };
 
 const ALL_APPROVALS: UserApprovalRights = {
   archiveProjects: true,
   deleteProjectPermanently: true,
+  raiseInvoice: true,
 };
 
 function approvals(...keys: (keyof UserApprovalRights)[]): UserApprovalRights {

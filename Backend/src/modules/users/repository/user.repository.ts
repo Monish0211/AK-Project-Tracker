@@ -93,6 +93,23 @@ export function findActiveUsersByRoleName(roleName?: string) {
   });
 }
 
+/**
+ * Request Invoice workflow (Sept 2026) — backs GET /users/eligible-invoice-
+ * raisers. Same narrow {id, fullName}-only shape as findActiveUsersByRoleName
+ * above (reachable by any authenticated Invoices-module user, never role/
+ * module/region/approval grants), but eligibility here is permission-based
+ * (holds the named ApprovalType), not role-based — an Invoices user picking
+ * a responsible person to raise an invoice needs someone who actually CAN,
+ * regardless of what role they happen to hold.
+ */
+export function findActiveUsersWithApprovalPermission(approvalTypeName: string) {
+  return prisma.portalUser.findMany({
+    where: { isActive: true, approvalPermissions: { some: { approvalType: { name: approvalTypeName } } } },
+    select: { id: true, fullName: true },
+    orderBy: { fullName: "asc" },
+  });
+}
+
 export async function getLookups() {
   const [roles, modules, regions, approvalTypes] = await Promise.all([
     prisma.portalRole.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),

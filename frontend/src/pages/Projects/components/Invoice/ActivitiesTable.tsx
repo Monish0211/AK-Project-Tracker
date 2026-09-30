@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { ClipboardList, ListChecks, PlusCircle } from "lucide-react";
+import { ClipboardList, ListChecks, PlusCircle, Send } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import { Card, CardBody, CardHeader } from "../../../../components/ui/Card";
 import { Button } from "../../../../components/ui/Button";
@@ -11,6 +11,12 @@ interface Props {
   project: Project;
   readOnly?: boolean;
   onRaiseInvoice: () => void;
+  /** Request Invoice workflow — whether the current user holds the "Raise Invoice" approval permission. Raise Invoice stays disabled (not hidden — see Backend's requireApprovalPermission gate, the real enforcement) when false, and "Request Invoice" renders beside it instead. */
+  canRaiseInvoice?: boolean;
+  /** Request Invoice workflow — opens the Request Invoice form. Omit to hide the action entirely (e.g. read-only contexts). */
+  onRequestInvoice?: () => void;
+  /** Request Invoice workflow — true while this project already has an Open Invoice Request, so "Request Invoice" can show its pending state instead of allowing a duplicate submission. */
+  hasOpenInvoiceRequest?: boolean;
   /** Scrolls this activity's row into view on mount — e.g. when opened via a notification's deep link to a specific invoice/activity. */
   highlightItemId?: string | null;
 }
@@ -25,7 +31,15 @@ interface Props {
  * header, which opens the Invoice Cycle picker → Invoice Workspace covering
  * every activity at once.
  */
-export function ActivitiesTable({ project, readOnly = false, onRaiseInvoice, highlightItemId }: Props) {
+export function ActivitiesTable({
+  project,
+  readOnly = false,
+  onRaiseInvoice,
+  canRaiseInvoice = true,
+  onRequestInvoice,
+  hasOpenInvoiceRequest = false,
+  highlightItemId,
+}: Props) {
   const items = project.invoiceItems ?? [];
   // Lump Sum bills against Payment Milestones, not execution quantities —
   // Completed Qty/Remaining Qty don't apply and must not render at all.
@@ -57,9 +71,29 @@ export function ActivitiesTable({ project, readOnly = false, onRaiseInvoice, hig
         subtitle="Project billing progress — every activity mirrors Quantity Details automatically"
         action={
           !readOnly && items.length > 0 ? (
-            <Button variant="primary" size="sm" icon={<PlusCircle size={14} />} onClick={onRaiseInvoice}>
-              Raise Invoice
-            </Button>
+            <div className="flex items-center gap-2">
+              {onRequestInvoice && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={<Send size={14} />}
+                  onClick={onRequestInvoice}
+                  disabled={hasOpenInvoiceRequest}
+                  title={hasOpenInvoiceRequest ? "An invoice request is already pending for this project." : undefined}
+                >
+                  {hasOpenInvoiceRequest ? "Request Pending" : "Request Invoice"}
+                </Button>
+              )}
+              <Button
+                variant={canRaiseInvoice ? "primary" : "outline"}
+                size="sm"
+                icon={<PlusCircle size={14} />}
+                onClick={onRaiseInvoice}
+                title={!canRaiseInvoice ? "You do not have the Raise Invoice permission — click for details." : undefined}
+              >
+                Raise Invoice
+              </Button>
+            </div>
           ) : undefined
         }
       />

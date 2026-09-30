@@ -17,6 +17,7 @@ import {
   createUserRegionAccess,
   deleteUserById,
   findActiveUsersByRoleName,
+  findActiveUsersWithApprovalPermission,
   findAllUsers,
   findExistingUserIds,
   findRoleById,
@@ -207,6 +208,17 @@ export function getLookups(): Promise<UserLookupsDto> {
  */
 export function getUsersByRole(roleName?: string) {
   return findActiveUsersByRoleName(roleName);
+}
+
+/**
+ * Request Invoice workflow (Sept 2026) — backs GET /users/eligible-invoice-
+ * raisers. The "Send Invoice To" (responsible-person) picker in the Request
+ * Invoice form must show ONLY active users who currently hold the "Raise
+ * Invoice" approval permission — never inactive or ineligible users (see
+ * user.repository.ts's findActiveUsersWithApprovalPermission()).
+ */
+export function getEligibleInvoiceRaisers() {
+  return findActiveUsersWithApprovalPermission("Raise Invoice");
 }
 
 function toUserListItemDto(user: Awaited<ReturnType<typeof findAllUsers>>[number]): UserListItemDto {

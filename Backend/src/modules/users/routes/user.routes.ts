@@ -6,6 +6,7 @@ import { validate } from "../../../shared/middleware/validate.js";
 import {
   createUser,
   deleteUser,
+  getEligibleInvoiceRaisers,
   getLookups,
   getUsers,
   getUsersByRole,
@@ -30,6 +31,15 @@ router.get("/lookups", authenticate, getLookups);
 // region/approval grants, unlike GET / below. Registered before "/" so it
 // can never be confused with it (distinct literal path, no :id segment).
 router.get("/by-role", authenticate, getUsersByRole);
+
+// Request Invoice workflow (Sept 2026) — same "no Users module access
+// required" precedent as /by-role above: any authenticated Invoices user
+// must be able to populate the Request Invoice form's "Send Invoice To"
+// picker. Safe for the identical reason — findActiveUsersWithApprovalPermission()
+// returns only {id, fullName} for active, eligible users, never any
+// role/module/region/approval grants. Registered before "/" for the same
+// literal-path-collision reason as /by-role.
+router.get("/eligible-invoice-raisers", authenticate, getEligibleInvoiceRaisers);
 
 // The User Directory listing — same two roles as Create User/Reset
 // Password, since it exposes every account's role and permission grants.

@@ -38,6 +38,7 @@ const REGION_FIELDS: { key: keyof UserProjectRegionAccess; label: string }[] = [
 const APPROVAL_FIELDS: { key: keyof UserApprovalRights; label: string }[] = [
   { key: "archiveProjects", label: "Archive Projects" },
   { key: "deleteProjectPermanently", label: "Delete Project Permanently" },
+  { key: "raiseInvoice", label: "Raise Invoice" },
 ];
 
 const formatDateTime = (iso?: string | null): string => {

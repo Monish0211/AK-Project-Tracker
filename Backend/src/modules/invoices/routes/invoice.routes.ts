@@ -2,6 +2,7 @@ import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
 import { authorize } from "../../../shared/middleware/authorize.js";
 import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
+import { requireApprovalPermission } from "../../../shared/middleware/requireApprovalPermission.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import {
@@ -10,9 +11,15 @@ import {
   getAllInvoiceItemsForCaller,
   getInvoiceItemsByProject,
   ingestInvoiceLines,
+  sendInvoiceLineTo,
   updateInvoiceLine,
 } from "../controllers/invoice.controller.js";
-import { createInvoiceLineSchema, ingestInvoiceLinesSchema, updateInvoiceLineSchema } from "../validators/invoice.validators.js";
+import {
+  createInvoiceLineSchema,
+  ingestInvoiceLinesSchema,
+  sendInvoiceLineToSchema,
+  updateInvoiceLineSchema,
+} from "../validators/invoice.validators.js";
 
 const router = Router();
 
@@ -51,11 +58,19 @@ router.post(
 );
 // Nested under the QuantityItem it bills against (not the project) — an
 // InvoiceLine's identity is 100% scoped to its parent activity.
+//
+// Request Invoice workflow (Sept 2026) — this is the literal "Raise Invoice"
+// action, so it is the one route gated by the new "Raise Invoice" approval
+// permission on top of ordinary Invoices module access. See
+// invoice.service.ts's updateInvoiceLine() for why the PATCH route below is
+// NOT given the same blanket gate (a narrower, transition-specific check
+// lives there instead) — the bypass this closes is documented there.
 router.post(
   "/quantity/:quantityItemId/invoice-lines",
   authenticate,
   denyReadOnlyWrites,
   requireModuleAccess("Invoices"),
+  requireApprovalPermission("Raise Invoice"),
   validate(createInvoiceLineSchema),
   createInvoiceLine
 );
@@ -76,6 +91,18 @@ router.delete(
   denyReadOnlyWrites,
   requireModuleAccess("Invoices"),
   deleteInvoiceLine
+);
+// Request Invoice workflow (Sept 2026) — Section C: "Send Invoice To." A
+// separate, manual, post-raise action; no "Raise Invoice" permission
+// required (any active user may be a recipient — see invoice.service.ts's
+// sendInvoiceLineToUsers()).
+router.post(
+  "/invoice-lines/:id/send-to",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Invoices"),
+  validate(sendInvoiceLineToSchema),
+  sendInvoiceLineTo
 );
 
 export default router;

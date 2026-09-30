@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Edit2, Eye, History, Printer, Receipt, Trash2 } from "lucide-react";
+import { Edit2, Eye, History, Printer, Receipt, Send, Trash2 } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
 import { Card, CardBody, CardHeader } from "../../../../components/ui/Card";
@@ -34,6 +34,8 @@ interface Props {
   onUpdateInvoiceStatus?: (invoiceNo: string, newStatus: InvoiceLineStatus) => void;
   /** Opens the Print Invoice Document modal for this line's invoice cycle — the same isolated-iframe print pipeline used everywhere else, never a raw window.print(). */
   onPrintInvoice?: (invoiceNo: string) => void;
+  /** Request Invoice workflow — Section C: "Send Invoice To." Omit to hide the action entirely — e.g. in a read-only context, or for a Draft line (nothing has actually been raised yet to share). */
+  onSendInvoiceTo?: (item: InvoiceItem, line: InvoiceLine) => void;
   /** Pre-selects the Activity filter — e.g. when opened via an activity's own "View History" action. */
   initialActivityFilter?: string | null;
   /** Scrolls to and highlights this invoice line's row on mount — e.g. when opened via a notification's deep link to a specific invoice. */
@@ -83,7 +85,17 @@ const formatDate = (value: string): string => {
  * table (no per-activity duplicate history views). Section 5 sits below it
  * as a future-ready placeholder only — see types/QuantityRevision.ts.
  */
-export function InvoiceHistory({ project, onView, onEdit, onDelete, onUpdateInvoiceStatus, onPrintInvoice, initialActivityFilter, highlightLineId }: Props) {
+export function InvoiceHistory({
+  project,
+  onView,
+  onEdit,
+  onDelete,
+  onUpdateInvoiceStatus,
+  onPrintInvoice,
+  onSendInvoiceTo,
+  initialActivityFilter,
+  highlightLineId,
+}: Props) {
   const [activityFilter, setActivityFilter] = useState(initialActivityFilter ?? "all");
   const [statusFilter, setStatusFilter] = useState<InvoiceLineStatus | "all">("all");
   const [search, setSearch] = useState("");
@@ -408,6 +420,16 @@ export function InvoiceHistory({ project, onView, onEdit, onDelete, onUpdateInvo
                         >
                           <Printer size={15} />
                         </button>
+                        {onSendInvoiceTo && row.status !== "Draft" && (
+                          <button
+                            type="button"
+                            onClick={() => onSendInvoiceTo(row.item, row.line)}
+                            title="Send Invoice To"
+                            className="p-1.5 rounded-lg text-[var(--nu-accent)] hover:bg-[var(--nu-accent-soft)] transition"
+                          >
+                            <Send size={15} />
+                          </button>
+                        )}
                         {onDelete && (
                           <button
                             type="button"

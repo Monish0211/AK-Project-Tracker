@@ -18,6 +18,7 @@ import { pdfImportRoutes } from "./modules/pdfImport/index.js";
 import { dashboardRoutes } from "./modules/dashboard/index.js";
 import { notificationRoutes } from "./modules/notifications/index.js";
 import { prRequestRoutes } from "./modules/prRequests/index.js";
+import { invoiceRequestRoutes } from "./modules/invoiceRequests/index.js";
 import { documentRoutes } from "./modules/documents/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { requestLogger } from "./shared/middleware/requestLogger.js";
@@ -134,6 +135,10 @@ app.use(notificationRoutes);
 // it calls the existing project.service.ts createProject() unchanged rather
 // than reimplementing Project creation.
 app.use(prRequestRoutes);
+// Request Invoice workflow. Declares its own full paths
+// (/projects/:projectId/invoice-requests), mounted at root alongside the
+// routers above.
+app.use(invoiceRequestRoutes);
 // Documents feature — Sep 2026. Declares its own full paths
 // (/projects/:projectId/documents, /pr-requests/:prRequestId/documents,
 // /documents/:id[/download]), mounted at root alongside the routers above.

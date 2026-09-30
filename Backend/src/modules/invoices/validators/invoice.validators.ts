@@ -148,3 +148,15 @@ export type QuantityItemIdParam = z.infer<typeof quantityItemIdParamSchema>;
 export const invoiceLineIdParamSchema = uuidParamSchema("id", "Invoice Line ID");
 
 export type InvoiceLineIdParam = z.infer<typeof invoiceLineIdParamSchema>;
+
+/**
+ * Request Invoice workflow (Sept 2026) — Section C: "Send Invoice To." A
+ * separate, manual, post-raise action — recipients are plain active-user
+ * ids (re-validated server-side against isActive, never trusted as-is; see
+ * invoice.service.ts's sendInvoiceLineToUsers()), deliberately NOT restricted
+ * to users holding "Raise Invoice" — any active user may be a recipient.
+ */
+export const sendInvoiceLineToSchema = z.object({
+  userIds: z.array(z.string().trim().min(1)).min(1, "Select at least one recipient."),
+});
+export type SendInvoiceLineToInput = z.infer<typeof sendInvoiceLineToSchema>;

@@ -125,6 +125,13 @@ model PortalUser {
   prRequestsRejected    PRRequest[]                @relation("PRRequestRejectedBy")
   prRequestApprovalActions PRRequestApprovalHistory[]
 
+  // Request Invoice workflow (Sept 2026) — same onDelete: Restrict
+  // audit-preservation treatment as the PR Request relations above: a user
+  // who requested, or was ever assigned to raise, an Invoice Request can
+  // never be hard-deleted while that record exists.
+  invoiceRequestsSubmitted InvoiceRequest[] @relation("InvoiceRequestRequester")
+  invoiceRequestsAssigned  InvoiceRequest[] @relation("InvoiceRequestAssignee")
+
   // Documents feature — onDelete: Restrict on Document.uploadedBy (see that
   // model) means a user who has ever uploaded a document can never be
   // hard-deleted while it exists, same audit-trail-preservation treatment
@@ -409,6 +416,71 @@ model PRRequest {
   @@index([status])
 }
 
+// =============================================================================
+// INVOICE REQUEST — Request Invoice workflow (Sept 2026)
+// =============================================================================
+// Lets an Invoices-module user who does NOT hold the "Raise Invoice" approval
+// permission ask a specific responsible person (who does hold it) to raise
+// an invoice for this project, instead of raising it themselves. Deliberately
+// does NOT duplicate Client Name/Project Name/PR Number — those are always
+// read live from the linked Project (see invoiceRequest.service.ts). There is
+// no separate "Invoice Requests" page in this phase; the notification/email
+// link goes straight to the project's own Invoices tab, reusing the existing
+// entityType: "Invoice" route builder in notification.service.ts.
+model InvoiceRequest {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  requestedByUserId String
+  requestedBy       PortalUser @relation("InvoiceRequestRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+
+  // The chosen "responsible person" — always an active user who, at the
+  // moment of selection, holds the "Raise Invoice" approval permission (see
+  // invoiceRequest.validators.ts / the eligibility-filtered
+  // GET /users/eligible-invoice-raisers lookup). Never re-validated after the
+  // fact if that user's permission is later revoked — same "frozen at
+  // assignment" precedent as PRRequest.assignedPmoManagerId.
+  assignedToUserId String
+  assignedTo       PortalUser @relation("InvoiceRequestAssignee", fields: [assignedToUserId], references: [id], onDelete: Restrict)
+
+  // Matches the fields the team's existing manual "raise the invoice" email
+  // already asks for (Invoice amount / Number of copies required /
+  // Reports-Drawings Available / Report Printing Details / Address) — all
+  // free text, all optional, all purely descriptive context passed through
+  // to the responsible person's notification/email. Client Name/Project
+  // Name/PR Number/Client Contact Name/Phone/Email are deliberately NOT
+  // duplicated here — those are always read live from the linked Project
+  // (client/projectTitle/prNo/eicName/contactNumber/emailId).
+  invoiceAmountNote String?
+  copiesRequired    String?
+  drawingsAvailable String?
+  printingDetails   String?
+  address           String?
+
+  notes String?
+
+  // Open | Completed — deliberately just two states (no Rejected/Cancelled in
+  // this phase — not asked for). "Completed" is set automatically, only once
+  // a real InvoiceLine has actually been saved as Raised for this project —
+  // never set manually, never set before that save actually succeeds. See
+  // invoice.service.ts's fulfillOpenInvoiceRequestsForProject().
+  status String @default("Open")
+
+  // Set exactly once, atomically with status -> "Completed" — the specific
+  // InvoiceLine whose successful raise fulfilled this request.
+  fulfilledInvoiceLineId String?      @unique
+  fulfilledInvoiceLine   InvoiceLine? @relation(fields: [fulfilledInvoiceLineId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([assignedToUserId])
+  @@index([status])
+}
+
 // Append-only, one row per stage transition — never updated after creation.
 // Same precedent/shape as TimesheetImportRowLog below: this is what makes
 // "who approved this and when" a real, traceable database query rather than
@@ -674,6 +746,9 @@ model Project {
   // purely additive and never populated retroactively.
   prRequest PRRequest?
 
+  // Request Invoice workflow (Sept 2026) — see InvoiceRequest above.
+  invoiceRequests InvoiceRequest[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -855,6 +930,12 @@ model InvoiceLine {
 
   status    String @default("Draft")
   createdBy String
+
+  // Opposite side of InvoiceRequest.fulfilledInvoiceLineId — set only when
+  // this specific line is the one whose successful raise fulfilled an Open
+  // Invoice Request. Absent (null) for every ordinary invoice line raised
+  // outside that workflow.
+  invoiceRequestFulfillment InvoiceRequest?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

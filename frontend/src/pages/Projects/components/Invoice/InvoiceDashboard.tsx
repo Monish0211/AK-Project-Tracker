@@ -1,11 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { ListChecks } from "lucide-react";
 
 import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
+import type { InvoiceRequest } from "../../../../types/InvoiceRequest";
 import { updateProject } from "../../../../services/projectService";
 import { syncInvoiceLinesWithApi } from "../../../../services/invoiceService";
+import { getInvoiceRequestsForProject } from "../../../../services/invoiceRequestService";
+import { useAuth } from "../../../../auth/authContext";
+import { hasApprovalPermission } from "../../../../auth/permissions";
 
 import { CommercialSummary } from "./CommercialSummary";
 import { InvoiceSummaryPanel } from "./InvoiceSummaryPanel";
@@ -18,6 +22,8 @@ import { MlmpInvoiceWorkspaceModal } from "./MlmpInvoiceWorkspaceModal";
 import { AmountBasedInvoiceWorkspaceModal } from "./AmountBasedInvoiceWorkspaceModal";
 import { InvoiceHistory } from "./InvoiceHistory";
 import { PrintInvoiceModal } from "./PrintInvoiceModal";
+import { RequestInvoiceModal } from "./RequestInvoiceModal";
+import { SendInvoiceToModal } from "./SendInvoiceToModal";
 import { getInvoiceMethod, getInvoiceCyclesForProject, suggestNextInvoiceNumber } from "./InvoiceCalculations";
 import { logInvoiceDeletedAudit, logInvoiceCycleStatusChangedAudit } from "../../../../services/projectAuditService";
 import { EmptyState } from "../../../../components/ui/EmptyState";
@@ -64,9 +70,39 @@ interface DrawerState {
  */
 export function InvoiceDashboard({ project, setProject, readOnly = false, initialActivityId, initialInvoiceLineId }: Props) {
   const { showToast } = usePmoToast();
+  const { user } = useAuth();
   const isReadOnly = readOnly || !setProject;
+  // UI-courtesy layer only — the backend's requireApprovalPermission("Raise
+  // Invoice") gate on POST /quantity/:quantityItemId/invoice-lines (and the
+  // matching PATCH-transition check) remains the real, authoritative gate.
+  const canRaiseInvoice = hasApprovalPermission(user, "Raise Invoice");
 
   const [drawerState, setDrawerState] = useState<DrawerState | null>(null);
+
+  // Request Invoice workflow — whether this project already has an Open
+  // Invoice Request (duplicate-submission UX only; the backend's own
+  // advisory-locked check is the real guard). Not fetched at all in a
+  // read-only context, where the button never renders anyway.
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [openInvoiceRequest, setOpenInvoiceRequest] = useState<InvoiceRequest | null>(null);
+  const [sendInvoiceToTarget, setSendInvoiceToTarget] = useState<{ item: InvoiceItem; line: InvoiceLine } | null>(null);
+
+  useEffect(() => {
+    if (isReadOnly) return;
+    let cancelled = false;
+    getInvoiceRequestsForProject(project.id)
+      .then((requests) => {
+        if (!cancelled) setOpenInvoiceRequest(requests.find((r) => r.status === "Open") ?? null);
+      })
+      .catch(() => {
+        // Best-effort UX only — a failed load never blocks Request Invoice
+        // itself (the backend's own duplicate guard still applies at submit
+        // time), so this is silently ignored rather than surfaced as an error.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id, isReadOnly]);
 
   // The unified, project-wide "Raise Invoice" flow: ONE common button (in
   // ActivitiesTable's header) opens the Invoice Cycle picker; choosing a
@@ -126,6 +162,21 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
 
   const handleRaiseInvoice = () => {
     if (isReadOnly) return;
+    // UI-courtesy layer only (the backend's requireApprovalPermission("Raise
+    // Invoice") gate is the real, authoritative check) — but it must give
+    // clear, visible feedback rather than silently doing nothing. The button
+    // itself is never disabled via the native `disabled` attribute (that
+    // blocks onClick entirely, so a user without permission got zero
+    // feedback on click — see ActivitiesTable.tsx's own comment), so this is
+    // the one place that actually stops the flow and explains why.
+    if (!canRaiseInvoice) {
+      showToast({
+        type: "error",
+        message: "You cannot raise invoices — You do not have the Raise Invoice permission please contact administrator or use Request Invoice instead.",
+        duration: 0,
+      });
+      return;
+    }
     setIsCycleModalOpen(true);
   };
 
@@ -272,6 +323,9 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
         project={project}
         readOnly={isReadOnly}
         onRaiseInvoice={handleRaiseInvoice}
+        canRaiseInvoice={canRaiseInvoice}
+        onRequestInvoice={isReadOnly ? undefined : () => setIsRequestModalOpen(true)}
+        hasOpenInvoiceRequest={!!openInvoiceRequest}
         highlightItemId={initialActivityId}
       />
 
@@ -348,11 +402,35 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
             onDelete={isReadOnly ? undefined : handleDeleteInvoiceLine}
             onUpdateInvoiceStatus={isReadOnly ? undefined : handleUpdateInvoiceCycleStatus}
             onPrintInvoice={handlePrintInvoice}
+            onSendInvoiceTo={isReadOnly ? undefined : (item, line) => setSendInvoiceToTarget({ item, line })}
             initialActivityFilter={initialActivityId}
             highlightLineId={initialInvoiceLineId}
           />
         </div>
       </div>
+
+      {isRequestModalOpen && (
+        <RequestInvoiceModal
+          project={project}
+          onClose={() => setIsRequestModalOpen(false)}
+          onSubmitted={(created) => {
+            // The POST response already IS the just-created Open request —
+            // no follow-up GET needed to know "is one now pending" (removed
+            // per independent review; this used to re-fetch the full list
+            // just to derive the same boolean the response already gave us).
+            setIsRequestModalOpen(false);
+            setOpenInvoiceRequest(created);
+          }}
+        />
+      )}
+
+      {sendInvoiceToTarget && (
+        <SendInvoiceToModal
+          item={sendInvoiceToTarget.item}
+          line={sendInvoiceToTarget.line}
+          onClose={() => setSendInvoiceToTarget(null)}
+        />
+      )}
 
       {/* Print Invoice Document Modal */}
       {isPrintModalOpen && (

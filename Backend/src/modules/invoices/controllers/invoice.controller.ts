@@ -8,7 +8,12 @@ import {
   projectIdParamSchema,
   quantityItemIdParamSchema,
 } from "../validators/invoice.validators.js";
-import type { CreateInvoiceLineInput, IngestInvoiceLinesInput, UpdateInvoiceLineInput } from "../validators/invoice.validators.js";
+import type {
+  CreateInvoiceLineInput,
+  IngestInvoiceLinesInput,
+  SendInvoiceLineToInput,
+  UpdateInvoiceLineInput,
+} from "../validators/invoice.validators.js";
 
 // Path params aren't covered by the shared `validate()` middleware (body
 // only) — same manual-safeParse convention as quantity.controller.ts/
@@ -72,6 +77,13 @@ export const deleteInvoiceLine = asyncHandler(async (req: Request, res: Response
   const id = parseInvoiceLineIdParam(req);
   await invoiceService.deleteInvoiceLine(id, user);
   res.status(200).json({ success: true, data: null, message: "Invoice line deleted successfully." });
+});
+
+export const sendInvoiceLineTo = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  const id = parseInvoiceLineIdParam(req);
+  const result = await invoiceService.sendInvoiceLineToUsers(id, req.body as SendInvoiceLineToInput, user);
+  res.status(200).json({ success: true, data: result, message: "Invoice shared successfully." });
 });
 
 // Ingest — legacy-migration only. See invoice.service.ts's

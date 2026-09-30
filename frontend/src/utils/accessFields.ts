@@ -38,6 +38,7 @@ export const REGION_FIELDS: { key: keyof UserProjectRegionAccess; label: string 
 export const APPROVAL_FIELDS: { key: keyof UserApprovalRights; label: string }[] = [
   { key: "archiveProjects", label: "Archive Projects" },
   { key: "deleteProjectPermanently", label: "Delete Project Permanently" },
+  { key: "raiseInvoice", label: "Raise Invoice" },
 ];
 
 /** Names present (from the backend) -> the boolean-flag object the UI renders. */

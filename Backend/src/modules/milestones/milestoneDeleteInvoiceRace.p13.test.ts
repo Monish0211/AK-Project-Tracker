@@ -48,6 +48,9 @@ test("DELETE /milestones/:id racing POST invoice-lines referencing it never leav
       prisma.module.findUniqueOrThrow({ where: { name: "Invoices" } }),
     ]);
     const projectsModule = await prisma.module.findUniqueOrThrow({ where: { name: "Projects" } });
+    // Request Invoice workflow (Sept 2026) — POST .../invoice-lines now also
+    // requires the "Raise Invoice" approval permission.
+    const raiseInvoiceApproval = await prisma.approvalType.findUniqueOrThrow({ where: { name: "Raise Invoice" } });
     const passwordHash = await hashPassword("MsDelRaceTest@123");
 
     const user = await prisma.portalUser.create({
@@ -59,6 +62,7 @@ test("DELETE /milestones/:id racing POST invoice-lines referencing it never leav
         roleId: engineerRole.id,
         forcePasswordChange: false,
         moduleAccess: { create: [{ moduleId: invoicesModule.id }, { moduleId: projectsModule.id }] },
+        approvalPermissions: { create: { approvalTypeId: raiseInvoiceApproval.id } },
       },
     });
     createdUserIds.push(user.id);

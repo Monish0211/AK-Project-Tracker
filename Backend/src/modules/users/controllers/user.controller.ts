@@ -39,6 +39,11 @@ export const getUsersByRole = asyncHandler(async (req: Request, res: Response) =
   res.status(200).json({ success: true, data: users });
 });
 
+export const getEligibleInvoiceRaisers = asyncHandler(async (_req: Request, res: Response) => {
+  const users = await userService.getEligibleInvoiceRaisers();
+  res.status(200).json({ success: true, data: users });
+});
+
 export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
   await userService.resetPassword(req.params.id as string);
   res.status(200).json({ success: true, data: null, message: "Password reset successfully." });
