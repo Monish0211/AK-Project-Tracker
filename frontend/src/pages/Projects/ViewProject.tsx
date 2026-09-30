@@ -67,8 +67,12 @@ const ViewProject = () => {
   // Completed Projects) — preserved from Projects.tsx's row action so Back
   // returns to the right place and the Sidebar keeps the right item
   // highlighted, instead of always assuming Project Repository.
-  const source = (location.state as { source?: "repository" | "completed" } | null)?.source;
-  const backDestination = source === "completed" ? "/projects/completed" : "/projects";
+  const navState = location.state as { source?: "repository" | "completed"; returnTo?: string } | null;
+  const source = navState?.source;
+  // Projects.tsx passes the repository URL it was on, carrying page + filters
+  // so returning lands exactly where the user left. Falls back to the plain
+  // path when opened from anywhere else (deep link, notification, refresh).
+  const backDestination = navState?.returnTo ?? (source === "completed" ? "/projects/completed" : "/projects");
 
   const [, setRefreshTrigger] = useState(0);
 
@@ -223,7 +227,9 @@ const ViewProject = () => {
 
   const goEdit = () =>
     navigate(`/projects/edit/${project.id}`, {
-      state: { tab: activeTab, source },
+      // returnTo is forwarded so View -> Edit -> Save still lands back on the
+      // repository page/filters the user originally came from.
+      state: { tab: activeTab, source, returnTo: navState?.returnTo },
     });
 
   return (

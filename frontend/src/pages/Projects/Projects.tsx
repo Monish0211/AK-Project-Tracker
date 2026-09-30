@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { formatBusinessINR } from "../../utils/formatCurrency";
 import {
   FolderKanban,
@@ -33,6 +33,11 @@ import { persistImportedProjectChildRecords } from "../../services/projectImport
 import { ApiError } from "../../services/apiClient";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import { isActiveProjectStatus, PROJECT_STATUS_OPTIONS } from "../../constants/projectStatus";
+// The SAME PR Category source General Information already uses — never a
+// second list. inferPrCategory() prefers the project's own stored
+// prCategory and only falls back to the PR-prefix rule when that field is
+// blank (legacy rows), exactly as ProjectForm's overview strip does.
+import { PR_CATEGORIES, inferPrCategory } from "../../utils/createEmptyProject";
 import { useAuth } from "../../auth/authContext";
 import { canMutateData, hasApprovalPermission } from "../../auth/permissions";
 import { usePmoToast } from "../../components/ui/usePmoToast";
@@ -65,6 +70,49 @@ const scopeProjectsByMode = (all: Project[], mode: ProjectsMode): Project[] =>
   mode === "completed"
     ? all.filter((p) => p.projectStatus === "Completed")
     : all.filter((p) => p.projectStatus !== "Completed");
+
+/**
+ * "PR Series" = the leading two digits of a PR Number's NUMERIC portion —
+ * what the business means by "11 Series". The alphabetic prefix is the PR
+ * CATEGORY, never the series, so PR-11047, MYPR-11050 and EE-11069 are all
+ * "11 Series".
+ *
+ * Reads the LAST run of digits so multi-part prefixes resolve correctly:
+ * EE-Q-12015 -> 12015, Q-PR-11050 -> 11050, PRAD-10136 -> 10136.
+ *
+ * Returns null unless that run is exactly 5 digits. Every real PR number is
+ * 5 digits (PR-10136, PR-11047, PR-12001), but the data also contains
+ * shorter/longer values (PR-123, PR-0987, PR-123409 all exist), whose first
+ * two digits would be meaningless as a series. Per the filter spec, those are
+ * simply excluded from the Series dropdown while remaining fully visible
+ * under "All Series" — never hidden, never a crash.
+ */
+/**
+ * The PR Number's numeric value, for ordering only — never for display or
+ * storage. Repository default order is "latest PR first", which means the
+ * NUMBER, not the string: plain string sort puts PR-9999 above PR-12066, and
+ * puts every MYPR-/EE-/Q-PR- row in a separate alphabetical block instead of
+ * interleaved by number.
+ *
+ * Reads the last digit run, exactly like getPrSeries(), so the alphabetic
+ * prefix never participates: PR-12066, MYPR-12065 and EE-Q-12064 order as
+ * 12066 > 12065 > 12064.
+ *
+ * Returns -1 when there is no numeric portion at all, so those rows sort to
+ * the bottom under the default (descending) order rather than the top.
+ */
+const getPrNumericValue = (prNo: string | null | undefined): number => {
+  const digitRuns = String(prNo ?? "").match(/\d+/g);
+  if (!digitRuns || digitRuns.length === 0) return -1;
+  return Number(digitRuns[digitRuns.length - 1]);
+};
+
+const getPrSeries = (prNo: string | null | undefined): string | null => {
+  const digitRuns = String(prNo ?? "").match(/\d+/g);
+  if (!digitRuns || digitRuns.length === 0) return null;
+  const numeric = digitRuns[digitRuns.length - 1]!;
+  return numeric.length === 5 ? numeric.slice(0, 2) : null;
+};
 
 // Approved Repository-level Invoice Status / Pending Due business rule —
 // deliberately a DIFFERENT concept from getProjectCommercialSummary()'s own
@@ -106,6 +154,11 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const [showExpenseImportModal, setShowExpenseImportModal] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const statusParam = searchParams.get("status") || "All";
+  const location = useLocation();
+  // The exact repository URL to come back to — pathname keeps Completed
+  // Projects distinct from the Repository, search carries page + filters.
+  // Passed to View/Edit as navigation state; they navigate back to it.
+  const repositoryUrl = `${location.pathname}${location.search}`;
   const { user } = useAuth();
   const { showToast } = usePmoToast();
   // Delete Permanently requires the "Delete Project Permanently" approval
@@ -142,21 +195,35 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const [archiveTargetId, setArchiveTargetId] = useState<string | null>(null);
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<Project | null>(null);
 
-  // Search & Filter State
-  const [search, setSearch] = useState("");
-  const [department, setDepartment] = useState("All");
+  // Search & Filter State — initialised FROM the URL so returning from a
+  // project (View/Edit) restores exactly the repository the user left. The
+  // URL is the single source; there is no second store. `status` already
+  // worked this way before this change (statusParam above) and is unchanged.
+  const [search, setSearch] = useState(() => searchParams.get("q") || "");
+  const [department, setDepartment] = useState(() => searchParams.get("dept") || "All");
   const [status, setStatus] = useState(statusParam);
+  const [prSeries, setPrSeries] = useState(() => searchParams.get("series") || "All");
+  const [prCategory, setPrCategory] = useState(() => searchParams.get("cat") || "All");
 
   useEffect(() => {
     setStatus(statusParam);
   }, [statusParam]);
 
   // Sorting State
-  const [sortField, setSortField] = useState<string>("prNo");
-  const [sortAsc, setSortAsc] = useState<boolean>(true);
+  const [sortField, setSortField] = useState<string>(() => searchParams.get("sort") || "prNo");
+  // Default repository order is LATEST PR FIRST — i.e. prNo descending, and
+  // descending by NUMBER (see getPrNumericValue). This is only the initial
+  // value: the existing Sort control still owns the state from the user's
+  // first click onward, so a manual choice is never overridden on re-render.
+  // A restored ?dir= wins over the default, so a manual choice survives the
+  // round trip into a project and back.
+  const [sortAsc, setSortAsc] = useState<boolean>(() => searchParams.get("dir") === "asc");
 
   // Pagination State
-  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [currentPage, setCurrentPage] = useState<number>(() => {
+    const fromUrl = Number(searchParams.get("page"));
+    return Number.isFinite(fromUrl) && fromUrl >= 1 ? Math.floor(fromUrl) : 1;
+  });
   const pageSize = 10;
 
   useEffect(() => {
@@ -273,6 +340,17 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     ];
   }, [projects]);
 
+  // Series options come from the data itself (same convention as the
+  // department list above), so a future 13/14 Series appears automatically
+  // with no code change and no new stored field. Sorted numerically so
+  // "9 Series" can never sort after "10 Series".
+  const seriesOptions = useMemo(() => {
+    const present = new Set(
+      projects.map((p) => getPrSeries(p.prNo)).filter((s): s is string => s !== null)
+    );
+    return [...present].sort((a, b) => Number(a) - Number(b));
+  }, [projects]);
+
   // Handle Sort Toggle
   const toggleSort = (field: string) => {
     if (sortField === field) {
@@ -345,7 +423,16 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       const matchDept = department === "All" || p.department === department;
       const matchStatus = status === "All" || p.projectStatus === status;
 
-      return matchSearch && matchDept && matchStatus;
+      // Series and Category are INDEPENDENT of each other: series is the
+      // numeric portion, category is the alphabetic prefix / stored field.
+      // A project whose PR Number yields no series (null) is only ever
+      // filtered out when a specific series is selected — under "All Series"
+      // it stays visible, same as today.
+      const matchSeries = prSeries === "All" || getPrSeries(p.prNo) === prSeries;
+      const matchCategory =
+        prCategory === "All" || inferPrCategory(p.prNo, p.prCategory) === prCategory;
+
+      return matchSearch && matchDept && matchStatus && matchSeries && matchCategory;
     });
 
     // Sort
@@ -359,6 +446,12 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       } else if (sortField === "invoiceStatus") {
         valA = getRepositoryInvoiceSummary(a).invoiceStatus;
         valB = getRepositoryInvoiceSummary(b).invoiceStatus;
+      } else if (sortField === "prNo") {
+        // Compare the NUMBER, not the string — see getPrNumericValue(). These
+        // become numbers, so they fall through to the numeric branch below
+        // and reuse the existing asc/desc handling unchanged.
+        valA = getPrNumericValue(a.prNo);
+        valB = getPrNumericValue(b.prNo);
       }
 
       if (typeof valA === "string") {
@@ -373,12 +466,44 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     });
 
     return result;
-  }, [projects, search, department, status, sortField, sortAsc]);
+  }, [projects, search, department, status, prSeries, prCategory, sortField, sortAsc]);
 
-  // Reset page when filters modify result counts
+  // Reset page when filters modify result counts.
+  //
+  // Skips its own FIRST run: this effect fires on mount like any other, which
+  // would immediately discard a page restored from ?page= when returning from
+  // a project. Only an actual filter change after mount should reset to 1.
+  const hasMountedRef = useRef(false);
   useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
     setCurrentPage(1);
-  }, [search, department, status]);
+  }, [search, department, status, prSeries, prCategory]);
+
+  // Mirror the repository's own state into the URL (replace, never push, so
+  // the browser Back button still leaves the repository rather than stepping
+  // through filter changes). This is what View/Edit navigate back to, so the
+  // page and filters survive the round trip with no extra store.
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    const put = (key: string, value: string, omitWhen: string) =>
+      value === omitWhen ? next.delete(key) : next.set(key, value);
+
+    put("q", search, "");
+    put("dept", department, "All");
+    put("status", status, "All");
+    put("series", prSeries, "All");
+    put("cat", prCategory, "All");
+    put("sort", sortField, "prNo");
+    put("dir", sortAsc ? "asc" : "desc", "desc");
+    put("page", String(currentPage), "1");
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [search, department, status, prSeries, prCategory, sortField, sortAsc, currentPage, searchParams, setSearchParams]);
 
   // Pagination bounds
   const paginatedProjects = useMemo(() => {
@@ -390,6 +515,16 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     Math.ceil(processedProjects.length / pageSize),
     1
   );
+
+  // Clamp a now-invalid page rather than rendering an empty table. Reachable
+  // two ways: a restored ?page=5 whose filtered set has since shrunk to 2
+  // pages, and a hand-edited/stale URL. Runs only when genuinely out of
+  // range, so it never fights the normal page controls.
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   // Format currency helpers
   const fmtWOValue = (v: number) => formatBusinessINR(v || 0);
@@ -842,6 +977,41 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
               </select>
             )}
 
+            {/* PR Series — numeric portion of the PR Number (see getPrSeries).
+                Options are derived from the loaded projects, so a new series
+                appears on its own with no code change. Hidden entirely when
+                the current dataset yields no series at all, rather than
+                offering a dropdown whose only choice is "All Series". */}
+            {seriesOptions.length > 0 && (
+              <select
+                value={prSeries}
+                onChange={(e) => setPrSeries(e.target.value)}
+                className="flt py-1.5 px-3 pr-8 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 outline-none cursor-pointer"
+              >
+                <option value="All">All Series</option>
+                {seriesOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s} Series
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* PR Category — the SAME business categories General Information
+                stores on the project; PR_CATEGORIES is the single source. */}
+            <select
+              value={prCategory}
+              onChange={(e) => setPrCategory(e.target.value)}
+              className="flt py-1.5 px-3 pr-8 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 outline-none cursor-pointer"
+            >
+              <option value="All">All PR Categories</option>
+              {PR_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+
             <div className="t-sep h-5 w-[1px] bg-slate-200 dark:bg-slate-800"></div>
 
             {/* Sort button */}
@@ -1026,7 +1196,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                       <td className="p-3 text-center">
                         <div className="pmo-act-wrap bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-900">
                           <button
-                            onClick={() => navigate(`/projects/view/${p.id}`, { state: { source: mode } })}
+                            onClick={() => navigate(`/projects/view/${p.id}`, { state: { source: mode, returnTo: repositoryUrl } })}
                             className="pmo-act-btn act-v hover:bg-blue-100/40 hover:text-blue-600"
                             aria-label="View Project Details"
                           >
@@ -1034,7 +1204,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                           </button>
                           {canMutate && (
                             <button
-                              onClick={() => navigate(`/projects/edit/${p.id}`, { state: { source: mode } })}
+                              onClick={() => navigate(`/projects/edit/${p.id}`, { state: { source: mode, returnTo: repositoryUrl } })}
                               className="pmo-act-btn act-e hover:bg-slate-100/50 hover:text-slate-600"
                               aria-label="Edit Project Details"
                             >

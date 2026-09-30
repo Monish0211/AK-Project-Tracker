@@ -1,5 +1,5 @@
 import { Save, RotateCcw, X, ArrowLeft, ChevronRight } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
@@ -91,6 +91,13 @@ const FormButtons = ({
   expensesConcurrencyBaseline,
 }: Props) => {
   const navigate = useNavigate();
+  // The repository URL (page + filters) the user opened this project from,
+  // passed through navigation state by Projects.tsx. Falls back to the plain
+  // path for Add Project and for any deep link, where there is no repository
+  // position to return to.
+  const routerLocation = useLocation();
+  const repositoryReturnUrl =
+    (routerLocation.state as { returnTo?: string } | null)?.returnTo ?? "/projects";
   const { showToast } = usePmoToast();
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
@@ -347,7 +354,7 @@ const FormButtons = ({
         type: "success",
         message: mode === "add" ? "Project saved successfully." : "Project updated successfully.",
       });
-      navigate("/projects");
+      navigate(repositoryReturnUrl);
     } finally {
       setIsSaving(false);
     }
@@ -368,7 +375,7 @@ const FormButtons = ({
 
   const handleBack = () => {
     if (isFirstTab) {
-      navigate("/projects");
+      navigate(repositoryReturnUrl);
     } else {
       onBack();
     }
@@ -482,7 +489,7 @@ const FormButtons = ({
         onCancel={() => setCancelConfirmOpen(false)}
         onConfirm={() => {
           setCancelConfirmOpen(false);
-          navigate("/projects");
+          navigate(repositoryReturnUrl);
         }}
       />
     </div>
