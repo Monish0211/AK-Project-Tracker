@@ -6,10 +6,16 @@ import type { CustomerData } from "../customer.types.js";
  * All Prisma access for Customers lives here — the service layer never
  * imports `prisma` directly. Hard delete matches the existing frontend
  * (customerService.ts's deleteCustomer permanently removes the row).
+ *
+ * gstDocumentSelect — included on every read/write below so
+ * customer.service.ts's toCustomerDto() can always resolve gstDocumentId
+ * from `customer.gstDocument?.id` without a second query. Cheap: at most one
+ * matching row per customer (Document.customerId is @unique).
  */
+const gstDocumentSelect = { gstDocument: { select: { id: true } } } as const;
 
 export function createCustomer(data: CustomerData) {
-  return prisma.customer.create({ data });
+  return prisma.customer.create({ data, include: gstDocumentSelect });
 }
 
 export function createCustomersBulk(rows: CustomerData[]) {
@@ -17,7 +23,7 @@ export function createCustomersBulk(rows: CustomerData[]) {
 }
 
 export function findCustomerById(id: string) {
-  return prisma.customer.findUnique({ where: { id } });
+  return prisma.customer.findUnique({ where: { id }, include: gstDocumentSelect });
 }
 
 /** Case-insensitive name lookup — matches frontend duplicate rule. */
@@ -48,7 +54,7 @@ export function findCustomersByNamesInsensitive(customerNames: string[]) {
 }
 
 export function updateCustomer(id: string, data: Partial<CustomerData>) {
-  return prisma.customer.update({ where: { id }, data });
+  return prisma.customer.update({ where: { id }, data, include: gstDocumentSelect });
 }
 
 export function deleteCustomer(id: string) {
@@ -88,6 +94,7 @@ export async function findCustomersPage(
   const [items, total] = await Promise.all([
     prisma.customer.findMany({
       where,
+      include: gstDocumentSelect,
       orderBy: { [sortField]: sortDirection },
       skip: (page - 1) * pageSize,
       take: pageSize,

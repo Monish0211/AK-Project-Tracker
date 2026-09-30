@@ -10,6 +10,7 @@
  * browser-side history without an explicit migration.
  */
 import type { Customer } from "../types/CustomerModel";
+import type { GstExtractionCandidate } from "../types/CustomerGst";
 import { apiClient, ApiError } from "./apiClient";
 import { dispatchPmoDataChanged } from "../utils/pmoDataChanged";
 
@@ -22,6 +23,14 @@ export interface CustomerInput {
   email?: string;
   phone?: string;
   status: "Active" | "Inactive";
+  // GST Document Import/Extraction (Sep 2026) — always sent as a full set on
+  // every create/update, matching this file's existing "send the whole form
+  // state" convention (see toCustomerPayload — the backend's PATCH resolves
+  // an omitted optional field to null, not "leave unchanged").
+  gstNumber?: string;
+  gstLegalName?: string;
+  gstTradeName?: string;
+  gstState?: string;
 }
 
 export interface SaveCustomerResult {
@@ -56,6 +65,11 @@ interface BackendCustomerDto {
   email: string | null;
   phone: string | null;
   status: string;
+  gstNumber: string | null;
+  gstLegalName: string | null;
+  gstTradeName: string | null;
+  gstState: string | null;
+  gstDocumentId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -76,6 +90,10 @@ interface CustomerPayload {
   email: string | null;
   phone: string | null;
   status: "Active" | "Inactive";
+  gstNumber: string | null;
+  gstLegalName: string | null;
+  gstTradeName: string | null;
+  gstState: string | null;
 }
 
 /** In-memory only — never written to localStorage as authoritative storage. */
@@ -122,6 +140,11 @@ function toCustomer(dto: BackendCustomerDto): Customer {
     email: dto.email || undefined,
     phone: dto.phone || undefined,
     status: (dto.status === "Inactive" ? "Inactive" : "Active") as Customer["status"],
+    gstNumber: dto.gstNumber || undefined,
+    gstLegalName: dto.gstLegalName || undefined,
+    gstTradeName: dto.gstTradeName || undefined,
+    gstState: dto.gstState || undefined,
+    gstDocumentId: dto.gstDocumentId || undefined,
     createdAt: dto.createdAt,
     updatedAt: dto.updatedAt,
   };
@@ -142,6 +165,10 @@ function toCustomerPayload(input: CustomerInput): CustomerPayload {
     email: emptyToNull(input.email),
     phone: emptyToNull(input.phone),
     status: input.status,
+    gstNumber: emptyToNull(input.gstNumber),
+    gstLegalName: emptyToNull(input.gstLegalName),
+    gstTradeName: emptyToNull(input.gstTradeName),
+    gstState: emptyToNull(input.gstState),
   };
 }
 
@@ -247,6 +274,64 @@ export async function updateCustomer(id: string, input: CustomerInput): Promise<
 export async function deleteCustomer(id: string): Promise<void> {
   await apiClient.delete(`/customers/${id}`);
   removeFromCustomersCache(id);
+}
+
+// =============================================================================
+// GST Document Import/Extraction (Sep 2026)
+// =============================================================================
+// One upload -> one backend extraction request -> one Claude call -> review
+// -> save. Extraction never persists anything by itself (memory-only on the
+// backend); the GST document is only written to storage by
+// uploadCustomerGstDocument(), called AFTER a Customer create/update has
+// already succeeded — see CustomerModal.tsx's handleSave().
+
+export const GST_DOCUMENT_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const GST_ALLOWED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg"];
+
+/** Returns a user-facing error message, or null if the file is acceptable to upload. */
+export function validateGstDocumentFile(file: File): string | null {
+  const name = file.name.toLowerCase();
+  if (!GST_ALLOWED_EXTENSIONS.some((ext) => name.endsWith(ext))) {
+    return "Only PDF, PNG, and JPEG files are accepted.";
+  }
+  if (file.size === 0) {
+    return "This file is empty and cannot be uploaded.";
+  }
+  if (file.size > GST_DOCUMENT_MAX_FILE_SIZE_BYTES) {
+    return "File exceeds the 10MB maximum size limit.";
+  }
+  return null;
+}
+
+// 60s override (default 30s) — an LLM document-extraction call, not a normal
+// CRUD request (matches the existing PDF Import AI-assist precedent).
+const GST_EXTRACT_TIMEOUT_MS = 60_000;
+
+export async function extractGstDocument(file: File): Promise<GstExtractionCandidate> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiClient.postFormData<GstExtractionCandidate>("/customers/gst-extract", formData, { timeoutMs: GST_EXTRACT_TIMEOUT_MS });
+}
+
+interface GstDocumentDto {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  createdAt: string;
+}
+
+/**
+ * Persists the GST document for an ALREADY-EXISTING customer (create or
+ * edit). Replaces any previous GST document for this customer — never
+ * leaves two. Called only after the Customer row itself was just
+ * successfully created/updated; never called by extraction, and never
+ * called at all if the user cancels the modal before saving.
+ */
+export async function uploadCustomerGstDocument(customerId: string, file: File): Promise<GstDocumentDto> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiClient.postFormData<GstDocumentDto>(`/customers/${customerId}/gst-document`, formData);
 }
 
 export interface ImportResult {

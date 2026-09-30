@@ -13,6 +13,7 @@ const displayFields = {
 export function createDocument(data: {
   projectId?: string | null;
   prRequestId?: string | null;
+  customerId?: string | null;
   fileName: string;
   storageKey: string;
   mimeType: string;
@@ -23,6 +24,7 @@ export function createDocument(data: {
     data: {
       projectId: data.projectId ?? null,
       prRequestId: data.prRequestId ?? null,
+      customerId: data.customerId ?? null,
       fileName: data.fileName,
       storageKey: data.storageKey,
       mimeType: data.mimeType,
@@ -31,6 +33,16 @@ export function createDocument(data: {
     },
     select: displayFields,
   });
+}
+
+/**
+ * Customer GST Document (Sep 2026) — at most one row, since
+ * Document.customerId is @unique (one GST document per customer for this
+ * release). Used to find-and-replace on re-upload — see
+ * document.service.ts's uploadDocumentForCustomer().
+ */
+export function findDocumentByCustomerId(customerId: string) {
+  return prisma.document.findUnique({ where: { customerId } });
 }
 
 export function findDocumentsByProjectId(projectId: string) {

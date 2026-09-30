@@ -177,6 +177,14 @@ const envSchema = z.object({
   // below that production ceiling; raising it without also raising Nginx's
   // setting would just move the failure point, not remove it.
   DOCUMENT_UPLOAD_MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(64),
+
+  // Customer GST Document Import/Extraction (Sep 2026) — a single GST
+  // registration certificate is a tiny document (1-2 pages), nowhere near
+  // the general Documents ceiling above; a dedicated, smaller default keeps
+  // this feature's own failure mode ("file too large") distinct from the
+  // general Documents feature's. Same "app boots fine unconfigured" Claude
+  // gate as PDF Import — see customerGst's own claude extraction service.
+  GST_DOCUMENT_MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(10),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -24,6 +24,9 @@ const CustomerRow = ({ customer, index, onEdit, onDelete, canMutate = true }: Pr
           <p className="text-[11px] text-[var(--nu-text-muted)] leading-snug break-words">{customer.companyName}</p>
         )}
       </td>
+      <td className="px-4 py-3 text-[12px] text-[var(--nu-text-secondary)]">
+        {customer.gstNumber || <span className="text-[var(--nu-text-muted)]">—</span>}
+      </td>
       <td className="px-4 py-3 text-center">
         <Badge tone={customer.status === "Active" ? "success" : "neutral"} dot>
           {customer.status}

@@ -1152,6 +1152,15 @@ model Document {
   prRequestId String?
   prRequest   PRRequest? @relation(fields: [prRequestId], references: [id], onDelete: Cascade)
 
+  // Customer GST Registration Document (Sep 2026). A third, optional parent —
+  // @unique because a Customer has at most one active GST document for this
+  // release (see Customer.gstDocument below); re-uploading replaces the row
+  // rather than adding a second one. The existing "exactly one parent" logic
+  // in document.service.ts's getDocumentForDownload() widens to "at most one
+  // of Project, PR Request, Customer" — same pattern, one more branch.
+  customerId String?  @unique
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
   fileName      String
   storageKey    String
   mimeType      String
@@ -1514,6 +1523,20 @@ model Customer {
   phone         String?
 
   status String @default("Active")
+
+  // GST Document Import/Extraction (Sep 2026) — additive, nullable, one
+  // GST registration per customer for this release (see the approved audit's
+  // Section M: no CustomerGstRegistration / multi-registration table yet).
+  // Extraction of these values from an uploaded certificate is NOT the same
+  // claim as "this GSTIN is currently valid" — see customerGst module's own
+  // comments. gstDocument is the reverse of Document.customerId (Document
+  // physically holds the FK, mirroring projectId/prRequestId exactly) —
+  // Customer never duplicates that pointer with its own scalar column.
+  gstNumber    String?
+  gstLegalName String?
+  gstTradeName String?
+  gstState     String?
+  gstDocument  Document?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

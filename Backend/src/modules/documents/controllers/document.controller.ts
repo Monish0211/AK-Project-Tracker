@@ -36,6 +36,14 @@ export const uploadPRRequestDocument = asyncHandler(async (req: Request, res: Re
   res.status(201).json({ success: true, data: document, message: "Document uploaded successfully." });
 });
 
+export const uploadCustomerGstDocument = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  const customerId = requireParam(req, "customerId");
+  const file = requireUploadedFile(req);
+  const document = await documentService.uploadDocumentForCustomer(customerId, file, user);
+  res.status(201).json({ success: true, data: document, message: "GST document uploaded successfully." });
+});
+
 export const listProjectDocuments = asyncHandler(async (req: Request, res: Response) => {
   const user = requireUser(req);
   const projectId = requireParam(req, "projectId");

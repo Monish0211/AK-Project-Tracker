@@ -8,6 +8,7 @@ import { env } from "../../../shared/utils/env.js";
 import {
   uploadProjectDocument,
   uploadPRRequestDocument,
+  uploadCustomerGstDocument,
   listProjectDocuments,
   listPRRequestDocuments,
   downloadDocument,
@@ -56,11 +57,25 @@ router.post(
 );
 router.get("/pr-requests/:prRequestId/documents", authenticate, requireModuleAccess("Approvals"), listPRRequestDocuments);
 
-// Shared by both parent kinds — either module grant is enough to reach the
-// route; document.service.ts still re-checks real Project/PR Request
-// authorization against the document's CURRENT parent before any filesystem
-// access (see getDocumentForDownload()'s own comment).
-router.get("/documents/:id/download", authenticate, requireModuleAccess("Projects", "Approvals"), downloadDocument);
+// Customer GST Registration Document (Sep 2026) — called ONLY after the
+// Customer row already exists (create or edit), never by the extraction
+// endpoint (customers/routes/customer.routes.ts's own POST /gst-extract,
+// which never persists). Same memoryStorage `upload` instance as the two
+// routes above — one file, write-then-record via documentStorage.ts.
+router.post(
+  "/customers/:customerId/gst-document",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Customer Master"),
+  upload.single("file"),
+  uploadCustomerGstDocument
+);
+
+// Shared by every parent kind — either module grant is enough to reach the
+// route; document.service.ts still re-checks real Project/PR Request/
+// Customer authorization against the document's CURRENT parent before any
+// filesystem access (see getDocumentForDownload()'s own comment).
+router.get("/documents/:id/download", authenticate, requireModuleAccess("Projects", "Approvals", "Customer Master"), downloadDocument);
 
 // Delete — Administrator ONLY, per the confirmed final rule. No uploader/
 // creator ownership check anywhere in this chain or in the service below.

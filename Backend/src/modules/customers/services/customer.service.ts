@@ -40,6 +40,11 @@ function toCustomerDto(customer: Awaited<ReturnType<typeof findCustomerById>>): 
     email: customer.email,
     phone: customer.phone,
     status: customer.status,
+    gstNumber: customer.gstNumber,
+    gstLegalName: customer.gstLegalName,
+    gstTradeName: customer.gstTradeName,
+    gstState: customer.gstState,
+    gstDocumentId: customer.gstDocument?.id ?? null,
     createdAt: customer.createdAt,
     updatedAt: customer.updatedAt,
   };
@@ -66,6 +71,15 @@ function toCustomerData(input: CreateCustomerInput | ImportCustomerRowInput): Cu
     email: emptyToNull(input.email ?? undefined),
     phone: emptyToNull(input.phone ?? undefined),
     status: input.status,
+    // Bulk import rows (ImportCustomerRowInput) never carry GST fields — the
+    // feature is scoped to the Add/Edit Customer modal only (see
+    // customer.validators.ts's importCustomerRowSchema, deliberately
+    // unchanged) — so this is undefined→null for every imported row, never
+    // a behavior change to bulk import.
+    gstNumber: emptyToNull("gstNumber" in input ? (input.gstNumber ?? undefined) : undefined),
+    gstLegalName: emptyToNull("gstLegalName" in input ? (input.gstLegalName ?? undefined) : undefined),
+    gstTradeName: emptyToNull("gstTradeName" in input ? (input.gstTradeName ?? undefined) : undefined),
+    gstState: emptyToNull("gstState" in input ? (input.gstState ?? undefined) : undefined),
   };
 }
 
@@ -169,6 +183,10 @@ export async function updateCustomer(id: string, input: UpdateCustomerInput): Pr
     ...(input.email !== undefined && { email: emptyToNull(input.email) }),
     ...(input.phone !== undefined && { phone: emptyToNull(input.phone) }),
     ...(input.status !== undefined && { status: input.status }),
+    ...(input.gstNumber !== undefined && { gstNumber: emptyToNull(input.gstNumber) }),
+    ...(input.gstLegalName !== undefined && { gstLegalName: emptyToNull(input.gstLegalName) }),
+    ...(input.gstTradeName !== undefined && { gstTradeName: emptyToNull(input.gstTradeName) }),
+    ...(input.gstState !== undefined && { gstState: emptyToNull(input.gstState) }),
   });
 
   return toCustomerDto(updated);

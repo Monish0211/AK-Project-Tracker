@@ -26,6 +26,14 @@ export const createCustomerSchema = z.object({
   email: optionalEmail,
   phone: optionalText,
   status: z.enum(["Active", "Inactive"]).default("Active"),
+  // GST Document Import/Extraction — plain optional text, whether typed
+  // manually or copied from a reviewed/edited AI suggestion. No format
+  // enforcement here (GSTIN format varies enough across real documents that
+  // a hard regex would reject valid data more often than it catches typos).
+  gstNumber: optionalText,
+  gstLegalName: optionalText,
+  gstTradeName: optionalText,
+  gstState: optionalText,
 });
 
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
@@ -40,6 +48,10 @@ export const updateCustomerSchema = z.object({
   email: optionalEmail,
   phone: optionalText,
   status: z.enum(["Active", "Inactive"]).optional(),
+  gstNumber: optionalText,
+  gstLegalName: optionalText,
+  gstTradeName: optionalText,
+  gstState: optionalText,
 });
 
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;

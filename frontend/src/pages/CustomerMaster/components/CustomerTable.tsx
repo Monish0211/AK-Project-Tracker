@@ -25,6 +25,7 @@ const CustomerTable = ({ customers, onEdit, onDelete, canMutate = true }: Props)
             <tr className="bg-[var(--nu-surface-alt)] text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)] border-b border-[var(--nu-border)]">
               <th className="px-4 py-2.5 text-center font-medium w-14">Sl No</th>
               <th className="px-4 py-2.5 text-left font-medium">Customer Name</th>
+              <th className="px-4 py-2.5 text-left font-medium w-40">GST Number</th>
               <th className="px-4 py-2.5 text-center font-medium w-32">Status</th>
               <th className="px-4 py-2.5 text-center font-medium w-32">Created On</th>
               {canMutate && <th className="px-4 py-2.5 text-center font-medium w-28">Actions</th>}
