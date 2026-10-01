@@ -58,8 +58,13 @@ app.use("/users", userRoutes);
 // exact literal routes like GET /projects/resources match resourceRoutes
 // instead of getting swallowed by projectRoutes' /:id handler.
 app.use(resourceRoutes);
-app.use("/projects", projectRoutes);
+// projectNoteRoutes' literal GET /projects/notes must be mounted before
+// projectRoutes — otherwise projectRoutes' GET /:id (line 28 of
+// project.routes.ts) would match "/notes" first with id="notes" and this
+// route would never be reached, the same collision the resourceRoutes
+// comment above describes for /projects/resources.
 app.use("/projects", projectNoteRoutes);
+app.use("/projects", projectRoutes);
 // quantity.routes.ts already declares its own full paths
 // (/projects/:projectId/quantity, /quantity/:id) — mounted at root rather
 // than under a prefix, same as the two routers above share the /projects
