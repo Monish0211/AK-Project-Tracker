@@ -1,11 +1,18 @@
 import path from "node:path";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
-import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccessById, assertProjectAccess } from "../../../shared/utils/projectAccess.js";
+import { findProjectByIdAny } from "../../projects/repository/project.repository.js";
 import { assertCanViewPRRequest } from "../../prRequests/services/prRequest.service.js";
 import { findPRRequestById } from "../../prRequests/repository/prRequest.repository.js";
 import { findCustomerById } from "../../customers/repository/customer.repository.js";
-import { generateStorageKey, writeDocumentFile, deleteDocumentFile, readDocumentFilePath } from "../../../shared/utils/documentStorage.js";
+import {
+  generateStorageKey,
+  writeDocumentFile,
+  deleteDocumentFile,
+  readDocumentFilePath,
+  sanitizePrNoForStorage,
+} from "../../../shared/utils/documentStorage.js";
 import { BLOCKED_EXTENSIONS, BLOCKED_MIME_TYPES, MAGIC_BYTE_SIGNATURES, matchesSignature } from "../documents.constants.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import * as repo from "../repository/document.repository.js";
@@ -116,10 +123,33 @@ async function assertCustomerExistsById(customerId: string): Promise<void> {
   }
 }
 
+/**
+ * Resolves the live, current PR-number subdirectory for a Project document.
+ * Deliberately a fresh lookup every time (never cached, never taken from a
+ * previously-read value) — Document.projectId -> Project.id -> Project.prNo
+ * stays authoritative, and prNo can change after upload (see
+ * project.service.ts's updateProject(), which relocates the physical folder
+ * when that happens). A Document with a non-null projectId can only exist
+ * while its Project still exists (onDelete: Cascade on that relation), so a
+ * missing Project here would indicate a real inconsistency — fail closed
+ * rather than guess a path.
+ */
+async function resolveProjectDocumentSubDir(projectId: string): Promise<string> {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { prNo: true } });
+  if (!project) {
+    throw new AppError("Document's Project could not be resolved.", 500);
+  }
+  return sanitizePrNoForStorage(project.prNo);
+}
+
 export async function uploadDocumentForProject(projectId: string, file: UploadedFile, user: AccessTokenPayload) {
-  await assertProjectAccessById(projectId, user);
+  const project = await findProjectByIdAny(projectId);
+  if (!project) {
+    throw new AppError("Project not found.", 404);
+  }
+  await assertProjectAccess(user, project);
   assertFileIsSafe(file);
-  return persistDocument({ projectId, file, user });
+  return persistDocument({ projectId, projectPrNo: project.prNo, file, user });
 }
 
 export async function uploadDocumentForPRRequest(prRequestId: string, file: UploadedFile, user: AccessTokenPayload) {
@@ -161,13 +191,19 @@ export async function uploadDocumentForCustomer(customerId: string, file: Upload
  */
 async function persistDocument(args: {
   projectId?: string;
+  projectPrNo?: string;
   prRequestId?: string;
   customerId?: string;
   file: UploadedFile;
   user: AccessTokenPayload;
 }) {
   const storageKey = generateStorageKey();
-  await writeDocumentFile(storageKey, args.file.buffer);
+  // subDir is undefined (flat storage, unchanged) for PR Request/Customer
+  // documents — only a Project document is ever written into a PR-number
+  // folder. projectPrNo is resolved once by the caller (uploadDocumentForProject)
+  // from the authoritative Project record, never trusted from the frontend.
+  const subDir = args.projectPrNo ? sanitizePrNoForStorage(args.projectPrNo) : undefined;
+  await writeDocumentFile(storageKey, args.file.buffer, subDir);
 
   try {
     const created = await repo.createDocument({
@@ -182,7 +218,7 @@ async function persistDocument(args: {
     });
     return toDocumentDto(created);
   } catch (err) {
-    await deleteDocumentFile(storageKey).catch((cleanupErr) => {
+    await deleteDocumentFile(storageKey, subDir).catch((cleanupErr) => {
       console.error(`[documents] Failed to clean up orphaned file ${storageKey} after DB insert failure:`, cleanupErr);
     });
     throw err;
@@ -214,8 +250,11 @@ export async function getDocumentForDownload(id: string, user: AccessTokenPayloa
     throw new AppError("Document not found.", 404);
   }
 
+  let subDir: string | undefined;
+
   if (doc.projectId) {
     await assertProjectAccessById(doc.projectId, user);
+    subDir = await resolveProjectDocumentSubDir(doc.projectId);
   } else if (doc.prRequestId) {
     await assertPRRequestAccessById(doc.prRequestId, user);
   } else if (doc.customerId) {
@@ -229,7 +268,7 @@ export async function getDocumentForDownload(id: string, user: AccessTokenPayloa
   }
 
   return {
-    filePath: readDocumentFilePath(doc.storageKey),
+    filePath: readDocumentFilePath(doc.storageKey, subDir),
     fileName: doc.fileName,
     mimeType: doc.mimeType,
   };
@@ -251,6 +290,8 @@ export async function deleteDocument(id: string): Promise<void> {
     throw new AppError("Document not found.", 404);
   }
 
+  const subDir = doc.projectId ? await resolveProjectDocumentSubDir(doc.projectId) : undefined;
+
   await repo.deleteDocumentRow(id);
-  await deleteDocumentFile(doc.storageKey);
+  await deleteDocumentFile(doc.storageKey, subDir);
 }

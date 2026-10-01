@@ -1,4 +1,6 @@
 import { prisma } from "../../../shared/utils/prismaClient.js";
+import { AppError } from "../../../shared/utils/AppError.js";
+import { moveFlatDocumentIntoProjectFolder } from "../../../shared/utils/documentStorage.js";
 
 const displayFields = {
   id: true,
@@ -77,15 +79,41 @@ export function deleteDocumentRow(id: string) {
 
 /**
  * PR approval hook — re-points every document still attached to this PR
- * Request onto the newly created Project. A plain conditional updateMany,
- * not a copy: the physical file never moves, only the FK does. Naturally
- * idempotent — a second call matches zero rows, since prRequestId is
- * already NULL for anything already re-pointed — on top of the outer
- * claim-ticket guard in pmoManagerApprove() that already prevents this from
- * running twice for one approval. See that function's own comment for the
- * exact call site.
+ * Request onto the newly created Project. Naturally idempotent — a second
+ * call matches zero rows, since prRequestId is already NULL for anything
+ * already re-pointed — on top of the outer claim-ticket guard in
+ * pmoManagerApprove() that already prevents this from running twice for one
+ * approval. See that function's own comment for the exact call site.
+ *
+ * PR-number folders (Oct 2026) — Project documents are now physically
+ * stored under <storageDir>/<prNo>/<uuid> (see documentStorage.ts), while PR
+ * Request documents remain flat (<storageDir>/<uuid>). This hook's target
+ * is always a Project, so the physical file IS moved here — out of the flat
+ * area and into the target Project's current PR-number folder — before the
+ * FK is updated, keeping storage consistent with the new parent. Resolves
+ * the list of affected documents first (not a direct updateMany) precisely
+ * because it now needs each one's storageKey to move it; the caller
+ * (prRequest.service.ts's pmoManagerApprove()) already treats this whole
+ * call as best-effort (logs and continues on failure).
  */
-export function repointDocumentsToProject(prRequestId: string, projectId: string) {
+export async function repointDocumentsToProject(prRequestId: string, projectId: string): Promise<{ count: number }> {
+  const pending = await prisma.document.findMany({
+    where: { prRequestId, projectId: null },
+    select: { id: true, storageKey: true },
+  });
+  if (pending.length === 0) {
+    return { count: 0 };
+  }
+
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { prNo: true } });
+  if (!project) {
+    throw new AppError("Target Project could not be resolved for document repoint.", 500);
+  }
+
+  for (const doc of pending) {
+    await moveFlatDocumentIntoProjectFolder(doc.storageKey, project.prNo);
+  }
+
   return prisma.document.updateMany({
     where: { prRequestId, projectId: null },
     data: { projectId, prRequestId: null },

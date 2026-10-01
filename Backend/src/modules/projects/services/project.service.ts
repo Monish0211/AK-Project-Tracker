@@ -3,6 +3,7 @@ import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccess, hasUnrestrictedProjectVisibility } from "../../../shared/utils/projectAccess.js";
 import { validatePrCategoryPrNoRule } from "../project.constants.js";
 import { reconcileUnassignedEntriesForProject } from "../../timesheets/services/timesheet.service.js";
+import { renameProjectDocumentFolder } from "../../../shared/utils/documentStorage.js";
 import { notify, resolveProjectEventRecipients } from "../../notifications/notification.service.js";
 import {
   groupQuantityTotals,
@@ -496,6 +497,20 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
   // never touch Timesheet data.
   if (prNoChanged) {
     await reconcileUnassignedEntriesForProject(updated.id, updated.prNo);
+
+    // Documents feature (Oct 2026) — Project documents are physically stored
+    // under a PR-number folder (see documentStorage.ts), derived live from
+    // Project.prNo rather than persisted anywhere. A prNo edit must move
+    // that folder so already-uploaded documents stay reachable under the
+    // new name; best-effort (logged, never thrown) — a storage-layer
+    // problem must never block or roll back a prNo edit that has already
+    // committed to the database.
+    await renameProjectDocumentFolder(existing.prNo, updated.prNo).catch((err) => {
+      console.error(
+        `[projects] Failed to relocate document storage folder for Project ${updated.id} (${existing.prNo} -> ${updated.prNo}):`,
+        err
+      );
+    });
   }
 
   return toProjectDto(updated, await computeCommercialTotalsForOne(updated.id));
