@@ -2,7 +2,8 @@
  * Single shared source for the Project/Work Order status vocabulary used by
  * the ordinary manual create/update API validation (see
  * validators/project.validators.ts). Mirrors the frontend dropdown exactly
- * (frontend/src/pages/Projects/components/GeneralInfoCard.tsx) — kept as
+ * (frontend/src/constants/projectStatus.ts, consumed by
+ * frontend/src/pages/Projects/components/GeneralInfoCard.tsx) — kept as
  * plain string arrays (not a Prisma/TS enum) so the column itself stays a
  * flexible `String`, matching every other status-like field in this schema
  * (Employee.status, TimesheetImport.status, InvoiceLine.status).
@@ -14,10 +15,65 @@
  * progress", "Issued", etc.) that import must keep accepting. This list is
  * the enforced vocabulary for NEW data entered through the ordinary UI/API
  * only, never a filter applied to already-imported historical values.
+ *
+ * Sept 2026 — Project Status Workflow Expansion. Added 8 granular workflow
+ * stages. "Ongoing" (no hyphen, pre-existing) is kept for backward
+ * compatibility (a production audit found 0 projects currently using it,
+ * but it stays valid/selectable rather than being removed); "On-going"
+ * (hyphenated) is the new, distinct workflow-stage value — the two are
+ * intentionally separate values, never merged. This array only widens the
+ * accepted Zod enum in validators/project.validators.ts (createProjectSchema
+ * / updateProjectSchema) — projectStatus is a plain Prisma `String` column
+ * (see schema.prisma), so no migration is needed to support new values.
  */
-export const PROJECT_STATUS_VALUES = ["Not Started", "Ongoing", "Active", "On Hold", "Completed", "Cancelled"] as const;
+export const PROJECT_STATUS_VALUES = [
+  "Not Started",
+  "Ongoing",
+  "Active",
+  "Allotted to Tech team",
+  "KoM Completed",
+  "Data Request Shared",
+  "On-going",
+  "Draft Report Submitted",
+  "Comments Received",
+  "Updated Report Submitted",
+  "Final Report Submitted",
+  "On Hold",
+  "Completed",
+  "Cancelled",
+] as const;
 
 export const WORK_ORDER_STATUS_VALUES = ["Received", "Yet to Receive", "Pending", "Closed", "Cancelled"] as const;
+
+/**
+ * Centralized "Active Project" classification — backend mirror of
+ * frontend/src/constants/projectStatus.ts's ACTIVE_PROJECT_STATUSES /
+ * isActiveProjectStatus() (Sept 2026 Project Status Workflow Expansion).
+ * Kept byte-for-byte identical to that frontend definition so "is this
+ * project active" can never silently diverge between a client-side summary
+ * (Project Repository's Quick Summary) and a server-computed one (Dashboard's
+ * Team Leads – Project Workload, see dashboard.service.ts's buildTeamLeads()).
+ * Project Status (the workflow stage) and "is this project active" are
+ * deliberately different concepts — a project moves through many
+ * workflow-stage statuses while remaining active the whole time. "Not
+ * Started" is deliberately excluded, matching the frontend definition.
+ */
+export const ACTIVE_PROJECT_STATUSES: ReadonlySet<string> = new Set([
+  "Active",
+  "Ongoing",
+  "On-going",
+  "Allotted to Tech team",
+  "KoM Completed",
+  "Data Request Shared",
+  "Draft Report Submitted",
+  "Comments Received",
+  "Updated Report Submitted",
+  "Final Report Submitted",
+]);
+
+export function isActiveProjectStatus(status: string | null | undefined): boolean {
+  return !!status && ACTIVE_PROJECT_STATUSES.has(status);
+}
 
 /**
  * Region -> PR Category -> PR Number prefix business rule. prCategory

@@ -73,17 +73,50 @@ export interface TimelineAlertsDto {
   onTrackCount: number;
 }
 
+export interface TeamLeadWorkloadProjectRefDto {
+  id: string;
+  prNo: string;
+}
+
+/**
+ * Aug 2026 — `reportingManager` now holds the assigned person's name, sourced
+ * from QuantityItem.assignedTo (see dashboard.service.ts's buildTeamLeads()),
+ * not Employee.reportingManager. Field name kept as-is to avoid a breaking
+ * rename for existing consumers of this DTO — only where the value comes
+ * from changed. `projects` is additive (new).
+ */
 export interface TeamLeadWorkloadDto {
   reportingManager: string;
   activeProjectsCount: number;
   totalWorkOrderValue: number;
   formattedWorkOrderValue: string;
   status: "High" | "Medium" | "Normal";
+  projects: TeamLeadWorkloadProjectRefDto[];
+}
+
+/** One active project with at least one Quantity Details row missing an Assigned To — see buildTeamLeads()'s missingAssigneeProjects. */
+export interface MissingAssigneeProjectDto {
+  id: string;
+  prNo: string;
+  projectTitle: string;
 }
 
 export interface TeamLeadsDto {
   totalReportingManagers: number;
   top5: TeamLeadWorkloadDto[];
+  // Phase 2.2 — same authoritative list top5 is sliced from (zero extra
+  // computation: buildTeamLeads() already builds this full sorted array
+  // before slicing). The dedicated Team Leads Workload page
+  // (TeamLeadsWorkloadProjects.tsx) renders this instead of recomputing its
+  // own list — same pattern already established by HoursOverrunDto's own
+  // top5/allMatching split for the Financial Loss drill-down.
+  allAssigned: TeamLeadWorkloadDto[];
+  // Sept 2026 — Missing Assignee. Active projects (same isActiveProjectStatus()
+  // scope as the rest of this DTO) with at least one Quantity Details row
+  // whose Assigned To is blank/unusable (see buildTeamLeads()'s own
+  // isUsableManagerName() reuse). Purely derived, never persisted — no new
+  // Prisma field, no "Unassigned" Manpower record.
+  missingAssignee: MissingAssigneeProjectDto[];
 }
 
 export interface TimesheetPendingItemDto {

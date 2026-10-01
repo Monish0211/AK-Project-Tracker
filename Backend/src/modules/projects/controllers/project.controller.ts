@@ -38,6 +38,13 @@ export const getProjects = asyncHandler(async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: page });
 });
 
+/** Sidebar "Quick Summary" counts — one grouped query instead of the frontend's previous 4 separate GET /projects?pageSize=1&projectStatus=... calls. Registered before "/:id" in the router (see project.routes.ts) so Express never matches this path as an :id param. */
+export const getProjectStatusCounts = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  const counts = await projectService.getProjectStatusCounts(user);
+  res.status(200).json({ success: true, data: counts });
+});
+
 export const getProject = asyncHandler(async (req: Request, res: Response) => {
   const user = requireUser(req);
   const project = await projectService.getProjectById(req.params.id as string, user);

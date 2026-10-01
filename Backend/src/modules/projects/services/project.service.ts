@@ -1,9 +1,14 @@
 import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
-import { assertProjectAccess } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccess, hasUnrestrictedProjectVisibility } from "../../../shared/utils/projectAccess.js";
 import { validatePrCategoryPrNoRule } from "../project.constants.js";
 import { reconcileUnassignedEntriesForProject } from "../../timesheets/services/timesheet.service.js";
 import { notify, resolveProjectEventRecipients } from "../../notifications/notification.service.js";
+import {
+  groupQuantityTotals,
+  findInvoiceLinesForProjects,
+} from "../../dashboard/repository/dashboard.repository.js";
+import { projectCommercialTotals } from "../../dashboard/dashboard.formulas.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type {
   ImportProjectsResultDto,
@@ -13,6 +18,7 @@ import type {
 import type { ProjectGeneralInfoData } from "../repository/project.repository.js";
 import {
   archiveProject as archiveProjectInRepository,
+  countProjectsByStatus,
   createProject as createProjectInRepository,
   createProjectsBulk,
   findActiveProjectByPrNo,
@@ -24,6 +30,7 @@ import {
   restoreProject as restoreProjectInRepository,
   updateProject as updateProjectInRepository,
 } from "../repository/project.repository.js";
+import type { SidebarStatusCounts } from "../repository/project.repository.js";
 import type {
   CreateProjectInput,
   ImportProjectsInput,
@@ -31,7 +38,61 @@ import type {
   UpdateProjectInput,
 } from "../validators/project.validators.js";
 
-function toProjectDto(project: Awaited<ReturnType<typeof findProjectById>>): ProjectDto {
+interface CommercialTotals {
+  workOrderValueINR: number;
+  pendingDueINR: number;
+}
+
+/**
+ * Work Order Value / Pending Due — Aug 2026 bug fix. Batched (one groupBy +
+ * one query total, never one per project) so this is safe to call for an
+ * entire list page at once — see ProjectDto's own comment for the full
+ * history. Reuses the exact same aggregation queries and formula the
+ * Dashboard module already computes its own KPIs from
+ * (groupQuantityTotals(), findInvoiceLinesForProjects(),
+ * projectCommercialTotals()) rather than re-deriving WO Value or the
+ * invoice-raised calculation a second time anywhere.
+ */
+async function computeCommercialTotalsByProjectId(projectIds: string[]): Promise<Map<string, CommercialTotals>> {
+  const result = new Map<string, CommercialTotals>();
+  if (projectIds.length === 0) return result;
+
+  const [quantityTotals, invoiceLines] = await Promise.all([
+    groupQuantityTotals(projectIds),
+    findInvoiceLinesForProjects(projectIds),
+  ]);
+
+  const woValueByProject = new Map(quantityTotals.map((row) => [row.projectId, row.woValue]));
+  const linesByProject = new Map<string, { status: string; invoiceAmountINR: number }[]>();
+  for (const line of invoiceLines) {
+    const list = linesByProject.get(line.projectId) ?? [];
+    list.push({ status: line.status, invoiceAmountINR: line.invoiceAmountINR });
+    linesByProject.set(line.projectId, list);
+  }
+
+  for (const projectId of projectIds) {
+    const workOrderValueINR = woValueByProject.get(projectId) ?? 0;
+    const { totalInvoiceRaised } = projectCommercialTotals(workOrderValueINR, linesByProject.get(projectId) ?? []);
+    // Same "Balance to Invoice" formula frontend's getProjectCommercialSummary()
+    // already uses (Math.max(projectValueINR - totalInvoiceRaised, 0)) — not a
+    // new Pending Due rule, just this same one computed once more server-side.
+    const pendingDueINR = Math.max(workOrderValueINR - totalInvoiceRaised, 0);
+    result.set(projectId, { workOrderValueINR, pendingDueINR });
+  }
+
+  return result;
+}
+
+/** Single-project convenience wrapper around computeCommercialTotalsByProjectId() — same batched query machinery, just called with one id. */
+async function computeCommercialTotalsForOne(projectId: string): Promise<CommercialTotals> {
+  const map = await computeCommercialTotalsByProjectId([projectId]);
+  return map.get(projectId) ?? { workOrderValueINR: 0, pendingDueINR: 0 };
+}
+
+function toProjectDto(
+  project: Awaited<ReturnType<typeof findProjectById>>,
+  commercial: CommercialTotals
+): ProjectDto {
   if (!project) {
     throw new AppError("Project not found.", 404);
   }
@@ -83,6 +144,8 @@ function toProjectDto(project: Awaited<ReturnType<typeof findProjectById>>): Pro
     createdByUserId: project.createdByUserId,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
+    workOrderValueINR: commercial.workOrderValueINR,
+    pendingDueINR: commercial.pendingDueINR,
   };
 }
 
@@ -221,7 +284,7 @@ export async function createProject(input: CreateProjectInput, creatorUserId: st
   // Now that a Project with this prNo exists, link any of those rows to it.
   await reconcileUnassignedEntriesForProject(created.id, created.prNo);
 
-  return toProjectDto(created);
+  return toProjectDto(created, await computeCommercialTotalsForOne(created.id));
 }
 
 /**
@@ -276,6 +339,26 @@ export async function bulkImportProjects(
   }
   const createdByPrNo = new Map(created.map((row) => [row.prNo, row]));
 
+  // Same reconciliation createProject() already does for a single-project
+  // create (see that function's own call below) — previously missing here,
+  // which left any pre-existing "Unassigned" (projectId: null) TimesheetEntry
+  // rows for a bulk-imported PR Number unlinked forever, since nothing else
+  // ever revisits them. reconcileUnassignedEntriesForProject() only touches
+  // rows that are CURRENTLY projectId: null and match this prNo (via the
+  // same normalizeProjectCode() the import engine itself uses) — it never
+  // reassigns an already-linked entry, so running it once per newly-created
+  // row here is safe and idempotent, same as it already is for createProject().
+  for (const row of created) {
+    await reconcileUnassignedEntriesForProject(row.id, row.prNo);
+  }
+
+  // Freshly-created rows have no QuantityItems yet, so this will always
+  // resolve to 0/0 for every row here — computed (not hardcoded) anyway,
+  // for the same reason every other toProjectDto() call site now is: so
+  // "0 because nothing exists yet" and "0 because we didn't bother
+  // computing it" can never be confused with each other again.
+  const commercialByProjectId = await computeCommercialTotalsByProjectId(created.map((row) => row.id));
+
   const items = input.projects.map((p) => {
     const row = createdByPrNo.get(p.prNo);
     if (!row) {
@@ -283,7 +366,7 @@ export async function bulkImportProjects(
       // row per submitted prNo, already confirmed unique above.
       throw new AppError(`Project with PR Number "${p.prNo}" was not created.`, 500);
     }
-    return toProjectDto(row);
+    return toProjectDto(row, commercialByProjectId.get(row.id) ?? { workOrderValueINR: 0, pendingDueINR: 0 });
   });
 
   return { items };
@@ -305,7 +388,7 @@ export async function getProjectById(id: string, user: AccessTokenPayload): Prom
     throw new AppError("Project not found.", 404);
   }
   await assertProjectAccess(user, project);
-  return toProjectDto(project);
+  return toProjectDto(project, await computeCommercialTotalsForOne(project.id));
 }
 
 /**
@@ -415,7 +498,7 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
     await reconcileUnassignedEntriesForProject(updated.id, updated.prNo);
   }
 
-  return toProjectDto(updated);
+  return toProjectDto(updated, await computeCommercialTotalsForOne(updated.id));
 }
 
 /**
@@ -562,11 +645,13 @@ export async function listProjects(query: ListProjectsQuery, user: AccessTokenPa
   // real name.
   const prCategory = query.prCategory || query.region;
 
-  // Administrator sees everything (callerUserId: undefined ⇒ no ownership
-  // restriction in buildWhereClause); every other role only ever sees
-  // projects they created plus unclaimed legacy projects (createdByUserId:
-  // null) — never a second, list-specific authorization concept.
-  const callerUserId = user.roleName === "Administrator" ? undefined : user.sub;
+  // Administrator and PMO Manager see everything (callerUserId: undefined
+  // ⇒ no ownership restriction in buildWhereClause) — see
+  // hasUnrestrictedProjectVisibility()'s own doc comment for the business
+  // rule. Every other role only ever sees projects they created plus
+  // unclaimed legacy projects (createdByUserId: null) — never a second,
+  // list-specific authorization concept.
+  const callerUserId = hasUnrestrictedProjectVisibility(user.roleName) ? undefined : user.sub;
 
   const { items, total } = await findProjectsPage(
     {
@@ -584,10 +669,35 @@ export async function listProjects(query: ListProjectsQuery, user: AccessTokenPa
     query.pageSize
   );
 
+  // Work Order Value / Pending Due — Aug 2026 bug fix. One batched call for
+  // the whole page (never one query per row) — see
+  // computeCommercialTotalsByProjectId()'s own comment for the full history
+  // and why this is a reuse of the Dashboard module's existing aggregation,
+  // not a second implementation of either calculation.
+  const commercialByProjectId = await computeCommercialTotalsByProjectId(items.map((item) => item.id));
+
   return {
-    items: items.map((item) => toProjectDto(item)),
+    items: items.map((item) =>
+      toProjectDto(item, commercialByProjectId.get(item.id) ?? { workOrderValueINR: 0, pendingDueINR: 0 })
+    ),
     total,
     page: query.page,
     pageSize: query.pageSize,
   };
+}
+
+/**
+ * Sidebar "Quick Summary" counts (Active/On Hold/Completed/Cancelled) — used
+ * to replace the frontend's previous 4 separate listProjects(pageSize: 1)
+ * calls (one per status) with a single grouped query. Same authorization
+ * rule as listProjects() above, byte-for-byte (hasUnrestrictedProjectVisibility
+ * decides callerUserId the same way), so a restricted-visibility caller sees
+ * counts scoped to exactly the same projects listProjects() would have shown
+ * them per status — never broader. Does not use/introduce
+ * ACTIVE_PROJECT_STATUSES; each count is an exact projectStatus string match,
+ * identical in meaning to before.
+ */
+export async function getProjectStatusCounts(user: AccessTokenPayload): Promise<SidebarStatusCounts> {
+  const callerUserId = hasUnrestrictedProjectVisibility(user.roleName) ? undefined : user.sub;
+  return countProjectsByStatus(callerUserId);
 }

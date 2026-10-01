@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { requireUser } from "../../../shared/utils/requireUser.js";
-import { assertProjectAccess } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccess, hasUnrestrictedProjectVisibility } from "../../../shared/utils/projectAccess.js";
 import { parseTimesheetWorkbook, validateAttachment } from "../services/excelParser.service.js";
 import {
   clearHistoricalTimesheetEntries,
@@ -106,7 +106,7 @@ export const getEntries = asyncHandler(async (req: Request, res: Response) => {
   const parsed = findEntriesQuerySchema.safeParse(req.query);
   if (!parsed.success) throw new AppError("Invalid query parameters.", 400);
 
-  const callerUserId = user.roleName === "Administrator" ? undefined : user.sub;
+  const callerUserId = hasUnrestrictedProjectVisibility(user.roleName) ? undefined : user.sub;
   const { page, pageSize } = parsed.data;
   const result = await timesheetRepo.findEntries(parsed.data, callerUserId);
   res.status(200).json({ success: true, data: { items: result.items, total: result.total, page, pageSize } });

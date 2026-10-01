@@ -225,3 +225,40 @@ export async function findProjectsPage(
 
   return { items, total };
 }
+
+/** The exact statuses the Sidebar's "Quick Summary" card shows — kept as a
+ * plain literal tuple here (not imported from anywhere) since it must match
+ * Sidebar.tsx's own hardcoded SUMMARY_ROWS list exactly; this is a UI-display
+ * count, not the broader ACTIVE_PROJECT_STATUSES business classification. */
+const SIDEBAR_STATUS_COUNT_KEYS = ["Active", "On Hold", "Completed", "Cancelled"] as const;
+export type SidebarStatusCounts = Record<(typeof SIDEBAR_STATUS_COUNT_KEYS)[number], number>;
+
+/**
+ * Sidebar "Quick Summary" counts (Active/On Hold/Completed/Cancelled) via a
+ * single grouped query, replacing what used to be 4 separate
+ * findProjectsPage(pageSize: 1) calls (one per status) from the frontend.
+ * Same `buildWhereClause()` this file already uses for every other project
+ * read — including the exact same `isDeleted: false` default and ownership
+ * (`callerUserId`) scoping — so authorization/visibility is identical to
+ * calling findProjectsPage() once per status; only the query shape changed
+ * (one groupBy instead of 4x findMany+count), never who is allowed to see
+ * what. Each returned count is an exact `projectStatus` string match, same
+ * as before — this does not use/introduce ACTIVE_PROJECT_STATUSES.
+ */
+export async function countProjectsByStatus(callerUserId: string | undefined): Promise<SidebarStatusCounts> {
+  const where = await buildWhereClause({ callerUserId });
+
+  const rows = await prisma.project.groupBy({
+    by: ["projectStatus"],
+    where,
+    _count: true,
+  });
+
+  const counts: SidebarStatusCounts = { Active: 0, "On Hold": 0, Completed: 0, Cancelled: 0 };
+  for (const row of rows) {
+    if ((SIDEBAR_STATUS_COUNT_KEYS as readonly string[]).includes(row.projectStatus)) {
+      counts[row.projectStatus as (typeof SIDEBAR_STATUS_COUNT_KEYS)[number]] = row._count;
+    }
+  }
+  return counts;
+}

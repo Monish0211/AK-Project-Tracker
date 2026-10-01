@@ -9,6 +9,7 @@ import {
   createProject,
   getProject,
   getProjects,
+  getProjectStatusCounts,
   importProjects,
   permanentlyDeleteProject,
   restoreProject,
@@ -25,6 +26,11 @@ const router = Router();
 // function — see shared/utils/projectAccess.ts. Write routes also run
 // denyReadOnlyWrites after authenticate (Read Only may GET only).
 router.get("/", authenticate, requireModuleAccess("Projects"), getProjects);
+// Registered BEFORE "/:id" below — unlike "/:id/permanent" (a different
+// path-segment count, so Express can never confuse the two regardless of
+// order), "/status-counts" is a single segment and WOULD be swallowed by
+// "/:id" (treated as id="status-counts") if declared after it.
+router.get("/status-counts", authenticate, requireModuleAccess("Projects"), getProjectStatusCounts);
 router.get("/:id", authenticate, requireModuleAccess("Projects"), getProject);
 router.post("/", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), validate(createProjectSchema), createProject);
 // Excel import — General Information for every row in one request; see

@@ -41,6 +41,11 @@ export interface QuantityItemRow {
   projectId: string;
   woQty: number;
   uom: string;
+  // Aug 2026 — Team Leads Workload now groups by this instead of
+  // ProjectResource -> Employee.reportingManager (see dashboard.service.ts's
+  // buildTeamLeads()). Free text, matches QuantityItem.assignedTo exactly —
+  // not a second employee identifier concept.
+  assignedTo: string | null;
 }
 
 export interface ResourceRow {
@@ -129,7 +134,7 @@ export function findQuantityItemsForProjects(projectIds: string[]): Promise<Quan
   if (projectIds.length === 0) return Promise.resolve([]);
   return prisma.quantityItem.findMany({
     where: { projectId: { in: projectIds } },
-    select: { id: true, projectId: true, woQty: true, uom: true },
+    select: { id: true, projectId: true, woQty: true, uom: true, assignedTo: true },
   });
 }
 
@@ -198,9 +203,12 @@ export async function findInvoiceLinesForProjects(projectIds: string[]): Promise
 export async function groupExpenseTotals(projectIds: string[]): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   if (projectIds.length === 0) return map;
+  // isActive: true — Excel Import (Sept 2026) superseded rows must never
+  // contribute to totals (see ExpenseImportBatch's schema comment). No-op
+  // for every current row, which already defaults to isActive: true.
   const rows = await prisma.projectExpense.groupBy({
     by: ["projectId"],
-    where: { projectId: { in: projectIds } },
+    where: { projectId: { in: projectIds }, isActive: true },
     _sum: { totalCost: true },
   });
   for (const row of rows) {

@@ -75,6 +75,25 @@ export interface ProjectDto {
   createdByUserId: string | null;
   createdAt: Date;
   updatedAt: Date;
+
+  // Work Order Value / Pending Due — Aug 2026 bug fix. Previously this DTO
+  // carried NEITHER figure, so the frontend's Project Repository LIST could
+  // only ever show a correct value for an account whose OWN browser already
+  // had this project's real QuantityItems cached locally (e.g. the account
+  // that built it via Add Project) — every other account saw "—" until they
+  // personally opened Edit Project once. These two fields are a read-only,
+  // server-computed aggregate — SUM(QuantityItem.woValue) and the same
+  // "Balance to Invoice" formula Dashboard already uses — so every account
+  // sees correct figures directly from this DTO, with no dependency on any
+  // per-browser local cache history. See project.service.ts's
+  // computeCommercialTotalsByProjectId() for how these are computed (reuses
+  // the Dashboard module's existing aggregation queries/formula, never a
+  // second implementation of either calculation). NOT a new source of truth
+  // for anywhere the real QuantityItem/InvoiceItem arrays are already loaded
+  // client-side (Edit Project, Add Project) — those continue to compute from
+  // their own real data exactly as before.
+  workOrderValueINR: number;
+  pendingDueINR: number;
 }
 
 export interface PaginatedProjectListDto {

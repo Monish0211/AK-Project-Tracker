@@ -6,9 +6,11 @@ import type {
   DashboardSummaryDto,
   DepartmentOpsDto,
   HoursOverrunProjectDto,
+  MissingAssigneeProjectDto,
   TeamLeadWorkloadDto,
   TimelineAlertProjectDto,
 } from "../dto/dashboard.dto.js";
+import { isActiveProjectStatus } from "../../projects/project.constants.js";
 import {
   actualProjectCost,
   calculateCompletionPercentage,
@@ -85,12 +87,6 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
     dashboardRepo.findMilestonesForProjects(projectIds),
     getTimesheetPendingProjects(callerUserId),
   ]);
-
-  const employeeNos = [...new Set(resources.map((r) => r.employeeNo))];
-  const employees = await dashboardRepo.findEmployeesByNos(employeeNos);
-  const employeeManagerByNo = new Map(
-    employees.map((e) => [e.employeeNo.trim().toLowerCase(), (e.reportingManager || "").trim()])
-  );
 
   const qtyByProject = new Map(quantityTotals.map((row) => [row.projectId, row]));
   const invoiceByProject = linesByProject(invoiceLines);
@@ -215,7 +211,7 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
     kpis,
     hoursOverrun: buildHoursOverrun(projects, woByProject, timesheetHours),
     timelineAlerts: buildTimelineAlerts(projects),
-    teamLeads: buildTeamLeads(projects, woByProject, resourcesByProject, employeeManagerByNo),
+    teamLeads: buildTeamLeads(projects, woByProject, quantityItemsByProject),
     timesheetPending: {
       items: timesheetPendingItems.map((row) => ({
         projectId: row.projectId,
@@ -336,63 +332,107 @@ function buildTimelineAlerts(projects: DashboardProjectRow[]) {
   };
 }
 
+/**
+ * Aug 2026 — Team Leads Workload rule change. Previously grouped by
+ * ProjectResource.employeeNo -> Employee.reportingManager (falling back to
+ * Project.primaryProjectManager only when a project had no resolvable
+ * resource manager). Now groups by QuantityItem.assignedTo directly — "who
+ * is assigned to this project's engineering activities," independent of
+ * Project Leadership and independent of Team Assigned/ProjectResource.
+ * Neither of those two other concepts is read here anymore; this function
+ * has no effect on ProjectResource, TimesheetEntry, or their calculations.
+ *
+ * quantityItemsByProject is the SAME map getDashboardSummary() already
+ * builds from findQuantityItemsForProjects(projectIds) — projectIds is
+ * already scoped to the caller's authorized projects (see that function's
+ * own findAuthorizedProjects() call), so this never sees a project the
+ * caller isn't allowed to see, and issues no additional database query.
+ */
 function buildTeamLeads(
   projects: DashboardProjectRow[],
   woByProject: Map<string, number>,
-  resourcesByProject: Map<string, dashboardRepo.ResourceRow[]>,
-  employeeManagerByNo: Map<string, string>
+  quantityItemsByProject: Map<string, dashboardRepo.QuantityItemRow[]>
 ) {
-  const managerDataMap = new Map<string, { projectIds: Set<string>; totalWOValue: number }>();
+  const personDataMap = new Map<string, { projects: Map<string, string>; totalWOValue: number }>();
+  // Sept 2026 — Missing Assignee. Same active-project scope, same
+  // quantityItemsByProject source, same isUsableManagerName() rule the
+  // assignee grouping below already uses — never a second definition of
+  // "has an assignee." A project qualifies only if it HAS at least one
+  // Quantity Details row (a project with zero rows yet has nothing to be
+  // "missing" from) AND at least one of those rows' Assigned To is
+  // blank/unusable.
+  const missingAssigneeProjects: MissingAssigneeProjectDto[] = [];
 
   for (const project of projects) {
-    if (project.projectStatus !== "Active") continue;
+    if (!isActiveProjectStatus(project.projectStatus)) continue;
     const woValue = woByProject.get(project.id) || 0;
-    const projectManagers = new Set<string>();
 
-    for (const resource of resourcesByProject.get(project.id) ?? []) {
-      let managerName = employeeManagerByNo.get(resource.employeeNo.trim().toLowerCase()) || "";
-      if (isUsableManagerName(managerName)) {
-        projectManagers.add(managerName.trim());
+    const items = quantityItemsByProject.get(project.id) ?? [];
+    const assignees = new Set<string>();
+    let hasUnassignedRow = false;
+    for (const item of items) {
+      const name = (item.assignedTo || "").trim();
+      if (isUsableManagerName(name)) {
+        assignees.add(name);
+      } else {
+        hasUnassignedRow = true;
       }
     }
-
-    if (projectManagers.size === 0 && project.primaryProjectManager && isUsableManagerName(project.primaryProjectManager)) {
-      projectManagers.add(project.primaryProjectManager.trim());
+    if (items.length > 0 && hasUnassignedRow) {
+      missingAssigneeProjects.push({ id: project.id, prNo: project.prNo, projectTitle: project.projectTitle });
     }
 
-    for (const mgr of projectManagers) {
-      if (!managerDataMap.has(mgr)) {
-        managerDataMap.set(mgr, { projectIds: new Set(), totalWOValue: 0 });
+    for (const name of assignees) {
+      if (!personDataMap.has(name)) {
+        personDataMap.set(name, { projects: new Map(), totalWOValue: 0 });
       }
-      const data = managerDataMap.get(mgr);
+      const data = personDataMap.get(name);
       if (!data) continue;
-      if (!data.projectIds.has(project.id)) {
-        data.projectIds.add(project.id);
+      // Map keyed by projectId — multiple QuantityItem rows for the SAME
+      // person on the SAME project (e.g. two activities both assigned to
+      // Monish on PR-11089) collapse to one entry, never a duplicate.
+      if (!data.projects.has(project.id)) {
+        data.projects.set(project.id, project.prNo);
         data.totalWOValue += woValue;
       }
     }
   }
 
   const list: TeamLeadWorkloadDto[] = [];
-  managerDataMap.forEach((data, managerName) => {
-    const activeProjectsCount = data.projectIds.size;
+  personDataMap.forEach((data, personName) => {
+    const activeProjectsCount = data.projects.size;
     list.push({
-      reportingManager: managerName,
+      reportingManager: personName,
       activeProjectsCount,
       totalWorkOrderValue: data.totalWOValue,
       formattedWorkOrderValue: formatCurrencyCompact(data.totalWOValue),
       status: teamLeadStatus(activeProjectsCount),
+      projects: Array.from(data.projects.entries()).map(([id, prNo]) => ({ id, prNo })),
     });
   });
 
+  // Phase 2.2 — active projects desc, then total WO value desc (both
+  // unchanged from Phase 2), then assigned name asc as a deterministic
+  // tertiary tiebreak so two people tied on both counts never depend on Map
+  // iteration/insertion order to decide who lands in the Dashboard's top 5.
   list.sort((a, b) => {
     if (b.activeProjectsCount !== a.activeProjectsCount) return b.activeProjectsCount - a.activeProjectsCount;
-    return b.totalWorkOrderValue - a.totalWorkOrderValue;
+    if (b.totalWorkOrderValue !== a.totalWorkOrderValue) return b.totalWorkOrderValue - a.totalWorkOrderValue;
+    return a.reportingManager.localeCompare(b.reportingManager);
   });
+
+  // Deterministic order (PR No. asc) — same reasoning as the person list's
+  // own tiebreak above: never depend on Map/array insertion order.
+  missingAssigneeProjects.sort((a, b) => a.prNo.localeCompare(b.prNo));
 
   return {
     totalReportingManagers: list.length,
     top5: list.slice(0, 5),
+    // Phase 2.2 — same sorted array top5 is sliced from, unsliced. See
+    // TeamLeadsDto's own comment for why this is free (already fully
+    // computed above) and who consumes it.
+    allAssigned: list,
+    missingAssignee: missingAssigneeProjects,
   };
 }
 

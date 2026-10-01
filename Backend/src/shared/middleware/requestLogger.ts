@@ -26,6 +26,20 @@ import { env } from "../utils/env.js";
  * their stack traces via errorHandler.ts's own console.error() — this
  * middleware only adds the requestId to req so errorHandler.ts can
  * correlate an error line with the request line that produced it.
+ *
+ * Phase C (client-abort observability) — `close` fires on EVERY request,
+ * including ones that already fired `finish` (a normal completion's socket
+ * still closes eventually) — so `finished` below is a mandatory guard, not
+ * a nicety: without it, every ordinary request would log twice. Only a
+ * `close` that occurs BEFORE `finished` is set represents a genuine client
+ * disconnect. `res.statusCode` is deliberately never logged for an abort —
+ * Express's default (200) would still be sitting there even though no
+ * response was ever delivered, so logging it as a real status would be
+ * misleading; the distinct `event: "client_abort"` field is the signal
+ * instead. The whole handler body is wrapped in try/catch because this
+ * app has no global uncaughtException/unhandledRejection safety net — a
+ * throw from an EventEmitter callback would otherwise be able to crash the
+ * process, which observability code must never risk.
  */
 export function requestLogger(req: Request, res: Response, next: NextFunction): void {
   if (req.path === "/health") {
@@ -43,8 +57,10 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
   res.setHeader("x-request-id", requestId);
 
   const startedAt = process.hrtime.bigint();
+  let finished = false;
 
   res.on("finish", () => {
+    finished = true;
     const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
     const entry = {
       timestamp: new Date().toISOString(),
@@ -64,6 +80,40 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
         `[${entry.timestamp}] ${entry.method} ${entry.route} ${entry.status} ${entry.durationMs}ms` +
           `${entry.userId ? ` user=${entry.userId}` : ""} req=${entry.requestId}`
       );
+    }
+  });
+
+  res.on("close", () => {
+    try {
+      if (finished) return;
+
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      const entry = {
+        timestamp: new Date().toISOString(),
+        requestId,
+        method: req.method,
+        route: req.originalUrl,
+        event: "client_abort",
+        durationMs: Math.round(durationMs * 100) / 100,
+        userId: req.user?.sub ?? null,
+        environment: env.NODE_ENV,
+      };
+
+      if (env.NODE_ENV === "production") {
+        console.log(JSON.stringify(entry));
+      } else {
+        console.log(
+          `[${entry.timestamp}] ${entry.method} ${entry.route} CLIENT_ABORT ${entry.durationMs}ms` +
+            `${entry.userId ? ` user=${entry.userId}` : ""} req=${entry.requestId}`
+        );
+      }
+    } catch {
+      // Observability code must never crash the process — this app has no
+      // global uncaughtException/unhandledRejection handler (see this
+      // function's own comment above), so a throw here would otherwise be
+      // able to take the whole server down. Silently drop rather than risk
+      // that; the normal request-completion/error logging paths are
+      // unaffected either way.
     }
   });
 
