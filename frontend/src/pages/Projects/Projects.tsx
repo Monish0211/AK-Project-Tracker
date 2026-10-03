@@ -12,6 +12,7 @@ import {
   Pencil,
   Trash2,
   ShieldAlert,
+  BarChart3,
   Archive as ArchiveIcon,
   ChevronLeft,
   ChevronRight,
@@ -1202,6 +1203,16 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                           >
                             <Eye />
                           </button>
+                          {mode === "completed" && (
+                            <button
+                              onClick={() => navigate(`/reports?prNo=${encodeURIComponent(p.prNo)}`)}
+                              className="pmo-act-btn act-report hover:bg-indigo-100/40 hover:text-indigo-600"
+                              aria-label="View Report"
+                              title="View Report"
+                            >
+                              <BarChart3 />
+                            </button>
+                          )}
                           {canMutate && (
                             <button
                               onClick={() => navigate(`/projects/edit/${p.id}`, { state: { source: mode, returnTo: repositoryUrl } })}

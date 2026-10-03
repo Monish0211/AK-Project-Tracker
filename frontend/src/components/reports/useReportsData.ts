@@ -31,10 +31,20 @@ export const INITIAL_REPORT_FILTERS: ReportFilterState = {
   countryRegion: "ALL",
 };
 
-export function useReportsData() {
+/**
+ * `initialFilters` — optional, applied once at mount only (e.g. deep-linking
+ * in from Completed Projects' "View Report" action with a specific PR
+ * Number already known). Merged onto INITIAL_REPORT_FILTERS exactly like
+ * every other default, so a caller with no override keeps today's exact
+ * behavior unchanged.
+ */
+export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
-  const [filters, setFilters] = useState<ReportFilterState>(INITIAL_REPORT_FILTERS);
+  const [filters, setFilters] = useState<ReportFilterState>(() => ({
+    ...INITIAL_REPORT_FILTERS,
+    ...initialFilters,
+  }));
 
   // Issue #4 fix — Reports/Dashboard Invoice Raised discrepancy. Every
   // invoice line across every authorized project, fetched from the SAME

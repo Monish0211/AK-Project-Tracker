@@ -1,4 +1,5 @@
-import { useState, lazy, Suspense } from "react";
+import { useState, lazy, Suspense, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useReportsData } from "../components/reports/useReportsData";
 import { ReportHeader, type ReportTabKey } from "../components/reports/Shared/ReportHeader";
 import { ReportFilters } from "../components/reports/Shared/ReportFilters";
@@ -50,6 +51,19 @@ function ReportFallback() {
 
 export function ReportsPage() {
   const [activeTab, setActiveTab] = useState<ReportTabKey>("executive");
+
+  // Deep-link support (e.g. Completed Projects' "View Report" action):
+  // /reports?prNo=PR-12059 pre-selects that PR Number on open. Read once at
+  // mount only — useReportsData()'s initial state is a lazy useState
+  // initializer, so this has no effect on later renders, and opening
+  // /reports with no query param behaves exactly as before (INITIAL_REPORT_FILTERS).
+  const [searchParams] = useSearchParams();
+  const initialFilters = useMemo(() => {
+    const prNo = searchParams.get("prNo");
+    return prNo ? { prNo } : undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately mount-only, see comment above
+  }, []);
+
   const {
     allProjects,
     filteredProjects,
@@ -59,7 +73,7 @@ export function ReportsPage() {
     resetFilters,
     analytics,
     authoritativeInvoiceLines,
-  } = useReportsData();
+  } = useReportsData(initialFilters);
 
   const handleDrillDown = (target: string) => {
     if (target === "raised" || target === "outstanding") {
