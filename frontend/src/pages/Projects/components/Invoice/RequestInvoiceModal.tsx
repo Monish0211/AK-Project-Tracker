@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Send, X } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { EligibleInvoiceRaiser, InvoiceRequest } from "../../../../types/InvoiceRequest";
+import type { UserByRole } from "../../../../types/PRRequest";
 import { Button } from "../../../../components/ui/Button";
 import { FormLabel } from "../../../../components/ui/FormLabel";
 import { Input } from "../../../../components/ui/Input";
@@ -11,6 +12,7 @@ import { Portal } from "../../../../components/ui/Portal";
 import { usePmoToast } from "../../../../components/ui/usePmoToast";
 import { getUserFriendlyErrorMessage } from "../../../../utils/errorMessage";
 import { createInvoiceRequest, getEligibleInvoiceRaisers } from "../../../../services/invoiceRequestService";
+import { getUsersByRole } from "../../../../services/prRequestService";
 
 interface Props {
   project: Project;
@@ -34,6 +36,13 @@ export function RequestInvoiceModal({ project, onClose, onSubmitted }: Props) {
   const [eligibleUsers, setEligibleUsers] = useState<EligibleInvoiceRaiser[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [assignedToUserId, setAssignedToUserId] = useState("");
+  // CC Members — any active PMO user (same "every active user" source the
+  // existing post-raise "Send Invoice To" action already uses), deliberately
+  // NOT restricted to Raise-Invoice holders like "Send Invoice To" above —
+  // this is plain email distribution, never a raise-permission grant.
+  const [allActiveUsers, setAllActiveUsers] = useState<UserByRole[]>([]);
+  const [isLoadingCcUsers, setIsLoadingCcUsers] = useState(true);
+  const [ccMemberUserIds, setCcMemberUserIds] = useState<string[]>([]);
   // Matches the team's existing manual "raise the invoice" email template's
   // field set — all free text, all optional.
   const [invoiceAmountNote, setInvoiceAmountNote] = useState("");
@@ -64,12 +73,42 @@ export function RequestInvoiceModal({ project, onClose, onSubmitted }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    getUsersByRole()
+      .then((users) => {
+        if (!cancelled) setAllActiveUsers(users);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          showToast({ type: "error", title: "Failed to load CC member list", message: getUserFriendlyErrorMessage(error) });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingCcUsers(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleAddCcMember = (id: string) => {
+    if (!id) return;
+    setCcMemberUserIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  };
+
+  const handleRemoveCcMember = (id: string) => {
+    setCcMemberUserIds((prev) => prev.filter((existingId) => existingId !== id));
+  };
+
   const handleSubmit = async () => {
     if (!assignedToUserId || isSubmitting) return;
     setIsSubmitting(true);
     try {
       const created = await createInvoiceRequest(project.id, {
         assignedToUserId,
+        ccMemberUserIds,
         invoiceAmountNote: invoiceAmountNote.trim() || null,
         copiesRequired: copiesRequired.trim() || null,
         drawingsAvailable: drawingsAvailable.trim() || null,
@@ -150,6 +189,51 @@ export function RequestInvoiceModal({ project, onClose, onSubmitted }: Props) {
                   No active user currently holds the Raise Invoice permission. Ask an Administrator to grant it first.
                 </p>
               )}
+            </div>
+
+            <div>
+              <FormLabel>CC Members</FormLabel>
+              <Select
+                value=""
+                onChange={(e) => handleAddCcMember(e.target.value)}
+                disabled={isLoadingCcUsers}
+              >
+                <option value="">{isLoadingCcUsers ? "Loading users..." : "Select a PMO user to add"}</option>
+                {allActiveUsers
+                  .filter((u) => !ccMemberUserIds.includes(u.id))
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.fullName}
+                    </option>
+                  ))}
+              </Select>
+              {ccMemberUserIds.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {ccMemberUserIds.map((id) => {
+                    const user = allActiveUsers.find((u) => u.id === id);
+                    if (!user) return null;
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1 rounded-full bg-[var(--nu-accent-soft)] text-[var(--nu-accent)] pl-2.5 pr-1.5 py-1 text-[12px] font-medium"
+                      >
+                        {user.fullName}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCcMember(id)}
+                          aria-label={`Remove ${user.fullName} from CC`}
+                          className="rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/10 cursor-pointer"
+                        >
+                          <X size={11} />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[11px] text-[var(--nu-text-muted)] mt-1.5">
+                info@ifluids.com is always included automatically and cannot be removed.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

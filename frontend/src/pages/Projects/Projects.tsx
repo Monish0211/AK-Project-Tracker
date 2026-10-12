@@ -42,6 +42,7 @@ import { PR_CATEGORIES, inferPrCategory } from "../../utils/createEmptyProject";
 import { useAuth } from "../../auth/authContext";
 import { canMutateData, hasApprovalPermission } from "../../auth/permissions";
 import { usePmoToast } from "../../components/ui/usePmoToast";
+import { InvoiceRequestFlag } from "../../components/ui/InvoiceRequestFlag";
 import ExpenseImportModal from "./components/ExpenseInformation/ExpenseImportModal";
 
 /** Sort fields the backend's GET /projects can order by — see listProjectsQuerySchema. Anything else (Team/Commercial/Invoice columns, not modeled server-side yet) is synced with the default sort instead and left to this page's own client-side sort exactly as before. */
@@ -1186,7 +1187,10 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                         </>
                       )}
                       <td className="p-3 text-center">
-                        {renderInvoiceStatusBadge(comm.invoiceStatus)}
+                        <span className="inline-flex items-center">
+                          {renderInvoiceStatusBadge(comm.invoiceStatus)}
+                          {p.hasOpenInvoiceRequest && <InvoiceRequestFlag />}
+                        </span>
                       </td>
                       <td className="p-3 text-right font-bold text-slate-800 dark:text-slate-100 grp pmo-prno">
                         {fmtCurrency(p.workOrderValueINR)}

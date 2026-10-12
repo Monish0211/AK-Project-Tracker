@@ -97,6 +97,21 @@ export interface Project {
   // source of truth once the real item arrays ARE populated.
   backendWorkOrderValueINR?: number;
   backendPendingDueINR?: number;
+  // Invoice Request indicator (Oct 2026) — whether this project currently
+  // has an Open InvoiceRequest. Deliberately independent of, and never
+  // feeding into, the Invoice Status calculation below (Not Started /
+  // Raised / Partially Paid / Paid, still derived client-side exactly as
+  // before from workOrderValueINR/backendPendingDueINR) — this flag only
+  // drives Project Repository's small, separate "+" indicator beside the
+  // unchanged status badge. See Backend's ProjectDto for how it's computed.
+  hasOpenInvoiceRequest?: boolean;
+  // Invoice Currency feature (Oct 2026) — the backend's persisted invoice-
+  // currency lock (ProjectDto.invoiceCurrency), separate from `currency`
+  // (Quantity Details' pricing currency). undefined = the backend doesn't
+  // report it (older backend, or a never-synced local project) and USD
+  // invoicing is not offered; null = backend supports it, nothing locked
+  // yet. See Invoice/invoiceCurrency.ts's isInvoiceCurrencySupported().
+  invoiceCurrency?: string | null;
 
   contractType: string;
 

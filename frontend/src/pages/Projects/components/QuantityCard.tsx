@@ -27,6 +27,7 @@ import { Select } from "../../../components/ui/Select";
 import { EmptyStateRow } from "../../../components/ui/EmptyStateRow";
 
 import { FieldError } from "../../../components/ui/FieldError";
+import { SUPPORTED_CURRENCIES } from "../../../constants/currencies";
 
 interface Props {
   project: Project;
@@ -47,7 +48,8 @@ const DESCRIPTION_PLACEHOLDERS = [
 
 const LAST_ROW_WARNING = "At least one quantity item is required.";
 
-const CURRENCY_OPTIONS = ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR"];
+// Shared with the Invoice section — see constants/currencies.ts (same seven codes as before).
+const CURRENCY_OPTIONS = SUPPORTED_CURRENCIES;
 
 const DEFAULT_CURRENCY = "INR";
 

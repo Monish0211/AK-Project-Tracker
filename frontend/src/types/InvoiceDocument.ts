@@ -1,4 +1,4 @@
-import type { InvoiceLineStatus, InvoiceMethod } from "./InvoiceItem";
+import type { InvoiceCurrency, InvoiceLineStatus, InvoiceMethod } from "./InvoiceItem";
 
 export interface BuyerInformation {
   companyName: string;
@@ -63,6 +63,10 @@ export interface InvoiceDocumentLineItem {
   setLabel?: string;
 
   amountINR: number;
+  /** This line's amount in the invoice's own currency (equals amountINR for an INR invoice). */
+  amountOriginal: number;
+  /** Quantity layout only: the unit rate in the invoice's own currency (equals basicUnitRateINR for INR). */
+  basicUnitRateOriginal?: number;
 }
 
 export interface TaxSummaryRow {
@@ -126,7 +130,20 @@ export interface InvoiceDocumentDTO {
   totalTaxINR: number;
   grandTotalINR: number;
 
-  // Words
+  /**
+   * Invoice Currency (Oct 2026) — the currency the invoice is PRINTED in:
+   * its own saved currency. For INR every *Original figure equals its *INR
+   * twin and exchangeRateToINR is 1, so an INR document is unchanged. For a
+   * foreign currency the *Original figures are the primary invoice amounts;
+   * subtotalINR/grandTotalINR remain the recorded INR equivalent, shown only
+   * as a reference (foreign invoices never carry GST).
+   */
+  invoiceCurrency: InvoiceCurrency;
+  exchangeRateToINR: number;
+  subtotalOriginal: number;
+  grandTotalOriginal: number;
+
+  // Words — amountInWords is in the invoice's own currency
   amountInWords: string;
   taxAmountInWords: string;
 

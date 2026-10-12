@@ -53,6 +53,13 @@ export interface ProjectDto {
   currentExchangeRate: number;
   contractExchangeRate: number;
 
+  // Invoice Currency feature (Oct 2026) — the project's persisted INVOICE
+  // currency lock (separate from `currency` above). Read-only through this
+  // API; set only by invoice.service.ts. null = not persisted yet (the
+  // invoice service still infers INR for projects with pre-feature raised
+  // invoices — see invoiceCurrency.rules.ts's resolveEffectiveLock()).
+  invoiceCurrency: string | null;
+
   // Expense Budget — Phase 3.5.
   manhourBudgetAmount: number | null;
   manhourBudgetHours: number | null;
@@ -94,6 +101,17 @@ export interface ProjectDto {
   // their own real data exactly as before.
   workOrderValueINR: number;
   pendingDueINR: number;
+  /**
+   * Invoice Request indicator (Oct 2026) — whether this project currently
+   * has an Open InvoiceRequest. Deliberately independent of, and never
+   * feeding into, the Project Repository's own Invoice Status calculation
+   * (Not Started / Raised / Partially Paid / Paid), which remains exactly
+   * as it was — this flag only drives the small, separate "+" indicator
+   * shown beside that unchanged status badge. See project.service.ts's
+   * computeCommercialTotalsByProjectId() for how it's computed (one
+   * batched query, never N+1).
+   */
+  hasOpenInvoiceRequest: boolean;
 }
 
 export interface PaginatedProjectListDto {

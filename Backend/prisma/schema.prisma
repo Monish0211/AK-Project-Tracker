@@ -132,6 +132,12 @@ model PortalUser {
   invoiceRequestsSubmitted InvoiceRequest[] @relation("InvoiceRequestRequester")
   invoiceRequestsAssigned  InvoiceRequest[] @relation("InvoiceRequestAssignee")
 
+  // Request Invoice workflow — CC Members (Oct 2026). Same onDelete:
+  // Restrict audit-preservation treatment as the two relations directly
+  // above: a user ever selected as a CC Member can never be hard-deleted
+  // while that InvoiceRequestCcMember row exists.
+  invoiceRequestCcMemberships InvoiceRequestCcMember[]
+
   // Documents feature — onDelete: Restrict on Document.uploadedBy (see that
   // model) means a user who has ever uploaded a document can never be
   // hard-deleted while it exists, same audit-trail-preservation treatment
@@ -473,12 +479,46 @@ model InvoiceRequest {
   fulfilledInvoiceLineId String?      @unique
   fulfilledInvoiceLine   InvoiceLine? @relation(fields: [fulfilledInvoiceLineId], references: [id], onDelete: SetNull)
 
+  // CC Members (Oct 2026) — the PortalUsers selected as CC recipients at
+  // submission time, in addition to the mandatory info@ifluids.com (which is
+  // never a row here — it isn't a PortalUser, it's injected server-side
+  // wherever this workflow's emails are composed, see
+  // invoiceRequest.service.ts). The SAME persisted set follows this request
+  // through Raised and Paid — never reconstructed from current directory
+  // state. See InvoiceRequestCcMember below for why this is a normalized
+  // relation rather than a comma-separated string.
+  ccMembers InvoiceRequestCcMember[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([projectId])
   @@index([assignedToUserId])
   @@index([status])
+}
+
+// Request Invoice workflow — CC Members (Oct 2026). Normalized many-to-many
+// between one InvoiceRequest and the PortalUsers selected as CC recipients —
+// same join-table shape as UserApprovalPermission above. onDelete: Restrict
+// on portalUserId (not Cascade) matches InvoiceRequest.requestedBy/
+// assignedTo's own precedent directly above: historical CC membership must
+// remain traceable even if that PortalUser is later deactivated or would
+// otherwise be deleted — never silently lost. @@unique prevents the same
+// person being persisted twice against one request.
+model InvoiceRequestCcMember {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  invoiceRequestId String
+  invoiceRequest   InvoiceRequest @relation(fields: [invoiceRequestId], references: [id], onDelete: Cascade)
+
+  portalUserId String
+  portalUser   PortalUser @relation(fields: [portalUserId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@unique([invoiceRequestId, portalUserId])
+  @@index([invoiceRequestId])
+  @@index([portalUserId])
 }
 
 // Append-only, one row per stage transition — never updated after creation.
@@ -631,6 +671,17 @@ model Project {
   currentExchangeRate  Float  @default(1)
   contractExchangeRate Float  @default(1)
 
+  // Invoice Currency feature (Oct 2026) — the project-wide INVOICE currency
+  // lock, established by the first invoice that reaches Raised (or a direct
+  // Draft -> Paid transition, per the approved business rule — see
+  // invoice.service.ts). Deliberately SEPARATE from `currency` above
+  // (Quantity Details' own pricing currency, unchanged by this feature) —
+  // the two may legitimately differ, and changing Quantity Details'
+  // currency must never affect this field. Null means no invoice has
+  // established a currency yet. This migration only adds the column;
+  // enforcing the lock is a later phase, not implemented here.
+  invoiceCurrency String?
+
   // Expense Budget — Phase 3.5. Deliberately flat on Project, NOT a child
   // table: this is a 1:1 attribute (exactly one Man-Hour Budget and one
   // Non-Man-Hour Budget per project, always), same treatment as every other
@@ -654,6 +705,10 @@ model Project {
   projectEngineer         String?
   projectCoordinator      String?
   clientCoordinator       String?
+
+  // Manual invoice numbering (Oct 2026) — the invoice numbers this project
+  // owns. See InvoiceNumber below.
+  invoiceNumbers InvoiceNumber[]
 
   // Project Remarks — optional free-text explanation for a project's
   // timeline (e.g. "Client-side delay — pending approval"). Flat,
@@ -903,6 +958,31 @@ model PaymentMilestone {
 // link field may already reference a pre-migration id from an
 // already-dispatched local notification.
 // =============================================================================
+// Manual invoice numbering (Oct 2026) — the register of invoice numbers in
+// use. Users enter their Tally invoice number; one invoice is several
+// InvoiceLine rows sharing that number, so InvoiceLine.invoiceNo itself
+// cannot carry a unique constraint. This table holds ONE row per invoice
+// number and enforces the confirmed rule at the database level: a number is
+// unique across the WHOLE portal, compared ignoring letter case and outer
+// whitespace (normalizedInvoiceNo = upper(trim(invoiceNo))), while the
+// number is always stored/displayed exactly as entered. A row exists while
+// any line (any status, Cancelled included — a cancelled number is never
+// reused automatically) carries the number; it is released only when every
+// line of that invoice is deleted. See invoice.service.ts.
+model InvoiceNumber {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  invoiceNo           String
+  normalizedInvoiceNo String @unique
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
+}
+
 model InvoiceLine {
   id String @id @default(dbgenerated("gen_random_uuid()"))
 
@@ -924,6 +1004,22 @@ model InvoiceLine {
   calculatedAmountINR     Float?
   invoiceAmountINR        Float
   commercialAdjustmentINR Float?
+
+  // Invoice Currency feature (Oct 2026) — additive, backward-compatible.
+  // invoiceAmountINR above remains the one authoritative INR-equivalent
+  // figure every existing aggregator/report/PDF already reads and must
+  // keep reading unchanged — nothing about it changes here. These three
+  // fields are purely descriptive: what currency/rate/original amount this
+  // specific line was actually raised in. Historical rows (created before
+  // this feature existed) are explicitly backfilled by this migration to
+  // currency="INR", exchangeRateToINR=1, invoiceAmountOriginal=
+  // invoiceAmountINR — identical in every respect to a line that was
+  // always, explicitly, raised in INR; never left ambiguous. Nullable like
+  // its siblings above (unitPriceINR/calculatedAmountINR/
+  // commercialAdjustmentINR) rather than NOT NULL, for the same reason.
+  currency              String  @default("INR")
+  exchangeRateToINR     Float   @default(1)
+  invoiceAmountOriginal Float?
 
   clientReference String?
   remarks         String?

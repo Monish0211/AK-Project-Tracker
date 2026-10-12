@@ -5,6 +5,8 @@ import type { EligibleInvoiceRaiser, InvoiceRequest } from "../types/InvoiceRequ
 
 export interface CreateInvoiceRequestPayload {
   assignedToUserId: string;
+  /** CC Members — selected PortalUser ids, re-validated server-side. The mandatory info@ifluids.com is never sent here — it's server-injected. */
+  ccMemberUserIds?: string[];
   invoiceAmountNote?: string | null;
   copiesRequired?: string | null;
   drawingsAvailable?: string | null;

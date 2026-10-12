@@ -4,6 +4,7 @@ import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
 import type { ReportInvoiceLine } from "../../../services/invoiceService";
+import { formatInvoiceMoney, normalizeInvoiceCurrency } from "../../../pages/Projects/components/Invoice/invoiceCurrency";
 
 interface Props {
   projects: any[];
@@ -38,6 +39,15 @@ export function InvoiceLedger({ projects, invoiceLines }: Props) {
         activityName: quantityItem?.description || "-",
         quantityBilled: line.quantityBilled || 0,
         amountINR: line.invoiceAmountINR || 0,
+        // Invoice Currency feature (Oct 2026) — additive columns (also in the
+        // export). amountINR above stays the INR equivalent; a missing/legacy
+        // currency is INR, never a foreign currency.
+        invoiceCurrency: normalizeInvoiceCurrency(line.currency),
+        amountOriginal:
+          normalizeInvoiceCurrency(line.currency) !== "INR" && typeof line.invoiceAmountOriginal === "number"
+            ? line.invoiceAmountOriginal
+            : line.invoiceAmountINR || 0,
+        exchangeRateToINR: normalizeInvoiceCurrency(line.currency) !== "INR" ? line.exchangeRateToINR ?? null : 1,
         status: line.status || "Draft",
       });
     });
@@ -97,7 +107,7 @@ export function InvoiceLedger({ projects, invoiceLines }: Props) {
                 <th className="p-2.5">Client</th>
                 <th className="p-2.5">Activity Description</th>
                 <th className="p-2.5 text-center">Billed Qty</th>
-                <th className="p-2.5 text-right">Invoiced Amount</th>
+                <th className="p-2.5 text-right">Invoiced Amount (INR)</th>
                 <th className="p-2.5 text-center">Status</th>
               </tr>
             </thead>
@@ -112,6 +122,11 @@ export function InvoiceLedger({ projects, invoiceLines }: Props) {
                   <td className="p-2.5 text-center font-mono font-bold">{row.quantityBilled}</td>
                   <td className="p-2.5 text-right font-mono font-extrabold text-blue-600 dark:text-blue-400">
                     {formatBusinessINR(row.amountINR)}
+                    {row.invoiceCurrency !== "INR" && (
+                      <div className="text-[10px] font-semibold text-[var(--nu-text-muted)]">
+                        {formatInvoiceMoney(row.amountOriginal, row.invoiceCurrency)} @ {row.exchangeRateToINR ?? "-"}
+                      </div>
+                    )}
                   </td>
                   <td className="p-2.5 text-center">
                     <span

@@ -1,6 +1,7 @@
 import type { InvoiceDocumentDTO, InvoiceDocumentLineItem } from "../../../../types/InvoiceDocument";
 import { formatFullINR } from "../../../../utils/formatCurrency";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
+import { formatInvoiceMoney } from "./invoiceCurrency";
 
 interface Props {
   document: InvoiceDocumentDTO;
@@ -8,6 +9,11 @@ interface Props {
 
 export function InvoiceDocumentView({ document }: Props) {
   const d = document;
+  // Invoice Currency (Oct 2026) — the document is printed in the invoice's
+  // own currency. INR keeps exactly the existing ₹ format; a foreign
+  // currency is code-prefixed with its own decimals (OMR: 3).
+  const isForeign = d.invoiceCurrency !== "INR";
+  const money = (value: number) => (isForeign ? formatInvoiceMoney(value, d.invoiceCurrency) : formatFullINR(value));
   const isLumpSumDocument = d.billingMethod === "lump_sum";
   const isMlmpDocument = d.billingMethod === "mlmp";
   const isAmountBasedDocument = d.billingMethod === "amount_based";
@@ -155,13 +161,13 @@ export function InvoiceDocumentView({ document }: Props) {
                   <>
                     {d.isGstApplicable && <th className="border-r border-black p-1 w-14">HSN/SAC</th>}
                     {d.isGstApplicable && <th className="border-r border-black p-1 w-12">GST %</th>}
-                    <th className="border-r border-black p-1 text-right w-24">Basic Unit Rate in INR</th>
+                    <th className="border-r border-black p-1 text-right w-24">Basic Unit Rate in {d.invoiceCurrency}</th>
                     <th className="border-r border-black p-1 w-14">UOM</th>
                     <th className="border-r border-black p-1 text-center w-16">Quantity</th>
                   </>
                 )
               )}
-              <th className="p-1 text-right w-24">Amount</th>
+              <th className="p-1 text-right w-24">{isForeign ? `Amount (${d.invoiceCurrency})` : "Amount"}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -184,13 +190,13 @@ export function InvoiceDocumentView({ document }: Props) {
                     <>
                       {d.isGstApplicable && <td className="border-r border-black p-1.5 text-center font-mono">{item.hsnSac}</td>}
                       {d.isGstApplicable && <td className="border-r border-black p-1.5 text-center">{item.gstRatePercent}%</td>}
-                      <td className="border-r border-black p-1.5 text-right font-mono">{formatFullINR(item.basicUnitRateINR ?? 0)}</td>
+                      <td className="border-r border-black p-1.5 text-right font-mono">{money(item.basicUnitRateOriginal ?? item.basicUnitRateINR ?? 0)}</td>
                       <td className="border-r border-black p-1.5 text-center">{item.uom}</td>
                       <td className="border-r border-black p-1.5 text-center font-semibold">{formatIndianNumber(item.quantity ?? 0)}</td>
                     </>
                   )
                 )}
-                <td className="p-1.5 text-right font-bold font-mono">{formatFullINR(item.amountINR)}</td>
+                <td className="p-1.5 text-right font-bold font-mono">{money(item.amountOriginal)}</td>
               </tr>
             ))}
 
@@ -231,7 +237,7 @@ export function InvoiceDocumentView({ document }: Props) {
                     (see utils/formatCurrency.ts). Adding a second rendered
                     "₹ ₹ 1,000". Every other amount in this document relies
                     on the formatter for the symbol — keep it that way. */}
-                {formatFullINR(d.grandTotalINR)}
+                {money(d.grandTotalOriginal)}
               </td>
             </tr>
           </tbody>
@@ -246,6 +252,29 @@ export function InvoiceDocumentView({ document }: Props) {
         </div>
         <span className="text-[9.5px] font-bold text-gray-500">E. & O.E</span>
       </div>
+
+      {/* Invoice Currency — a foreign-currency invoice is billed in that
+          currency (amounts above); the rate and the recorded INR equivalent
+          are stated for reference only. No GST on foreign-currency invoices. */}
+      {isForeign && (
+        <div className="border-x border-b border-black p-1.5 px-2 text-[10.5px] space-y-0.5">
+          <p>
+            <span className="font-semibold">Invoice Currency :</span> <span className="font-extrabold">{d.invoiceCurrency}</span>
+            <span className="mx-2 text-gray-400">|</span>
+            <span className="font-semibold">Exchange Rate :</span>{" "}
+            <span className="font-mono font-bold">1 {d.invoiceCurrency} = INR {d.exchangeRateToINR}</span>
+          </p>
+          <p className="text-[9.5px] text-gray-700">
+            INR equivalent (for reference only): <span className="font-mono font-semibold">{formatFullINR(d.grandTotalINR)}</span>
+          </p>
+          {!isMilestoneDocument && !isAmountBasedDocument && (
+            <p className="text-[9.5px] text-gray-700">
+              Basic unit rates are converted from INR at this exchange rate and rounded for display; each line amount is the
+              exact invoiced amount and the total is the sum of those amounts.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Tax Summary Table (If GST Applicable) */}
       {d.isGstApplicable && (

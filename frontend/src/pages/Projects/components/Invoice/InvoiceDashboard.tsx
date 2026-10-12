@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { ListChecks } from "lucide-react";
 
@@ -6,7 +6,8 @@ import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
 import type { InvoiceRequest } from "../../../../types/InvoiceRequest";
 import { updateProject } from "../../../../services/projectService";
-import { syncInvoiceLinesWithApi } from "../../../../services/invoiceService";
+import { fetchInvoiceItemsFromApi, fetchProjectInvoiceCurrency, syncInvoiceLinesWithApi } from "../../../../services/invoiceService";
+import { ApiError } from "../../../../services/apiClient";
 import { getInvoiceRequestsForProject } from "../../../../services/invoiceRequestService";
 import { useAuth } from "../../../../auth/authContext";
 import { hasApprovalPermission } from "../../../../auth/permissions";
@@ -24,7 +25,8 @@ import { InvoiceHistory } from "./InvoiceHistory";
 import { PrintInvoiceModal } from "./PrintInvoiceModal";
 import { RequestInvoiceModal } from "./RequestInvoiceModal";
 import { SendInvoiceToModal } from "./SendInvoiceToModal";
-import { getInvoiceMethod, getInvoiceCyclesForProject, suggestNextInvoiceNumber } from "./InvoiceCalculations";
+import { InvoiceRequestStatusIndicator } from "./InvoiceRequestStatusIndicator";
+import { getInvoiceMethod, getInvoiceCyclesForProject, NEW_INVOICE_CYCLE } from "./InvoiceCalculations";
 import { logInvoiceDeletedAudit, logInvoiceCycleStatusChangedAudit } from "../../../../services/projectAuditService";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { Card, CardBody } from "../../../../components/ui/Card";
@@ -79,29 +81,48 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
 
   const [drawerState, setDrawerState] = useState<DrawerState | null>(null);
 
+  // Invoice Currency feature (Oct 2026) — duplicate-submission guard. True
+  // while a persistProjectChange() sync is still talking to the backend. A
+  // second save in that window would diff against optimistic lines whose
+  // server ids don't exist yet (and could double-submit), so it is refused
+  // with a message instead. A ref, not state: the guard must see the
+  // current value synchronously, even for two clicks in the same frame.
+  const isSyncingRef = useRef(false);
+
   // Request Invoice workflow — whether this project already has an Open
   // Invoice Request (duplicate-submission UX only; the backend's own
   // advisory-locked check is the real guard). Not fetched at all in a
   // read-only context, where the button never renders anyway.
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  // Also drives the Invoice Request lifecycle indicator below — per the
+  // finalized business rule, that indicator shows "Invoice Requested" only
+  // while a request is genuinely Open and shows nothing once it's
+  // Completed/Cancelled, which is exactly this same value (no separate
+  // "most recent request regardless of status" state needed any more).
   const [openInvoiceRequest, setOpenInvoiceRequest] = useState<InvoiceRequest | null>(null);
   const [sendInvoiceToTarget, setSendInvoiceToTarget] = useState<{ item: InvoiceItem; line: InvoiceLine } | null>(null);
 
-  useEffect(() => {
+  // Extracted so it can be called both on mount AND after a real invoice
+  // mutation (see persistProjectChange below) — the lifecycle indicator must
+  // reflect Raised/Partially Paid/Paid as soon as the user actually raises
+  // or updates an invoice in this same session, not only after a remount.
+  // Still the one existing endpoint, never a new one.
+  const refreshInvoiceRequestState = () => {
     if (isReadOnly) return;
-    let cancelled = false;
     getInvoiceRequestsForProject(project.id)
       .then((requests) => {
-        if (!cancelled) setOpenInvoiceRequest(requests.find((r) => r.status === "Open") ?? null);
+        setOpenInvoiceRequest(requests.find((r) => r.status === "Open") ?? null);
       })
       .catch(() => {
         // Best-effort UX only — a failed load never blocks Request Invoice
         // itself (the backend's own duplicate guard still applies at submit
         // time), so this is silently ignored rather than surfaced as an error.
       });
-    return () => {
-      cancelled = true;
-    };
+  };
+
+  useEffect(() => {
+    refreshInvoiceRequestState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, isReadOnly]);
 
   // The unified, project-wide "Raise Invoice" flow: ONE common button (in
@@ -127,7 +148,7 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
   // unused for Invoice Line Items / Commercial Milestone Billing projects.
   const [selectedProjectCycle, setSelectedProjectCycle] = useState<string>(() => {
     const cycles = getInvoiceCyclesForProject(project).filter((cycle) => !cycle.isNew);
-    return cycles.length > 0 ? cycles[cycles.length - 1].invoiceNo : suggestNextInvoiceNumber(project);
+    return cycles.length > 0 ? cycles[cycles.length - 1].invoiceNo : NEW_INVOICE_CYCLE;
   });
 
   // No Invoice Method chosen yet (Invoice Management header dropdown) — no
@@ -157,7 +178,7 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
   // selection to the next never-used project-wide number; it only becomes a
   // real, persisted cycle once an invoice is actually saved against it.
   const handleCreateNewProjectCycle = () => {
-    setSelectedProjectCycle(suggestNextInvoiceNumber(project));
+    setSelectedProjectCycle(NEW_INVOICE_CYCLE);
   };
 
   const handleRaiseInvoice = () => {
@@ -186,8 +207,16 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
   };
 
   const handleWorkspaceSave = (updatedProject: Project) => {
-    persistProjectChange(updatedProject);
+    if (!persistProjectChange(updatedProject)) return;
     setWorkspaceInvoiceNo(null);
+    // Manual invoice numbering — if the summary was showing the "new
+    // invoice" placeholder, point it at the invoice just created (its number
+    // is the one cycle that exists now but did not before).
+    if (selectedProjectCycle === NEW_INVOICE_CYCLE) {
+      const before = new Set(getInvoiceCyclesForProject(project).map((cycle) => cycle.invoiceNo));
+      const created = getInvoiceCyclesForProject(updatedProject).find((cycle) => !cycle.isNew && !before.has(cycle.invoiceNo));
+      if (created) setSelectedProjectCycle(created.invoiceNo);
+    }
   };
 
   const handleViewInvoiceLine = (item: InvoiceItem, line: InvoiceLine) => {
@@ -226,25 +255,87 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
   // call fails, the optimistic localStorage write still stands (same
   // degraded behavior as before this phase existed) and the error is
   // surfaced to the console rather than silently swallowed.
-  const persistProjectChange = (updatedProject: Project) => {
+  // Invoice Currency feature (Oct 2026) — the server's current lock for this
+  // project, or the value we already had if it can't be read (older backend
+  // or a transient failure). Never invents a lock.
+  const readServerInvoiceCurrency = async (fallback: Project["invoiceCurrency"]): Promise<Project["invoiceCurrency"]> => {
+    try {
+      const fresh = await fetchProjectInvoiceCurrency(project.id);
+      return fresh === undefined ? fallback : fresh;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const persistProjectChange = (updatedProject: Project): boolean => {
+    if (isSyncingRef.current) {
+      showToast({
+        type: "error",
+        title: "Previous invoice change still saving",
+        message: "Please wait a moment for the previous invoice change to finish saving, then try again.",
+      });
+      return false;
+    }
+    isSyncingRef.current = true;
+
     setProject?.(updatedProject);
     updateProject({ ...updatedProject, updatedAt: new Date().toISOString() });
 
     syncInvoiceLinesWithApi(project.id, project.invoiceItems, updatedProject.invoiceItems)
-      .then((reconciledItems) => {
-        const reconciledProject = { ...updatedProject, invoiceItems: reconciledItems };
+      .then(async (reconciledItems) => {
+        // Re-read the lock too: a first raise establishes it and a delete may
+        // release it, so the copy loaded with the project is stale now. A
+        // new invoice opened next then starts from the server's real state.
+        const invoiceCurrency = await readServerInvoiceCurrency(updatedProject.invoiceCurrency);
+        const reconciledProject = { ...updatedProject, invoiceItems: reconciledItems, invoiceCurrency };
         setProject?.(reconciledProject);
         updateProject({ ...reconciledProject, updatedAt: new Date().toISOString() });
+        // Invoice Request lifecycle indicator — re-check after a real,
+        // backend-confirmed invoice change (Raise/status update/edit/delete
+        // all funnel through here) so Open -> Completed (and the fulfilled
+        // line's own status) is reflected without requiring a remount. The
+        // backend's own Raised-fulfillment/Paid-notification work is itself
+        // fire-and-forget server-side, so this can very occasionally still
+        // be a beat behind — never incorrect, just eventually consistent,
+        // same class of tradeoff as every other fire-and-forget path here.
+        refreshInvoiceRequestState();
       })
       .catch((error) => {
         console.error("Failed to sync invoice changes with the backend:", error);
+        // Invoice Currency feature (Oct 2026) — a 4xx is the backend
+        // definitively rejecting the change (e.g. currency lock, invalid
+        // exchange rate, Work Order Value ceiling): show its actual reason,
+        // and replace the optimistic local state with what the server really
+        // holds, so the screen never shows an invoice that was never saved.
+        // Network/5xx failures keep the previous behavior (outcome unknown).
+        if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+          showToast({
+            type: "error",
+            title: "Invoice change was rejected",
+            message: error.message,
+            duration: 0,
+          });
+          return Promise.all([fetchInvoiceItemsFromApi(project.id), readServerInvoiceCurrency(updatedProject.invoiceCurrency)])
+            .then(([serverItems, invoiceCurrency]) => {
+              const serverProject = { ...updatedProject, invoiceItems: serverItems, invoiceCurrency };
+              setProject?.(serverProject);
+              updateProject({ ...serverProject, updatedAt: new Date().toISOString() });
+            })
+            .catch((reloadError) => {
+              console.error("Failed to reload invoices after a rejected change:", reloadError);
+            });
+        }
         showToast({
           type: "error",
           title: "Invoice change not saved to the server",
           message: "Your change is showing locally, but saving it to the server failed. Please retry, or it may not persist.",
           duration: 0,
         });
+      })
+      .finally(() => {
+        isSyncingRef.current = false;
       });
+    return true;
   };
 
   const handleDeleteInvoiceLine = (item: InvoiceItem, line: InvoiceLine) => {
@@ -256,7 +347,7 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
         : { ...invoiceItem, invoices: invoiceItem.invoices.filter((existing) => existing.id !== line.id) }
     );
     const updatedProject = { ...project, invoiceItems: updatedItems };
-    persistProjectChange(updatedProject);
+    if (!persistProjectChange(updatedProject)) return;
 
     // Audit Log "Invoice Deleted"
     logInvoiceDeletedAudit(
@@ -283,14 +374,14 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
     });
 
     const updatedProject = { ...project, invoiceItems: updatedItems };
-    persistProjectChange(updatedProject);
+    if (!persistProjectChange(updatedProject)) return;
 
     // Audit Log "Invoice Status Updated"
     logInvoiceCycleStatusChangedAudit(project.id, invoiceNo, oldStatus, newStatus);
   };
 
   const handleSave = (updatedProject: Project) => {
-    persistProjectChange(updatedProject);
+    if (!persistProjectChange(updatedProject)) return;
     setDrawerState(null);
   };
 
@@ -380,6 +471,19 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
           onClose={() => setWorkspaceInvoiceNo(null)}
           onSave={handleWorkspaceSave}
         />
+      )}
+
+      {/* Invoice Request lifecycle indicator — persistent status, never an
+          action control (see InvoiceRequestStatusIndicator.tsx's own
+          comment). Renders nothing until a Request Invoice has actually
+          been submitted for this project. */}
+      {openInvoiceRequest && (
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]">
+            Invoice Request
+          </span>
+          <InvoiceRequestStatusIndicator invoiceRequest={openInvoiceRequest} />
+        </div>
       )}
 
       {/* Side-by-Side: Compact Invoice Summary (35%) + Invoice History (65%) with matching heights */}

@@ -1,4 +1,4 @@
-import type { InvoiceItem, InvoiceLine, InvoiceLineStatus, InvoiceMethod } from "../../../../types/InvoiceItem";
+import type { InvoiceCurrency, InvoiceItem, InvoiceLine, InvoiceLineStatus, InvoiceMethod } from "../../../../types/InvoiceItem";
 import type { Project } from "../../../../types/Project";
 import type { Tone } from "../../../../components/ui/Badge";
 import {
@@ -461,21 +461,102 @@ export interface GstBreakdown {
   ratePercent: number;
   gstAmount: number;
   grandTotal: number;
+  /** IGST (buyer outside Tamil Nadu) vs CGST + SGST — decided by the buyer state saved for this invoice. */
+  isInterState: boolean;
+  /** False while no buyer state has been saved for this invoice yet (CGST + SGST is then applied, exactly as the printout does for a blank state). */
+  buyerStateKnown: boolean;
+  cgst: number;
+  sgst: number;
+  igst: number;
+}
+
+/**
+ * THE place-of-supply rule — the printed invoice and every Raise Invoice
+ * screen use this one check. The company is registered in Tamil Nadu: a
+ * buyer state outside it is inter-state (IGST); Tamil Nadu or not yet
+ * entered is intra-state (CGST + SGST). Unchanged from the printout's
+ * existing behaviour.
+ */
+export function isInterStateSupply(buyerStateName: string | null | undefined): boolean {
+  return Boolean(buyerStateName && !buyerStateName.toLowerCase().includes("tamil nadu"));
+}
+
+/** The buyer state saved with this invoice's document details (Print Invoice → Buyer Information), or "" if none yet. */
+export function getSavedBuyerState(project: Project, invoiceNo: string): string {
+  return project.invoiceDocumentDetailsMap?.[invoiceNo]?.buyerInformation?.stateName?.trim() ?? "";
+}
+
+/**
+ * THE GST eligibility rule for an invoice — the single check every Raise
+ * Invoice workspace and every printed-invoice mapper uses, so the screen and
+ * the printout can never disagree. GST applies only when ALL hold:
+ * - the project's own Commercial Summary GST setting is on (`gstApplicable`);
+ * - the project's Quantity Details currency is INR (the Quantity module's
+ *   existing rule — see utils/quantityCalculations.ts);
+ * - this invoice's own currency is INR — a foreign invoice currency (USD,
+ *   EUR, ...) never carries GST.
+ * Nothing else (billing method, payment type) changes it; GST is a display
+ * and print figure only — no invoice line ever stores a GST amount.
+ */
+export function isGstApplicableForInvoice(project: Project, invoiceCurrency: InvoiceCurrency): boolean {
+  return Boolean(project.gstApplicable) && (project.currency || "INR") === "INR" && invoiceCurrency === "INR";
+}
+
+export interface GstTaxSplit {
+  cgst: number;
+  sgst: number;
+  igst: number;
+  totalTax: number;
+}
+
+/**
+ * THE GST arithmetic — used by the printed invoice (all four layouts) and,
+ * through getGstBreakdown(), by every Raise Invoice screen, so the figure on
+ * screen is always the figure printed. Intra-state: CGST and SGST are each
+ * half the rate, rounded separately; inter-state: one IGST at the full rate.
+ */
+export function computeGstTax(subtotal: number, ratePercent: number, isInterState: boolean): GstTaxSplit {
+  if (isInterState) {
+    const igst = round(subtotal * (ratePercent / 100));
+    return { cgst: 0, sgst: 0, igst, totalTax: igst };
+  }
+  const cgst = round(subtotal * (ratePercent / 200));
+  const sgst = round(subtotal * (ratePercent / 200));
+  return { cgst, sgst, igst: 0, totalTax: round(cgst + sgst) };
 }
 
 /**
  * GST for a given base amount, read from the project's own Commercial
- * Summary settings (`gstApplicable`/`gstRate`) — the same source of truth
- * the Quantity module's own GST figure already uses (Doc: GST only ever
- * applies when the project's billing currency is INR). Never a
- * separately-configured toggle for the Lump Sum workspace.
+ * Summary settings (`gstApplicable`/`gstRate`), gated by
+ * isGstApplicableForInvoice(). Recomputed on every render, so changing the
+ * invoice currency never leaves a stale GST figure behind. The tax treatment
+ * (IGST vs CGST + SGST) follows the buyer state saved for THIS invoice —
+ * the same state, rule (isInterStateSupply) and arithmetic (computeGstTax)
+ * the printout uses, so screen and print always show the same tax.
  */
-export function getGstBreakdown(project: Project, baseAmount: number): GstBreakdown {
-  const isApplicable = Boolean(project.gstApplicable) && (project.currency || "INR") === "INR";
+export function getGstBreakdown(project: Project, baseAmount: number, invoiceCurrency: InvoiceCurrency, invoiceNo: string): GstBreakdown {
+  const isApplicable = isGstApplicableForInvoice(project, invoiceCurrency);
   const ratePercent = isApplicable ? project.gstRate || 18 : 0;
-  const gstAmount = isApplicable ? round(baseAmount * (ratePercent / 100)) : 0;
-  const grandTotal = round(baseAmount + gstAmount);
-  return { isApplicable, ratePercent, gstAmount, grandTotal };
+  const buyerState = getSavedBuyerState(project, invoiceNo);
+  const isInterState = isInterStateSupply(buyerState);
+  const split = isApplicable ? computeGstTax(baseAmount, ratePercent, isInterState) : { cgst: 0, sgst: 0, igst: 0, totalTax: 0 };
+  const grandTotal = round(baseAmount + split.totalTax);
+  return {
+    isApplicable,
+    ratePercent,
+    gstAmount: split.totalTax,
+    grandTotal,
+    isInterState,
+    buyerStateKnown: buyerState !== "",
+    cgst: split.cgst,
+    sgst: split.sgst,
+    igst: split.igst,
+  };
+}
+
+/** "IGST 18%" or "CGST 9% + SGST 9%" — the treatment actually applied. */
+export function describeGstTreatment(gst: GstBreakdown): string {
+  return gst.isInterState ? `IGST ${gst.ratePercent}%` : `CGST ${gst.ratePercent / 2}% + SGST ${gst.ratePercent / 2}%`;
 }
 
 export const INVOICE_LINE_STATUS_LABEL: Record<InvoiceLineStatus, string> = {
@@ -530,30 +611,16 @@ export function getInvoiceCycleStatus(project: Project, invoiceNo: string): Invo
   return "Draft";
 }
 
-/** Every distinct, non-cancelled invoiceNo used anywhere in the project — one entry per Invoice Cycle, regardless of how many activities or milestone lines share it. */
-function getDistinctInvoiceCycleNumbers(project: Project): string[] {
-  const items = Array.isArray(project.invoiceItems) ? project.invoiceItems : [];
-  const seen = new Set<string>();
-  items.forEach((it) => {
-    (Array.isArray(it.invoices) ? it.invoices : []).forEach((line) => {
-      if (line.status !== "Cancelled") seen.add(line.invoiceNo);
-    });
-  });
-  return Array.from(seen);
-}
-
 /**
- * The next fresh Invoice Cycle number — PR-XXXXX-INV-001, -002, ... — counts
- * distinct Invoice Cycles used so far, never total invoice LINES. One cycle
- * can already contain several lines (multiple milestones, multiple
- * activities), so counting lines would skip numbers ahead of the true cycle
- * count.
+ * Manual invoice numbering (Oct 2026) — the cycle key that stands for "a new
+ * invoice whose number the user has not entered yet". Users enter their own
+ * Tally invoice number in the Raise Invoice form; the portal never generates
+ * one (the previous suggestNextInvoiceNumber() is gone). This value is a
+ * placeholder ONLY: no invoice line can ever be saved with it — every
+ * workspace writes the number typed into its Invoice No field
+ * (useInvoiceNumberField.ts), and the backend rejects blank numbers.
  */
-export function suggestNextInvoiceNumber(project: Project): string {
-  const cycleCount = getDistinctInvoiceCycleNumbers(project).length;
-  const prefix = project.prNo?.trim() || "INV";
-  return `${prefix}-INV-${String(cycleCount + 1).padStart(3, "0")}`;
-}
+export const NEW_INVOICE_CYCLE = "__NEW_INVOICE__";
 
 export interface InvoiceCycleOption {
   invoiceNo: string;
@@ -604,7 +671,7 @@ export function getInvoiceCyclesForProject(project: Project): InvoiceCycleOption
   }));
 
   options.push({
-    invoiceNo: suggestNextInvoiceNumber(project),
+    invoiceNo: NEW_INVOICE_CYCLE,
     label: `Invoice ${options.length + 1}`,
     isNew: true,
   });

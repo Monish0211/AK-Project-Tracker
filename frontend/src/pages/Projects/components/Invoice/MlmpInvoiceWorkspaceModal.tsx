@@ -26,6 +26,12 @@ import {
   type InvoiceStatus,
   type MlmpSetGroup,
 } from "./InvoiceCalculations";
+import { InvoiceCurrencyFields } from "./InvoiceCurrencyFields";
+import { useInvoiceCurrencyState } from "./useInvoiceCurrencyState";
+import { InvoiceNumberField } from "./InvoiceNumberField";
+import { useInvoiceNumberField } from "./useInvoiceNumberField";
+import { amountsFromInr, formatInvoiceMoney, isForeignCurrency, sumAmountsFromInr } from "./invoiceCurrency";
+import { InrReferenceNote, InvoiceTotalBoxes } from "./InvoiceTotalBoxes";
 
 interface Props {
   project: Project;
@@ -181,6 +187,17 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
 
   // Selections across every activity — cheap to build: only ever scans each
   // item's already-saved invoice lines, never computes SET/milestone rows.
+  // Invoice Currency feature (Oct 2026) — per-invoice currency/rate. MLMP
+  // amounts stay milestone % x INR value; for a foreign-currency invoice each line's original
+  // amount is derived from its INR value (amountsFromInr()). It is not
+  // separately editable (neither here nor in Edit Invoice, whose amount
+  // field is disabled for quantity-0 lines) — see the release report.
+  const currencyState = useInvoiceCurrencyState(project, invoiceNo);
+  // Manual invoice numbering — the user's Tally number (required, editable for a new invoice).
+  const numberField = useInvoiceNumberField(project, invoiceNo);
+  const { currency: invoiceCurrency, selection: currencySelection } = currencyState;
+  const isForeign = isForeignCurrency(invoiceCurrency);
+
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => {
     const initial = new Set<string>();
     items.forEach((item) => {
@@ -323,10 +340,16 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
   }, [items, selectedItemIds, selectedKeys, selectedItem, selectedSets, project]);
 
   const totalInvoiceAmount = round(globalSelectedRows.reduce((sum, row) => sum + row.milestone.invoiceAmount, 0));
-  const gst = getGstBreakdown(project, totalInvoiceAmount);
+  const gst = getGstBreakdown(project, totalInvoiceAmount, invoiceCurrency, invoiceNo);
   const activitiesTouched = selectedItemIds.size;
 
-  const canSave = globalSelectedRows.length > 0 && invoiceDate.trim() !== "" && !!invoiceStatus;
+  const canSave = globalSelectedRows.length > 0 && invoiceDate.trim() !== "" && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
+
+  /** Original-currency + saved-INR totals of the lines the given rows will actually be saved as (null for an INR invoice). OMR keeps 3 decimals. */
+  const sumForeign = (amountsINR: number[]) => (isForeign && currencySelection ? sumAmountsFromInr(amountsINR, currencySelection) : null);
+  const foreignTotals = sumForeign(globalSelectedRows.map((row) => row.milestone.invoiceAmount));
+  const totalOriginalAmount = foreignTotals?.original ?? null;
+  const currentActivityForeign = sumForeign(currentActivitySelectedRows.map((row) => row.milestone.invoiceAmount));
 
   // Items to persist on Save: every activity with a live selection, PLUS any
   // activity that already had a saved line in this cycle (so fully
@@ -340,8 +363,11 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
     return ids;
   }, [items, invoiceNo]);
 
-  const handleSave = () => {
-    if (!canSave) return;
+  const handleSave = async () => {
+    if (!canSave || !currencySelection) return;
+    // Never closes the form on a missing/duplicate number — the typed value stays put.
+    const savedInvoiceNo = await numberField.resolveForSave();
+    if (!savedInvoiceNo) return;
 
     const itemsToProcess = new Set<string>([...selectedItemIds, ...existingLineItemIds]);
 
@@ -369,14 +395,14 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
           if (isSelected) {
             const updatedLine: InvoiceLine = {
               id: existingLine?.id ?? crypto.randomUUID(),
-              invoiceNo,
+              invoiceNo: savedInvoiceNo,
               invoiceDate,
               milestoneId: milestone.id,
               milestoneName: milestone.label,
               setIndex: set.setIndex,
               quantityBilled: 0,
+              ...amountsFromInr(milestone.invoiceAmount, currencySelection),
               calculatedAmountINR: milestone.invoiceAmount,
-              invoiceAmountINR: milestone.invoiceAmount,
               commercialAdjustmentINR: 0,
               clientReference: clientReference.trim() || undefined,
               remarks: remarks.trim() || undefined,
@@ -400,7 +426,7 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
       const noteLines = [
         `📄 ${cycleLabel} Raised`,
         "",
-        `Invoice: ${invoiceNo}`,
+        `Invoice: ${savedInvoiceNo}`,
         `Date: ${formatNoteDate(invoiceDate)}`,
         "",
         "Milestones Invoiced",
@@ -409,7 +435,9 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
         ),
         "",
         `Total: ${globalSelectedRows.length} milestone(s) across ${activitiesTouched} activit${activitiesTouched !== 1 ? "ies" : "y"}`,
-        `Invoice Amount: ${formatIndianCurrency(totalInvoiceAmount)}`,
+        totalOriginalAmount !== null
+          ? `Invoice Amount: ${formatInvoiceMoney(totalOriginalAmount, invoiceCurrency)} (${formatIndianCurrency(foreignTotals?.inr ?? totalInvoiceAmount)} @ ${currencySelection.exchangeRateToINR})`
+          : `Invoice Amount: ${formatIndianCurrency(totalInvoiceAmount)}`,
       ];
       if (remarks.trim()) {
         noteLines.push("", "Remarks", remarks.trim());
@@ -481,15 +509,12 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
 
           {/* Invoice Header Details */}
           <div className="shrink-0 border-b border-[var(--nu-border)] bg-[var(--nu-surface-alt)] px-4 sm:px-6 py-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${isForeign ? "lg:grid-cols-7" : "lg:grid-cols-6"}`}>
               <div>
                 <label className={labelClass}>Invoice Cycle</label>
                 <Input type="text" value={cycleLabel} disabled className={disabledFieldClass} />
               </div>
-              <div>
-                <label className={labelClass}>Invoice No</label>
-                <Input type="text" value={invoiceNo} disabled className={`${disabledFieldClass} font-mono`} />
-              </div>
+              <InvoiceNumberField state={numberField} />
               <div>
                 <label className={labelClass}>Invoice Date</label>
                 <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
@@ -513,6 +538,7 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
                   ))}
                 </Select>
               </div>
+              <InvoiceCurrencyFields state={currencyState} />
             </div>
           </div>
 
@@ -718,18 +744,19 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
                         </div>
                         <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
                           <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Invoice Amount (This Activity)</p>
-                          <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums">{formatIndianCurrency(currentActivityAmount)}</p>
+                          <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums">
+                            {currentActivityForeign ? formatInvoiceMoney(currentActivityForeign.original, invoiceCurrency) : formatIndianCurrency(currentActivityAmount)}
+                          </p>
+                          {currentActivityForeign && <InrReferenceNote inr={currentActivityForeign.inr} />}
                         </div>
-                        {gst.isApplicable && (
-                          <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
-                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">GST ({gst.ratePercent}%)</p>
-                            <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums">{formatIndianCurrency(gst.gstAmount)}</p>
-                          </div>
-                        )}
-                        <div className="bg-white/90 dark:bg-slate-900/90 p-3 rounded-xl border border-blue-300 dark:border-cyan-800 col-span-2 sm:col-span-1">
-                          <p className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-cyan-400">Grand Total (All Activities)</p>
-                          <p className="text-lg font-black text-blue-700 dark:text-cyan-300 mt-0.5 tabular-nums">{formatIndianCurrency(gst.grandTotal)}</p>
-                        </div>
+                        <InvoiceTotalBoxes
+                          gst={gst}
+                          currency={invoiceCurrency}
+                          originalTotal={totalOriginalAmount}
+                          inrTotal={foreignTotals?.inr ?? totalInvoiceAmount}
+                          grandTotalLabel="Grand Total (All Activities)"
+                          grandTotalClassName="col-span-2 sm:col-span-1"
+                        />
                       </div>
 
                       {activitiesTouched > 1 && (

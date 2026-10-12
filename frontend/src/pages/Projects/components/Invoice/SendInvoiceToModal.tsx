@@ -9,7 +9,7 @@ import { usePmoToast } from "../../../../components/ui/usePmoToast";
 import { getUserFriendlyErrorMessage } from "../../../../utils/errorMessage";
 import { getUsersByRole } from "../../../../services/prRequestService";
 import { sendInvoiceLineTo } from "../../../../services/invoiceService";
-import { formatIndianCurrency } from "../../../../utils/formatCurrency";
+import { formatLineAmountWithEquivalent } from "./invoiceCurrency";
 
 interface Props {
   item: InvoiceItem;
@@ -100,7 +100,7 @@ export function SendInvoiceToModal({ item, line, onClose }: Props) {
               </div>
               <div>
                 <span className="text-[var(--nu-text-muted)]">Amount</span>
-                <p className="font-semibold text-[var(--nu-text)]">{formatIndianCurrency(line.invoiceAmountINR)}</p>
+                <p className="font-semibold text-[var(--nu-text)]">{formatLineAmountWithEquivalent(line)}</p>
               </div>
               <div className="col-span-2">
                 <span className="text-[var(--nu-text-muted)]">Activity</span>

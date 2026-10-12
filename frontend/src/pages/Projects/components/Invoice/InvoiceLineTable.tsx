@@ -40,6 +40,13 @@ interface Props {
   onDescriptionChange: (key: string, description: string) => void;
   onRemoveRow: (key: string) => void;
   disabled?: boolean;
+  /**
+   * Invoice Currency feature (Oct 2026) — editing a saved foreign-currency line: the
+   * Invoice Amount input shows/edits this raw original-currency text instead of
+   * row.currentInvoiceAmount (which stays the INR equivalent, used by every
+   * other column). Omitted — every existing caller — the table is unchanged.
+   */
+  foreignAmount?: { value: string; currency: string; onChange: (raw: string) => void; inrEquivalentLabel: string } | undefined;
 }
 
 const STATUS_BADGE_STYLE: Record<CommercialLineBillingStatus, string> = {
@@ -66,6 +73,7 @@ export function InvoiceLineTable({
   onDescriptionChange,
   onRemoveRow,
   disabled = false,
+  foreignAmount,
 }: Props) {
   const handleQtyInput = (key: string) => (e: ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
@@ -189,16 +197,29 @@ export function InvoiceLineTable({
                       <Input
                         type="text"
                         inputMode="decimal"
-                        value={row.currentInvoiceAmount === 0 ? "" : String(row.currentInvoiceAmount)}
-                        onChange={handleAmountInput(row.key)}
+                        value={foreignAmount ? foreignAmount.value : row.currentInvoiceAmount === 0 ? "" : String(row.currentInvoiceAmount)}
+                        onChange={
+                          foreignAmount
+                            ? (e) => {
+                                const raw = e.target.value;
+                                if (raw !== "" && !/^\d*\.?\d*$/.test(raw)) return;
+                                foreignAmount.onChange(raw);
+                              }
+                            : handleAmountInput(row.key)
+                        }
                         disabled={isRowDisabled || row.qtyToBill <= 0}
-                        placeholder={isRowDisabled ? "Disabled" : "₹ 0"}
+                        placeholder={isRowDisabled ? "Disabled" : foreignAmount ? `${foreignAmount.currency} 0` : "₹ 0"}
                         invalid={!!row.error}
                         className={`text-right font-bold text-cyan-600 dark:text-cyan-400 disabled:bg-slate-100/60 dark:disabled:bg-slate-800/40 disabled:opacity-60 disabled:cursor-not-allowed ${
                           row.error ? "!border-red-500 !ring-red-500/20" : ""
                         }`}
                       />
                     </div>
+                    {foreignAmount && !row.error && (
+                      <p className="mt-1 text-right text-[10px] font-medium text-[var(--nu-text-muted)] tabular-nums">
+                        {foreignAmount.currency} · ≈ {foreignAmount.inrEquivalentLabel}
+                      </p>
+                    )}
                     {hasCommercialAdjustment && (
                       <p className="mt-1 flex items-center justify-end gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400">
                         Commercial Adjustment{" "}

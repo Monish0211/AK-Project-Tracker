@@ -21,6 +21,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
     await getTransporter().sendMail({
       from: `"${env.SMTP_FROM_NAME}" <${env.SMTP_FROM_EMAIL}>`,
       to: options.to,
+      cc: options.cc,
       subject: options.subject,
       html: options.html,
       text: options.text,

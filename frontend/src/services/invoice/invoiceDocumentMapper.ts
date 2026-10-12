@@ -5,9 +5,67 @@ import {
   getInvoiceCyclesForProject,
   getMilestonesForProject,
   getMlmpSetLabel,
+  computeGstTax,
+  isGstApplicableForInvoice,
+  isInterStateSupply,
   round,
+  type GstTaxSplit,
 } from "../../pages/Projects/components/Invoice/InvoiceCalculations";
+import {
+  getInvoiceCycleCurrency,
+  getLineOriginalAmount,
+  isForeignCurrency,
+  roundToMinorUnit,
+} from "../../pages/Projects/components/Invoice/invoiceCurrency";
+import type { InvoiceCurrency } from "../../types/InvoiceItem";
 import { numberToIndianWords } from "./numberToWords";
+import { amountToCurrencyWords } from "./currencyWords";
+
+/**
+ * The currency/rate this invoice was saved in (every line of one invoice
+ * shares them) — the document is printed in that currency. A legacy line
+ * with no currency is INR at rate 1. Also feeds the shared GST rule, so a
+ * foreign-currency invoice never prints GST.
+ */
+interface PrintCurrency {
+  currency: InvoiceCurrency;
+  exchangeRateToINR: number;
+}
+
+function getPrintCurrency(project: Project, invoiceNo: string): PrintCurrency {
+  const saved = getInvoiceCycleCurrency(project, invoiceNo);
+  if (!saved || !isForeignCurrency(saved.currency)) return { currency: "INR", exchangeRateToINR: 1 };
+  return { currency: saved.currency, exchangeRateToINR: saved.exchangeRateToINR };
+}
+
+const NO_GST: GstTaxSplit = { cgst: 0, sgst: 0, igst: 0, totalTax: 0 };
+
+/**
+ * Totals in the invoice's own currency. INR: exactly the previous figures and
+ * wording (original === INR). Foreign: the sum of the lines' saved original
+ * amounts — never INR converted back — and no GST (isGstApplicableForInvoice()).
+ */
+function getCurrencyTotals(pc: PrintCurrency, subtotalINR: number, subtotalOriginal: number, grandTotalINR: number) {
+  if (!isForeignCurrency(pc.currency)) {
+    return { subtotalOriginal: subtotalINR, grandTotalOriginal: grandTotalINR, amountInWords: numberToIndianWords(grandTotalINR) };
+  }
+  const subtotal = roundToMinorUnit(subtotalOriginal, pc.currency);
+  return { subtotalOriginal: subtotal, grandTotalOriginal: subtotal, amountInWords: amountToCurrencyWords(subtotal, pc.currency) };
+}
+
+/**
+ * A line's printed amount in the invoice currency. INR: exactly the INR
+ * figure the layout already prints (unchanged). Foreign: the line's saved
+ * original amount, to that currency's precision.
+ */
+function lineAmountInInvoiceCurrency(line: Parameters<typeof getLineOriginalAmount>[0], amountINR: number, pc: PrintCurrency): number {
+  return isForeignCurrency(pc.currency) ? roundToMinorUnit(getLineOriginalAmount(line), pc.currency) : amountINR;
+}
+
+/** A unit rate (INR) expressed in the invoice currency, to that currency's precision. INR unchanged. */
+function unitRateInInvoiceCurrency(unitRateINR: number, pc: PrintCurrency): number {
+  return isForeignCurrency(pc.currency) ? roundToMinorUnit(unitRateINR / pc.exchangeRateToINR, pc.currency) : unitRateINR;
+}
 
 /**
  * Quantity Billing's PDF/print mapper — UNCHANGED. Reads line items strictly
@@ -24,6 +82,7 @@ export function mapProjectToInvoiceDocumentDTO(
   details: InvoiceDocumentDetails
 ): InvoiceDocumentDTO {
   const items = Array.isArray(project.invoiceItems) ? project.invoiceItems : [];
+  const printCurrency = getPrintCurrency(project, invoiceNo);
   
   // Find cycle label (e.g., "Invoice 1")
   const cycles = getInvoiceCyclesForProject(project);
@@ -35,6 +94,7 @@ export function mapProjectToInvoiceDocumentDTO(
   const documentLines: InvoiceDocumentLineItem[] = [];
   let slNo = 1;
   let subtotal = 0;
+  let subtotalOriginal = 0;
   let firstLineDate = "";
 
   items.forEach((item) => {
@@ -46,7 +106,9 @@ export function mapProjectToInvoiceDocumentDTO(
 
         const unitRate = line.unitPriceINR ?? item.unitPrice;
         const lineAmount = line.invoiceAmountINR;
+        const lineOriginal = lineAmountInInvoiceCurrency(line, lineAmount, printCurrency);
         subtotal += lineAmount;
+        subtotalOriginal += lineOriginal;
 
         documentLines.push({
           slNo: slNo++,
@@ -58,6 +120,8 @@ export function mapProjectToInvoiceDocumentDTO(
           uom: item.uom || "MAN-HOUR",
           quantity: line.quantityBilled,
           amountINR: lineAmount,
+          amountOriginal: lineOriginal,
+          basicUnitRateOriginal: unitRateInInvoiceCurrency(unitRate, printCurrency),
         });
       }
     });
@@ -65,8 +129,8 @@ export function mapProjectToInvoiceDocumentDTO(
 
   subtotal = round(subtotal);
 
-  // Determine GST applicability
-  const isGstApplicable = Boolean(project.gstApplicable);
+  // GST applicability — the same shared rule the Raise Invoice workspaces use
+  const isGstApplicable = isGstApplicableForInvoice(project, printCurrency.currency);
   const gstRate = isGstApplicable ? (project.gstRate || 18) : 0;
   const buyerInfo = details.buyerInformation || {
     companyName: project.client || "",
@@ -80,27 +144,12 @@ export function mapProjectToInvoiceDocumentDTO(
     email: project.emailId || "",
   };
 
-  const isInterState = Boolean(
-    buyerInfo.stateName && !buyerInfo.stateName.toLowerCase().includes("tamil nadu")
-  );
+  const isInterState = isInterStateSupply(buyerInfo.stateName);
 
-  let cgst = 0;
-  let sgst = 0;
-  let igst = 0;
-  let totalTax = 0;
-
-  if (isGstApplicable) {
-    if (isInterState) {
-      igst = round(subtotal * (gstRate / 100));
-      totalTax = igst;
-    } else {
-      cgst = round(subtotal * (gstRate / 200));
-      sgst = round(subtotal * (gstRate / 200));
-      totalTax = round(cgst + sgst);
-    }
-  }
+  const { cgst, sgst, igst, totalTax } = isGstApplicable ? computeGstTax(subtotal, gstRate, isInterState) : NO_GST;
 
   const grandTotal = round(subtotal + totalTax);
+  const currencyTotals = getCurrencyTotals(printCurrency, subtotal, subtotalOriginal, grandTotal);
 
   // Formatted date helper
   const formattedInvoiceDate = firstLineDate
@@ -160,9 +209,13 @@ export function mapProjectToInvoiceDocumentDTO(
     igstAmountINR: igst,
     totalTaxINR: totalTax,
     grandTotalINR: grandTotal,
+    invoiceCurrency: printCurrency.currency,
+    exchangeRateToINR: printCurrency.exchangeRateToINR,
+    subtotalOriginal: currencyTotals.subtotalOriginal,
+    grandTotalOriginal: currencyTotals.grandTotalOriginal,
 
     // Words
-    amountInWords: numberToIndianWords(grandTotal),
+    amountInWords: currencyTotals.amountInWords,
     taxAmountInWords: isGstApplicable ? numberToIndianWords(totalTax) : "NIL",
 
     // Bank Info
@@ -196,6 +249,7 @@ export function mapProjectToLumpSumInvoiceDocumentDTO(
   details: InvoiceDocumentDetails
 ): InvoiceDocumentDTO {
   const items = Array.isArray(project.invoiceItems) ? project.invoiceItems : [];
+  const printCurrency = getPrintCurrency(project, invoiceNo);
   const milestones = getMilestonesForProject(project);
 
   const cycles = getInvoiceCyclesForProject(project);
@@ -206,6 +260,7 @@ export function mapProjectToLumpSumInvoiceDocumentDTO(
   // Sum each milestone's already-saved invoiceAmountINR across every
   // activity's proportional share — never recomputed from qty/unit rate.
   const amountByMilestoneId = new Map<string, number>();
+  const originalByMilestoneId = new Map<string, number>();
   let firstLineDate = "";
 
   items.forEach((item) => {
@@ -215,6 +270,12 @@ export function mapProjectToLumpSumInvoiceDocumentDTO(
         line.milestoneId,
         round((amountByMilestoneId.get(line.milestoneId) || 0) + line.invoiceAmountINR)
       );
+      if (isForeignCurrency(printCurrency.currency)) {
+        originalByMilestoneId.set(
+          line.milestoneId,
+          roundToMinorUnit((originalByMilestoneId.get(line.milestoneId) || 0) + getLineOriginalAmount(line), printCurrency.currency)
+        );
+      }
       if (!firstLineDate && line.invoiceDate) firstLineDate = line.invoiceDate;
     });
   });
@@ -222,20 +283,25 @@ export function mapProjectToLumpSumInvoiceDocumentDTO(
   const documentLines: InvoiceDocumentLineItem[] = [];
   let slNo = 1;
   let subtotal = 0;
+  let subtotalOriginal = 0;
 
   milestones.forEach((milestone) => {
     const amount = amountByMilestoneId.get(milestone.id);
     if (amount === undefined || amount <= 0) return; // not part of this invoice
+    // INR: the printed INR amount itself (unchanged); foreign: the summed saved originals.
+    const original = originalByMilestoneId.get(milestone.id) ?? round(amount);
     subtotal = round(subtotal + amount);
+    subtotalOriginal += original;
     documentLines.push({
       slNo: slNo++,
       activityName: milestone.label,
       milestonePercent: milestone.percent,
       amountINR: round(amount),
+      amountOriginal: original,
     });
   });
 
-  const isGstApplicable = Boolean(project.gstApplicable);
+  const isGstApplicable = isGstApplicableForInvoice(project, printCurrency.currency);
   const gstRate = isGstApplicable ? project.gstRate || 18 : 0;
 
   const buyerInfo = details.buyerInformation || {
@@ -250,25 +316,12 @@ export function mapProjectToLumpSumInvoiceDocumentDTO(
     email: project.emailId || "",
   };
 
-  const isInterState = Boolean(buyerInfo.stateName && !buyerInfo.stateName.toLowerCase().includes("tamil nadu"));
+  const isInterState = isInterStateSupply(buyerInfo.stateName);
 
-  let cgst = 0;
-  let sgst = 0;
-  let igst = 0;
-  let totalTax = 0;
-
-  if (isGstApplicable) {
-    if (isInterState) {
-      igst = round(subtotal * (gstRate / 100));
-      totalTax = igst;
-    } else {
-      cgst = round(subtotal * (gstRate / 200));
-      sgst = round(subtotal * (gstRate / 200));
-      totalTax = round(cgst + sgst);
-    }
-  }
+  const { cgst, sgst, igst, totalTax } = isGstApplicable ? computeGstTax(subtotal, gstRate, isInterState) : NO_GST;
 
   const grandTotal = round(subtotal + totalTax);
+  const currencyTotals = getCurrencyTotals(printCurrency, subtotal, subtotalOriginal, grandTotal);
 
   const formattedInvoiceDate = firstLineDate
     ? new Date(firstLineDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })
@@ -327,9 +380,13 @@ export function mapProjectToLumpSumInvoiceDocumentDTO(
     igstAmountINR: igst,
     totalTaxINR: totalTax,
     grandTotalINR: grandTotal,
+    invoiceCurrency: printCurrency.currency,
+    exchangeRateToINR: printCurrency.exchangeRateToINR,
+    subtotalOriginal: currencyTotals.subtotalOriginal,
+    grandTotalOriginal: currencyTotals.grandTotalOriginal,
 
     // Words — always derived from the Grand Total, never a qty calculation
-    amountInWords: numberToIndianWords(grandTotal),
+    amountInWords: currencyTotals.amountInWords,
     taxAmountInWords: isGstApplicable ? numberToIndianWords(totalTax) : "NIL",
 
     // Bank Info
@@ -360,6 +417,7 @@ export function mapProjectToMlmpInvoiceDocumentDTO(
   details: InvoiceDocumentDetails
 ): InvoiceDocumentDTO {
   const items = Array.isArray(project.invoiceItems) ? project.invoiceItems : [];
+  const printCurrency = getPrintCurrency(project, invoiceNo);
   // Same source as Lump Sum — there is no separate MLMP milestone template.
   const milestones = getMilestonesForProject(project);
 
@@ -371,6 +429,7 @@ export function mapProjectToMlmpInvoiceDocumentDTO(
   const documentLines: InvoiceDocumentLineItem[] = [];
   let slNo = 1;
   let subtotal = 0;
+  let subtotalOriginal = 0;
   let firstLineDate = "";
 
   items.forEach((item) => {
@@ -380,7 +439,9 @@ export function mapProjectToMlmpInvoiceDocumentDTO(
 
       const percent = milestones.find((m) => m.id === line.milestoneId)?.percent;
       const amount = round(line.invoiceAmountINR);
+      const original = lineAmountInInvoiceCurrency(line, amount, printCurrency);
       subtotal = round(subtotal + amount);
+      subtotalOriginal += original;
 
       documentLines.push({
         slNo: slNo++,
@@ -389,11 +450,12 @@ export function mapProjectToMlmpInvoiceDocumentDTO(
         setLabel: `${getMlmpSetLabel(item)} ${line.setIndex}`,
         milestonePercent: percent,
         amountINR: amount,
+        amountOriginal: original,
       });
     });
   });
 
-  const isGstApplicable = Boolean(project.gstApplicable);
+  const isGstApplicable = isGstApplicableForInvoice(project, printCurrency.currency);
   const gstRate = isGstApplicable ? project.gstRate || 18 : 0;
 
   const buyerInfo = details.buyerInformation || {
@@ -408,25 +470,12 @@ export function mapProjectToMlmpInvoiceDocumentDTO(
     email: project.emailId || "",
   };
 
-  const isInterState = Boolean(buyerInfo.stateName && !buyerInfo.stateName.toLowerCase().includes("tamil nadu"));
+  const isInterState = isInterStateSupply(buyerInfo.stateName);
 
-  let cgst = 0;
-  let sgst = 0;
-  let igst = 0;
-  let totalTax = 0;
-
-  if (isGstApplicable) {
-    if (isInterState) {
-      igst = round(subtotal * (gstRate / 100));
-      totalTax = igst;
-    } else {
-      cgst = round(subtotal * (gstRate / 200));
-      sgst = round(subtotal * (gstRate / 200));
-      totalTax = round(cgst + sgst);
-    }
-  }
+  const { cgst, sgst, igst, totalTax } = isGstApplicable ? computeGstTax(subtotal, gstRate, isInterState) : NO_GST;
 
   const grandTotal = round(subtotal + totalTax);
+  const currencyTotals = getCurrencyTotals(printCurrency, subtotal, subtotalOriginal, grandTotal);
 
   const formattedInvoiceDate = firstLineDate
     ? new Date(firstLineDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })
@@ -485,9 +534,13 @@ export function mapProjectToMlmpInvoiceDocumentDTO(
     igstAmountINR: igst,
     totalTaxINR: totalTax,
     grandTotalINR: grandTotal,
+    invoiceCurrency: printCurrency.currency,
+    exchangeRateToINR: printCurrency.exchangeRateToINR,
+    subtotalOriginal: currencyTotals.subtotalOriginal,
+    grandTotalOriginal: currencyTotals.grandTotalOriginal,
 
     // Words — always derived from the Grand Total, never a qty calculation
-    amountInWords: numberToIndianWords(grandTotal),
+    amountInWords: currencyTotals.amountInWords,
     taxAmountInWords: isGstApplicable ? numberToIndianWords(totalTax) : "NIL",
 
     // Bank Info
@@ -515,6 +568,7 @@ export function mapProjectToAmountBasedInvoiceDocumentDTO(
   details: InvoiceDocumentDetails
 ): InvoiceDocumentDTO {
   const items = Array.isArray(project.invoiceItems) ? project.invoiceItems : [];
+  const printCurrency = getPrintCurrency(project, invoiceNo);
 
   const cycles = getInvoiceCyclesForProject(project);
   const matchedCycle = cycles.find((c) => c.invoiceNo === invoiceNo);
@@ -524,6 +578,7 @@ export function mapProjectToAmountBasedInvoiceDocumentDTO(
   const documentLines: InvoiceDocumentLineItem[] = [];
   let slNo = 1;
   let subtotal = 0;
+  let subtotalOriginal = 0;
   let firstLineDate = "";
 
   items.forEach((item) => {
@@ -532,17 +587,20 @@ export function mapProjectToAmountBasedInvoiceDocumentDTO(
       if (!firstLineDate && line.invoiceDate) firstLineDate = line.invoiceDate;
 
       const amount = round(line.invoiceAmountINR);
+      const original = lineAmountInInvoiceCurrency(line, amount, printCurrency);
       subtotal = round(subtotal + amount);
+      subtotalOriginal += original;
 
       documentLines.push({
         slNo: slNo++,
         activityName: item.description,
         amountINR: amount,
+        amountOriginal: original,
       });
     });
   });
 
-  const isGstApplicable = Boolean(project.gstApplicable);
+  const isGstApplicable = isGstApplicableForInvoice(project, printCurrency.currency);
   const gstRate = isGstApplicable ? project.gstRate || 18 : 0;
 
   const buyerInfo = details.buyerInformation || {
@@ -557,25 +615,12 @@ export function mapProjectToAmountBasedInvoiceDocumentDTO(
     email: project.emailId || "",
   };
 
-  const isInterState = Boolean(buyerInfo.stateName && !buyerInfo.stateName.toLowerCase().includes("tamil nadu"));
+  const isInterState = isInterStateSupply(buyerInfo.stateName);
 
-  let cgst = 0;
-  let sgst = 0;
-  let igst = 0;
-  let totalTax = 0;
-
-  if (isGstApplicable) {
-    if (isInterState) {
-      igst = round(subtotal * (gstRate / 100));
-      totalTax = igst;
-    } else {
-      cgst = round(subtotal * (gstRate / 200));
-      sgst = round(subtotal * (gstRate / 200));
-      totalTax = round(cgst + sgst);
-    }
-  }
+  const { cgst, sgst, igst, totalTax } = isGstApplicable ? computeGstTax(subtotal, gstRate, isInterState) : NO_GST;
 
   const grandTotal = round(subtotal + totalTax);
+  const currencyTotals = getCurrencyTotals(printCurrency, subtotal, subtotalOriginal, grandTotal);
 
   const formattedInvoiceDate = firstLineDate
     ? new Date(firstLineDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })
@@ -634,9 +679,13 @@ export function mapProjectToAmountBasedInvoiceDocumentDTO(
     igstAmountINR: igst,
     totalTaxINR: totalTax,
     grandTotalINR: grandTotal,
+    invoiceCurrency: printCurrency.currency,
+    exchangeRateToINR: printCurrency.exchangeRateToINR,
+    subtotalOriginal: currencyTotals.subtotalOriginal,
+    grandTotalOriginal: currencyTotals.grandTotalOriginal,
 
     // Words — always derived from the Grand Total, never a qty calculation
-    amountInWords: numberToIndianWords(grandTotal),
+    amountInWords: currencyTotals.amountInWords,
     taxAmountInWords: isGstApplicable ? numberToIndianWords(totalTax) : "NIL",
 
     // Bank Info

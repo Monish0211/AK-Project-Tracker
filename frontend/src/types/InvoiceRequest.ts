@@ -25,6 +25,9 @@ export interface InvoiceRequest {
   assignedToUserId: string;
   assignedToName: string;
 
+  /** CC Members — the PortalUsers persisted as CC recipients at submission time; follows this request through Raised and Paid. Never includes the mandatory info@ifluids.com (server-injected, not a selectable user). */
+  ccMembers: { id: string; fullName: string; email: string }[];
+
   invoiceAmountNote: string | null;
   copiesRequired: string | null;
   drawingsAvailable: string | null;

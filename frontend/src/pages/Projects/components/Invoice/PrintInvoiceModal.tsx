@@ -21,6 +21,8 @@ import {
   mapProjectToAmountBasedInvoiceDocumentDTO,
 } from "../../../../services/invoice/invoiceDocumentMapper";
 import { InvoiceDocumentView } from "./InvoiceDocumentView";
+import { formatInvoiceMoney, getLineCurrency, getLineOriginalAmount, isForeignCurrency, roundToMinorUnit } from "./invoiceCurrency";
+import type { InvoiceCurrency } from "../../../../types/InvoiceItem";
 import { printComponentElement } from "../../../../utils/printComponent";
 
 interface Props {
@@ -36,16 +38,24 @@ export function PrintInvoiceModal({ project, setProject, initialInvoiceNo, onClo
     return getInvoiceCyclesForProject(project).map((cycle) => {
       const items = Array.isArray(project.invoiceItems) ? project.invoiceItems : [];
       let totalAmount = 0;
+      let totalOriginal = 0;
+      let currency: InvoiceCurrency = "INR";
       let lineCount = 0;
 
       items.forEach((item) => {
         (Array.isArray(item.invoices) ? item.invoices : []).forEach((line) => {
           if (line.invoiceNo === cycle.invoiceNo && line.status !== "Cancelled") {
             totalAmount += line.invoiceAmountINR;
+            totalOriginal += getLineOriginalAmount(line);
+            currency = getLineCurrency(line);
             lineCount++;
           }
         });
       });
+      // Every line of one invoice shares its currency; a foreign invoice is listed in that currency.
+      const totalLabel = isForeignCurrency(currency)
+        ? formatInvoiceMoney(roundToMinorUnit(totalOriginal, currency), currency)
+        : formatBusinessINR(totalAmount);
 
       const status = getInvoiceCycleStatus(project, cycle.invoiceNo);
       const isPrintable = status === "Paid" || status === "Raised";
@@ -53,6 +63,7 @@ export function PrintInvoiceModal({ project, setProject, initialInvoiceNo, onClo
       return {
         ...cycle,
         totalAmount,
+        totalLabel,
         lineCount,
         status,
         isPrintable,
@@ -123,10 +134,15 @@ export function PrintInvoiceModal({ project, setProject, initialInvoiceNo, onClo
   const documentDTO = useMemo(() => {
     if (!selectedCycleNo) return null;
     const method = getInvoiceMethod(project);
-    if (method === "lump_sum") return mapProjectToLumpSumInvoiceDocumentDTO(project, selectedCycleNo, details);
-    if (method === "mlmp") return mapProjectToMlmpInvoiceDocumentDTO(project, selectedCycleNo, details);
-    if (method === "amount_based") return mapProjectToAmountBasedInvoiceDocumentDTO(project, selectedCycleNo, details);
-    return mapProjectToInvoiceDocumentDTO(project, selectedCycleNo, details);
+    // Each mapper prints the invoice in its own saved currency (see
+    // invoiceDocumentMapper.ts's getPrintCurrency()).
+    return method === "lump_sum"
+      ? mapProjectToLumpSumInvoiceDocumentDTO(project, selectedCycleNo, details)
+      : method === "mlmp"
+        ? mapProjectToMlmpInvoiceDocumentDTO(project, selectedCycleNo, details)
+        : method === "amount_based"
+          ? mapProjectToAmountBasedInvoiceDocumentDTO(project, selectedCycleNo, details)
+          : mapProjectToInvoiceDocumentDTO(project, selectedCycleNo, details);
   }, [project, selectedCycleNo, details]);
 
   // Save changes onto project
@@ -270,7 +286,7 @@ export function PrintInvoiceModal({ project, setProject, initialInvoiceNo, onClo
                                   root cause as the Total row previously fixed
                                   in InvoiceDocumentView. */}
                               <p className="text-xs font-bold text-[var(--nu-accent)] pl-5 font-mono">
-                                {formatBusinessINR(cycle.totalAmount)}
+                                {cycle.totalLabel}
                               </p>
                             </div>
 

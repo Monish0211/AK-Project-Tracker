@@ -386,6 +386,9 @@ interface BackendProjectDto {
   // ProjectDto and this file's writeThroughProjectsMirror() comment.
   workOrderValueINR: number;
   pendingDueINR: number;
+  hasOpenInvoiceRequest: boolean;
+  // Invoice Currency feature (Oct 2026) — absent on a backend without the feature.
+  invoiceCurrency?: string | null;
 }
 
 interface BackendPaginatedProjectList {
@@ -610,6 +613,8 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     // computeCommercialTotalsByProjectId()), so it's never stale here either.
     backendWorkOrderValueINR: dto.workOrderValueINR,
     backendPendingDueINR: dto.pendingDueINR,
+    hasOpenInvoiceRequest: dto.hasOpenInvoiceRequest,
+    invoiceCurrency: dto.invoiceCurrency,
   });
 }
 

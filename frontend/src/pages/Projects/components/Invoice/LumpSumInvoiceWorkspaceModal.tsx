@@ -19,6 +19,12 @@ import {
   round,
   type ProjectLumpSumMilestoneRow,
 } from "./InvoiceCalculations";
+import { InvoiceCurrencyFields } from "./InvoiceCurrencyFields";
+import { useInvoiceCurrencyState } from "./useInvoiceCurrencyState";
+import { InvoiceNumberField } from "./InvoiceNumberField";
+import { useInvoiceNumberField } from "./useInvoiceNumberField";
+import { amountsFromInr, formatInvoiceMoney, isForeignCurrency, sumAmountsFromInr } from "./invoiceCurrency";
+import { InrReferenceNote, InvoiceTotalBoxes } from "./InvoiceTotalBoxes";
 
 interface Props {
   project: Project;
@@ -80,6 +86,17 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
     return (RAISE_INVOICE_STATUS_OPTIONS as InvoiceLineStatus[]).includes(currentStatus) ? currentStatus : "Raised";
   });
 
+  // Invoice Currency feature (Oct 2026) — per-invoice currency/rate. Lump
+  // Sum amounts stay milestone % x INR contract value; for a foreign-currency
+  // invoice each line's original amount is derived from its INR value (amountsFromInr()).
+  // It is not separately editable (neither here nor in Edit Invoice, whose
+  // amount field is disabled for quantity-0 lines) — see the release report.
+  const currencyState = useInvoiceCurrencyState(project, invoiceNo);
+  // Manual invoice numbering — the user's Tally number (required, editable for a new invoice).
+  const numberField = useInvoiceNumberField(project, invoiceNo);
+  const { currency: invoiceCurrency, selection: currencySelection } = currencyState;
+  const isForeign = isForeignCurrency(invoiceCurrency);
+
   const [selectedMilestoneIds, setSelectedMilestoneIds] = useState<Set<string>>(() => {
     const initial = new Set<string>();
     milestoneRows.forEach((row) => {
@@ -102,12 +119,29 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
   const selectedRows = milestoneRows.filter((row) => selectedMilestoneIds.has(row.id));
   const totalPercent = round(selectedRows.reduce((sum, row) => sum + row.percent, 0));
   const invoiceAmount = round(selectedRows.reduce((sum, row) => sum + row.invoiceAmount, 0));
-  const gst = getGstBreakdown(project, invoiceAmount);
+  const gst = getGstBreakdown(project, invoiceAmount, invoiceCurrency, invoiceNo);
 
-  const canSave = selectedRows.length > 0 && invoiceDate.trim() !== "" && !!invoiceStatus;
+  const canSave = selectedRows.length > 0 && invoiceDate.trim() !== "" && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
 
-  const handleSave = () => {
-    if (!canSave) return;
+  // Original-currency total = the sum of every line handleSave() will actually create
+  // (one per activity x selected milestone), each derived independently —
+  // so the figure shown is exactly what gets saved.
+  // (OMR keeps its 3 decimals; the INR equivalent is the sum of the lines' own saved INR.)
+  const foreignTotals = (() => {
+    if (!isForeign || !currencySelection) return null;
+    const lineAmountsINR: number[] = [];
+    (project.invoiceItems ?? []).forEach((item) => {
+      selectedRows.forEach((row) => lineAmountsINR.push(round((item.totalPrice || 0) * (row.percent / 100))));
+    });
+    return sumAmountsFromInr(lineAmountsINR, currencySelection);
+  })();
+  const totalOriginalAmount = foreignTotals?.original ?? null;
+
+  const handleSave = async () => {
+    if (!canSave || !currencySelection) return;
+    // Never closes the form on a missing/duplicate number — the typed value stays put.
+    const savedInvoiceNo = await numberField.resolveForSave();
+    if (!savedInvoiceNo) return;
 
     const items = project.invoiceItems ?? [];
 
@@ -127,13 +161,13 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
           const amount = round((item.totalPrice || 0) * (row.percent / 100));
           const updatedLine: InvoiceLine = {
             id: existingLine?.id ?? crypto.randomUUID(),
-            invoiceNo,
+            invoiceNo: savedInvoiceNo,
             invoiceDate,
             milestoneId: row.id,
             milestoneName: row.label,
             quantityBilled: 0,
+            ...amountsFromInr(amount, currencySelection),
             calculatedAmountINR: amount,
-            invoiceAmountINR: amount,
             commercialAdjustmentINR: 0,
             clientReference: clientReference.trim() || undefined,
             remarks: remarks.trim() || undefined,
@@ -161,14 +195,16 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
       const noteLines = [
         `📄 ${cycleLabel} Raised`,
         "",
-        `Invoice: ${invoiceNo}`,
+        `Invoice: ${savedInvoiceNo}`,
         `Date: ${formatNoteDate(invoiceDate)}`,
         "",
         "Milestones Invoiced",
         ...selectedRows.map((row) => `• ${row.label} (${row.percent}%)`),
         "",
         `Total: ${totalPercent}%`,
-        `Invoice Amount: ${formatIndianCurrency(invoiceAmount)}`,
+        totalOriginalAmount !== null
+          ? `Invoice Amount: ${formatInvoiceMoney(totalOriginalAmount, invoiceCurrency)} (${formatIndianCurrency(foreignTotals?.inr ?? invoiceAmount)} @ ${currencySelection.exchangeRateToINR})`
+          : `Invoice Amount: ${formatIndianCurrency(invoiceAmount)}`,
       ];
       if (remarks.trim()) {
         noteLines.push("", "Remarks", remarks.trim());
@@ -242,15 +278,12 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
           <div className="flex-1 min-h-0 space-y-5 overflow-y-auto overflow-x-hidden p-4 sm:p-6 nu-scrollbar">
             {/* Invoice Header Details */}
             <div className="rounded-2xl border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${isForeign ? "lg:grid-cols-7" : "lg:grid-cols-6"}`}>
                 <div>
                   <label className={labelClass}>Invoice Cycle</label>
                   <Input type="text" value={cycleLabel} disabled className={disabledFieldClass} />
                 </div>
-                <div>
-                  <label className={labelClass}>Invoice No</label>
-                  <Input type="text" value={invoiceNo} disabled className={`${disabledFieldClass} font-mono`} />
-                </div>
+                <InvoiceNumberField state={numberField} />
                 <div>
                   <label className={labelClass}>Invoice Date</label>
                   <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
@@ -274,6 +307,7 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
                     ))}
                   </Select>
                 </div>
+                <InvoiceCurrencyFields state={currencyState} />
               </div>
             </div>
 
@@ -369,18 +403,17 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
                 </div>
                 <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Invoice Amount</p>
-                  <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums">{formatIndianCurrency(invoiceAmount)}</p>
+                  <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums">
+                    {totalOriginalAmount !== null ? formatInvoiceMoney(totalOriginalAmount, invoiceCurrency) : formatIndianCurrency(invoiceAmount)}
+                  </p>
+                  {foreignTotals && <InrReferenceNote inr={foreignTotals.inr} />}
                 </div>
-                {gst.isApplicable && (
-                  <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">GST ({gst.ratePercent}%)</p>
-                    <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums">{formatIndianCurrency(gst.gstAmount)}</p>
-                  </div>
-                )}
-                <div className="bg-white/90 dark:bg-slate-900/90 p-3 rounded-xl border border-blue-300 dark:border-cyan-800">
-                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-cyan-400">Grand Total</p>
-                  <p className="text-lg font-black text-blue-700 dark:text-cyan-300 mt-0.5 tabular-nums">{formatIndianCurrency(gst.grandTotal)}</p>
-                </div>
+                <InvoiceTotalBoxes
+                  gst={gst}
+                  currency={invoiceCurrency}
+                  originalTotal={totalOriginalAmount}
+                  inrTotal={foreignTotals?.inr ?? invoiceAmount}
+                />
               </div>
             </div>
 

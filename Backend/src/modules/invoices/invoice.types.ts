@@ -23,6 +23,11 @@ export interface InvoiceLineData {
   invoiceAmountINR: number;
   commercialAdjustmentINR?: number | null;
 
+  /** Invoice Currency feature (Oct 2026) — see schema.prisma's InvoiceLine comment. invoiceAmountINR above stays authoritative; these are descriptive only. */
+  currency?: string;
+  exchangeRateToINR?: number;
+  invoiceAmountOriginal?: number | null;
+
   clientReference?: string | null;
   remarks?: string | null;
 

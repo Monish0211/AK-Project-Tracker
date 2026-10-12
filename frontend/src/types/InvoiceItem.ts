@@ -1,3 +1,5 @@
+import type { SupportedCurrency } from "../constants/currencies";
+
 /**
  * One billing line raised against an Activity (InvoiceItem). The Invoice
  * Management module's single billing primitive — supports both the PMO
@@ -26,6 +28,9 @@
  * and Paid are only reachable later, via Edit Invoice.
  */
 export type InvoiceLineStatus = "Draft" | "Raised" | "PartiallyPaid" | "Paid" | "Cancelled";
+
+/** Invoice Currency feature (Oct 2026) — the currency an invoice is raised in: one of the seven shared codes (constants/currencies.ts). Separate from the project's Quantity/work-order currency. */
+export type InvoiceCurrency = SupportedCurrency;
 
 /**
  * Project-wide switch for how invoices are raised. "lump_sum" bills purely
@@ -76,6 +81,18 @@ export interface InvoiceLine {
 
   /** Commercial adjustment = invoiceAmountINR - calculatedAmountINR (e.g. -189 or +500) */
   commercialAdjustmentINR?: number;
+
+  /**
+   * Invoice Currency feature (Oct 2026). Optional so legacy/local lines
+   * (which never had them) stay valid — absent means INR, rate 1, original
+   * === invoiceAmountINR. invoiceAmountINR above is ALWAYS the INR
+   * equivalent and stays what every total/KPI/report sums; for a non-INR line
+   * invoiceAmountOriginal is the figure actually billed, in that currency. See
+   * pages/Projects/components/Invoice/invoiceCurrency.ts.
+   */
+  currency?: InvoiceCurrency;
+  exchangeRateToINR?: number;
+  invoiceAmountOriginal?: number;
 
   clientReference?: string;
   remarks?: string;

@@ -4,9 +4,12 @@ import { AppError } from "../../../shared/utils/AppError.js";
 import { env } from "../../../shared/utils/env.js";
 import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
 import { userHasApprovalPermission } from "../../../shared/middleware/requireApprovalPermission.js";
+import { findActiveUsersByIds } from "../../users/repository/user.repository.js";
 import { sendEmail } from "../../../shared/email/email.service.js";
 import { buildInvoiceRaisedSuccessfullyEmail } from "../../../shared/email/templates/invoiceRaisedSuccessfully.template.js";
 import { buildInvoiceRequestAssignedEmail } from "../../../shared/email/templates/invoiceRequestAssigned.template.js";
+import { buildInvoicePaidEmail } from "../../../shared/email/templates/invoicePaid.template.js";
+import { buildInvoiceWorkflowCcList } from "../invoiceRequestEmail.rules.js";
 import { notify } from "../../notifications/notification.service.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type { InvoiceRequestDto } from "../dto/invoiceRequest.dto.js";
@@ -29,6 +32,7 @@ function toInvoiceRequestDto(row: InvoiceRequestRow): InvoiceRequestDto {
     requestedByName: row.requestedBy.fullName,
     assignedToUserId: row.assignedToUserId,
     assignedToName: row.assignedTo.fullName,
+    ccMembers: row.ccMembers.map((m) => ({ id: m.portalUser.id, fullName: m.portalUser.fullName, email: m.portalUser.email })),
     invoiceAmountNote: row.invoiceAmountNote,
     copiesRequired: row.copiesRequired,
     drawingsAvailable: row.drawingsAvailable,
@@ -84,6 +88,18 @@ export async function createInvoiceRequest(
     throw new AppError("The selected person does not currently hold the Raise Invoice permission.", 400);
   }
 
+  // CC Members (Oct 2026) — never trust the frontend-selected ids as-is.
+  // Dedupe first (a double-click or a stray duplicate in the payload must
+  // never produce two InvoiceRequestCcMember rows for the same person —
+  // @@unique would reject it anyway, but failing the whole request on that
+  // is unnecessary), then re-validate every id is a real, currently-active
+  // PortalUser; anything else is silently dropped, never persisted, never
+  // emailed — same "never trust the client's picker" precedent as
+  // assignedToUserId directly above.
+  const requestedCcIds = Array.from(new Set(input.ccMemberUserIds ?? []));
+  const validCcUsers = requestedCcIds.length > 0 ? await findActiveUsersByIds(requestedCcIds) : [];
+  const ccMemberUserIds = validCcUsers.map((u) => u.id);
+
   const created = await prisma.$transaction(async (tx) => {
     await lockProjectForInvoiceRequestWrite(tx, projectId);
 
@@ -102,6 +118,7 @@ export async function createInvoiceRequest(
       printingDetails: input.printingDetails ?? null,
       address: input.address ?? null,
       notes: input.notes ?? null,
+      ccMemberUserIds,
     });
   });
 
@@ -151,7 +168,8 @@ async function notifyAssignedResponsiblePerson(request: InvoiceRequestRow): Prom
       notes: request.notes,
       invoicesUrl: projectInvoicesUrl(request.projectId),
     });
-    const result = await sendEmail({ to: request.assignedTo.email, subject: email.subject, html: email.html });
+    const cc = buildInvoiceWorkflowCcList(request.ccMembers.map((m) => m.portalUser.email));
+    const result = await sendEmail({ to: request.assignedTo.email, cc, subject: email.subject, html: email.html });
     if (!result.success) {
       console.error(`[invoiceRequests] Assigned email failed for ${request.assignedTo.email}: ${result.error}`);
     }
@@ -215,13 +233,74 @@ async function notifyRequesterInvoiceRaised(request: InvoiceRequestRow): Promise
       projectTitle: request.project.projectTitle,
       invoicesUrl: projectInvoicesUrl(request.projectId),
     });
-    const result = await sendEmail({ to: request.requestedBy.email, subject: email.subject, html: email.html });
+    const cc = buildInvoiceWorkflowCcList(request.ccMembers.map((m) => m.portalUser.email));
+    const result = await sendEmail({ to: request.requestedBy.email, cc, subject: email.subject, html: email.html });
     if (!result.success) {
       console.error(`[invoiceRequests] Fulfilled email failed for ${request.requestedBy.email}: ${result.error}`);
     }
   } catch (error) {
     console.error(
       "[invoiceRequests] Unexpected error while sending Fulfilled email:",
+      error instanceof Error ? error.message : error
+    );
+  }
+}
+
+/**
+ * Invoice Paid (Oct 2026) — the third and final stage of the Request Invoice
+ * -> Invoice Raised -> Invoice Paid lifecycle. Called ONLY from
+ * invoice.service.ts's updateInvoiceLine(), ONLY on a genuine
+ * previous-status-!=-Paid -> Paid transition (see invoiceRequestEmail.rules.ts's
+ * isGenuinePaidTransition() — the guard lives there/at the call site, not
+ * here, so this function's own contract is simply "notify for this line,
+ * now"). A silent no-op when this InvoiceLine was never the one that
+ * fulfilled an InvoiceRequest (raised outside this workflow entirely) — there
+ * is no "original requester" to notify in that case, by design, not an
+ * oversight.
+ */
+export async function notifyInvoicePaidIfLinked(
+  invoiceLineId: string,
+  invoiceLine: {
+    invoiceNo: string;
+    invoiceAmountINR: number;
+    currency?: string | undefined;
+    invoiceAmountOriginal?: number | null | undefined;
+    exchangeRateToINR?: number | undefined;
+  }
+): Promise<void> {
+  const invoiceRequest = await repo.findInvoiceRequestByFulfilledLineId(invoiceLineId);
+  if (!invoiceRequest) return;
+
+  await notify([invoiceRequest.requestedByUserId], {
+    title: "Invoice Paid",
+    message: `Invoice ${invoiceLine.invoiceNo} for ${invoiceRequest.project.projectTitle} (PR ${invoiceRequest.project.prNo}) has been marked as Paid.`,
+    type: "INVOICE_PAID",
+    severity: "Info",
+    entityType: "Invoice",
+    entityId: invoiceRequest.projectId,
+  });
+
+  try {
+    const email = buildInvoicePaidEmail({
+      requesterName: invoiceRequest.requestedBy.fullName,
+      prNo: invoiceRequest.project.prNo,
+      projectTitle: invoiceRequest.project.projectTitle,
+      client: invoiceRequest.project.client,
+      invoiceNo: invoiceLine.invoiceNo,
+      invoiceAmountINR: invoiceLine.invoiceAmountINR,
+      invoiceCurrency: invoiceLine.currency,
+      invoiceAmountOriginal: invoiceLine.invoiceAmountOriginal,
+      exchangeRateToINR: invoiceLine.exchangeRateToINR,
+      invoicesUrl: projectInvoicesUrl(invoiceRequest.projectId),
+    });
+    const cc = buildInvoiceWorkflowCcList(invoiceRequest.ccMembers.map((m) => m.portalUser.email));
+    const result = await sendEmail({ to: invoiceRequest.requestedBy.email, cc, subject: email.subject, html: email.html });
+    if (!result.success) {
+      console.error(`[invoiceRequests] Paid email failed for ${invoiceRequest.requestedBy.email}: ${result.error}`);
+    }
+  } catch (error) {
+    console.error(
+      "[invoiceRequests] Unexpected error while sending Paid email:",
       error instanceof Error ? error.message : error
     );
   }

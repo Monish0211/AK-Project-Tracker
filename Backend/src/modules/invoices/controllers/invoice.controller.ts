@@ -49,6 +49,16 @@ export const getInvoiceItemsByProject = asyncHandler(async (req: Request, res: R
   res.status(200).json({ success: true, data: result });
 });
 
+// Manual invoice numbering (Oct 2026) — pre-save duplicate check for the
+// Raise Invoice form. See invoice.service.ts's checkInvoiceNumberAvailability().
+export const getInvoiceNumberAvailability = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  const projectId = parseProjectIdParam(req);
+  const invoiceNo = typeof req.query.invoiceNo === "string" ? req.query.invoiceNo : "";
+  const result = await invoiceService.checkInvoiceNumberAvailability(projectId, invoiceNo, user);
+  res.status(200).json({ success: true, data: result });
+});
+
 // Sept 2026 — Reports/Dashboard Invoice Raised discrepancy fix. See
 // invoice.service.ts's listAllInvoiceLinesForCaller() for why this reuses
 // the Dashboard's own authorized-project + InvoiceLine query verbatim.

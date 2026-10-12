@@ -1,4 +1,5 @@
-import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../types/InvoiceItem";
+import type { InvoiceCurrency, InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../types/InvoiceItem";
+import { isSupportedCurrency } from "../constants/currencies";
 import { getProjectById, getProjects, saveProjects } from "./projectService";
 import { apiClient } from "./apiClient";
 
@@ -36,6 +37,11 @@ interface BackendInvoiceLineDto {
   calculatedAmountINR: number | null;
   invoiceAmountINR: number;
   commercialAdjustmentINR: number | null;
+  // Invoice Currency feature (Oct 2026) — optional: a backend without the
+  // feature doesn't send them, and toInvoiceLine() treats that as INR.
+  currency?: string;
+  exchangeRateToINR?: number;
+  invoiceAmountOriginal?: number | null;
   clientReference: string | null;
   remarks: string | null;
   status: string;
@@ -83,6 +89,12 @@ interface InvoiceLinePayload {
   remarks: string | null;
   status: InvoiceLineStatus;
   createdBy: string;
+  // Invoice Currency feature (Oct 2026) — sent ONLY for a non-INR line (see
+  // toInvoiceLinePayload()); an INR line's payload is byte-identical to
+  // before this feature existed.
+  currency?: InvoiceCurrency;
+  exchangeRateToINR?: number;
+  invoiceAmountOriginal?: number;
 }
 
 /** Same as InvoiceLinePayload, plus the id/quantityItemId being adopted and the historical snapshot fields preserved verbatim — Ingest-only, never sent by the ordinary create path. */
@@ -100,7 +112,16 @@ function toDateOnly(iso: string | null): string {
 }
 
 function toInvoiceLinePayload(line: InvoiceLine): InvoiceLinePayload {
+  const currencyFields: Pick<InvoiceLinePayload, "currency" | "exchangeRateToINR" | "invoiceAmountOriginal"> =
+    line.currency !== undefined && line.currency !== "INR"
+      ? {
+          currency: line.currency,
+          exchangeRateToINR: line.exchangeRateToINR,
+          invoiceAmountOriginal: line.invoiceAmountOriginal,
+        }
+      : {};
   return {
+    ...currencyFields,
     invoiceNo: line.invoiceNo,
     invoiceDate: line.invoiceDate,
     milestoneId: line.milestoneId ?? null,
@@ -130,6 +151,10 @@ function toInvoiceLine(dto: BackendInvoiceLineDto): InvoiceLine {
     calculatedAmountINR: dto.calculatedAmountINR ?? undefined,
     invoiceAmountINR: dto.invoiceAmountINR,
     commercialAdjustmentINR: dto.commercialAdjustmentINR ?? undefined,
+    // Missing/legacy/unknown currency fields are read as INR, never a foreign currency.
+    currency: isSupportedCurrency(dto.currency) ? dto.currency : "INR",
+    exchangeRateToINR: typeof dto.exchangeRateToINR === "number" ? dto.exchangeRateToINR : 1,
+    invoiceAmountOriginal: typeof dto.invoiceAmountOriginal === "number" ? dto.invoiceAmountOriginal : dto.invoiceAmountINR,
     clientReference: dto.clientReference ?? undefined,
     remarks: dto.remarks ?? undefined,
     status: dto.status as InvoiceLineStatus,
@@ -162,6 +187,7 @@ function hasInvoiceLineChanged(existing: InvoiceLine, next: InvoiceLine): boolea
     a.description !== b.description ||
     a.quantityBilled !== b.quantityBilled ||
     a.invoiceAmountINR !== b.invoiceAmountINR ||
+    a.invoiceAmountOriginal !== b.invoiceAmountOriginal ||
     a.clientReference !== b.clientReference ||
     a.remarks !== b.remarks ||
     a.status !== b.status
@@ -185,6 +211,10 @@ export interface ReportInvoiceLine {
   invoiceDate: string;
   invoiceNo: string;
   quantityBilled: number;
+  /** Invoice Currency feature (Oct 2026) — optional (older backends omit them). invoiceAmountINR stays the INR equivalent every Reports total sums. */
+  currency?: string;
+  exchangeRateToINR?: number;
+  invoiceAmountOriginal?: number | null;
 }
 
 interface ReportInvoiceLineListDto {
@@ -209,6 +239,19 @@ interface ReportInvoiceLineListDto {
 export async function fetchAllInvoiceLinesForCaller(): Promise<ReportInvoiceLine[]> {
   const result = await apiClient.get<ReportInvoiceLineListDto>("/invoice-items");
   return result.items;
+}
+
+/**
+ * Invoice Currency feature (Oct 2026) — the project's CURRENT persisted
+ * invoice-currency lock (ProjectDto.invoiceCurrency), re-read after every
+ * invoice save/delete: the backend establishes the lock on a first raise and
+ * may release it on a delete (see invoice.service.ts's deleteInvoiceLine()),
+ * so the copy loaded with the project goes stale. undefined = the backend
+ * doesn't report the field (older backend); callers then keep what they had.
+ */
+export async function fetchProjectInvoiceCurrency(projectId: string): Promise<string | null | undefined> {
+  const dto = await apiClient.get<{ invoiceCurrency?: string | null }>(`/projects/${projectId}`);
+  return dto.invoiceCurrency;
 }
 
 /** Fresh Invoice Items list for a project — GET /projects/:projectId/invoice-items. One entry per QuantityItem belonging to the project (id === that QuantityItem's id), each carrying its own InvoiceLine history. */
@@ -296,6 +339,18 @@ export async function loadInvoiceForProject(projectId: string): Promise<InvoiceI
  * line has actually, successfully been saved (see syncInvoiceLinesWithApi()
  * above, always awaited first by every caller).
  */
+/**
+ * Manual invoice numbering (Oct 2026) — is this invoice number free
+ * portal-wide? Used by the Raise Invoice form before it closes; the create
+ * call remains the authority.
+ */
+export async function checkInvoiceNumberAvailability(
+  projectId: string,
+  invoiceNo: string
+): Promise<{ invoiceNo: string; available: boolean; usedInThisProject: boolean }> {
+  return apiClient.get(`/projects/${projectId}/invoice-numbers/availability?invoiceNo=${encodeURIComponent(invoiceNo)}`);
+}
+
 export async function sendInvoiceLineTo(invoiceLineId: string, userIds: string[]): Promise<{ sentTo: string[] }> {
   return apiClient.post<{ sentTo: string[] }>(`/invoice-lines/${invoiceLineId}/send-to`, { userIds });
 }
@@ -319,10 +374,25 @@ export async function syncInvoiceLinesWithApi(
     }
   }
 
+  // Manual invoice numbering (Oct 2026) — tell the backend whether each new
+  // line STARTS a new invoice or joins one that already exists, so a new
+  // invoice can never silently reopen/merge into an existing one (the
+  // backend rejects "new" for any number already in use). The first line of
+  // a number this project has never had is "new"; every other line is
+  // "existing". Numbers compared ignoring case/outer spaces, as the backend does.
+  const normalizeNo = (value: string) => value.trim().toUpperCase();
+  const knownInvoiceNos = new Set(Array.from(previousLines.values(), (line) => normalizeNo(line.invoiceNo)));
+
   for (const [id, { line, quantityItemId }] of nextLineOwners) {
     const existing = previousLines.get(id);
     if (!existing) {
-      await apiClient.post<BackendInvoiceLineDto>(`/quantity/${quantityItemId}/invoice-lines`, toInvoiceLinePayload(line));
+      const key = normalizeNo(line.invoiceNo);
+      const invoiceIntent = knownInvoiceNos.has(key) ? "existing" : "new";
+      knownInvoiceNos.add(key);
+      await apiClient.post<BackendInvoiceLineDto>(`/quantity/${quantityItemId}/invoice-lines`, {
+        ...toInvoiceLinePayload(line),
+        invoiceIntent,
+      });
     } else if (hasInvoiceLineChanged(existing, line)) {
       await apiClient.patch<BackendInvoiceLineDto>(`/invoice-lines/${id}`, toInvoiceLinePayload(line));
     }

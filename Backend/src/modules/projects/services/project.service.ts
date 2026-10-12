@@ -10,6 +10,7 @@ import {
   findInvoiceLinesForProjects,
 } from "../../dashboard/repository/dashboard.repository.js";
 import { projectCommercialTotals } from "../../dashboard/dashboard.formulas.js";
+import { findOpenInvoiceRequestProjectIds } from "../../invoiceRequests/repository/invoiceRequest.repository.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type {
   ImportProjectsResultDto,
@@ -42,7 +43,26 @@ import type {
 interface CommercialTotals {
   workOrderValueINR: number;
   pendingDueINR: number;
+  /**
+   * Invoice Request indicator (Oct 2026) — deliberately NOT a replacement
+   * for, or input into, the Invoice Status calculation below. The Project
+   * Repository's existing workOrderValueINR/pendingDueINR-derived status
+   * (Not Started / Raised / Partially Paid / Paid, computed client-side in
+   * Projects.tsx exactly as before this field existed) remains completely
+   * untouched by this flag — it only tells the UI whether to render the
+   * small, separate "+" indicator beside that unchanged status badge. See
+   * invoiceRequests/repository/invoiceRequest.repository.ts's
+   * findOpenInvoiceRequestProjectIds() for why "Open" (never "any
+   * historical request") is the correct, batched signal here.
+   */
+  hasOpenInvoiceRequest: boolean;
 }
+
+const DEFAULT_COMMERCIAL_TOTALS: CommercialTotals = {
+  workOrderValueINR: 0,
+  pendingDueINR: 0,
+  hasOpenInvoiceRequest: false,
+};
 
 /**
  * Work Order Value / Pending Due — Aug 2026 bug fix. Batched (one groupBy +
@@ -58,9 +78,13 @@ async function computeCommercialTotalsByProjectId(projectIds: string[]): Promise
   const result = new Map<string, CommercialTotals>();
   if (projectIds.length === 0) return result;
 
-  const [quantityTotals, invoiceLines] = await Promise.all([
+  // hasOpenInvoiceRequest (Oct 2026) — one additional batched query
+  // alongside the two already here, same shape/convention, never one per
+  // project, never feeding into workOrderValueINR/pendingDueINR below.
+  const [quantityTotals, invoiceLines, openInvoiceRequestProjectIds] = await Promise.all([
     groupQuantityTotals(projectIds),
     findInvoiceLinesForProjects(projectIds),
+    findOpenInvoiceRequestProjectIds(projectIds),
   ]);
 
   const woValueByProject = new Map(quantityTotals.map((row) => [row.projectId, row.woValue]));
@@ -70,6 +94,7 @@ async function computeCommercialTotalsByProjectId(projectIds: string[]): Promise
     list.push({ status: line.status, invoiceAmountINR: line.invoiceAmountINR });
     linesByProject.set(line.projectId, list);
   }
+  const openRequestProjectIdSet = new Set(openInvoiceRequestProjectIds.map((row) => row.projectId));
 
   for (const projectId of projectIds) {
     const workOrderValueINR = woValueByProject.get(projectId) ?? 0;
@@ -78,7 +103,11 @@ async function computeCommercialTotalsByProjectId(projectIds: string[]): Promise
     // already uses (Math.max(projectValueINR - totalInvoiceRaised, 0)) — not a
     // new Pending Due rule, just this same one computed once more server-side.
     const pendingDueINR = Math.max(workOrderValueINR - totalInvoiceRaised, 0);
-    result.set(projectId, { workOrderValueINR, pendingDueINR });
+    result.set(projectId, {
+      workOrderValueINR,
+      pendingDueINR,
+      hasOpenInvoiceRequest: openRequestProjectIdSet.has(projectId),
+    });
   }
 
   return result;
@@ -87,7 +116,7 @@ async function computeCommercialTotalsByProjectId(projectIds: string[]): Promise
 /** Single-project convenience wrapper around computeCommercialTotalsByProjectId() — same batched query machinery, just called with one id. */
 async function computeCommercialTotalsForOne(projectId: string): Promise<CommercialTotals> {
   const map = await computeCommercialTotalsByProjectId([projectId]);
-  return map.get(projectId) ?? { workOrderValueINR: 0, pendingDueINR: 0 };
+  return map.get(projectId) ?? DEFAULT_COMMERCIAL_TOTALS;
 }
 
 function toProjectDto(
@@ -129,6 +158,7 @@ function toProjectDto(
     currency: project.currency,
     currentExchangeRate: project.currentExchangeRate,
     contractExchangeRate: project.contractExchangeRate,
+    invoiceCurrency: project.invoiceCurrency,
     manhourBudgetAmount: project.manhourBudgetAmount,
     manhourBudgetHours: project.manhourBudgetHours,
     manhourBudgetRemarks: project.manhourBudgetRemarks,
@@ -147,6 +177,7 @@ function toProjectDto(
     updatedAt: project.updatedAt,
     workOrderValueINR: commercial.workOrderValueINR,
     pendingDueINR: commercial.pendingDueINR,
+    hasOpenInvoiceRequest: commercial.hasOpenInvoiceRequest,
   };
 }
 
@@ -285,6 +316,7 @@ export async function createProject(input: CreateProjectInput, creatorUserId: st
   // Now that a Project with this prNo exists, link any of those rows to it.
   await reconcileUnassignedEntriesForProject(created.id, created.prNo);
 
+
   return toProjectDto(created, await computeCommercialTotalsForOne(created.id));
 }
 
@@ -367,7 +399,7 @@ export async function bulkImportProjects(
       // row per submitted prNo, already confirmed unique above.
       throw new AppError(`Project with PR Number "${p.prNo}" was not created.`, 500);
     }
-    return toProjectDto(row, commercialByProjectId.get(row.id) ?? { workOrderValueINR: 0, pendingDueINR: 0 });
+    return toProjectDto(row, commercialByProjectId.get(row.id) ?? DEFAULT_COMMERCIAL_TOTALS);
   });
 
   return { items };
@@ -512,6 +544,7 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
       );
     });
   }
+
 
   return toProjectDto(updated, await computeCommercialTotalsForOne(updated.id));
 }
@@ -693,7 +726,7 @@ export async function listProjects(query: ListProjectsQuery, user: AccessTokenPa
 
   return {
     items: items.map((item) =>
-      toProjectDto(item, commercialByProjectId.get(item.id) ?? { workOrderValueINR: 0, pendingDueINR: 0 })
+      toProjectDto(item, commercialByProjectId.get(item.id) ?? DEFAULT_COMMERCIAL_TOTALS)
     ),
     total,
     page: query.page,

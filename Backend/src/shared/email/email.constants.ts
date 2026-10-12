@@ -8,6 +8,15 @@ export const EMAIL_BRAND = {
 } as const;
 
 /**
+ * Request Invoice → Invoice Raised → Invoice Paid workflow (Oct 2026) — the
+ * one mandatory CC recipient every email in that lifecycle must carry,
+ * server-controlled and never user-removable. Not a PortalUser (no directory
+ * row backs it), so it is injected here rather than persisted as a CC
+ * Member — see invoiceRequest.service.ts's buildInvoiceWorkflowCcList().
+ */
+export const MANDATORY_INVOICE_WORKFLOW_CC_EMAIL = "info@ifluids.com";
+
+/**
  * One subject line per template, kept here rather than inline in each
  * template file so a future notification-log/audit feature can list "what
  * subject lines does this system send" without importing every template.
@@ -25,4 +34,5 @@ export const EMAIL_SUBJECTS = {
   INVOICE_REQUEST_ASSIGNED: `Invoice Request — please raise this invoice`,
   INVOICE_RAISED_SUCCESSFULLY: `Your requested invoice has been raised`,
   INVOICE_SHARED: `An invoice has been shared with you`,
+  INVOICE_PAID: (projectTitle: string, prNo: string) => `Invoice Paid - ${projectTitle} / ${prNo}`,
 } as const;

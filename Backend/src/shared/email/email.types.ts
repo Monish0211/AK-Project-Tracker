@@ -10,6 +10,8 @@ export interface SendEmailOptions {
   html: string;
   /** Plain-text fallback for clients that don't render HTML. Optional — most callers can skip it. */
   text?: string;
+  /** Project Notification System (Oct 2026) — optional CC list. Omit entirely for callers that don't need it. */
+  cc?: string | string[];
 }
 
 export interface SendEmailResult {
@@ -131,6 +133,28 @@ export interface InvoiceRaisedSuccessfullyEmailData {
 }
 
 /**
+ * Request Invoice workflow — Invoice Paid (Oct 2026). Sent to the original
+ * requester, only on a genuine previous-status-!=-Paid -> Paid transition
+ * (see invoice.service.ts's updateInvoiceLine()), only when that InvoiceLine
+ * is the one that fulfilled an InvoiceRequest. invoiceAmountINR is the raw
+ * number — formatting happens in the template, matching every other
+ * currency field across these email data interfaces.
+ */
+export interface InvoicePaidEmailData {
+  requesterName: string;
+  prNo: string;
+  projectTitle: string;
+  client: string;
+  invoiceNo: string;
+  invoiceAmountINR: number;
+  /** Invoice Currency feature (Oct 2026) — optional; absent/INR renders exactly as before. See templates/invoiceAmount.format.ts. */
+  invoiceCurrency?: string | undefined;
+  invoiceAmountOriginal?: number | null | undefined;
+  exchangeRateToINR?: number | undefined;
+  invoicesUrl: string;
+}
+
+/**
  * Request Invoice workflow (Sept 2026) — Section C: "Send Invoice To," a
  * separate MANUAL action the responsible person takes after an invoice has
  * already, successfully been saved — never sent before that save succeeds,
@@ -145,6 +169,11 @@ export interface InvoiceSharedEmailData {
   client: string;
   invoiceNo: string;
   invoiceAmountINR: number;
+  /** Invoice Currency feature (Oct 2026) — optional; absent/INR renders exactly as before. See templates/invoiceAmount.format.ts. */
+  invoiceCurrency?: string | undefined;
+  invoiceAmountOriginal?: number | null | undefined;
+  exchangeRateToINR?: number | undefined;
   invoiceDateIso: string;
   invoicesUrl: string;
 }
+

@@ -9,7 +9,9 @@ import { Badge, type Tone } from "../../../../components/ui/Badge";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { MoneyValue, MoneyTooltip } from "../../../../components/ui/MoneyTooltip";
 import { formatBusinessINR } from "../../../../utils/formatCurrency";
+import { formatInvoiceMoney, getLineCurrency, getLineOriginalAmount, isForeignCurrency } from "./invoiceCurrency";
 import {
+  NEW_INVOICE_CYCLE,
   getInvoiceCyclesForProject,
   getInvoiceCycleStatus,
   INVOICE_LINE_STATUS_LABEL,
@@ -130,6 +132,19 @@ export function InvoiceSummaryPanel({ project, isProjectLevelCycle, selectedCycl
     return activeLines.reduce((sum, l) => sum + l.line.invoiceAmountINR, 0);
   }, [activeLines]);
 
+  // Invoice Currency feature (Oct 2026) — every line of one invoice shares a
+  // currency/rate, so a foreign-currency invoice also shows its billed total in that currency. The INR
+  // figures above stay the INR equivalent, unchanged.
+  const foreignInvoice = useMemo(() => {
+    const first = activeLines[0]?.line;
+    if (!first || !isForeignCurrency(getLineCurrency(first))) return null;
+    return {
+      currency: getLineCurrency(first),
+      total: activeLines.reduce((sum, l) => sum + getLineOriginalAmount(l.line), 0),
+      rate: first.exchangeRateToINR ?? null,
+    };
+  }, [activeLines]);
+
   // Lump Sum shows the summary for whatever cycle is selected even before its
   // first invoice is raised (e.g. right after "+ Create New Invoice Cycle") —
   // activeLines is simply empty and the totals below are zero. Commercial
@@ -200,7 +215,10 @@ export function InvoiceSummaryPanel({ project, isProjectLevelCycle, selectedCycl
           <div className="bg-[var(--nu-surface-alt)] rounded-xl p-3 border border-[var(--nu-border)] space-y-2 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-[var(--nu-text-muted)]">Invoice No</span>
-              <span className="font-extrabold text-[var(--nu-text)] font-mono">{activeInvoiceNo}</span>
+              <span className="font-extrabold text-[var(--nu-text)] font-mono">
+                {/* Manual invoice numbering — a not-yet-raised invoice has no number until the user enters it. */}
+                {activeInvoiceNo === NEW_INVOICE_CYCLE ? "Entered when raised" : activeInvoiceNo}
+              </span>
             </div>
 
             <div className="flex items-center justify-between border-t border-[var(--nu-border)]/60 pt-1.5">
@@ -261,6 +279,14 @@ export function InvoiceSummaryPanel({ project, isProjectLevelCycle, selectedCycl
               <MoneyValue value={finalInvoiceAmount} />
             </span>
           </div>
+          {foreignInvoice && (
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[var(--nu-text-muted)]">
+                Billed in {foreignInvoice.currency}{foreignInvoice.rate !== null ? ` @ ${foreignInvoice.rate}` : ""}
+              </span>
+              <span className="text-[12px] font-extrabold text-[var(--nu-text)] tabular-nums">{formatInvoiceMoney(foreignInvoice.total, foreignInvoice.currency)}</span>
+            </div>
+          )}
         </div>
 
         {/* Print Invoice Action Button */}

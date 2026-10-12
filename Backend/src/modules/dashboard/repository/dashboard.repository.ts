@@ -33,6 +33,12 @@ export interface InvoiceLineRow {
   projectId: string;
   quantityItemId: string;
   quantityBilled: number;
+  // Invoice Currency feature (Oct 2026) — descriptive only, passed through
+  // to GET /invoice-items. Never read by any Dashboard formula: every total
+  // is built from invoiceAmountINR (the INR equivalent) exactly as before.
+  currency: string;
+  exchangeRateToINR: number;
+  invoiceAmountOriginal: number | null;
 }
 
 /** Raw per-item rows needed to derive invoiceQty/pendingQty at the project level — see dashboard.service.ts. Kept separate from groupQuantityTotals() because the LUMP SUM pending-quantity ceiling (see shared/utils/quantityProgress.ts) must be applied per item before summing, not on an already-summed project total. */
@@ -181,6 +187,9 @@ export async function findInvoiceLinesForProjects(projectIds: string[]): Promise
           milestoneId: true,
           quantityItemId: true,
           quantityBilled: true,
+          currency: true,
+          exchangeRateToINR: true,
+          invoiceAmountOriginal: true,
         },
       },
     },
@@ -196,6 +205,9 @@ export async function findInvoiceLinesForProjects(projectIds: string[]): Promise
       quantityItemId: line.quantityItemId,
       quantityBilled: line.quantityBilled,
       projectId: item.projectId,
+      currency: line.currency,
+      exchangeRateToINR: line.exchangeRateToINR,
+      invoiceAmountOriginal: line.invoiceAmountOriginal,
     }))
   );
 }

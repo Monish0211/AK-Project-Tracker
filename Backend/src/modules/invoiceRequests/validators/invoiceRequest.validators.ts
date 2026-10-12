@@ -12,6 +12,14 @@ import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
  */
 export const createInvoiceRequestSchema = z.object({
   assignedToUserId: z.string().trim().min(1, "Please select who should raise this invoice."),
+  // CC Members (Oct 2026) — optional, any number of PortalUser ids. Never
+  // trusted as-is: invoiceRequest.service.ts's createInvoiceRequest()
+  // re-validates every id is a real, active PortalUser before persisting,
+  // and dedupes. The mandatory info@ifluids.com recipient is never accepted
+  // here — it is server-injected wherever this workflow's emails are
+  // composed (see invoiceRequestEmail.rules.ts), so the frontend has no way
+  // to omit or duplicate it.
+  ccMemberUserIds: z.array(z.string().trim().min(1)).optional(),
   // Matches the team's existing manual "raise the invoice" email template —
   // all free text, all optional (a request must not be blocked on filling
   // these in if the requester doesn't have the detail handy yet).

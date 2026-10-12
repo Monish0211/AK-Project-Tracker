@@ -28,7 +28,7 @@ import {
   getCommercialAdjustment,
   getPreviousRaisedAmountForMilestone,
   getCommercialBillingStatus,
-  suggestNextInvoiceNumber,
+  NEW_INVOICE_CYCLE,
   getInvoiceCyclesForProject,
   calculateExecutionProgress,
   getInvoiceWorkflowMode,
@@ -41,6 +41,8 @@ import {
   type LumpSumMilestoneRow,
 } from "./InvoiceCalculations";
 import { InvoiceLineTable, type InvoiceLineRow } from "./InvoiceLineTable";
+import { amountsFromInr, getLineCurrency, getLineOriginalAmount, isForeignCurrency, roundToMinorUnit } from "./invoiceCurrency";
+import { formatIndianCurrency } from "../../../../utils/formatCurrency";
 import { LumpSumMilestoneTable } from "./LumpSumMilestoneTable";
 
 interface Props {
@@ -112,7 +114,7 @@ export function RaiseInvoiceDrawer({
 
   const invoiceCycles = useMemo(() => getInvoiceCyclesForProject(project), [project]);
 
-  const [invoiceNo, setInvoiceNo] = useState(existingLine?.invoiceNo ?? suggestNextInvoiceNumber(project));
+  const [invoiceNo, setInvoiceNo] = useState(existingLine?.invoiceNo ?? "");
   const [invoiceDate, setInvoiceDate] = useState(existingLine?.invoiceDate ?? todayISODate());
   const [clientReference, setClientReference] = useState(existingLine?.clientReference ?? "");
   const [remarks, setRemarks] = useState(existingLine?.remarks ?? "");
@@ -122,8 +124,16 @@ export function RaiseInvoiceDrawer({
   const [editQtyInput, setEditQtyInput] = useState(
     existingLine ? String(existingLine.quantityBilled) : ""
   );
+  // Invoice Currency feature (Oct 2026) — a saved foreign-currency line is
+  // edited in its own currency: editAmountInput then holds that figure, and its INR equivalent
+  // (editAmountValue below) is derived with the line's own recorded rate —
+  // the same round(original x rate) the backend re-derives. Currency and rate
+  // themselves are never editable. INR lines are unchanged.
+  const lineCurrency = existingLine ? getLineCurrency(existingLine) : "INR";
+  const isForeignLine = isForeignCurrency(lineCurrency);
+  const foreignLineRate = existingLine?.exchangeRateToINR ?? 1;
   const [editAmountInput, setEditAmountInput] = useState(
-    existingLine ? String(existingLine.invoiceAmountINR) : ""
+    existingLine ? String(isForeignLine ? getLineOriginalAmount(existingLine) : existingLine.invoiceAmountINR) : ""
   );
 
   const [draftLines, setDraftLines] = useState<DraftLine[]>(() => {
@@ -334,7 +344,18 @@ export function RaiseInvoiceDrawer({
   );
 
   const editCalculatedAmount = getSystemAmount(editQtyValue, item.unitPrice, editMilestonePercent);
-  const editAmountValue = editAmountInput !== "" ? Number(editAmountInput) : editCalculatedAmount;
+  // Always the INR equivalent (for a foreign line: round(original x recorded rate)), so every existing INR calculation below is unchanged.
+  const editOriginalAmount = isForeignLine
+    ? editAmountInput !== ""
+      ? roundToMinorUnit(Number(editAmountInput) || 0, lineCurrency)
+      : (amountsFromInr(editCalculatedAmount, { currency: lineCurrency, exchangeRateToINR: foreignLineRate }).invoiceAmountOriginal ?? 0)
+    : null;
+  const editAmountValue =
+    editOriginalAmount !== null
+      ? round(editOriginalAmount * foreignLineRate)
+      : editAmountInput !== ""
+        ? Number(editAmountInput)
+        : editCalculatedAmount;
   const editCommercialAdjustment = getCommercialAdjustment(editAmountValue, editCalculatedAmount);
 
   let editError: string | null = null;
@@ -422,7 +443,7 @@ export function RaiseInvoiceDrawer({
   // number only if the parent didn't pass one (defensive; InvoiceDashboard
   // always does for Lump Sum projects).
   const effectiveInvoiceNo = isLumpSum && isCreateMode
-    ? (projectInvoiceCycle ?? suggestNextInvoiceNumber(project))
+    ? (projectInvoiceCycle && projectInvoiceCycle !== NEW_INVOICE_CYCLE ? projectInvoiceCycle : "")
     : invoiceNo;
 
   // Human-readable label for that project cycle (e.g. "Invoice 2
@@ -495,6 +516,7 @@ export function RaiseInvoiceDrawer({
             unitPriceINR: existingLine.unitPriceINR ?? item.unitPrice,
             calculatedAmountINR: editCalculatedAmount,
             invoiceAmountINR: editAmountValue,
+            ...(editOriginalAmount !== null && { invoiceAmountOriginal: editOriginalAmount }),
             commercialAdjustmentINR: editCommercialAdjustment,
             clientReference: clientReference.trim() || undefined,
             remarks: remarks.trim() || undefined,
@@ -874,17 +896,14 @@ export function RaiseInvoiceDrawer({
                       ))}
                     </Select>
                   ) : (
-                    <Select
-                      value={invoiceNo}
-                      disabled={isViewMode}
-                      className={disabledFieldClass}
-                      onChange={(e) => handleInvoiceCycleChange(e.target.value)}
-                    >
-                      {invoiceCycles.map((cycle) => (
-                        <option key={cycle.invoiceNo} value={cycle.invoiceNo}>
-                          {cycle.label} {cycle.isNew ? "(New)" : `— ${cycle.invoiceNo}`}
-                        </option>
-                      ))}
+                    // View/Edit of a saved line: its invoice number is fixed
+                    // (manual numbering, Oct 2026). Moving a line into another
+                    // invoice would merge invoices, and the "(New)" option is a
+                    // placeholder, never a number — the backend rejects both.
+                    <Select value={invoiceNo} disabled className={disabledFieldClass}>
+                      <option value={invoiceNo}>
+                        {invoiceCycles.find((cycle) => cycle.invoiceNo === invoiceNo && !cycle.isNew)?.label ?? "Invoice"} — {invoiceNo}
+                      </option>
                     </Select>
                   )}
                 </div>
@@ -1007,6 +1026,16 @@ export function RaiseInvoiceDrawer({
                     disabled={isViewMode}
                     onQtyToBillChange={(_key, qty) => setEditQtyInput(qty === 0 ? "" : String(qty))}
                     onInvoiceAmountChange={(_key, amount) => setEditAmountInput(amount === 0 ? "" : String(amount))}
+                    foreignAmount={
+                      isForeignLine
+                        ? {
+                            value: editAmountInput,
+                            onChange: setEditAmountInput,
+                            currency: lineCurrency,
+                            inrEquivalentLabel: `${formatIndianCurrency(editAmountValue)} @ ${foreignLineRate}`,
+                          }
+                        : undefined
+                    }
                     onDescriptionChange={() => {}}
                     onRemoveRow={() => {}}
                   />

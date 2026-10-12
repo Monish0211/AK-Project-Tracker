@@ -1,6 +1,7 @@
 import { EMAIL_SUBJECTS } from "../email.constants.js";
 import type { EmailContent, InvoiceSharedEmailData } from "../email.types.js";
 import { renderButton, renderEmailLayout } from "./layout.template.js";
+import { formatInvoiceAmountForEmail } from "./invoiceAmount.format.js";
 
 function formatDate(iso: string): string {
   const date = new Date(iso);
@@ -8,9 +9,6 @@ function formatDate(iso: string): string {
   return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-function formatInr(amount: number): string {
-  return `₹${amount.toLocaleString("en-IN")}`;
-}
 
 /**
  * Request Invoice workflow — Section C: "Send Invoice To." A separate,
@@ -36,7 +34,7 @@ export function buildInvoiceSharedEmail(data: InvoiceSharedEmailData): EmailCont
       </tr>
       <tr>
         <td style="padding:12px 16px; font-size:13px; color:#64748B; border-top:1px solid #E2E8F0;">Invoice Amount</td>
-        <td style="padding:12px 16px; font-size:13px; color:#0F172A; font-weight:600; border-top:1px solid #E2E8F0;">${formatInr(data.invoiceAmountINR)}</td>
+        <td style="padding:12px 16px; font-size:13px; color:#0F172A; font-weight:600; border-top:1px solid #E2E8F0;">${formatInvoiceAmountForEmail(data)}</td>
       </tr>
       <tr>
         <td style="padding:12px 16px; font-size:13px; color:#64748B; border-top:1px solid #E2E8F0;">PR Number</td>

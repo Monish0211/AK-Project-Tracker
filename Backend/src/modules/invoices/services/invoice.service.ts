@@ -12,7 +12,8 @@ import { userHasApprovalPermission } from "../../../shared/middleware/requireApp
 import { sendEmail } from "../../../shared/email/email.service.js";
 import { buildInvoiceSharedEmail } from "../../../shared/email/templates/invoiceShared.template.js";
 import { notify, resolveProjectEventRecipients } from "../../notifications/notification.service.js";
-import { fulfillOpenInvoiceRequestsForProject } from "../../invoiceRequests/services/invoiceRequest.service.js";
+import { fulfillOpenInvoiceRequestsForProject, notifyInvoicePaidIfLinked } from "../../invoiceRequests/services/invoiceRequest.service.js";
+import { isGenuinePaidTransition } from "../../invoiceRequests/invoiceRequestEmail.rules.js";
 import { findProjectByIdAny } from "../../projects/repository/project.repository.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { getMilestonePercentageById } from "../../milestones/services/milestone.service.js";
@@ -39,9 +40,18 @@ import {
   deleteLine as deleteLineInRepository,
   findActiveUsersByIds,
   findConflictingLineForMilestone,
+  findFirstNonDraftLineCurrencyForProject,
+  findInvoiceSiblingWithDifferentCurrency,
+  findProjectInvoiceCurrency,
+  clearProjectInvoiceCurrencyIfNoGenuineLines,
+  findInvoiceNumber,
+  insertInvoiceNumber,
+  lockInvoiceNumber,
+  releaseInvoiceNumberIfUnused,
   getLineById,
   getLinesByIds,
   getLinesByQuantityItemIds,
+  setProjectInvoiceCurrencyIfUnset,
   sumInvoicedAmountForQuantityItem,
   updateLine as updateLineInRepository,
 } from "../repository/invoice.repository.js";
@@ -52,6 +62,13 @@ import type {
   UpdateInvoiceLineInput,
 } from "../validators/invoice.validators.js";
 import { env } from "../../../shared/utils/env.js";
+import {
+  evaluateCurrencyLock,
+  normalizeCurrency,
+  resolveCreateAmounts,
+  resolveEffectiveLock,
+  resolveUpdateAmounts,
+} from "../invoiceCurrency.rules.js";
 
 type InvoiceLineRow = NonNullable<Awaited<ReturnType<typeof getLineById>>>;
 type IngestLineRow = IngestInvoiceLinesInput["lines"][number];
@@ -63,6 +80,25 @@ function round(value: number): number {
 
 function isUniqueConstraintViolation(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
+
+/**
+ * Invoice numbers carry no business length limit (confirmed Oct 2026 — they
+ * must match Tally exactly). The only ceiling is physical: Postgres cannot
+ * index a value over ~2.7 KB (SQLSTATE 54000), so such a number gets a clear
+ * 400 instead of a generic 500. Nothing is written — the whole transaction
+ * rolls back.
+ */
+async function insertInvoiceNumberOrReject(invoiceNo: string, projectId: string, tx: Prisma.TransactionClient): Promise<boolean> {
+  try {
+    return await insertInvoiceNumber(invoiceNo, projectId, tx);
+  } catch (error) {
+    const cause = (error as { meta?: { driverAdapterError?: { cause?: { originalCode?: string } } } })?.meta?.driverAdapterError?.cause;
+    if (error instanceof Prisma.PrismaClientKnownRequestError && cause?.originalCode === "54000") {
+      throw new AppError("This Invoice Number is too long for the database to store. Check it against Tally.", 400);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -122,6 +158,9 @@ function toInvoiceLineDto(row: InvoiceLineRow): InvoiceLineDto {
     calculatedAmountINR: row.calculatedAmountINR,
     invoiceAmountINR: row.invoiceAmountINR,
     commercialAdjustmentINR: row.commercialAdjustmentINR,
+    currency: row.currency,
+    exchangeRateToINR: row.exchangeRateToINR,
+    invoiceAmountOriginal: row.invoiceAmountOriginal,
     clientReference: row.clientReference,
     remarks: row.remarks,
     status: row.status,
@@ -315,6 +354,153 @@ async function lockProjectForMilestoneRead(tx: Prisma.TransactionClient, project
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${projectId}))`;
 }
 
+/**
+ * Invoice Currency feature (Oct 2026) — enforce, inside the caller's
+ * transaction, (1) the project-wide invoice-currency lock and (2) the
+ * per-invoice rule that every line sharing an invoiceNo has the same
+ * currency and rate, then persist the lock if this write establishes it.
+ * See invoiceCurrency.rules.ts for the business rules themselves.
+ *
+ * Serialized by its OWN advisory key ("invoice-currency:<projectId>"), not
+ * the bare projectId key milestones/reminders/invoice requests share, and
+ * always acquired LAST in this file's lock order — the holder of this lock
+ * never waits on any other lock, so it can't take part in a deadlock. Two
+ * concurrent first-raises of conflicting currencies on different
+ * QuantityItems of one project both reach this point; whichever acquires it
+ * second sees the first one's committed lock (or its non-Draft line) and is
+ * rejected with 409.
+ */
+async function enforceInvoiceCurrencyRules(
+  tx: Prisma.TransactionClient,
+  params: {
+    projectId: string;
+    invoiceNo: string;
+    currency: string;
+    exchangeRateToINR: number;
+    targetStatus: string;
+    excludeLineId?: string | undefined;
+  }
+): Promise<void> {
+  const lockKey = `invoice-currency:${params.projectId}`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
+  const lineCurrency = normalizeCurrency(params.currency);
+  const project = await findProjectInvoiceCurrency(params.projectId, tx);
+  const persistedLock = project?.invoiceCurrency ?? null;
+  const inferred = persistedLock ? null : await findFirstNonDraftLineCurrencyForProject(params.projectId, tx);
+  const effectiveLock = resolveEffectiveLock(persistedLock, inferred ? [inferred.currency] : []);
+
+  const { persistLock } = evaluateCurrencyLock({
+    effectiveLock,
+    persistedLock,
+    lineCurrency,
+    targetStatus: params.targetStatus,
+  });
+
+  const sibling = await findInvoiceSiblingWithDifferentCurrency(
+    {
+      projectId: params.projectId,
+      invoiceNo: params.invoiceNo,
+      currency: lineCurrency,
+      exchangeRateToINR: params.exchangeRateToINR,
+      excludeLineId: params.excludeLineId,
+    },
+    tx
+  );
+  if (sibling) {
+    throw new AppError(
+      `Invoice ${params.invoiceNo} already has lines in ${sibling.currency} at rate ${sibling.exchangeRateToINR}. Every line of one invoice must use the same currency and exchange rate.`,
+      409
+    );
+  }
+
+  if (persistLock) {
+    await setProjectInvoiceCurrencyIfUnset(params.projectId, persistLock, tx);
+  }
+}
+
+/**
+ * Manual invoice numbering (Oct 2026) — confirmed rules: the user enters
+ * their Tally invoice number; a number is unique across the WHOLE portal,
+ * compared ignoring letter case and outer whitespace, stored exactly as
+ * entered. One invoice = several lines sharing a number, all in one
+ * project. See schema.prisma's InvoiceNumber.
+ *
+ * `intent` says what the caller means:
+ * - "new": this line STARTS a new invoice — the number must not be in use
+ *   anywhere (any project, any status, Cancelled included). A new invoice
+ *   can therefore never reopen, overwrite or merge into an existing one.
+ * - "existing": this line joins an invoice this project already has.
+ * - undefined (callers that predate manual numbering): joins this
+ *   project's invoice if it exists, otherwise registers the number —
+ *   exactly how such callers behaved before — but a number owned by
+ *   another project is still rejected.
+ * Must run inside the caller's transaction, after its QuantityItem lock;
+ * takes the per-number lock itself (before the currency lock).
+ */
+async function registerInvoiceNumberForLine(
+  tx: Prisma.TransactionClient,
+  params: { projectId: string; invoiceNo: string; intent: "new" | "existing" | undefined }
+): Promise<void> {
+  const { projectId, invoiceNo, intent } = params;
+  await lockInvoiceNumber(invoiceNo, tx);
+  const registered = await findInvoiceNumber(invoiceNo, tx);
+
+  if (intent === "new") {
+    if (registered || !(await insertInvoiceNumberOrReject(invoiceNo, projectId, tx))) {
+      throw new AppError(
+        `Invoice number "${invoiceNo}" is already used by another invoice. Enter the invoice number exactly as issued in Tally.`,
+        409
+      );
+    }
+    return;
+  }
+
+  if (registered) {
+    if (registered.projectId !== projectId) {
+      throw new AppError(`Invoice number "${invoiceNo}" is already used by another invoice.`, 409);
+    }
+    if (registered.invoiceNo !== invoiceNo) {
+      throw new AppError(
+        `"${invoiceNo}" differs only in letter case or spacing from this project's existing invoice "${registered.invoiceNo}". Use the exact number.`,
+        409
+      );
+    }
+    return;
+  }
+
+  if (intent === "existing") {
+    throw new AppError(
+      `Invoice "${invoiceNo}" no longer exists in this project (it may have been deleted). Start a new invoice instead.`,
+      409
+    );
+  }
+  if (!(await insertInvoiceNumberOrReject(invoiceNo, projectId, tx))) {
+    throw new AppError(`Invoice number "${invoiceNo}" is already used by another invoice.`, 409);
+  }
+}
+
+/**
+ * GET /projects/:projectId/invoice-numbers/availability — lets the Raise
+ * Invoice form reject a duplicate BEFORE it closes, so the user's typed
+ * number is kept. The create path remains the authority (a number can still
+ * be taken between this check and the save). Reveals only whether the
+ * number is free — never which project uses it.
+ */
+export async function checkInvoiceNumberAvailability(
+  projectId: string,
+  invoiceNo: string,
+  user: AccessTokenPayload
+): Promise<{ invoiceNo: string; available: boolean; usedInThisProject: boolean }> {
+  await assertProjectAccessById(projectId, user);
+  const trimmed = invoiceNo.trim();
+  if (!trimmed) {
+    throw new AppError("Invoice Number is required.", 400);
+  }
+  const registered = await findInvoiceNumber(trimmed);
+  return { invoiceNo: trimmed, available: !registered, usedInThisProject: registered?.projectId === projectId };
+}
+
 export async function createInvoiceLineForQuantityItem(
   quantityItemId: string,
   input: CreateInvoiceLineInput,
@@ -328,6 +514,12 @@ export async function createInvoiceLineForQuantityItem(
   // else. No DB write depends on concurrent sibling state, so this is safe
   // to resolve outside the locked transaction below.
   const createdBy = await getUserDisplayName(user.sub);
+
+  // Invoice Currency feature (Oct 2026) — pure validation, before any lock
+  // is taken: a request without currency fields resolves to INR with the
+  // INR amount unchanged; a non-INR request has its INR equivalent derived here
+  // (never trusted from the client). See invoiceCurrency.rules.ts.
+  const amounts = resolveCreateAmounts(input);
 
   // P2/P3/P13 — lock, re-check (milestone existence, financial ceiling,
   // then duplicate-milestone-billing), and write, all inside one
@@ -344,7 +536,7 @@ export async function createInvoiceLineForQuantityItem(
   const created = await prisma.$transaction(
     async (tx) => {
       await lockQuantityItemForInvoiceWrite(tx, quantityItemId);
-      await assertInvoiceAmountWithinLimit(tx, quantityItemId, quantityItem.woValue, input.invoiceAmountINR);
+      await assertInvoiceAmountWithinLimit(tx, quantityItemId, quantityItem.woValue, amounts.invoiceAmountINR);
 
       if (input.milestoneId) {
         await lockProjectForMilestoneRead(tx, quantityItem.projectId);
@@ -356,7 +548,7 @@ export async function createInvoiceLineForQuantityItem(
         quantityBilled: input.quantityBilled,
         unitPriceINR,
         milestonePercent,
-        invoiceAmountINR: input.invoiceAmountINR,
+        invoiceAmountINR: amounts.invoiceAmountINR,
       });
 
       if (input.milestoneId && input.quantityBilled === 0) {
@@ -373,6 +565,20 @@ export async function createInvoiceLineForQuantityItem(
         });
       }
 
+      await registerInvoiceNumberForLine(tx, {
+        projectId: quantityItem.projectId,
+        invoiceNo: input.invoiceNo,
+        intent: input.invoiceIntent,
+      });
+
+      await enforceInvoiceCurrencyRules(tx, {
+        projectId: quantityItem.projectId,
+        invoiceNo: input.invoiceNo,
+        currency: amounts.currency,
+        exchangeRateToINR: amounts.exchangeRateToINR,
+        targetStatus: input.status,
+      });
+
       const data: InvoiceLineData = {
         invoiceNo: input.invoiceNo,
         invoiceDate: input.invoiceDate,
@@ -383,8 +589,14 @@ export async function createInvoiceLineForQuantityItem(
         quantityBilled: input.quantityBilled,
         unitPriceINR,
         calculatedAmountINR,
-        invoiceAmountINR: input.invoiceAmountINR,
+        invoiceAmountINR: amounts.invoiceAmountINR,
         commercialAdjustmentINR,
+        // Invoice Currency feature (Oct 2026) — a caller that sends no
+        // currency fields gets currency="INR", exchangeRateToINR=1 and
+        // invoiceAmountOriginal equal to the INR amount, exactly as before.
+        currency: amounts.currency,
+        exchangeRateToINR: amounts.exchangeRateToINR,
+        invoiceAmountOriginal: amounts.invoiceAmountOriginal,
         clientReference: input.clientReference ?? null,
         remarks: input.remarks ?? null,
         status: input.status,
@@ -462,8 +674,28 @@ export async function updateInvoiceLine(
     throw new AppError("You do not have permission to raise this invoice.", 403);
   }
 
+  // Invoice Currency feature (Oct 2026) — the amount fields this PATCH
+  // should actually write (empty when amounts aren't changing). For an INR
+  // line this is exactly input.invoiceAmountINR (plus invoiceAmountOriginal
+  // kept equal to it); for a non-INR line the INR equivalent is re-derived from
+  // invoiceAmountOriginal x the line's own recorded rate. Throws on any
+  // attempt to change the frozen currency/rate. See invoiceCurrency.rules.ts.
+  const amountChange = resolveUpdateAmounts(existing, input);
+
   const needsRecompute =
-    input.quantityBilled !== undefined || input.invoiceAmountINR !== undefined || input.milestoneId !== undefined;
+    input.quantityBilled !== undefined || amountChange.invoiceAmountINR !== undefined || input.milestoneId !== undefined;
+
+  // Re-check the currency lock only when this PATCH could newly conflict
+  // with it: a status change (e.g. a Draft in a now-locked-out currency
+  // being raised) or a move to a different invoiceNo.
+  const nextStatus = input.status ?? existing.status;
+  // Manual invoice numbering — the frontend re-sends the (trimmed) number on
+  // every PATCH; only a genuinely different number counts as a change, so a
+  // historical number with stray outer whitespace is never rewritten or
+  // rejected by an unrelated edit.
+  const invoiceNoChanging = input.invoiceNo !== undefined && input.invoiceNo !== existing.invoiceNo.trim();
+  const nextInvoiceNo = invoiceNoChanging ? input.invoiceNo! : existing.invoiceNo;
+  const currencyRulesApply = nextStatus !== existing.status || nextInvoiceNo !== existing.invoiceNo;
 
   // Duplicate-milestone-billing guard only matters when a field that could
   // newly create a conflict is actually changing, and only for a
@@ -488,12 +720,12 @@ export async function updateInvoiceLine(
     async (tx) => {
       await lockQuantityItemForInvoiceWrite(tx, existing.quantityItemId);
 
-      if (input.invoiceAmountINR !== undefined) {
+      if (amountChange.invoiceAmountINR !== undefined) {
         await assertInvoiceAmountWithinLimit(
           tx,
           existing.quantityItemId,
           parentQuantityItem.woValue,
-          input.invoiceAmountINR,
+          amountChange.invoiceAmountINR,
           id
         );
       }
@@ -504,7 +736,7 @@ export async function updateInvoiceLine(
 
       if (needsRecompute) {
         const quantityBilled = input.quantityBilled ?? existing.quantityBilled;
-        const mergedInvoiceAmountINR = input.invoiceAmountINR ?? existing.invoiceAmountINR;
+        const mergedInvoiceAmountINR = amountChange.invoiceAmountINR ?? existing.invoiceAmountINR;
 
         if (mergedMilestoneId) {
           await lockProjectForMilestoneRead(tx, parentQuantityItem.projectId);
@@ -537,17 +769,41 @@ export async function updateInvoiceLine(
         }
       }
 
-      return updateLineInRepository(
+      // Manual invoice numbering — renaming a line's invoice number is
+      // allowed only to a number that is free portal-wide (never into
+      // another existing invoice, which would merge them); a change of
+      // letter case/spacing alone is rejected (it would split one invoice
+      // into two spellings). The old number is released below if no line
+      // still carries it.
+      if (invoiceNoChanging) {
+        if (nextInvoiceNo.toUpperCase() === existing.invoiceNo.trim().toUpperCase()) {
+          throw new AppError("Changing only the letter case or spacing of an invoice number is not allowed.", 400);
+        }
+        await registerInvoiceNumberForLine(tx, { projectId: parentQuantityItem.projectId, invoiceNo: nextInvoiceNo, intent: "new" });
+      }
+
+      if (currencyRulesApply) {
+        await enforceInvoiceCurrencyRules(tx, {
+          projectId: parentQuantityItem.projectId,
+          invoiceNo: nextInvoiceNo,
+          currency: existing.currency,
+          exchangeRateToINR: existing.exchangeRateToINR,
+          targetStatus: nextStatus,
+          excludeLineId: id,
+        });
+      }
+
+      const written = await updateLineInRepository(
         id,
         {
-          ...(input.invoiceNo !== undefined && { invoiceNo: input.invoiceNo }),
+          ...(invoiceNoChanging && { invoiceNo: nextInvoiceNo }),
           ...(input.invoiceDate !== undefined && { invoiceDate: input.invoiceDate }),
           ...(input.milestoneId !== undefined && { milestoneId: input.milestoneId }),
           ...(input.milestoneName !== undefined && { milestoneName: input.milestoneName }),
           ...(input.setIndex !== undefined && { setIndex: input.setIndex }),
           ...(input.description !== undefined && { description: input.description }),
           ...(input.quantityBilled !== undefined && { quantityBilled: input.quantityBilled }),
-          ...(input.invoiceAmountINR !== undefined && { invoiceAmountINR: input.invoiceAmountINR }),
+          ...amountChange,
           ...(input.clientReference !== undefined && { clientReference: input.clientReference }),
           ...(input.remarks !== undefined && { remarks: input.remarks }),
           ...(input.status !== undefined && { status: input.status }),
@@ -555,6 +811,10 @@ export async function updateInvoiceLine(
         },
         tx
       );
+      if (invoiceNoChanging) {
+        await releaseInvoiceNumberIfUnused(existing.invoiceNo, parentQuantityItem.projectId, tx);
+      }
+      return written;
     },
     { timeout: 30_000, maxWait: 10_000 }
   );
@@ -574,17 +834,66 @@ export async function updateInvoiceLine(
     );
   }
 
-  // Request Invoice workflow (Sept 2026) — Section B. Fires only for the
-  // exact same transition the bypass-fix check above already gated: an
-  // existing line actually becoming "Raised" for the first time. Never for
-  // a line that was already Raised (e.g. an ordinary amount/date PATCH that
-  // happens to also resend the same status), and never for any other
-  // transition. Fire-and-forget — the PATCH has already committed above.
-  if (isRaisingTransition) {
-    void fulfillOpenInvoiceRequestsForProject(parentQuantityItem.projectId, updated.id).catch((error) => {
-      console.error("[invoices] fulfillOpenInvoiceRequestsForProject failed:", error instanceof Error ? error.message : error);
-    });
-  }
+  // Request Invoice workflow (Oct 2026) — Section B. The real business event
+  // an Open InvoiceRequest is waiting for is "this line is no longer a Draft
+  // — it is now a genuine invoice" (Raised, PartiallyPaid, or Paid), not
+  // specifically "became Raised." A line can legitimately go straight from
+  // Draft to PartiallyPaid or Paid (e.g. a quick single-PATCH update) without
+  // ever passing through the literal "Raised" value, and that must fulfill
+  // the request too. Gated on existing.status === "Draft" so this only ever
+  // fires once per line, on its first transition out of Draft — the normal
+  // Draft -> Raised -> PartiallyPaid -> Paid flow still fulfills exactly once
+  // (at the Draft -> Raised step), never again on the later PartiallyPaid ->
+  // Paid step, since existing.status is no longer "Draft" by then.
+  const isGenuineInvoiceTransition =
+    existing.status === "Draft" &&
+    input.status !== undefined &&
+    input.status !== "Draft" &&
+    input.status !== "Cancelled";
+
+  // Invoice Paid (Oct 2026) — Request Invoice workflow, final stage. Only a
+  // genuine previous-status-!=-Paid -> Paid transition qualifies (see
+  // isGenuinePaidTransition()'s own comment) — a re-save that leaves status
+  // already Paid, or any transition to a different status, never fires this
+  // again.
+  const isGenuinePaidNow = input.status !== undefined && isGenuinePaidTransition(existing.status, updated.status);
+
+  // Both calls below are fire-and-forget relative to the PATCH response (the
+  // update has already committed above, and neither a fulfillment nor a
+  // notification failure must ever be mistaken for the status change itself
+  // failing to save) — but ordered relative to EACH OTHER. A direct
+  // Draft -> Paid/PartiallyPaid transition makes isGenuineInvoiceTransition
+  // and isGenuinePaidNow both true from this SAME PATCH, which means the
+  // fulfillment write (sets InvoiceRequest.fulfilledInvoiceLineId) and the
+  // Paid-notification's read of that exact link were previously started
+  // independently with no ordering guarantee — the read could, and in a
+  // live QA run did, run before the write landed, finding no link and
+  // silently skipping the Invoice Paid notification/email. Awaiting
+  // fulfillment first inside this one unawaited async block fixes that
+  // while keeping the PATCH response itself just as non-blocking as before.
+  void (async () => {
+    if (isGenuineInvoiceTransition) {
+      try {
+        await fulfillOpenInvoiceRequestsForProject(parentQuantityItem.projectId, updated.id);
+      } catch (error) {
+        console.error("[invoices] fulfillOpenInvoiceRequestsForProject failed:", error instanceof Error ? error.message : error);
+      }
+    }
+
+    if (isGenuinePaidNow) {
+      try {
+        await notifyInvoicePaidIfLinked(updated.id, {
+          invoiceNo: updated.invoiceNo,
+          invoiceAmountINR: updated.invoiceAmountINR,
+          currency: updated.currency,
+          invoiceAmountOriginal: updated.invoiceAmountOriginal,
+          exchangeRateToINR: updated.exchangeRateToINR,
+        });
+      } catch (error) {
+        console.error("[invoices] notifyInvoicePaidIfLinked failed:", error instanceof Error ? error.message : error);
+      }
+    }
+  })();
 
   return toInvoiceLineDto(updated);
 }
@@ -607,7 +916,36 @@ export async function deleteInvoiceLine(id: string, user: AccessTokenPayload): P
   const parentQuantityItem = await getQuantityItemById(existing.quantityItemId);
   await assertProjectAccessById(parentQuantityItem.projectId, user);
 
-  await deleteLineInRepository(id);
+  // Invoice Currency feature (Oct 2026) — confirmed rule: a DELETE
+  // recalculates the project's currency lock. The lock is released only if
+  // no line that ever reached Raised/PartiallyPaid/Paid/Cancelled remains;
+  // otherwise it stays (cancelling never unlocks, and another genuine
+  // invoice still requires the currency). Same lock order as every other
+  // write in this file (QuantityItem first, the project's currency key
+  // last), so a concurrent raise in another currency is serialized against
+  // this delete and can never slip into a half-released lock.
+  await prisma.$transaction(
+    async (tx) => {
+      await lockQuantityItemForInvoiceWrite(tx, existing.quantityItemId);
+      await lockInvoiceNumber(existing.invoiceNo, tx);
+      const currencyLockKey = `invoice-currency:${parentQuantityItem.projectId}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${currencyLockKey}))`;
+      try {
+        await deleteLineInRepository(id, tx);
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+          throw new AppError("Invoice line not found.", 404);
+        }
+        throw error;
+      }
+      await clearProjectInvoiceCurrencyIfNoGenuineLines(parentQuantityItem.projectId, tx);
+      // Manual invoice numbering — deleting the LAST line of an invoice
+      // releases its number (the invoice no longer exists); cancelling keeps
+      // it reserved.
+      await releaseInvoiceNumberIfUnused(existing.invoiceNo, parentQuantityItem.projectId, tx);
+    },
+    { timeout: 30_000, maxWait: 10_000 }
+  );
 }
 
 /**
@@ -719,6 +1057,9 @@ async function notifyAndEmailSharedRecipients(
           client: project.client,
           invoiceNo: line.invoiceNo,
           invoiceAmountINR: line.invoiceAmountINR,
+          invoiceCurrency: line.currency,
+          invoiceAmountOriginal: line.invoiceAmountOriginal,
+          exchangeRateToINR: line.exchangeRateToINR,
           invoiceDateIso: line.invoiceDate.toISOString(),
           invoicesUrl,
         });
@@ -806,6 +1147,13 @@ async function createLinesWithIdsSafely(
         calculatedAmountINR: row.calculatedAmountINR ?? null,
         invoiceAmountINR: row.invoiceAmountINR,
         commercialAdjustmentINR: row.commercialAdjustmentINR ?? null,
+        // Invoice Currency feature (Oct 2026) — this ingest path exists
+        // only to migrate pre-existing, pre-feature historical data (see
+        // this function's own doc-comment), so every row it creates is
+        // explicitly, confidently INR — never left ambiguous.
+        currency: "INR",
+        exchangeRateToINR: 1,
+        invoiceAmountOriginal: row.invoiceAmountINR,
         clientReference: row.clientReference ?? null,
         remarks: row.remarks ?? null,
         status: row.status,
@@ -900,6 +1248,14 @@ export async function ingestInvoiceLinesForProject(
 
   const rowsToCreate = input.lines.filter((line) => !existingById.has(line.id));
 
+  // Manual invoice numbering — register every number this legacy batch
+  // introduces (same semantics as a create without an intent): joining this
+  // project's own number is fine; a number owned by another project is
+  // rejected before any line is written.
+  for (const invoiceNo of new Set(rowsToCreate.map((line) => line.invoiceNo))) {
+    await prisma.$transaction((tx) => registerInvoiceNumberForLine(tx, { projectId, invoiceNo, intent: undefined }));
+  }
+
   const created = await createLinesWithIdsSafely(rowsToCreate, existingById);
   const createdById = new Map(created.map((row) => [row.id, row]));
 
@@ -924,6 +1280,9 @@ function toReportInvoiceLineDto(row: DashboardInvoiceLineRow): ReportInvoiceLine
     invoiceDate: row.invoiceDate,
     invoiceNo: row.invoiceNo,
     quantityBilled: row.quantityBilled,
+    currency: row.currency,
+    exchangeRateToINR: row.exchangeRateToINR,
+    invoiceAmountOriginal: row.invoiceAmountOriginal,
   };
 }
 

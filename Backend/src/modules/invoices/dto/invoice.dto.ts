@@ -16,6 +16,11 @@ export interface CreateInvoiceLineDto {
   quantityBilled: number;
   invoiceAmountINR: number;
 
+  /** Invoice Currency feature (Oct 2026) — optional, Phase 1 plumbing only; see invoice.validators.ts. */
+  currency?: string;
+  exchangeRateToINR?: number;
+  invoiceAmountOriginal?: number;
+
   clientReference?: string | null;
   remarks?: string | null;
 
@@ -23,7 +28,7 @@ export interface CreateInvoiceLineDto {
   createdBy: string;
 }
 
-/** Same fields as CreateInvoiceLineDto, all optional — a PATCH only carries what changed. quantityItemId is never editable (identity, frozen at creation). */
+/** Same fields as CreateInvoiceLineDto, all optional — a PATCH only carries what changed. quantityItemId is never editable (identity, frozen at creation). currency/exchangeRateToINR/invoiceAmountOriginal are likewise never editable — deliberately absent here. */
 export interface UpdateInvoiceLineDto {
   invoiceNo?: string;
   invoiceDate?: string;
@@ -62,6 +67,11 @@ export interface InvoiceLineDto {
   calculatedAmountINR: number | null;
   invoiceAmountINR: number;
   commercialAdjustmentINR: number | null;
+
+  /** Invoice Currency feature (Oct 2026) — descriptive only; invoiceAmountINR above stays authoritative for every existing consumer. */
+  currency: string;
+  exchangeRateToINR: number;
+  invoiceAmountOriginal: number | null;
 
   clientReference: string | null;
   remarks: string | null;
@@ -115,6 +125,10 @@ export interface ReportInvoiceLineDto {
   invoiceDate: Date;
   invoiceNo: string;
   quantityBilled: number;
+  /** Invoice Currency feature (Oct 2026) — additive; invoiceAmountINR above stays the INR-equivalent figure every total is built from. */
+  currency: string;
+  exchangeRateToINR: number;
+  invoiceAmountOriginal: number | null;
 }
 
 /** GET /invoice-items response. */

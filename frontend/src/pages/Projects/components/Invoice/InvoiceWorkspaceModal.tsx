@@ -15,10 +15,17 @@ import {
   getActivityRaisedQtyExcludingCycle,
   getActivityLineForCycle,
   getInvoiceCycleStatus,
+  getGstBreakdown,
+  describeGstTreatment,
   RAISE_INVOICE_STATUS_OPTIONS,
   INVOICE_LINE_STATUS_LABEL,
   round,
 } from "./InvoiceCalculations";
+import { InvoiceCurrencyFields } from "./InvoiceCurrencyFields";
+import { useInvoiceCurrencyState } from "./useInvoiceCurrencyState";
+import { InvoiceNumberField } from "./InvoiceNumberField";
+import { useInvoiceNumberField } from "./useInvoiceNumberField";
+import { amountsFromInr, formatInvoiceMoney, isForeignCurrency, sumAmountsFromInr } from "./invoiceCurrency";
 
 interface Props {
   project: Project;
@@ -233,6 +240,15 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
     return (RAISE_INVOICE_STATUS_OPTIONS as InvoiceLineStatus[]).includes(currentStatus) ? currentStatus : "Raised";
   });
 
+  // Invoice Currency feature (Oct 2026) — per-invoice currency/rate. This
+  // workspace's values stay qty x INR unit rate; for a foreign-currency invoice
+  // the original amount is derived from that INR value (see amountsFromInr()).
+  const currencyState = useInvoiceCurrencyState(project, invoiceNo);
+  // Manual invoice numbering — the user's Tally number (required, editable for a new invoice).
+  const numberField = useInvoiceNumberField(project, invoiceNo);
+  const { currency: invoiceCurrency, selection: currencySelection } = currencyState;
+  const isForeign = isForeignCurrency(invoiceCurrency);
+
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     existingLines.forEach((line, itemId) => {
@@ -289,12 +305,24 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
   );
 
   const totalInvoiceValue = round(rows.filter((row) => row.currentQty > 0).reduce((sum, row) => sum + row.invoiceValue, 0));
+  // Same shared rule + arithmetic as the other three workspaces and the printed
+  // invoice: GST only for an INR invoice on a GST-applicable INR project.
+  const gst = getGstBreakdown(project, totalInvoiceValue, invoiceCurrency, invoiceNo);
   const hasBillableRow = rows.some((row) => row.currentQty > 0);
   const hasRowError = rows.some((row) => row.error);
-  const canSave = hasBillableRow && !hasRowError && invoiceDate.trim() !== "" && !!invoiceStatus;
+  const canSave = hasBillableRow && !hasRowError && invoiceDate.trim() !== "" && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
+  // Foreign-currency invoice total — the sum of each line's own derived original amount, exactly what will be saved.
+  // (OMR keeps its 3 decimals.)
+  const totalOriginalValue =
+    isForeign && currencySelection
+      ? sumAmountsFromInr(rows.filter((row) => row.currentQty > 0).map((row) => row.invoiceValue), currencySelection).original
+      : null;
 
-  const handleSave = () => {
-    if (!canSave) return;
+  const handleSave = async () => {
+    if (!canSave || !currencySelection) return;
+    // Never closes the form on a missing/duplicate number — the typed value stays put.
+    const savedInvoiceNo = await numberField.resolveForSave();
+    if (!savedInvoiceNo) return;
 
     const updatedItems = project.invoiceItems.map((item) => {
       const row = rows.find((r) => r.item.id === item.id);
@@ -303,16 +331,19 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
       const existingLine = row.existingLine;
 
       if (row.currentQty > 0) {
+        const amounts = amountsFromInr(row.invoiceValue, currencySelection);
         const updatedLine: InvoiceLine = {
           id: existingLine?.id ?? crypto.randomUUID(),
-          invoiceNo,
+          invoiceNo: savedInvoiceNo,
           invoiceDate,
           description: item.description,
           quantityBilled: row.currentQty,
           unitPriceINR: row.unitRate,
+          ...amounts,
           calculatedAmountINR: row.invoiceValue,
-          invoiceAmountINR: row.invoiceValue,
-          commercialAdjustmentINR: 0,
+          // 0 for INR (unchanged); for a foreign currency, the sub-rupee rounding
+          // between the INR value and the INR equivalent of its floored original.
+          commercialAdjustmentINR: round(amounts.invoiceAmountINR - row.invoiceValue),
           clientReference: clientReference.trim() || undefined,
           remarks: remarks.trim() || undefined,
           status: invoiceStatus,
@@ -348,7 +379,7 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
       const systemNote: ProjectNote = {
         id: crypto.randomUUID(),
         projectId: project.id,
-        message: buildInvoiceRaisedNoteMessage(cycleLabel, invoiceNo, invoiceDate, invoicedActivities, remarks),
+        message: buildInvoiceRaisedNoteMessage(cycleLabel, savedInvoiceNo, invoiceDate, invoicedActivities, remarks),
         createdBy: "System",
         createdAt: new Date().toISOString(),
       };
@@ -415,15 +446,12 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
           <div className="flex-1 min-h-0 space-y-5 overflow-y-auto overflow-x-hidden p-4 sm:p-6 nu-scrollbar">
             {/* Invoice Header Details */}
             <div className="rounded-2xl border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${isForeign ? "lg:grid-cols-7" : "lg:grid-cols-6"}`}>
                 <div>
                   <label className={labelClass}>Invoice Cycle</label>
                   <Input type="text" value={cycleLabel} disabled className={disabledFieldClass} />
                 </div>
-                <div>
-                  <label className={labelClass}>Invoice No</label>
-                  <Input type="text" value={invoiceNo} disabled className={`${disabledFieldClass} font-mono`} />
-                </div>
+                <InvoiceNumberField state={numberField} />
                 <div>
                   <label className={labelClass}>Invoice Date</label>
                   <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
@@ -447,6 +475,7 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
                     ))}
                   </Select>
                 </div>
+                <InvoiceCurrencyFields state={currencyState} />
               </div>
             </div>
 
@@ -495,6 +524,44 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
                       </td>
                       <td />
                     </tr>
+                    {gst.isApplicable && (
+                      <>
+                        <tr className="bg-slate-50/80 dark:bg-slate-800/50">
+                          <td colSpan={6} className="px-3 py-2 text-right font-bold text-[var(--nu-text-muted)] uppercase text-[11px] tracking-wide">
+                            GST — {describeGstTreatment(gst)}
+                            {!gst.buyerStateKnown && (
+                              <span className="block normal-case font-medium text-[10px] tracking-normal">
+                                Buyer state not entered yet — becomes IGST if the buyer is outside Tamil Nadu.
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right font-extrabold text-[var(--nu-text)] tabular-nums whitespace-nowrap">
+                            {formatIndianCurrency(gst.gstAmount)}
+                          </td>
+                          <td />
+                        </tr>
+                        <tr className="bg-slate-50/80 dark:bg-slate-800/50">
+                          <td colSpan={6} className="px-3 py-2 text-right font-extrabold text-[var(--nu-text)] uppercase text-[11.5px] tracking-wide">
+                            Grand Total (incl. GST)
+                          </td>
+                          <td className="px-3 py-2 text-right font-black text-blue-700 dark:text-cyan-300 text-[14px] tabular-nums whitespace-nowrap">
+                            {formatIndianCurrency(gst.grandTotal)}
+                          </td>
+                          <td />
+                        </tr>
+                      </>
+                    )}
+                    {totalOriginalValue !== null && (
+                      <tr className="bg-slate-50/80 dark:bg-slate-800/50">
+                        <td colSpan={6} className="px-3 py-2 text-right font-bold text-[var(--nu-text-muted)] uppercase text-[11px] tracking-wide">
+                          Invoice Total in {invoiceCurrency} (@ {currencySelection?.exchangeRateToINR})
+                        </td>
+                        <td className="px-3 py-2 text-right font-extrabold text-[var(--nu-text)] tabular-nums whitespace-nowrap">
+                          {formatInvoiceMoney(totalOriginalValue, invoiceCurrency)}
+                        </td>
+                        <td />
+                      </tr>
+                    )}
                   </tfoot>
                 </table>
               </div>

@@ -13,7 +13,7 @@ const TENS = [
   "", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"
 ];
 
-function convertBelowThousand(n: number): string {
+export function convertBelowThousand(n: number): string {
   let str = "";
   if (n >= 100) {
     str += ONES[Math.floor(n / 100)] + " Hundred ";

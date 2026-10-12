@@ -10,6 +10,7 @@ import {
   deleteInvoiceLine,
   getAllInvoiceItemsForCaller,
   getInvoiceItemsByProject,
+  getInvoiceNumberAvailability,
   ingestInvoiceLines,
   sendInvoiceLineTo,
   updateInvoiceLine,
@@ -29,6 +30,13 @@ const router = Router();
 // — including the one-hop InvoiceLine -> QuantityItem -> Project lookup for
 // routes that only carry an invoice-line id.
 router.get("/projects/:projectId/invoice-items", authenticate, requireModuleAccess("Invoices"), getInvoiceItemsByProject);
+// Manual invoice numbering (Oct 2026) — read-only "is this number free?" check.
+router.get(
+  "/projects/:projectId/invoice-numbers/availability",
+  authenticate,
+  requireModuleAccess("Invoices"),
+  getInvoiceNumberAvailability
+);
 // Sept 2026 — Reports/Dashboard Invoice Raised discrepancy fix. Every
 // invoice line across every project this caller is authorized to see, in
 // one request — used by Reports (useReportsData.ts) so it computes Invoice

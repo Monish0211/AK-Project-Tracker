@@ -22,6 +22,7 @@ import {
   round,
 } from "./InvoiceCalculations";
 import { formatIndianCurrency } from "../../../../utils/formatCurrency";
+import { formatInvoiceMoney, getLineCurrency, getLineOriginalAmount, isForeignCurrency } from "./invoiceCurrency";
 
 interface Props {
   project: Project;
@@ -371,6 +372,12 @@ export function InvoiceHistory({
                     )}
                     <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
                       <MoneyValue value={row.amount} className="font-semibold text-[var(--nu-accent)]" />
+                      {/* Invoice Currency feature — the amount above stays the INR equivalent (what every total sums); a foreign-currency line also shows what was actually billed. */}
+                      {isForeignCurrency(getLineCurrency(row.line)) && (
+                        <div className="text-[10.5px] font-semibold text-[var(--nu-text-muted)]">
+                          {formatInvoiceMoney(getLineOriginalAmount(row.line), getLineCurrency(row.line))} @ {row.line.exchangeRateToINR ?? "-"}
+                        </div>
+                      )}
                     </td>
                     {!isMilestoneBased && !isAmountBased && (
                       <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap text-xs font-mono">

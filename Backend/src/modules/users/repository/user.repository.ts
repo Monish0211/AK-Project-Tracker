@@ -110,6 +110,22 @@ export function findActiveUsersWithApprovalPermission(approvalTypeName: string) 
   });
 }
 
+/**
+ * Request Invoice workflow — CC Members (Oct 2026). Validates a
+ * frontend-supplied list of PortalUser ids server-side before persisting
+ * them as InvoiceRequestCcMember rows — invalid/inactive/nonexistent ids are
+ * silently excluded from the returned set (never trusted, never inserted),
+ * same "never trust the client's picker" precedent as
+ * findActiveUsersWithApprovalPermission's own callers.
+ */
+export function findActiveUsersByIds(ids: string[]) {
+  if (ids.length === 0) return Promise.resolve([]);
+  return prisma.portalUser.findMany({
+    where: { id: { in: ids }, isActive: true },
+    select: { id: true, fullName: true, email: true },
+  });
+}
+
 export async function getLookups() {
   const [roles, modules, regions, approvalTypes] = await Promise.all([
     prisma.portalRole.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),

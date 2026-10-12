@@ -61,8 +61,9 @@ export function updateLine(id: string, data: Partial<InvoiceLineData>, client: C
   return client.invoiceLine.update({ where: { id }, data });
 }
 
-export function deleteLine(id: string) {
-  return prisma.invoiceLine.delete({ where: { id } });
+/** Optional `tx` (defaults to the plain client) so deleteInvoiceLine() can delete inside its currency-lock transaction. */
+export function deleteLine(id: string, client: Client = prisma) {
+  return client.invoiceLine.delete({ where: { id } });
 }
 
 /**
@@ -261,4 +262,116 @@ export function findActiveUsersByIds(ids: string[]) {
     where: { id: { in: ids }, isActive: true },
     select: { id: true, fullName: true, email: true },
   });
+}
+
+/**
+ * Invoice Currency feature (Oct 2026) — the project-wide invoice-currency
+ * lock reads/writes. Always called inside invoice.service.ts's
+ * advisory-locked transaction (see enforceInvoiceCurrencyRules()), so `tx`
+ * is required, never defaulted.
+ */
+export function findProjectInvoiceCurrency(projectId: string, client: Prisma.TransactionClient) {
+  return client.project.findUnique({ where: { id: projectId }, select: { invoiceCurrency: true } });
+}
+
+/** Oldest line in this project that ever reached a genuine-invoice status (Cancelled included) — the lock inferred for projects whose invoices predate Project.invoiceCurrency. */
+export function findFirstNonDraftLineCurrencyForProject(projectId: string, client: Prisma.TransactionClient) {
+  return client.invoiceLine.findFirst({
+    where: { quantityItem: { projectId }, status: { not: "Draft" } },
+    orderBy: { createdAt: "asc" },
+    select: { currency: true },
+  });
+}
+
+/** Any OTHER line of the same invoice (same project + invoiceNo) whose currency or rate differs — the per-invoice consistency rule. */
+export function findInvoiceSiblingWithDifferentCurrency(
+  params: { projectId: string; invoiceNo: string; currency: string; exchangeRateToINR: number; excludeLineId?: string | undefined },
+  client: Prisma.TransactionClient
+) {
+  return client.invoiceLine.findFirst({
+    where: {
+      quantityItem: { projectId: params.projectId },
+      invoiceNo: params.invoiceNo,
+      ...(params.excludeLineId && { id: { not: params.excludeLineId } }),
+      OR: [{ currency: { not: params.currency } }, { exchangeRateToINR: { not: params.exchangeRateToINR } }],
+    },
+    select: { currency: true, exchangeRateToINR: true },
+  });
+}
+
+/**
+ * Persist the lock only if still unset. Raw SQL on purpose: a Prisma
+ * update() would bump Project.updatedAt (@updatedAt), and raising an
+ * invoice must not look like an edit to the project's own details.
+ */
+/**
+ * Invoice Currency feature (Oct 2026) — release the project's lock after a
+ * DELETE, but only when no line that ever reached a genuine-invoice status
+ * remains (Raised, PartiallyPaid, Paid — and Cancelled, since a cancelled
+ * line was raised and cancelling never unlocks). Any remaining such line
+ * keeps the lock. Raw SQL for the same reason as
+ * setProjectInvoiceCurrencyIfUnset(): never bump Project.updatedAt.
+ * Returns the number of Project rows changed (0 or 1).
+ */
+export function clearProjectInvoiceCurrencyIfNoGenuineLines(projectId: string, client: Prisma.TransactionClient) {
+  return client.$executeRaw`
+    UPDATE "Project" p SET "invoiceCurrency" = NULL
+    WHERE p."id" = ${projectId}
+      AND p."invoiceCurrency" IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM "InvoiceLine" l
+        JOIN "QuantityItem" q ON q."id" = l."quantityItemId"
+        WHERE q."projectId" = ${projectId} AND l."status" <> 'Draft'
+      )`;
+}
+
+export function setProjectInvoiceCurrencyIfUnset(projectId: string, currency: string, client: Prisma.TransactionClient) {
+  return client.$executeRaw`UPDATE "Project" SET "invoiceCurrency" = ${currency} WHERE "id" = ${projectId} AND "invoiceCurrency" IS NULL`;
+}
+
+/**
+ * Manual invoice numbering (Oct 2026) — the InvoiceNumber register (see
+ * schema.prisma). Normalization is done IN SQL with exactly the expression
+ * the migration's backfill used — upper(btrim(x, E' \t\r\n')) — so the
+ * application and the database can never disagree about whether two
+ * numbers are "the same".
+ */
+export interface InvoiceNumberRow {
+  invoiceNo: string;
+  projectId: string;
+}
+
+/** Serialize every write that claims/uses/releases this number (taken after the QuantityItem lock, before the currency lock). */
+export async function lockInvoiceNumber(invoiceNo: string, client: Prisma.TransactionClient): Promise<void> {
+  await client.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('invoice-number:' || upper(btrim(${invoiceNo}, E' \t\r\n'))))`;
+}
+
+export async function findInvoiceNumber(invoiceNo: string, client: Client = prisma): Promise<InvoiceNumberRow | null> {
+  const rows = await client.$queryRaw<InvoiceNumberRow[]>`
+    SELECT "invoiceNo", "projectId" FROM "InvoiceNumber"
+    WHERE "normalizedInvoiceNo" = upper(btrim(${invoiceNo}, E' \t\r\n'))`;
+  return rows[0] ?? null;
+}
+
+/** Returns true if this call registered the number; false if it was already registered (by anyone). The unique index is the final guard. */
+export async function insertInvoiceNumber(invoiceNo: string, projectId: string, client: Prisma.TransactionClient): Promise<boolean> {
+  const inserted = await client.$executeRaw`
+    INSERT INTO "InvoiceNumber" ("invoiceNo", "normalizedInvoiceNo", "projectId")
+    VALUES (btrim(${invoiceNo}, E' \t\r\n'), upper(btrim(${invoiceNo}, E' \t\r\n')), ${projectId})
+    ON CONFLICT ("normalizedInvoiceNo") DO NOTHING`;
+  return inserted === 1;
+}
+
+/** Release the number only when no line of this project (any status) still carries it — i.e. its invoice was deleted outright. */
+export function releaseInvoiceNumberIfUnused(invoiceNo: string, projectId: string, client: Prisma.TransactionClient) {
+  return client.$executeRaw`
+    DELETE FROM "InvoiceNumber" n
+    WHERE n."normalizedInvoiceNo" = upper(btrim(${invoiceNo}, E' \t\r\n'))
+      AND n."projectId" = ${projectId}
+      AND NOT EXISTS (
+        SELECT 1 FROM "InvoiceLine" l
+        JOIN "QuantityItem" q ON q."id" = l."quantityItemId"
+        WHERE q."projectId" = ${projectId}
+          AND upper(btrim(l."invoiceNo", E' \t\r\n')) = upper(btrim(${invoiceNo}, E' \t\r\n'))
+      )`;
 }
