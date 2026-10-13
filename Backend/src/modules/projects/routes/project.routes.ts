@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
-import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
+import { denyReadOnlyWrites, denyReadOnlyWritesExceptAssignedCoordinator } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireApprovalPermission } from "../../../shared/middleware/requireApprovalPermission.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
@@ -15,7 +15,8 @@ import {
   restoreProject,
   updateProject,
 } from "../controllers/project.controller.js";
-import { createProjectSchema, importProjectsSchema, updateProjectSchema } from "../validators/project.validators.js";
+import { getPmoCoordinatorOptions } from "../../pmoCoordinators/index.js";
+import { createProjectRequestSchema, importProjectsSchema, updateProjectSchema } from "../validators/project.validators.js";
 
 const router = Router();
 
@@ -31,14 +32,31 @@ router.get("/", authenticate, requireModuleAccess("Projects"), getProjects);
 // order), "/status-counts" is a single segment and WOULD be swallowed by
 // "/:id" (treated as id="status-counts") if declared after it.
 router.get("/status-counts", authenticate, requireModuleAccess("Projects"), getProjectStatusCounts);
+// The General Information PMO Coordinator picker — registered names with
+// live account eligibility. Before "/:id" for the same reason as above.
+// "Approvals" too: the PR Request draft form renders the same General
+// Information card (a PR Request stays text-only — see project.validators.ts).
+router.get("/pmo-coordinators", authenticate, requireModuleAccess("Projects", "Approvals"), getPmoCoordinatorOptions);
 router.get("/:id", authenticate, requireModuleAccess("Projects"), getProject);
-router.post("/", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), validate(createProjectSchema), createProject);
+router.post("/", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), validate(createProjectRequestSchema), createProject);
 // Excel import — General Information for every row in one request; see
 // bulkImportProjects() in project.service.ts for the all-or-nothing
 // semantics (matches the pre-existing "if any row fails validation, the
 // entire import is rejected" behavior the Import UI already documents).
 router.post("/import", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), validate(importProjectsSchema), importProjects);
-router.patch("/:id", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), validate(updateProjectSchema), updateProject);
+// Edit — a Read Only user may write here only while they are THIS
+// project's assigned PMO Coordinator (see
+// denyReadOnlyWritesExceptAssignedCoordinator, which lists every route with
+// the same exception). Module access and the service's project-access check
+// still apply after it.
+router.patch(
+  "/:id",
+  authenticate,
+  denyReadOnlyWritesExceptAssignedCoordinator({ param: "id" }),
+  requireModuleAccess("Projects"),
+  validate(updateProjectSchema),
+  updateProject
+);
 // Archive — reversible, the pre-existing Phase 3.1 soft-delete behavior,
 // never redesigned. Gated by BOTH the "Projects" module grant AND the
 // "Archive Projects" approval permission (not a role check — see

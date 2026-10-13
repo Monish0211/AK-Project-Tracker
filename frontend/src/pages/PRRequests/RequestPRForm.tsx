@@ -197,6 +197,7 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
                 errors={errors}
                 clearError={clearError}
                 showCustomerMasterWarning={false}
+                showCoordinatorLinkHint={false}
               />
               <ProjectDocumentsCard
                 ownerType="prRequest"

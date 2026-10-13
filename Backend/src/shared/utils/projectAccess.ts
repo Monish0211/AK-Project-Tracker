@@ -66,12 +66,26 @@ export async function getProjectManagerGrantedUserIds(callerUserId: string | und
  */
 export interface ProjectOwnershipCheck {
   createdByUserId: string | null;
+  // PMO Coordinator Management (Oct 2026) — required (not optional) so every
+  // call site must select it; a missing select would silently deny coordinators.
+  pmoCoordinatorUserId: string | null;
 }
+
+/** The project's own fields that canAccessProject() needs — use for every minimal access lookup. */
+export const PROJECT_ACCESS_SELECT = { createdByUserId: true, pmoCoordinatorUserId: true } as const;
 
 export async function canAccessProject(user: AccessTokenPayload, project: ProjectOwnershipCheck): Promise<boolean> {
   if (hasUnrestrictedProjectVisibility(user.roleName)) return true;
   if (project.createdByUserId === null) return true;
   if (project.createdByUserId === user.sub) return true;
+  // The project's assigned PMO Coordinator account — owner-equivalent access
+  // to THIS project only. Read fresh from the project row on every request,
+  // so reassigning or clearing the coordinator revokes it immediately. It
+  // widens project-ownership only: module access, Read Only (see
+  // denyReadOnlyWritesExceptAssignedCoordinator), and every approval gate
+  // (Archive Projects, Delete Project Permanently, Raise Invoice) remain
+  // separate checks.
+  if (project.pmoCoordinatorUserId !== null && project.pmoCoordinatorUserId === user.sub) return true;
   const grantedUserIds = await getProjectManagerGrantedUserIds(user.sub);
   return grantedUserIds.includes(project.createdByUserId);
 }
@@ -89,7 +103,7 @@ export async function assertProjectAccess(user: AccessTokenPayload, project: Pro
  * findUnique already used by the Project module's own findProjectByIdAny.
  */
 export async function assertProjectAccessById(projectId: string, user: AccessTokenPayload): Promise<void> {
-  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { createdByUserId: true } });
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: PROJECT_ACCESS_SELECT });
   if (!project) {
     throw new AppError("Project not found.", 404);
   }
@@ -130,5 +144,8 @@ export async function projectOwnershipWhereOr(callerUserId: string | undefined) 
     { createdByUserId: null },
     { createdByUserId: callerUserId },
     ...(grantedUserIds.length > 0 ? [{ createdByUserId: { in: grantedUserIds } }] : []),
+    // Projects where the caller is the assigned PMO Coordinator account —
+    // the list-side mirror of canAccessProject()'s coordinator branch.
+    { pmoCoordinatorUserId: callerUserId },
   ];
 }

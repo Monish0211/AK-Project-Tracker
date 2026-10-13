@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
-import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
+import { denyReadOnlyWrites, denyReadOnlyWritesExceptAssignedCoordinator } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import {
@@ -23,7 +23,7 @@ router.get("/projects/:projectId/reminders", authenticate, requireModuleAccess("
 router.post(
   "/projects/:projectId/reminders",
   authenticate,
-  denyReadOnlyWrites,
+  denyReadOnlyWritesExceptAssignedCoordinator({ param: "projectId" }),
   requireModuleAccess("Projects"),
   validate(createReminderSchema),
   createReminder
@@ -31,11 +31,11 @@ router.post(
 router.patch(
   "/reminders/:id",
   authenticate,
-  denyReadOnlyWrites,
+  denyReadOnlyWritesExceptAssignedCoordinator({ child: "projectReminder" }),
   requireModuleAccess("Projects"),
   validate(updateReminderSchema),
   updateReminder
 );
-router.delete("/reminders/:id", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), deleteReminder);
+router.delete("/reminders/:id", authenticate, denyReadOnlyWritesExceptAssignedCoordinator({ child: "projectReminder" }), requireModuleAccess("Projects"), deleteReminder);
 
 export default router;

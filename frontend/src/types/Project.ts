@@ -167,6 +167,10 @@ export interface Project {
   projectEngineer: string;
   projectCoordinator: string;
   pmoCoordinator?: string;
+  /** The assigned PMO Coordinator ACCOUNT, from the backend (null/absent = legacy text-only coordinator). */
+  pmoCoordinatorUserId?: string | null;
+  /** Form-only: the registry entry picked in General Information this session; sent so the backend can validate and link it. */
+  pmoCoordinatorEntryId?: string;
   clientCoordinator: string;
 
   resources: ProjectResource[];

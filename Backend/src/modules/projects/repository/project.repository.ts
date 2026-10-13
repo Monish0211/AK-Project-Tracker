@@ -65,10 +65,35 @@ export interface ProjectGeneralInfoData {
   // Set once at creation, from the authenticated caller's own JWT; never
   // accepted from the request body.
   createdByUserId?: string | null;
+
+  // PMO Coordinator Management (Oct 2026) — the assigned coordinator ACCOUNT
+  // and when it was assigned. Only ever set by project.service.ts from a
+  // validated registry entry (never from free text, never by import).
+  pmoCoordinatorUserId?: string | null;
+  pmoCoordinatorAssignedAt?: Date | null;
 }
 
-export function createProject(data: ProjectGeneralInfoData) {
-  return prisma.project.create({ data });
+type DbClient = typeof prisma | Prisma.TransactionClient;
+
+/** For the coordinator-assignment save path, which must validate the registry entry and write the project atomically. */
+export function runProjectTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+  return prisma.$transaction(fn);
+}
+
+/**
+ * Inside a coordinator-assignment transaction: locks the project row
+ * (FOR UPDATE) and returns its coordinator account as it stands NOW. Two
+ * concurrent saves of the same assignment are serialized here, so only the
+ * first one sees a change (and only it triggers the allocation email).
+ */
+export async function lockProjectCoordinatorForUpdate(tx: Prisma.TransactionClient, id: string): Promise<string | null> {
+  const rows = await tx.$queryRaw<{ pmoCoordinatorUserId: string | null }[]>`
+    SELECT "pmoCoordinatorUserId" FROM "Project" WHERE "id" = ${id} FOR UPDATE`;
+  return rows[0]?.pmoCoordinatorUserId ?? null;
+}
+
+export function createProject(data: ProjectGeneralInfoData, client: DbClient = prisma) {
+  return client.project.create({ data });
 }
 
 export function findProjectById(id: string) {
@@ -118,8 +143,8 @@ export function createProjectsBulk(rows: ProjectGeneralInfoData[]) {
   return prisma.project.createManyAndReturn({ data: rows });
 }
 
-export function updateProject(id: string, data: Partial<ProjectGeneralInfoData>) {
-  return prisma.project.update({ where: { id }, data });
+export function updateProject(id: string, data: Partial<ProjectGeneralInfoData>, client: DbClient = prisma) {
+  return client.project.update({ where: { id }, data });
 }
 
 /** Archive — reversible. Sets isDeleted/deletedAt; the row and every child row (QuantityItem/PaymentMilestone/ProjectExpense) are left completely untouched. */

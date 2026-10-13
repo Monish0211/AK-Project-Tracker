@@ -96,7 +96,7 @@ export function findEntriesForPair(
 export function findEntryById(id: string) {
   return prisma.timesheetEntry.findUnique({
     where: { id },
-    include: { project: { select: { createdByUserId: true } } },
+    include: { project: { select: { createdByUserId: true, pmoCoordinatorUserId: true } } },
   });
 }
 

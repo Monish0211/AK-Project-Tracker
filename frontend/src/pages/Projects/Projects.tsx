@@ -40,7 +40,7 @@ import { isActiveProjectStatus, PROJECT_STATUS_OPTIONS } from "../../constants/p
 // blank (legacy rows), exactly as ProjectForm's overview strip does.
 import { PR_CATEGORIES, inferPrCategory } from "../../utils/createEmptyProject";
 import { useAuth } from "../../auth/authContext";
-import { canMutateData, hasApprovalPermission } from "../../auth/permissions";
+import { canEditProject, canMutateData, hasApprovalPermission } from "../../auth/permissions";
 import { usePmoToast } from "../../components/ui/usePmoToast";
 import { InvoiceRequestFlag } from "../../components/ui/InvoiceRequestFlag";
 import ExpenseImportModal from "./components/ExpenseInformation/ExpenseImportModal";
@@ -1217,7 +1217,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                               <BarChart3 />
                             </button>
                           )}
-                          {canMutate && (
+                          {canEditProject(user, p) && (
                             <button
                               onClick={() => navigate(`/projects/edit/${p.id}`, { state: { source: mode, returnTo: repositoryUrl } })}
                               className="pmo-act-btn act-e hover:bg-slate-100/50 hover:text-slate-600"

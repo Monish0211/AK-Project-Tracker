@@ -20,6 +20,7 @@ import { notificationRoutes } from "./modules/notifications/index.js";
 import { prRequestRoutes } from "./modules/prRequests/index.js";
 import { invoiceRequestRoutes } from "./modules/invoiceRequests/index.js";
 import { documentRoutes } from "./modules/documents/index.js";
+import { pmoCoordinatorRoutes } from "./modules/pmoCoordinators/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { requestLogger } from "./shared/middleware/requestLogger.js";
 import { AppError } from "./shared/utils/AppError.js";
@@ -148,6 +149,10 @@ app.use(invoiceRequestRoutes);
 // (/projects/:projectId/documents, /pr-requests/:prRequestId/documents,
 // /documents/:id[/download]), mounted at root alongside the routers above.
 app.use(documentRoutes);
+// PMO Coordinator registry (Settings → PMO Coordinators, Oct 2026).
+// Relative paths only, mounted under its own prefix like /customers.
+// Administrator/PMO Manager with the Settings module — see its routes file.
+app.use("/pmo-coordinators", pmoCoordinatorRoutes);
 
 app.use((req, _res, next) => {
   next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));

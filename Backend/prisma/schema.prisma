@@ -148,6 +148,12 @@ model PortalUser {
   // Restrict / audit-preservation treatment as uploadedDocuments above.
   uploadedExpenseImportBatches ExpenseImportBatch[]
 
+  // PMO Coordinator Management (Oct 2026) — projects this account is the
+  // assigned PMO Coordinator of (see Project.pmoCoordinatorUserId), and the
+  // registry entries this account added (see PmoCoordinator.createdByUserId).
+  pmoCoordinatorProjects Project[]        @relation("ProjectPmoCoordinatorUser")
+  pmoCoordinatorsCreated PmoCoordinator[] @relation("PmoCoordinatorCreatedBy")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -710,6 +716,16 @@ model Project {
   // owns. See InvoiceNumber below.
   invoiceNumbers InvoiceNumber[]
 
+  // PMO Coordinator Management (Oct 2026) — the ACCOUNT assigned as this
+  // project's PMO Coordinator (authorization is by this id, never by the
+  // display text in pmoCoordinator above, which stays as the shown name).
+  // onDelete: SetNull — deleting the account only removes the coordinator
+  // link; unlike createdByUserId it never makes the project "unclaimed".
+  pmoCoordinatorUserId     String?
+  pmoCoordinatorUser       PortalUser? @relation("ProjectPmoCoordinatorUser", fields: [pmoCoordinatorUserId], references: [id], onDelete: SetNull)
+  // When the current coordinator was assigned (set whenever it changes).
+  pmoCoordinatorAssignedAt DateTime?
+
   // Project Remarks — optional free-text explanation for a project's
   // timeline (e.g. "Client-side delay — pending approval"). Flat,
   // nullable, same 1:1-attribute treatment as every other General
@@ -839,6 +855,8 @@ model Project {
   // migration diff. Do not add a plain `@@unique([prNo])` here — that would
   // enforce uniqueness across ALL rows including archived ones, breaking
   // the confirmed "reuse a PR number after archiving" business rule.
+
+  @@index([pmoCoordinatorUserId])
 }
 
 model QuantityItem {
@@ -1714,4 +1732,28 @@ model PushSubscription {
   revokedAt DateTime?
 
   @@index([userId])
+}
+
+// =============================================================================
+// PMO COORDINATOR MANAGEMENT (Oct 2026)
+// =============================================================================
+// The Settings-managed list of approved PMO Coordinators (Settings > PMO
+// Coordinators). Keyed by email so a person can be registered BEFORE their
+// PMO Portal account exists; the account is resolved live by
+// emailNormalized (lower-cased, trimmed) against PortalUser.email, never by
+// display name and never copied here — so creating the account later makes
+// the entry eligible with no further change. `email` keeps the value exactly
+// as supplied; uniqueness is on emailNormalized.
+model PmoCoordinator {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  displayName     String
+  email           String
+  emailNormalized String @unique
+
+  createdByUserId String?
+  createdBy       PortalUser? @relation("PmoCoordinatorCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

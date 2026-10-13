@@ -351,6 +351,8 @@ interface BackendProjectDto {
   durationUnit: string | null;
   contractType: string;
   pmoCoordinator: string | null;
+  /** The assigned coordinator ACCOUNT (null for legacy text-only coordinators). */
+  pmoCoordinatorUserId?: string | null;
   paymentType: string;
   // Commercial Summary GST toggle — see Backend's ProjectDto/schema.prisma
   // comment. GST Rate/GST Amount/Grand Total are NOT part of this
@@ -424,6 +426,8 @@ interface ProjectGeneralInfoPayload {
   durationUnit: string | null;
   contractType: string;
   pmoCoordinator: string | null;
+  /** Set only when a registry entry was picked this session — the backend links the account from it (see Backend project.validators.ts). */
+  pmoCoordinatorEntryId?: string;
   paymentType: string;
   // Commercial Summary GST toggle — see Backend's ProjectDto/schema.prisma
   // comment. GST Rate/GST Amount/Grand Total are NOT part of this
@@ -482,6 +486,7 @@ function toGeneralInfoPayload(project: Project): ProjectGeneralInfoPayload {
     durationUnit: project.durationUnit || null,
     contractType: project.contractType || "LUMP SUM",
     pmoCoordinator: orNull(project.pmoCoordinator),
+    ...(project.pmoCoordinatorEntryId ? { pmoCoordinatorEntryId: project.pmoCoordinatorEntryId } : {}),
     paymentType: project.paymentType || "Single",
     // Bug fix (Sep 2026): Commercial Summary's GST Applicability was
     // frontend/localStorage-only — never sent to the backend, so it could
@@ -576,6 +581,7 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     durationUnit: (dto.durationUnit as Project["durationUnit"]) || undefined,
     contractType: dto.contractType,
     pmoCoordinator: dto.pmoCoordinator || undefined,
+    pmoCoordinatorUserId: dto.pmoCoordinatorUserId ?? null,
     paymentType: (dto.paymentType as Project["paymentType"]) || "Single",
     // Bug fix (Sep 2026): direct pass-through, never `dto.gstApplicable ||
     // fallback` — the backend's column is NOT NULL with a real boolean, and

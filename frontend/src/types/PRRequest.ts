@@ -51,6 +51,8 @@ export interface PRRequestProjectData {
   durationUnit?: "Days" | "Weeks" | "Months" | null;
   contractType: string;
   pmoCoordinator: string;
+  /** PMO Coordinator registry entry picked in the form; linked to the coordinator's account when the request is approved. */
+  pmoCoordinatorEntryId?: string;
   paymentType: "Single" | "Multiple";
   gstApplicable: boolean;
   currency: string;

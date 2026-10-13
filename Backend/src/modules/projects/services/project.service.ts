@@ -12,6 +12,7 @@ import {
 import { projectCommercialTotals } from "../../dashboard/dashboard.formulas.js";
 import { findOpenInvoiceRequestProjectIds } from "../../invoiceRequests/repository/invoiceRequest.repository.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
+import { notifyPmoCoordinatorAllocated, resolveCoordinatorAssignment } from "../../pmoCoordinators/index.js";
 import type {
   ImportProjectsResultDto,
   PaginatedProjectListDto,
@@ -29,12 +30,15 @@ import {
   findProjectByIdAny,
   findProjectsPage,
   hardDeleteProject as hardDeleteProjectInRepository,
+  lockProjectCoordinatorForUpdate,
   restoreProject as restoreProjectInRepository,
+  runProjectTransaction,
   updateProject as updateProjectInRepository,
 } from "../repository/project.repository.js";
 import type { SidebarStatusCounts } from "../repository/project.repository.js";
 import type {
   CreateProjectInput,
+  CreateProjectRequestInput,
   ImportProjectsInput,
   ListProjectsQuery,
   UpdateProjectInput,
@@ -153,6 +157,8 @@ function toProjectDto(
     durationUnit: project.durationUnit,
     contractType: project.contractType,
     pmoCoordinator: project.pmoCoordinator,
+    pmoCoordinatorUserId: project.pmoCoordinatorUserId,
+    pmoCoordinatorAssignedAt: project.pmoCoordinatorAssignedAt,
     paymentType: project.paymentType,
     gstApplicable: project.gstApplicable,
     currency: project.currency,
@@ -295,13 +301,40 @@ function toGeneralInfoData(input: GeneralInfoInput): ProjectGeneralInfoData {
  * `createdByUserId`/similar field in `createProjectSchema` to trust from the
  * client, so there is nothing to strip or validate against spoofing.
  */
-export async function createProject(input: CreateProjectInput, creatorUserId: string): Promise<ProjectDto> {
+export async function createProject(input: CreateProjectRequestInput, creatorUserId: string): Promise<ProjectDto> {
   assertPrCategoryPrNoRule(input.prCategory, input.prNo);
   await assertPrNoAvailable(input.prNo);
 
+  const data = { ...toGeneralInfoData(input), createdByUserId: creatorUserId };
+  const entryId = input.pmoCoordinatorEntryId;
+  // The coordinator account linked by this create, if any — the allocation
+  // email is sent only after the insert has committed (see below).
+  let allocatedTo: string | null = null;
+
   let created;
   try {
-    created = await createProjectInRepository({ ...toGeneralInfoData(input), createdByUserId: creatorUserId });
+    // PMO Coordinator Management (Oct 2026): only a registry entry chosen in
+    // the form links an account (validated server-side, atomically with the
+    // insert). Without one — PR Request approval, or any text-only caller —
+    // the project keeps the coordinator as display text only, which never
+    // grants access.
+    created =
+      entryId === undefined
+        ? await createProjectInRepository(data)
+        : await runProjectTransaction(async (tx) => {
+            const coordinator = await resolveCoordinatorAssignment(tx, entryId, null);
+            const row = await createProjectInRepository(
+              {
+                ...data,
+                pmoCoordinator: coordinator.displayName,
+                pmoCoordinatorUserId: coordinator.accountId,
+                pmoCoordinatorAssignedAt: new Date(),
+              },
+              tx
+            );
+            allocatedTo = coordinator.accountId;
+            return row;
+          });
   } catch (err) {
     // P1-17 — a concurrent request created the same prNo between the check
     // above and this insert; the DB's partial unique index caught what the
@@ -316,6 +349,17 @@ export async function createProject(input: CreateProjectInput, creatorUserId: st
   // Now that a Project with this prNo exists, link any of those rows to it.
   await reconcileUnassignedEntriesForProject(created.id, created.prNo);
 
+  // Project Assigned does NOT fire here — corrected 2026-10-05. Real PMO
+  // workflow: a project is routinely created without a Primary PM yet; the
+  // PM is assigned later via Edit Project. See updateProject() below for
+  // where this actually fires.
+
+  // PMO Coordinator allocation email — after commit, fire-and-forget (an
+  // attempt, never a rollback). Only when a registry entry linked an account;
+  // PR Request approval and Excel import stay text-only, so never email.
+  if (allocatedTo) {
+    void notifyPmoCoordinatorAllocated({ projectId: created.id, coordinatorUserId: allocatedTo });
+  }
 
   return toProjectDto(created, await computeCommercialTotalsForOne(created.id));
 }
@@ -513,9 +557,57 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
   }
 
   const updateData = toUpdateData(input);
+  const entryId = input.pmoCoordinatorEntryId;
+  const isReadOnly = user.roleName === "Read Only";
+
+  // PMO Coordinator Management (Oct 2026). A coordinator change WITHOUT a
+  // registry entry (free text only) can never link an account — it can only
+  // drop the existing link, so the stored name and the account with access
+  // never disagree.
+  const textOnlyCoordinatorChange =
+    entryId === undefined && input.pmoCoordinator !== undefined && input.pmoCoordinator !== existing.pmoCoordinator;
+  // A Read Only user edits here only as this project's assigned coordinator
+  // (see denyReadOnlyWritesExceptAssignedCoordinator); they may not hand that
+  // access to someone else.
+  const readOnlyCannotChangeCoordinator = () =>
+    new AppError("Read Only users cannot change the PMO Coordinator.", 403);
+  if (isReadOnly && textOnlyCoordinatorChange) throw readOnlyCannotChangeCoordinator();
+  if (textOnlyCoordinatorChange && existing.pmoCoordinatorUserId !== null) {
+    updateData.pmoCoordinatorUserId = null;
+    updateData.pmoCoordinatorAssignedAt = null;
+  }
+
+  // The newly linked coordinator account, set only when this save changes it.
+  let allocatedTo: string | null = null;
+
   let updated;
   try {
-    updated = await updateProjectInRepository(id, updateData);
+    updated =
+      entryId === undefined
+        ? await updateProjectInRepository(id, updateData)
+        : await runProjectTransaction(async (tx) => {
+            // Compare against the coordinator as it stands under the row lock
+            // (not the pre-transaction read), so concurrent saves of the same
+            // assignment produce exactly one change — and one allocation email.
+            const currentAccountId = await lockProjectCoordinatorForUpdate(tx, id);
+            // Revalidated here regardless of what the picker showed; eligibility
+            // is only re-checked when the assigned account actually changes.
+            const coordinator = await resolveCoordinatorAssignment(tx, entryId, currentAccountId);
+            const changed = coordinator.accountId !== currentAccountId;
+            if (changed && isReadOnly) throw readOnlyCannotChangeCoordinator();
+            const row = await updateProjectInRepository(
+              id,
+              {
+                ...updateData,
+                pmoCoordinator: coordinator.displayName,
+                pmoCoordinatorUserId: coordinator.accountId,
+                ...(changed && { pmoCoordinatorAssignedAt: new Date() }),
+              },
+              tx
+            );
+            if (changed) allocatedTo = coordinator.accountId;
+            return row;
+          });
   } catch (err) {
     // P1-17 — a concurrent request claimed this prNo between the check
     // above and this update.
@@ -545,6 +637,11 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
     });
   }
 
+  // PMO Coordinator allocation email — after commit, only for a real change
+  // to a new account; fire-and-forget (an attempt, never a rollback).
+  if (allocatedTo) {
+    void notifyPmoCoordinatorAllocated({ projectId: updated.id, coordinatorUserId: allocatedTo });
+  }
 
   return toProjectDto(updated, await computeCommercialTotalsForOne(updated.id));
 }

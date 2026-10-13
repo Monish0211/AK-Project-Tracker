@@ -97,6 +97,24 @@ export const createProjectSchema = z.object({
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 
 /**
+ * PMO Coordinator Management (Oct 2026) — the registry entry chosen in the
+ * General Information picker. When present, the server validates it and
+ * links the project to that entry's account (pmoCoordinatorUserId), and the
+ * stored pmoCoordinator text becomes the entry's name. Deliberately NOT part
+ * of createProjectSchema itself: Excel import and PR Request approval reuse
+ * that schema and stay text-only (zod strips an unknown key there), so they
+ * can never grant coordinator access.
+ */
+const pmoCoordinatorEntryIdField = z.string().trim().min(1, "PMO Coordinator selection is invalid.").optional();
+
+/** POST /projects (the single-project form) only. */
+export const createProjectRequestSchema = createProjectSchema.extend({
+  pmoCoordinatorEntryId: pmoCoordinatorEntryIdField,
+});
+
+export type CreateProjectRequestInput = z.infer<typeof createProjectRequestSchema>;
+
+/**
  * Same fields as createProjectSchema, all optional — a PATCH only needs to
  * carry the fields that changed. contractType keeps no default here (unlike
  * create) since omitting it on an update must leave the existing value
@@ -132,6 +150,8 @@ export const updateProjectSchema = z.object({
 
   contractType: z.string().trim().min(1).optional(),
   pmoCoordinator: z.string().trim().min(1).optional(),
+  // See createProjectRequestSchema above.
+  pmoCoordinatorEntryId: pmoCoordinatorEntryIdField,
 
   // No default here (unlike create) — omitting it on an update must leave
   // the existing value alone, not silently reset it to "Single".

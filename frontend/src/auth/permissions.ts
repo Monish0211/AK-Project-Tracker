@@ -31,3 +31,32 @@ export function hasApprovalPermission(user: UserSession | null, approvalName: st
 export function canMutateData(user: UserSession | null): boolean {
   return !!user && user.role !== "Read Only";
 }
+
+/**
+ * PMO Coordinator exception (Oct 2026, approved "Option B"): a Read Only
+ * user who is THIS project's assigned PMO Coordinator account may edit the
+ * project's own fields (the General Information / Expense Budget save,
+ * PATCH /projects/:id) — nothing else. The backend enforces this
+ * (denyReadOnlyWritesExceptAssignedCoordinator); this is the matching UI
+ * supplement. Re-evaluated from the saved project each time, so a
+ * reassignment removes it on the next load.
+ */
+export function isReadOnlyAssignedCoordinator(
+  user: UserSession | null,
+  project: { pmoCoordinatorUserId?: string | null } | null | undefined
+): boolean {
+  return (
+    !!user &&
+    user.role === "Read Only" &&
+    !!project?.pmoCoordinatorUserId &&
+    project.pmoCoordinatorUserId === user.id
+  );
+}
+
+/** Whether the Edit Project action is offered for this project. */
+export function canEditProject(
+  user: UserSession | null,
+  project: { pmoCoordinatorUserId?: string | null } | null | undefined
+): boolean {
+  return canMutateData(user) || isReadOnlyAssignedCoordinator(user, project);
+}

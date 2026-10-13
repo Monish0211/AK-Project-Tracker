@@ -12,6 +12,7 @@ import { createProject } from "../../projects/services/project.service.js";
 import { createQuantityForProject } from "../../quantity/services/quantity.service.js";
 import { createMilestoneForProject } from "../../milestones/services/milestone.service.js";
 import { repointDocumentsToProject } from "../../documents/repository/document.repository.js";
+import { assertCoordinatorEntryAssignable } from "../../pmoCoordinators/index.js";
 import { prRequestProjectDataSchema } from "../validators/prRequest.validators.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type { PRRequestApprovalHistoryDto, PRRequestDetailDto, PRRequestDto } from "../dto/prRequest.dto.js";
@@ -62,7 +63,23 @@ function toApprovalHistoryDto(row: Awaited<ReturnType<typeof repo.findApprovalHi
  * deliberately no Assigned PMO Manager field here at all — see
  * schema.prisma's PRRequest.assignedPmoManagerId comment.
  */
+/**
+ * PMO Coordinator (Oct 2026): a newly chosen registry entry must be assignable
+ * when it is saved. An unchanged entry is not re-checked here (approval does
+ * that), so a reviewer can still correct other fields if the coordinator's
+ * account changed meanwhile.
+ */
+async function assertDraftCoordinatorAssignable(next: { pmoCoordinatorEntryId?: string | undefined }, previous: unknown): Promise<void> {
+  const nextId = next.pmoCoordinatorEntryId;
+  if (!nextId) return;
+  const previousId =
+    previous && typeof previous === "object" ? (previous as { pmoCoordinatorEntryId?: unknown }).pmoCoordinatorEntryId : undefined;
+  if (nextId === previousId) return;
+  await assertCoordinatorEntryAssignable(nextId);
+}
+
 export async function saveDraftPRRequest(input: SaveDraftPRRequestInput, requester: AccessTokenPayload): Promise<PRRequestDto> {
+  await assertDraftCoordinatorAssignable(input.projectData, undefined);
   const created = await repo.createDraftPRRequest({
     requestedByUserId: requester.sub,
     projectData: input.projectData as unknown as Prisma.InputJsonValue,
@@ -139,6 +156,8 @@ export async function updatePRRequestProjectData(
   // structurally (key order never matters), so this is the one comparison
   // that's actually correct for "did the caller's data change vs. what's
   // stored," not just "do these two serializations happen to match."
+  await assertDraftCoordinatorAssignable(input.projectData, existing.projectData);
+
   const normalizedInput = JSON.parse(JSON.stringify(input.projectData)) as unknown;
   const dataActuallyChanged = !isDeepStrictEqual(existing.projectData, normalizedInput);
 

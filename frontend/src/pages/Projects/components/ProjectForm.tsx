@@ -25,6 +25,8 @@ import type { Project } from "../../../types/Project";
 import type { Dispatch, SetStateAction } from "react";
 
 import GeneralInfoCard from "./GeneralInfoCard";
+import { useAuth } from "../../../auth/authContext";
+import { isReadOnlyAssignedCoordinator } from "../../../auth/permissions";
 import ProjectDocumentsCard from "./ProjectDocumentsCard";
 import type { PendingDocument } from "./ProjectDocumentsCard";
 import { getProjectById } from "../../../services/projectService";
@@ -104,6 +106,13 @@ interface Props {
 
 const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId, initialInvoiceLineId, resourceLoadFailed, expensesConcurrencyBaseline }: Props) => {
   const [isNotesOpen, setIsNotesOpen] = useState(false);
+  const { user } = useAuth();
+  // PMO Coordinator exception (Oct 2026, "full project responsibility"): a
+  // Read Only user editing their assigned project gets the full edit page,
+  // except invoice actions and reassigning the coordinator — both still
+  // blocked for Read Only on the backend. Decided from the project as
+  // loaded, once — not from the coordinator picked in this session.
+  const [isReadOnlyCoordinator] = useState(() => mode === "edit" && isReadOnlyAssignedCoordinator(user, project));
   const TABS = mode === "add" ? TABS_ADD : TABS_EDIT;
   const [activeTab, setActiveTab] = useState<TabKey>(
     initialTab && TABS.some((tab) => tab.key === initialTab)
@@ -453,7 +462,13 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
         <div className="p-4">
           {activeTab === "general" && (
             <div className="space-y-3.5">
-              <GeneralInfoCard project={project} setProject={setProject} errors={errors} clearError={clearError} />
+              <GeneralInfoCard
+                project={project}
+                setProject={setProject}
+                errors={errors}
+                clearError={clearError}
+                lockPmoCoordinator={isReadOnlyCoordinator}
+              />
               <ProjectDocumentsCard
                 ownerType="project"
                 ownerId={getProjectById(project.id) ? project.id : null}
@@ -495,6 +510,7 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
               setProject={setProject}
               initialActivityId={initialActivityId}
               initialInvoiceLineId={initialInvoiceLineId}
+              readOnly={isReadOnlyCoordinator}
             />
           )}
         </div>

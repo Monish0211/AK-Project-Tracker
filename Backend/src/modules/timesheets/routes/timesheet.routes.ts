@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
 import { authorize } from "../../../shared/middleware/authorize.js";
-import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
+import { denyReadOnlyWrites, denyReadOnlyWritesExceptAssignedCoordinator } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import {
@@ -65,7 +65,7 @@ router.get("/timesheets/pending-projects", authenticate, requireModuleAccess("Ti
 router.patch(
   "/timesheets/entries/:id",
   authenticate,
-  denyReadOnlyWrites,
+  denyReadOnlyWritesExceptAssignedCoordinator({ child: "timesheetEntry" }),
   requireModuleAccess("Timesheets"),
   validate(editEntryBodySchema),
   editEntry

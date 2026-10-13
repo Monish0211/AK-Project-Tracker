@@ -38,6 +38,9 @@ export interface ProjectDto {
 
   contractType: string;
   pmoCoordinator: string | null;
+  /** The assigned coordinator ACCOUNT (null for legacy text-only coordinators); see projectAccess.ts. */
+  pmoCoordinatorUserId: string | null;
+  pmoCoordinatorAssignedAt: Date | null;
 
   paymentType: string;
 

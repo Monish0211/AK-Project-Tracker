@@ -34,5 +34,7 @@ export const EMAIL_SUBJECTS = {
   INVOICE_REQUEST_ASSIGNED: `Invoice Request — please raise this invoice`,
   INVOICE_RAISED_SUCCESSFULLY: `Your requested invoice has been raised`,
   INVOICE_SHARED: `An invoice has been shared with you`,
+  // PMO Coordinator Management (Oct 2026) — the allocation email.
+  PMO_COORDINATOR_ALLOCATED: (prNo: string) => `PMO Project Assigned to You — ${prNo}`,
   INVOICE_PAID: (projectTitle: string, prNo: string) => `Invoice Paid - ${projectTitle} / ${prNo}`,
 } as const;

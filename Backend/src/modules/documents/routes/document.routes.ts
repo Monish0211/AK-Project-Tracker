@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
-import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
+import { denyReadOnlyWrites, denyReadOnlyWritesExceptAssignedCoordinator } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { authorize } from "../../../shared/middleware/authorize.js";
 import { env } from "../../../shared/utils/env.js";
@@ -40,7 +40,7 @@ const upload = multer({
 router.post(
   "/projects/:projectId/documents",
   authenticate,
-  denyReadOnlyWrites,
+  denyReadOnlyWritesExceptAssignedCoordinator({ param: "projectId" }),
   requireModuleAccess("Projects"),
   upload.single("file"),
   uploadProjectDocument

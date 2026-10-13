@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
-import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
+import { denyReadOnlyWrites, denyReadOnlyWritesExceptAssignedCoordinator } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import { createQuantity, deleteQuantity, getQuantityByProject, updateQuantity } from "../controllers/quantity.controller.js";
@@ -16,7 +16,7 @@ router.get("/projects/:projectId/quantity", authenticate, requireModuleAccess("P
 router.post(
   "/projects/:projectId/quantity",
   authenticate,
-  denyReadOnlyWrites,
+  denyReadOnlyWritesExceptAssignedCoordinator({ param: "projectId" }),
   requireModuleAccess("Projects"),
   validate(createQuantitySchema),
   createQuantity
@@ -24,11 +24,11 @@ router.post(
 router.patch(
   "/quantity/:id",
   authenticate,
-  denyReadOnlyWrites,
+  denyReadOnlyWritesExceptAssignedCoordinator({ child: "quantityItem" }),
   requireModuleAccess("Projects"),
   validate(updateQuantitySchema),
   updateQuantity
 );
-router.delete("/quantity/:id", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), deleteQuantity);
+router.delete("/quantity/:id", authenticate, denyReadOnlyWritesExceptAssignedCoordinator({ child: "quantityItem" }), requireModuleAccess("Projects"), deleteQuantity);
 
 export default router;

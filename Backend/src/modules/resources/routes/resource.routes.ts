@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
-import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
+import { denyReadOnlyWrites, denyReadOnlyWritesExceptAssignedCoordinator } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import {
@@ -32,7 +32,7 @@ router.get("/projects/:projectId/resources", authenticate, requireModuleAccess("
 router.post(
   "/projects/:projectId/resources",
   authenticate,
-  denyReadOnlyWrites,
+  denyReadOnlyWritesExceptAssignedCoordinator({ param: "projectId" }),
   requireModuleAccess("Projects"),
   validate(createResourceSchema),
   createResource
@@ -41,11 +41,11 @@ router.get("/employees/:employeeNo/assignments", authenticate, requireModuleAcce
 router.patch(
   "/resources/:id",
   authenticate,
-  denyReadOnlyWrites,
+  denyReadOnlyWritesExceptAssignedCoordinator({ child: "projectResource" }),
   requireModuleAccess("Projects"),
   validate(updateResourceSchema),
   updateResource
 );
-router.delete("/resources/:id", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), deleteResource);
+router.delete("/resources/:id", authenticate, denyReadOnlyWritesExceptAssignedCoordinator({ child: "projectResource" }), requireModuleAccess("Projects"), deleteResource);
 
 export default router;

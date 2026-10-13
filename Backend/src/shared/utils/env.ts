@@ -6,7 +6,7 @@ import { z } from "zod";
  * (any non-empty string is truthy), so SMTP_SECURE=false would silently
  * coerce to true. This treats only the literal string "true" as true.
  */
-const booleanFromEnv = z
+export const booleanFromEnv = z
   .string()
   .optional()
   .transform((value) => value === "true");
@@ -185,6 +185,13 @@ const envSchema = z.object({
   // general Documents feature's. Same "app boots fine unconfigured" Claude
   // gate as PDF Import — see customerGst's own claude extraction service.
   GST_DOCUMENT_MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(10),
+
+  // PMO Coordinator Management (Oct 2026) — allocation email switch ("PMO
+  // Project Assigned to You", sent to the newly linked coordinator account).
+  // Fail-safe default false (unset/"" / anything but "true"), same
+  // booleanFromEnv treatment as SMTP_SECURE above. SMTP must also be
+  // configured for a real send.
+  PMO_ALLOCATION_EMAIL_ENABLED: booleanFromEnv,
 });
 
 const parsed = envSchema.safeParse(process.env);

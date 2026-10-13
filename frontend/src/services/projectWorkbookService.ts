@@ -5,7 +5,7 @@ import { createEmptyProject, inferPrCategory, inferDomesticForeign } from "../ut
 import { syncInvoiceItemsWithQuantity } from "./invoiceSyncService";
 import { getProjectCommercialSummary } from "./invoiceProgressService";
 import { getEmployees } from "./employeeService";
-import { getPmoCoordinators } from "./pmoCoordinatorService";
+import { getPmoCoordinatorOptions, getPmoCoordinators } from "./pmoCoordinatorService";
 import { UOM_OPTIONS } from "../utils/quantityCalculations";
 import { PROJECT_STATUS_OPTIONS, WORK_ORDER_STATUS_OPTIONS } from "../constants/projectStatus";
 
@@ -479,6 +479,9 @@ async function buildWorkbook(projects: Project[], blankRowCount: number): Promis
   const workbook = new ExcelJS.Workbook();
   workbook.views = [{ x: 0, y: 0, width: 10000, height: 20000, firstSheet: 0, activeTab: 0, visibility: "visible" }];
 
+  // PMO Coordinator dropdown = the registry's names (best effort: a failed
+  // load leaves that one dropdown empty rather than blocking the workbook).
+  await getPmoCoordinatorOptions().catch(() => undefined);
   const lists = getLookupLists(projects);
 
   const projectsSheet = workbook.addWorksheet(SHEET_NAMES.projects);

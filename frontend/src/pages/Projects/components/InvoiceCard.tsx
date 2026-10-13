@@ -14,9 +14,11 @@ interface Props {
   initialActivityId?: string | null;
   /** Deep-linked from a notification — scrolls to and highlights this invoice line in Invoice History. */
   initialInvoiceLineId?: string | null;
+  /** Hides every invoice action (e.g. a Read Only assigned PMO Coordinator — invoice writes stay blocked for Read Only on the backend). */
+  readOnly?: boolean;
 }
 
-const InvoiceCard = ({ project, setProject, initialActivityId, initialInvoiceLineId }: Props) => {
+const InvoiceCard = ({ project, setProject, initialActivityId, initialInvoiceLineId, readOnly = false }: Props) => {
   const invoiceMethod = getInvoiceMethod(project);
 
   const handleInvoiceMethodChange = (value: string) => {
@@ -73,6 +75,7 @@ const InvoiceCard = ({ project, setProject, initialActivityId, initialInvoiceLin
           setProject={setProject}
           initialActivityId={initialActivityId}
           initialInvoiceLineId={initialInvoiceLineId}
+          readOnly={readOnly}
         />
       </div>
     </div>

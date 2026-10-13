@@ -17,6 +17,10 @@ import { createMilestoneSchema } from "../../milestones/validators/milestone.val
  * QuantityItem/PaymentMilestone rows once a real Project exists.
  */
 export const prRequestProjectDataSchema = createProjectSchema.extend({
+  // PMO Coordinator Management (Oct 2026) — the registry entry picked in the
+  // form. Stored with the draft; on approval createProject() validates it and
+  // links that coordinator's account (no entry = coordinator text only).
+  pmoCoordinatorEntryId: z.string().trim().min(1, "PMO Coordinator selection is invalid.").optional(),
   quantityItems: z.array(createQuantitySchema).default([]),
   paymentMilestones: z.array(createMilestoneSchema).default([]),
 });

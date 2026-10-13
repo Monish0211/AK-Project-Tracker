@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
 import { authorize } from "../../../shared/middleware/authorize.js";
-import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrites.js";
+import { denyReadOnlyWrites, denyReadOnlyWritesExceptAssignedCoordinator } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import {
@@ -23,7 +23,7 @@ router.get("/projects/:projectId/milestones", authenticate, requireModuleAccess(
 router.post(
   "/projects/:projectId/milestones",
   authenticate,
-  denyReadOnlyWrites,
+  denyReadOnlyWritesExceptAssignedCoordinator({ param: "projectId" }),
   requireModuleAccess("Projects"),
   validate(createMilestoneSchema),
   createMilestone
@@ -45,11 +45,11 @@ router.post(
 router.patch(
   "/milestones/:id",
   authenticate,
-  denyReadOnlyWrites,
+  denyReadOnlyWritesExceptAssignedCoordinator({ child: "paymentMilestone" }),
   requireModuleAccess("Projects"),
   validate(updateMilestoneSchema),
   updateMilestone
 );
-router.delete("/milestones/:id", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), deleteMilestone);
+router.delete("/milestones/:id", authenticate, denyReadOnlyWritesExceptAssignedCoordinator({ child: "paymentMilestone" }), requireModuleAccess("Projects"), deleteMilestone);
 
 export default router;

@@ -177,3 +177,13 @@ export interface InvoiceSharedEmailData {
   invoicesUrl: string;
 }
 
+
+/** PMO Coordinator Management (Oct 2026) — the allocation email to a newly assigned coordinator. */
+export interface PmoCoordinatorAllocatedEmailData {
+  /** The linked PMO Portal account's name (null if it has none). */
+  coordinatorName: string | null;
+  prNo: string;
+  projectTitle: string;
+  client: string | null;
+  projectUrl: string;
+}

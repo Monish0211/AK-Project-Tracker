@@ -4,11 +4,11 @@ import { AppError } from "../../../shared/utils/AppError.js";
 import { requireUser } from "../../../shared/utils/requireUser.js";
 import * as projectService from "../services/project.service.js";
 import { listProjectsQuerySchema } from "../validators/project.validators.js";
-import type { CreateProjectInput, ImportProjectsInput, UpdateProjectInput } from "../validators/project.validators.js";
+import type { CreateProjectRequestInput, ImportProjectsInput, UpdateProjectInput } from "../validators/project.validators.js";
 
 export const createProject = asyncHandler(async (req: Request, res: Response) => {
   const user = requireUser(req);
-  const project = await projectService.createProject(req.body as CreateProjectInput, user.sub);
+  const project = await projectService.createProject(req.body as CreateProjectRequestInput, user.sub);
   res.status(201).json({ success: true, data: project, message: "Project created successfully." });
 });
 
