@@ -6,6 +6,9 @@ import type { LucideIcon } from "lucide-react";
 import type { Project } from "../../types/Project";
 import GeneralInfoCard from "../Projects/components/GeneralInfoCard";
 import ProjectDocumentsCard from "../Projects/components/ProjectDocumentsCard";
+import type { PendingDocument } from "../Projects/components/ProjectDocumentsCard";
+import { uploadPRRequestDocument } from "../../services/documentService";
+import { getUserFriendlyErrorMessage } from "../../utils/errorMessage";
 import QuantityCard from "../Projects/components/QuantityCard";
 import CommercialCard from "../Projects/components/PaymentMilestoneCard";
 import ExpenseBudgetCard from "../Projects/components/ExpenseBudgetCard";
@@ -77,6 +80,42 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
   const isFirstTab = activeIndex === 0;
 
   const { errors, validate, clearError, clearAllErrors } = useFormValidation<Project>();
+
+  // Supporting documents picked BEFORE this request has been saved (no
+  // PR Request id yet) — same staging approach as Add Project: held in memory
+  // only, then uploaded to this PR Request right after the draft is created
+  // (see RequestPRFormButtons). Once a draft exists, uploads go straight to
+  // it. On approval the backend moves them onto the new Project.
+  const [pendingDocuments, setPendingDocuments] = useState<PendingDocument[]>([]);
+  const canStageDocuments = !isReview && !draftId;
+
+  const stagePendingDocument = (file: File) => {
+    setPendingDocuments((prev) => [...prev, { localId: crypto.randomUUID(), file, status: "pending" }]);
+  };
+  const removePendingDocument = (localId: string) => {
+    setPendingDocuments((prev) => prev.filter((doc) => doc.localId !== localId));
+  };
+  const uploadOnePendingDocument = async (prRequestId: string, doc: PendingDocument): Promise<boolean> => {
+    setPendingDocuments((prev) => prev.map((d) => (d.localId === doc.localId ? { ...d, status: "uploading", error: undefined } : d)));
+    try {
+      await uploadPRRequestDocument(prRequestId, doc.file);
+      setPendingDocuments((prev) => prev.filter((d) => d.localId !== doc.localId));
+      return true;
+    } catch (err) {
+      setPendingDocuments((prev) =>
+        prev.map((d) => (d.localId === doc.localId ? { ...d, status: "failed", error: getUserFriendlyErrorMessage(err, "Upload failed.") } : d))
+      );
+      return false;
+    }
+  };
+  /** Uploads every staged file to the just-created PR Request; false if any failed. */
+  const flushPendingDocuments = async (prRequestId: string): Promise<boolean> => {
+    const results: boolean[] = [];
+    for (const doc of pendingDocuments.filter((d) => d.status !== "uploading")) {
+      results.push(await uploadOnePendingDocument(prRequestId, doc));
+    }
+    return results.every(Boolean);
+  };
 
   const validateActiveTab = (tab: TabKey): boolean => {
     switch (tab) {
@@ -202,7 +241,11 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
               <ProjectDocumentsCard
                 ownerType="prRequest"
                 ownerId={draftId}
-                lockedMessage="Save this Draft, then reopen it to upload documents."
+                lockedMessage="Documents you add now are uploaded when the Draft is saved."
+                onStageFile={canStageDocuments ? stagePendingDocument : undefined}
+                pendingDocuments={canStageDocuments ? pendingDocuments : undefined}
+                onRemoveStaged={canStageDocuments ? removePendingDocument : undefined}
+                onRetryStaged={undefined}
               />
             </div>
           )}
@@ -224,6 +267,7 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
           onValidate={() => validateActiveTab(activeTab)}
           onSaveAndNext={goToNextTab}
           onBack={goToPreviousTab}
+          onFlushPendingDocuments={canStageDocuments ? flushPendingDocuments : undefined}
         />
       )}
     </div>

@@ -33,9 +33,11 @@ interface Props {
   onSaveAndNext: () => void;
   onBack: () => void;
   onValidate?: () => boolean;
+  /** New request only: uploads documents staged before the draft existed, right after it is created. False if any upload failed. */
+  onFlushPendingDocuments?: (prRequestId: string) => Promise<boolean>;
 }
 
-const RequestPRFormButtons = ({ project, setProject, draftId, isLastTab, isFirstTab, onSaveAndNext, onBack, onValidate }: Props) => {
+const RequestPRFormButtons = ({ project, setProject, draftId, isLastTab, isFirstTab, onSaveAndNext, onBack, onValidate, onFlushPendingDocuments }: Props) => {
   const navigate = useNavigate();
   const { showToast } = usePmoToast();
   const [isSaving, setIsSaving] = useState(false);
@@ -51,7 +53,18 @@ const RequestPRFormButtons = ({ project, setProject, draftId, isLastTab, isFirst
       if (draftId) {
         await updatePRRequestProjectData(draftId, { projectData });
       } else {
-        await saveDraftPRRequest({ projectData });
+        const created = await saveDraftPRRequest({ projectData });
+        // Staged documents: the draft now exists, so upload them to it. A
+        // failed upload never undoes the saved draft — the user is taken to
+        // the draft, where the documents card works directly, to add it again.
+        if (onFlushPendingDocuments && !(await onFlushPendingDocuments(created.id))) {
+          showToast({
+            type: "error",
+            message: "Draft saved, but some documents failed to upload. Please add them again on this Draft.",
+          });
+          navigate(`/pr-requests/${created.id}/edit`);
+          return;
+        }
       }
       showToast({ type: "success", message: "PR Request saved as Draft." });
       navigate("/pr-requests");
