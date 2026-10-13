@@ -25,7 +25,8 @@ import type { Project } from "../../types/Project";
 import {
   getProjects,
   deleteProject,
-  fetchProjectsFromApi,
+  queryProjectsFromApi,
+  writeThroughProjectsMirror,
   archiveProjectViaApi,
   permanentlyDeleteProjectViaApi,
   bulkImportProjectGeneralInfo,
@@ -199,17 +200,25 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
 
   // Search & Filter State — initialised FROM the URL so returning from a
   // project (View/Edit) restores exactly the repository the user left. The
-  // URL is the single source; there is no second store. `status` already
-  // worked this way before this change (statusParam above) and is unchanged.
+  // URL is the single source of truth.
+  //
+  // `status` is deliberately NOT one of these local useState values — unlike
+  // every other filter here, status can also change from OUTSIDE this
+  // component (Sidebar.tsx's status-row click calls navigate(`/projects?
+  // status=...`) directly, without going through this component's own
+  // setters). A local useState+correcting-useEffect pair for it used to
+  // exist, but that meant one extra render after every such external
+  // navigation where `statusParam` (the URL, already updated) and the old
+  // `status` state (not yet caught up) disagreed — exactly the reported bug:
+  // the table would briefly render using the STALE status for one commit
+  // (showing a mixed-status list) while the URL already read
+  // `status=Active`, until the correcting effect fired a render later.
+  // `statusParam` is read directly everywhere `status` used to be used
+  // instead, so there is only ever one source of truth and zero lag.
   const [search, setSearch] = useState(() => searchParams.get("q") || "");
   const [department, setDepartment] = useState(() => searchParams.get("dept") || "All");
-  const [status, setStatus] = useState(statusParam);
   const [prSeries, setPrSeries] = useState(() => searchParams.get("series") || "All");
   const [prCategory, setPrCategory] = useState(() => searchParams.get("cat") || "All");
-
-  useEffect(() => {
-    setStatus(statusParam);
-  }, [statusParam]);
 
   // Sorting State
   const [sortField, setSortField] = useState<string>(() => searchParams.get("sort") || "prNo");
@@ -245,16 +254,28 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   // of only whatever's already in the local mirror (e.g. on a fresh
   // browser). Genuinely exercises the backend's search/filter/sort
   // capabilities with the current toolbar state; the local mirror it writes
-  // into (via fetchProjectsFromApi's write-through) is what the rest of
-  // this page already reads from above — no other logic here changes.
+  // into (via writeThroughProjectsMirror) is what the rest of this page
+  // already reads from above — no other logic here changes.
+  //
+  // Calls queryProjectsFromApi() directly (the raw fetch) instead of
+  // fetchProjectsFromApi() (which unconditionally writes through) so this
+  // effect can gate the write-through itself: syncGenerationRef is bumped
+  // every time the effect re-runs (any filter/sort change), and a response
+  // only gets written through if it's still the MOST RECENT request by the
+  // time it resolves. Without this, a request for an earlier filter that
+  // happens to resolve after a request for a later filter would overwrite
+  // the shared mirror with stale, wrong-filter data — a real, reproducible
+  // race under rapid filter switching, not just a hypothetical.
+  const syncGenerationRef = useRef(0);
   useEffect(() => {
     const backendSortField = BACKEND_SORTABLE_FIELDS.has(sortField) ? sortField : "prNo";
+    const myGeneration = ++syncGenerationRef.current;
 
     const timer = setTimeout(() => {
-      fetchProjectsFromApi({
+      queryProjectsFromApi({
         search: search || undefined,
         department: department !== "All" ? department : undefined,
-        projectStatus: mode === "completed" ? "Completed" : status !== "All" ? status : undefined,
+        projectStatus: mode === "completed" ? "Completed" : statusParam !== "All" ? statusParam : undefined,
         page: 1,
         // Matches the backend's listProjectsQuerySchema pageSize ceiling
         // exactly (see project.validators.ts) — this bulk "stats scope"
@@ -264,6 +285,13 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
         sortDirection: sortAsc ? "asc" : "desc",
       })
         .then((result) => {
+          // A later filter/sort change already superseded this request —
+          // never let a stale response overwrite newer, already-displayed
+          // results.
+          if (syncGenerationRef.current !== myGeneration) return;
+
+          writeThroughProjectsMirror(result.items);
+
           // P2-06 — fail loudly instead of silently computing this page's
           // table/KPIs from an incomplete set: if the authorized+filtered
           // project count ever exceeds the 200-row cap above, `total` tells
@@ -283,7 +311,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [search, department, status, mode, sortField, sortAsc]);
+  }, [search, department, statusParam, mode, sortField, sortAsc]);
 
   // Computed statistics. `active`/`onHold`/`cancelled` and the WO/invoice/
   // outstanding totals stay scoped to `projects` exactly as before (the
@@ -423,7 +451,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
         (p.primaryProjectManager || "").toLowerCase().includes(search.toLowerCase());
 
       const matchDept = department === "All" || p.department === department;
-      const matchStatus = status === "All" || p.projectStatus === status;
+      const matchStatus = statusParam === "All" || p.projectStatus === statusParam;
 
       // Series and Category are INDEPENDENT of each other: series is the
       // numeric portion, category is the alphabetic prefix / stored field.
@@ -468,7 +496,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     });
 
     return result;
-  }, [projects, search, department, status, prSeries, prCategory, sortField, sortAsc]);
+  }, [projects, search, department, statusParam, prSeries, prCategory, sortField, sortAsc]);
 
   // Reset page when filters modify result counts.
   //
@@ -482,7 +510,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       return;
     }
     setCurrentPage(1);
-  }, [search, department, status, prSeries, prCategory]);
+  }, [search, department, statusParam, prSeries, prCategory]);
 
   // Mirror the repository's own state into the URL (replace, never push, so
   // the browser Back button still leaves the repository rather than stepping
@@ -495,7 +523,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
 
     put("q", search, "");
     put("dept", department, "All");
-    put("status", status, "All");
+    put("status", statusParam, "All");
     put("series", prSeries, "All");
     put("cat", prCategory, "All");
     put("sort", sortField, "prNo");
@@ -505,7 +533,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [search, department, status, prSeries, prCategory, sortField, sortAsc, currentPage, searchParams, setSearchParams]);
+  }, [search, department, statusParam, prSeries, prCategory, sortField, sortAsc, currentPage, searchParams, setSearchParams]);
 
   // Pagination bounds
   const paginatedProjects = useMemo(() => {
@@ -956,10 +984,9 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
               </span>
             ) : (
               <select
-                value={status}
+                value={statusParam}
                 onChange={(e) => {
                   const nextStatus = e.target.value;
-                  setStatus(nextStatus);
                   const newParams = new URLSearchParams(searchParams);
                   if (nextStatus === "All") {
                     newParams.delete("status");
