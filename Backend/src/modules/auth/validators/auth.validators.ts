@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dateInput } from "../../../shared/utils/dateInput.js";
 
 /**
  * Login is ALWAYS company email + password — there is no employeeCode
@@ -99,8 +100,8 @@ export const listAuditLogsQuerySchema = z.object({
   event: z.string().trim().min(1).optional(),
   eventCategory: z.enum(["success", "failure"]).optional(),
   ipAddress: z.string().trim().min(1).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  from: dateInput("From date").optional(),
+  to: dateInput("To date").optional(),
 });
 
 export type ListAuditLogsQuery = z.infer<typeof listAuditLogsQuerySchema>;

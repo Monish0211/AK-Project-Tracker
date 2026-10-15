@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dateInput } from "../../../shared/utils/dateInput.js";
 import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
 import { INVOICE_CURRENCIES } from "../invoiceCurrency.rules.js";
 
@@ -60,7 +61,7 @@ export const createInvoiceLineSchema = z.object({
   // callers that predate manual numbering — see invoice.service.ts's
   // registerInvoiceNumberForLine().
   invoiceIntent: z.enum(["new", "existing"]).optional(),
-  invoiceDate: z.coerce.date(),
+  invoiceDate: dateInput("Invoice Date"),
 
   milestoneId: z.string().trim().min(1).optional().nullable(),
   milestoneName: z.string().trim().min(1).optional().nullable(),
@@ -98,7 +99,7 @@ export type CreateInvoiceLineInput = z.infer<typeof createInvoiceLineSchema>;
  */
 export const updateInvoiceLineSchema = z.object({
   invoiceNo: z.string().trim().min(1, "Invoice Number cannot be blank.").optional(),
-  invoiceDate: z.coerce.date().optional(),
+  invoiceDate: dateInput("Invoice Date").optional(),
 
   milestoneId: z.string().trim().min(1).optional().nullable(),
   milestoneName: z.string().trim().min(1).optional().nullable(),
@@ -148,7 +149,7 @@ export const ingestInvoiceLinesSchema = z.object({
         quantityItemId: z.string().trim().min(1, "Quantity Item ID is required."),
 
         invoiceNo: z.string().trim().min(1, "Invoice No is required."),
-        invoiceDate: z.coerce.date(),
+        invoiceDate: dateInput("Invoice Date"),
 
         milestoneId: z.string().trim().min(1).optional().nullable(),
         milestoneName: z.string().trim().min(1).optional().nullable(),

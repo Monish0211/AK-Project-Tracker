@@ -472,16 +472,19 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCus
             />
           </Field>
 
-          <Field label="Project End Date">
+          <Field label="Project End Date" error={errors["projectEndDate"]}>
             <Input
               type="date"
+              data-field="projectEndDate"
               value={project.projectEndDate}
-              onChange={(e) =>
+              onChange={(e) => {
                 setProject({
                   ...project,
                   projectEndDate: e.target.value,
-                })
-              }
+                });
+                clearError?.("projectEndDate");
+              }}
+              invalid={!!errors["projectEndDate"]}
             />
           </Field>
 
@@ -531,16 +534,19 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCus
 
           {project.projectStatus === "Completed" && (
             <>
-              <Field label="Actual Completion Date">
+              <Field label="Actual Completion Date" error={errors["actualCompletionDate"]}>
                 <Input
                   type="date"
+                  data-field="actualCompletionDate"
                   value={project.actualCompletionDate || ""}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setProject((prev) => ({
                       ...prev,
                       actualCompletionDate: e.target.value,
-                    }))
-                  }
+                    }));
+                    clearError?.("actualCompletionDate");
+                  }}
+                  invalid={!!errors["actualCompletionDate"]}
                 />
               </Field>
 

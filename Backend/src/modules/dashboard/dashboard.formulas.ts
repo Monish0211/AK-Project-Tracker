@@ -83,6 +83,11 @@ export function toDateKey(value: Date | string): string {
     if (Number.isNaN(parsed.getTime())) return "";
     return parsed.toISOString().slice(0, 10);
   }
+  // A stored date the database driver could not read (e.g. a five-digit
+  // year) arrives as an Invalid Date; toISOString() would throw a RangeError
+  // and fail the whole dashboard summary. Same "" fallback as an unparseable
+  // string above — callers already treat "" as "date not set".
+  if (Number.isNaN(value.getTime())) return "";
   return value.toISOString().slice(0, 10);
 }
 

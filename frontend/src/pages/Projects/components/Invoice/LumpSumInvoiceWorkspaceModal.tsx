@@ -5,6 +5,8 @@ import type { InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceIt
 import type { ProjectNote } from "../../../../types/ProjectNote";
 import { Button } from "../../../../components/ui/Button";
 import { Input } from "../../../../components/ui/Input";
+import { FieldError } from "../../../../components/ui/FieldError";
+import { dateInputError, isValidDateInput } from "../../../../utils/dateInputValidation";
 import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
 import { Portal } from "../../../../components/ui/Portal";
@@ -121,7 +123,7 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
   const invoiceAmount = round(selectedRows.reduce((sum, row) => sum + row.invoiceAmount, 0));
   const gst = getGstBreakdown(project, invoiceAmount, invoiceCurrency, invoiceNo);
 
-  const canSave = selectedRows.length > 0 && invoiceDate.trim() !== "" && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
+  const canSave = selectedRows.length > 0 && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
 
   // Original-currency total = the sum of every line handleSave() will actually create
   // (one per activity x selected milestone), each derived independently —
@@ -286,7 +288,8 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
                 <InvoiceNumberField state={numberField} />
                 <div>
                   <label className={labelClass}>Invoice Date</label>
-                  <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+                  <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} invalid={!isValidDateInput(invoiceDate)} />
+<FieldError error={dateInputError("Invoice Date", invoiceDate)} />
                 </div>
                 <div>
                   <label className={labelClass}>Client Reference / PO Reference</label>

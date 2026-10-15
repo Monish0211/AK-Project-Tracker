@@ -6,6 +6,8 @@ import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../ty
 import type { ProjectNote } from "../../../../types/ProjectNote";
 import { Button } from "../../../../components/ui/Button";
 import { Input } from "../../../../components/ui/Input";
+import { FieldError } from "../../../../components/ui/FieldError";
+import { dateInputError, isValidDateInput } from "../../../../utils/dateInputValidation";
 import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
 import { Portal } from "../../../../components/ui/Portal";
@@ -343,7 +345,7 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
   const gst = getGstBreakdown(project, totalInvoiceAmount, invoiceCurrency, invoiceNo);
   const activitiesTouched = selectedItemIds.size;
 
-  const canSave = globalSelectedRows.length > 0 && invoiceDate.trim() !== "" && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
+  const canSave = globalSelectedRows.length > 0 && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
 
   /** Original-currency + saved-INR totals of the lines the given rows will actually be saved as (null for an INR invoice). OMR keeps 3 decimals. */
   const sumForeign = (amountsINR: number[]) => (isForeign && currencySelection ? sumAmountsFromInr(amountsINR, currencySelection) : null);
@@ -517,7 +519,8 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
               <InvoiceNumberField state={numberField} />
               <div>
                 <label className={labelClass}>Invoice Date</label>
-                <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+                <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} invalid={!isValidDateInput(invoiceDate)} />
+<FieldError error={dateInputError("Invoice Date", invoiceDate)} />
               </div>
               <div>
                 <label className={labelClass}>Client Reference / PO Reference</label>

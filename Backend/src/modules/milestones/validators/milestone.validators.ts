@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
+import { dateInput } from "../../../shared/utils/dateInput.js";
 
 /**
  * Required fields mirror validatePaymentMilestonesTab() in
@@ -16,7 +17,7 @@ export const createMilestoneSchema = z.object({
     .number()
     .positive("Payment % must be greater than 0.")
     .max(100, "Payment % cannot exceed 100."),
-  dueDate: z.coerce.date().optional().nullable(),
+  dueDate: dateInput("Due Date").optional().nullable(),
 });
 
 export type CreateMilestoneInput = z.infer<typeof createMilestoneSchema>;
@@ -29,7 +30,7 @@ export const updateMilestoneSchema = z.object({
     .positive("Payment % must be greater than 0.")
     .max(100, "Payment % cannot exceed 100.")
     .optional(),
-  dueDate: z.coerce.date().optional().nullable(),
+  dueDate: dateInput("Due Date").optional().nullable(),
 });
 
 export type UpdateMilestoneInput = z.infer<typeof updateMilestoneSchema>;
@@ -68,7 +69,7 @@ export const ingestMilestonesSchema = z.object({
           .number()
           .positive("Payment % must be greater than 0.")
           .max(100, "Payment % cannot exceed 100."),
-        dueDate: z.coerce.date().optional().nullable(),
+        dueDate: dateInput("Due Date").optional().nullable(),
       })
     )
     .min(1, "At least one milestone is required."),

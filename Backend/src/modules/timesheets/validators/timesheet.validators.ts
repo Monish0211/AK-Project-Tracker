@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dateInput } from "../../../shared/utils/dateInput.js";
 import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
 
 /**
@@ -53,10 +54,10 @@ export type ListImportRowsQuery = z.infer<typeof listImportRowsQuerySchema>;
 export const findEntriesQuerySchema = z.object({
   employeeNo: z.string().trim().min(1).optional(),
   projectId: z.string().trim().min(1).optional(),
-  workDate: z.coerce.date().optional(),
+  workDate: dateInput("Work Date").optional(),
   task: z.string().trim().optional(),
-  startDate: z.coerce.date().optional(),
-  endDate: z.coerce.date().optional(),
+  startDate: dateInput("Start Date").optional(),
+  endDate: dateInput("End Date").optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(200).default(20),
 });
@@ -76,7 +77,7 @@ export const editEntryBodySchema = z
   .object({
     hours: z.coerce.number().positive("Hours must be greater than zero.").optional(),
     task: z.string().trim().optional(),
-    workDate: z.coerce.date().optional(),
+    workDate: dateInput("Work Date").optional(),
     sourceStatus: z.enum(["Active", "Released"]).optional(),
   })
   .refine((data) => Object.keys(data).length > 0, { message: "At least one field must be provided." });
@@ -97,8 +98,8 @@ export type EditEntryBody = z.infer<typeof editEntryBodySchema>;
  */
 export const historicalClearQuerySchema = z
   .object({
-    startDate: z.coerce.date(),
-    endDate: z.coerce.date(),
+    startDate: dateInput("Start Date"),
+    endDate: dateInput("End Date"),
   })
   .refine((data) => data.startDate.getTime() <= data.endDate.getTime(), {
     message: "Start date must be on or before the end date.",

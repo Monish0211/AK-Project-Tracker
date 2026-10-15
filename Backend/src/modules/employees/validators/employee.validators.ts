@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dateInput } from "../../../shared/utils/dateInput.js";
 import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
 
 /**
@@ -31,7 +32,7 @@ export const createEmployeeSchema = z.object({
   // to this phase; both optional so every existing call site (and the
   // legacy migration of pre-existing localStorage employees, which have
   // neither) keeps working unchanged.
-  dateOfJoining: z.coerce.date().optional().nullable(),
+  dateOfJoining: dateInput("Date of Joining").optional().nullable(),
   employeeType: z.string().trim().optional().nullable(),
 });
 
@@ -51,7 +52,7 @@ export const updateEmployeeSchema = z.object({
 
   status: z.enum(["Active", "Inactive"]).optional(),
 
-  dateOfJoining: z.coerce.date().optional().nullable(),
+  dateOfJoining: dateInput("Date of Joining").optional().nullable(),
   employeeType: z.string().trim().optional().nullable(),
 });
 

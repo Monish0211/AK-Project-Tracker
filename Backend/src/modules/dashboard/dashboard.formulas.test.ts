@@ -14,6 +14,7 @@ import {
   profitPercentage,
   projectCommercialTotals,
   teamLeadStatus,
+  toDateKey,
 } from "./dashboard.formulas.js";
 
 test("invoice raised excludes Cancelled and includes Draft & PartiallyPaid", () => {
@@ -245,4 +246,29 @@ test("department completion average excludes cancelled projects", () => {
 
   // Case 3: Empty project list -> 0
   assert.equal(calculateDepartmentCompletion([]), 0);
+});
+
+test("toDateKey: an Invalid Date (unreadable stored date) returns \"\" instead of throwing", () => {
+  assert.doesNotThrow(() => toDateKey(new Date(Number.NaN)));
+  assert.equal(toDateKey(new Date(Number.NaN)), "");
+  // A five-digit year read back from PostgreSQL arrives exactly like this.
+  assert.equal(toDateKey(new Date("not a date")), "");
+});
+
+test("toDateKey: valid dates keep their existing keys", () => {
+  assert.equal(toDateKey(new Date("2026-04-01T00:00:00.000Z")), "2026-04-01");
+  assert.equal(toDateKey("2026-04-01"), "2026-04-01");
+  assert.equal(toDateKey("2026-04-01T18:30:00.000Z"), "2026-04-01");
+  assert.equal(toDateKey("garbage"), "");
+});
+
+test("classifyHealth: an unreadable end date counts as schedule-not-set, not a crash", () => {
+  const bucket = classifyHealth({
+    projectStatus: "Active",
+    startDateKey: toDateKey(new Date("2026-03-02T00:00:00.000Z")),
+    endDateKey: toDateKey(new Date(Number.NaN)),
+    totalPendingQty: 0,
+    pendingInvoicePercentage: 0,
+  });
+  assert.equal(bucket, "scheduleNotSet");
 });

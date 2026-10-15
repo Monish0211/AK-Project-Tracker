@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { CheckCircle2, AlertCircle, X } from "lucide-react";
+import { DATE_INPUT_MAX, DATE_INPUT_MIN, dateInputError } from "../../utils/dateInputValidation";
 
 interface Props {
   isOpen: boolean;
@@ -28,6 +29,11 @@ export function ProjectCompletionModal({
     e.preventDefault();
     if (!actualCompletionDate) {
       setError("Please select the Actual Completion Date.");
+      return;
+    }
+    const dateError = dateInputError("Actual Completion Date", actualCompletionDate);
+    if (dateError) {
+      setError(dateError);
       return;
     }
     if (!completionRemarks.trim() || completionRemarks.trim().length < 20) {
@@ -88,6 +94,8 @@ export function ProjectCompletionModal({
               <input
                 type="date"
                 required
+                min={DATE_INPUT_MIN}
+                max={DATE_INPUT_MAX}
                 value={actualCompletionDate}
                 onChange={(e) => setActualCompletionDate(e.target.value)}
                 className="w-full pl-3 pr-3 py-2 bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-xl text-xs text-[var(--nu-text)] focus:outline-none focus:ring-2 focus:ring-[var(--nu-accent)] font-mono"

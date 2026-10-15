@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dateInput } from "../../../shared/utils/dateInput.js";
 
 /**
  * priority/status/repeat/reminderType/notifyOffset are deliberately plain
@@ -18,7 +19,7 @@ export const createReminderSchema = z.object({
   reminderType: z.string().trim().min(1, "Reminder type is required."),
   priority: z.string().trim().min(1, "Priority is required."),
   status: z.string().trim().min(1).default("Pending"),
-  reminderDate: z.coerce.date(),
+  reminderDate: dateInput("Reminder Date"),
   reminderTime: z.string().trim().min(1, "Reminder time is required."),
   notifyOffset: z.string().trim().min(1, "Notify offset is required."),
   repeat: z.string().trim().min(1).default("None"),
@@ -39,14 +40,14 @@ export const updateReminderSchema = z.object({
   reminderType: z.string().trim().min(1).optional(),
   priority: z.string().trim().min(1).optional(),
   status: z.string().trim().min(1).optional(),
-  reminderDate: z.coerce.date().optional(),
+  reminderDate: dateInput("Reminder Date").optional(),
   reminderTime: z.string().trim().min(1).optional(),
   notifyOffset: z.string().trim().min(1).optional(),
   repeat: z.string().trim().min(1).optional(),
   isCompleted: z.boolean().optional(),
-  completedDate: z.coerce.date().optional().nullable(),
+  completedDate: dateInput("Completed Date").optional().nullable(),
   notificationGenerated: z.boolean().optional(),
-  triggeredAt: z.coerce.date().optional().nullable(),
+  triggeredAt: dateInput("Triggered At").optional().nullable(),
   metadata: z.unknown().optional(),
 });
 

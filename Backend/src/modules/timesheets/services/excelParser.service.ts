@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { AppError } from "../../../shared/utils/AppError.js";
 import type { ParsedTimesheetRow } from "../timesheet.types.js";
+import { isWithinYearRange, parseStrictDateInput } from "../../../shared/utils/dateInput.js";
 
 /**
  * Backend port of the frontend's tolerant Excel-parsing approach
@@ -120,6 +121,14 @@ function excelSerialToDate(serial: number): Date | null {
  * by a stray time-of-day component.
  */
 function parseWorkDate(value: unknown): Date | null {
+  const day = parseWorkDateUnchecked(value);
+  // Strict date validation (Oct 2026): a year outside 1900–2100 (e.g. a
+  // five-digit "20226") would be stored but read back by the database
+  // driver as an Invalid Date — reject it here like any unparseable date.
+  return day && isWithinYearRange(day) ? day : null;
+}
+
+function parseWorkDateUnchecked(value: unknown): Date | null {
   if (!value) return null;
   if (value instanceof Date) return new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
   if (typeof value === "number") return excelSerialToDate(value);
@@ -127,7 +136,12 @@ function parseWorkDate(value: unknown): Date | null {
     const trimmed = value.trim();
     const num = Number(trimmed);
     if (!isNaN(num) && num > 10000 && num < 100000) return excelSerialToDate(num);
-    const parsed = new Date(trimmed);
+    // An ISO-shaped value gets the strict calendar check (no 2026-02-30 ->
+    // 2 March rollover). Other human formats KEKA files use keep their
+    // existing lenient parse, now bounded by the year range above.
+    const strict = /^\d+-\d{2}-\d{2}/.test(trimmed) ? parseStrictDateInput(trimmed) : undefined;
+    if (strict === null) return null;
+    const parsed = strict ?? new Date(trimmed);
     if (isNaN(parsed.getTime())) return null;
     return new Date(Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()));
   }

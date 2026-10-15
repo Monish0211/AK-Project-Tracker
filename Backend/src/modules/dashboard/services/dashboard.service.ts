@@ -436,6 +436,13 @@ function buildTeamLeads(
   };
 }
 
+// An invoice date the database driver could not read (e.g. a five-digit
+// year) is an Invalid Date; toISOString() would throw and fail the whole
+// summary. "" is dropped by buildActivity()'s timestamp filter below.
+function isoTimestampOrEmpty(date: Date): string {
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
 function buildActivity(
   projects: DashboardProjectRow[],
   notes: dashboardRepo.NoteRow[],
@@ -473,7 +480,7 @@ function buildActivity(
         title: "Invoice Raised",
         description: `${line.invoiceNo} raised for ${project.client || project.prNo}.`,
         projectRef: project.prNo,
-        timestamp: line.invoiceDate.toISOString(),
+        timestamp: isoTimestampOrEmpty(line.invoiceDate),
       });
       if (line.status === "Paid") {
         events.push({
@@ -482,7 +489,7 @@ function buildActivity(
           title: "Payment Received",
           description: `${project.client || project.prNo} paid ₹ ${line.invoiceAmountINR.toLocaleString("en-IN")} against ${line.invoiceNo}.`,
           projectRef: project.prNo,
-          timestamp: line.invoiceDate.toISOString(),
+          timestamp: isoTimestampOrEmpty(line.invoiceDate),
         });
       }
     }

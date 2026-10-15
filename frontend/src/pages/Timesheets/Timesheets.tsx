@@ -38,6 +38,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Input } from "../../components/ui/Input";
+import { dateInputError } from "../../utils/dateInputValidation";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { usePmoToast } from "../../components/ui/usePmoToast";
 import { TimesheetExcelImportModal } from "./components/TimesheetExcelImportModal";
@@ -435,6 +436,11 @@ const Timesheets = () => {
     }
     if (!formStartDate || !formEndDate) {
       setFormError("Start and End dates are required.");
+      return;
+    }
+    const rangeDateError = dateInputError("Start Date", formStartDate) ?? dateInputError("End Date", formEndDate);
+    if (rangeDateError) {
+      setFormError(rangeDateError);
       return;
     }
     if (new Date(formEndDate) < new Date(formStartDate)) {

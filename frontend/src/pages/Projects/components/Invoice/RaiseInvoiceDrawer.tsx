@@ -8,6 +8,8 @@ import type { Project } from "../../../../types/Project";
 import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
 import { Button } from "../../../../components/ui/Button";
 import { Input } from "../../../../components/ui/Input";
+import { FieldError } from "../../../../components/ui/FieldError";
+import { dateInputError, isValidDateInput } from "../../../../utils/dateInputValidation";
 import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
 import { EmptyState } from "../../../../components/ui/EmptyState";
@@ -493,6 +495,7 @@ export function RaiseInvoiceDrawer({
     !isViewMode &&
     effectiveInvoiceNo.trim() !== "" &&
     invoiceDate.trim() !== "" &&
+    isValidDateInput(invoiceDate) &&
     hasBillableLine;
 
   const handleSave = () => {
@@ -916,7 +919,9 @@ export function RaiseInvoiceDrawer({
                     disabled={isViewMode}
                     className={disabledFieldClass}
                     onChange={(e) => setInvoiceDate(e.target.value)}
+                    invalid={!isViewMode && !isValidDateInput(invoiceDate)}
                   />
+                  {!isViewMode && <FieldError error={dateInputError("Invoice Date", invoiceDate)} />}
                 </div>
 
                 <div>

@@ -5,6 +5,8 @@ import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../ty
 import type { ProjectNote } from "../../../../types/ProjectNote";
 import { Button } from "../../../../components/ui/Button";
 import { Input } from "../../../../components/ui/Input";
+import { FieldError } from "../../../../components/ui/FieldError";
+import { dateInputError, isValidDateInput } from "../../../../utils/dateInputValidation";
 import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
 import { Portal } from "../../../../components/ui/Portal";
@@ -242,7 +244,7 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
   const gst = getGstBreakdown(project, totalInvoiceAmount, invoiceCurrency, invoiceNo);
   const hasRowError = rows.some((row) => row.error);
   const canSave =
-    selectedRows.length > 0 && !hasRowError && invoiceDate.trim() !== "" && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
+    selectedRows.length > 0 && !hasRowError && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
 
   const handleSave = async () => {
     if (!canSave || !currencySelection) return;
@@ -384,7 +386,8 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
                 <InvoiceNumberField state={numberField} />
                 <div>
                   <label className={labelClass}>Invoice Date</label>
-                  <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+                  <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} invalid={!isValidDateInput(invoiceDate)} />
+<FieldError error={dateInputError("Invoice Date", invoiceDate)} />
                 </div>
                 <div>
                   <label className={labelClass}>Client Reference / PO Reference</label>

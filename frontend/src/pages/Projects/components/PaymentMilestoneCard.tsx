@@ -395,8 +395,10 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
                           max={project.projectEndDate}
                           aria-label="Due Date"
                           onChange={(e) => handleDueDateChange(0, e.target.value)}
+                          invalid={!!errors["milestone_due_0"]}
                           className="h-9 px-2.5 text-[12.5px]"
                         />
+                        <FieldError error={errors["milestone_due_0"]} />
                       </>
                     )}
                   </div>
@@ -486,8 +488,10 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
                             onChange={(e) =>
                               handleDueDateChange(index, e.target.value)
                             }
+                            invalid={!!errors[`milestone_due_${index}`]}
                             className="h-9 px-2.5 text-[12.5px]"
                           />
+                          <FieldError error={errors[`milestone_due_${index}`]} />
                         </>
                       )}
                     </div>

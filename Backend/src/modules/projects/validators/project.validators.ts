@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PROJECT_STATUS_VALUES, WORK_ORDER_STATUS_VALUES } from "../project.constants.js";
+import { dateInput } from "../../../shared/utils/dateInput.js";
 
 /**
  * RFQ No. — the same rule on create and update: a string that is non-empty
@@ -31,17 +32,17 @@ export const createProjectSchema = z.object({
   projectTitle: z.string().trim().min(1, "Project Title is required."),
 
   workOrderStatus: z.enum(WORK_ORDER_STATUS_VALUES),
-  projectStartDate: z.coerce.date(),
-  projectEndDate: z.coerce.date().optional().nullable(),
+  projectStartDate: dateInput("Project Start Date"),
+  projectEndDate: dateInput("Project End Date").optional().nullable(),
   projectStatus: z.enum(PROJECT_STATUS_VALUES),
 
-  actualCompletionDate: z.coerce.date().optional().nullable(),
+  actualCompletionDate: dateInput("Actual Completion Date").optional().nullable(),
   completionRemarks: z.string().trim().min(1).optional().nullable(),
   completedBy: z.string().trim().min(1).optional().nullable(),
-  completedTimestamp: z.coerce.date().optional().nullable(),
+  completedTimestamp: dateInput("Completed Timestamp").optional().nullable(),
 
   workOrderNumber: z.string().trim().min(1, "Work Order Number is required."),
-  workOrderDate: z.coerce.date(),
+  workOrderDate: dateInput("Work Order Date"),
   eicName: z.string().trim().min(1, "EIC Name is required."),
   contactNumber: z.string().trim().min(1).optional().nullable(),
   emailId: z.string().trim().email("Enter a valid email address.").optional().nullable(),
@@ -147,17 +148,17 @@ export const updateProjectSchema = z.object({
   projectTitle: z.string().trim().min(1).optional(),
 
   workOrderStatus: z.enum(WORK_ORDER_STATUS_VALUES).optional(),
-  projectStartDate: z.coerce.date().optional(),
-  projectEndDate: z.coerce.date().optional().nullable(),
+  projectStartDate: dateInput("Project Start Date").optional(),
+  projectEndDate: dateInput("Project End Date").optional().nullable(),
   projectStatus: z.enum(PROJECT_STATUS_VALUES).optional(),
 
-  actualCompletionDate: z.coerce.date().optional().nullable(),
+  actualCompletionDate: dateInput("Actual Completion Date").optional().nullable(),
   completionRemarks: z.string().trim().min(1).optional().nullable(),
   completedBy: z.string().trim().min(1).optional().nullable(),
-  completedTimestamp: z.coerce.date().optional().nullable(),
+  completedTimestamp: dateInput("Completed Timestamp").optional().nullable(),
 
   workOrderNumber: z.string().trim().min(1).optional(),
-  workOrderDate: z.coerce.date().optional(),
+  workOrderDate: dateInput("Work Order Date").optional(),
   eicName: z.string().trim().min(1).optional(),
   contactNumber: z.string().trim().min(1).optional().nullable(),
   emailId: z.string().trim().email("Enter a valid email address.").optional().nullable(),

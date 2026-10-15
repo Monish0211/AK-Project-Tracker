@@ -25,4 +25,9 @@ describe("timesheetPending.rules", () => {
   it("emits an ISO date (YYYY-MM-DD) from a UTC midnight date", () => {
     assert.equal(toIsoDate(utcMidnight(utcDate(2026, 7, 20))), "2026-08-20");
   });
+
+  it("returns null (never throws) for an unreadable stored date", () => {
+    assert.doesNotThrow(() => toIsoDate(new Date(Number.NaN)));
+    assert.equal(toIsoDate(new Date(Number.NaN)), null);
+  });
 });

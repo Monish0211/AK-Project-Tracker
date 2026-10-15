@@ -29,6 +29,12 @@ export function isTimesheetPending(daysSinceAnchor: number): boolean {
   return daysSinceAnchor > PENDING_THRESHOLD_DAYS;
 }
 
-export function toIsoDate(date: Date): string {
+/**
+ * null for a stored date the database driver could not read (e.g. a
+ * five-digit year) — toISOString() would throw and fail both
+ * GET /timesheets/pending-projects and the whole dashboard summary.
+ */
+export function toIsoDate(date: Date): string | null {
+  if (Number.isNaN(date.getTime())) return null;
   return date.toISOString().slice(0, 10);
 }

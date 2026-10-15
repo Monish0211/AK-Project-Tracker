@@ -13,6 +13,8 @@ import { Button } from "../../../../components/ui/Button";
 import { Input } from "../../../../components/ui/Input";
 import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
+import { FieldError } from "../../../../components/ui/FieldError";
+import { dateInputError } from "../../../../utils/dateInputValidation";
 
 interface Props {
   reminder?: ProjectReminder | null;
@@ -43,6 +45,8 @@ export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode
     repeat: "None" as ReminderRepeat,
   });
 
+  const [dateError, setDateError] = useState<string | undefined>(undefined);
+
   useEffect(() => {
     if (reminder) {
       setFormData({
@@ -62,6 +66,11 @@ export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title.trim()) return;
+    const reminderDateError = dateInputError("Due Date", formData.reminderDate);
+    if (reminderDateError) {
+      setDateError(reminderDateError);
+      return;
+    }
 
     onSave({
       ...formData,
@@ -134,8 +143,13 @@ export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode
                 type="date"
                 required
                 value={formData.reminderDate}
-                onChange={(e) => setFormData({...formData, reminderDate: e.target.value})}
+                onChange={(e) => {
+                  setFormData({...formData, reminderDate: e.target.value});
+                  setDateError(undefined);
+                }}
+                invalid={!!dateError}
               />
+              <FieldError error={dateError} />
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">

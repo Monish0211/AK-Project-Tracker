@@ -5,6 +5,8 @@ import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../ty
 import type { ProjectNote } from "../../../../types/ProjectNote";
 import { Button } from "../../../../components/ui/Button";
 import { Input } from "../../../../components/ui/Input";
+import { FieldError } from "../../../../components/ui/FieldError";
+import { dateInputError, isValidDateInput } from "../../../../utils/dateInputValidation";
 import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
 import { Portal } from "../../../../components/ui/Portal";
@@ -310,7 +312,7 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
   const gst = getGstBreakdown(project, totalInvoiceValue, invoiceCurrency, invoiceNo);
   const hasBillableRow = rows.some((row) => row.currentQty > 0);
   const hasRowError = rows.some((row) => row.error);
-  const canSave = hasBillableRow && !hasRowError && invoiceDate.trim() !== "" && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
+  const canSave = hasBillableRow && !hasRowError && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
   // Foreign-currency invoice total — the sum of each line's own derived original amount, exactly what will be saved.
   // (OMR keeps its 3 decimals.)
   const totalOriginalValue =
@@ -454,7 +456,8 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
                 <InvoiceNumberField state={numberField} />
                 <div>
                   <label className={labelClass}>Invoice Date</label>
-                  <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+                  <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} invalid={!isValidDateInput(invoiceDate)} />
+<FieldError error={dateInputError("Invoice Date", invoiceDate)} />
                 </div>
                 <div>
                   <label className={labelClass}>Client Reference / PO Reference</label>

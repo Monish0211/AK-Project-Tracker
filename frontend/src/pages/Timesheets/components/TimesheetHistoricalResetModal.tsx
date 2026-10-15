@@ -3,6 +3,7 @@ import { AlertTriangle, History, X } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Input";
 import { apiClient, ApiError } from "../../../services/apiClient";
+import { dateInputError } from "../../../utils/dateInputValidation";
 
 interface ClearResult {
   deletedCount: number;
@@ -68,6 +69,11 @@ export const TimesheetHistoricalResetModal = ({ open, onClose, onCleared }: Prop
 
   const handleClear = async () => {
     if (!canConfirm) return;
+    const rangeDateError = dateInputError("Start date", startDate) ?? dateInputError("End date", endDate);
+    if (rangeDateError) {
+      setError(rangeDateError);
+      return;
+    }
     setPending(true);
     setError(null);
     try {

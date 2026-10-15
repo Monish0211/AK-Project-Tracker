@@ -25,6 +25,10 @@ export function getPlannedCompletionDate(project: ScheduleInput): string {
   if (Number.isNaN(start.getTime())) return "";
   const completion = new Date(start);
   completion.setDate(completion.getDate() + totalDays);
+  // A typed start date near the browser's year limit (e.g. 275760) can
+  // overflow once the duration is added; toISOString() would then throw
+  // while the user is still typing. Same "" fallback as an unset date.
+  if (Number.isNaN(completion.getTime())) return "";
   return completion.toISOString().slice(0, 10);
 }
 

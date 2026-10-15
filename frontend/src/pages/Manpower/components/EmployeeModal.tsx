@@ -9,6 +9,7 @@ import {
   updateEmployeeViaApi,
 } from "../../../services/employeeService";
 import { ApiError } from "../../../services/apiClient";
+import { DATE_INPUT_MAX, DATE_INPUT_MIN, dateInputError } from "../../../utils/dateInputValidation";
 import { DEFAULT_DEPARTMENTS } from "../../../data/departmentMasterData";
 
 interface Props {
@@ -125,6 +126,12 @@ const EmployeeModal = ({
 
     if (!location.trim()) {
       setError("Location is required.");
+      return;
+    }
+
+    const joiningDateError = dateInputError("Date of Joining", dateOfJoining);
+    if (joiningDateError) {
+      setError(joiningDateError);
       return;
     }
 
@@ -511,8 +518,13 @@ const EmployeeModal = ({
             </label>
             <input
               type="date"
+              min={DATE_INPUT_MIN}
+              max={DATE_INPUT_MAX}
               value={dateOfJoining}
-              onChange={(e) => setDateOfJoining(e.target.value)}
+              onChange={(e) => {
+                setDateOfJoining(e.target.value);
+                setError("");
+              }}
               className="
                 w-full
                 border

@@ -104,7 +104,12 @@ export const getImportRows = asyncHandler(async (req: Request, res: Response) =>
 export const getEntries = asyncHandler(async (req: Request, res: Response) => {
   const user = requireUser(req);
   const parsed = findEntriesQuerySchema.safeParse(req.query);
-  if (!parsed.success) throw new AppError("Invalid query parameters.", 400);
+  if (!parsed.success) {
+    // Same "<field>: <message>" convention as the other list controllers, so
+    // an invalid date filter says which date and why.
+    const firstIssue = parsed.error.issues[0];
+    throw new AppError(firstIssue ? `${firstIssue.path.join(".")}: ${firstIssue.message}` : "Invalid query parameters.", 400);
+  }
 
   const callerUserId = await resolveProjectReadScope(user);
   const { page, pageSize } = parsed.data;

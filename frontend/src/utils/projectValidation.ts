@@ -1,4 +1,5 @@
 import type { Project } from "../types/Project";
+import { dateInputError } from "./dateInputValidation";
 
 export const validateGeneralTab = (project: Project): Record<string, string> => {
   const errors: Record<string, string> = {};
@@ -19,6 +20,20 @@ export const validateGeneralTab = (project: Project): Record<string, string> => 
   if (!project.workOrderNumber?.trim()) errors["workOrderNumber"] = "Work Order Number is required.";
   if (!project.workOrderDate?.trim()) errors["workOrderDate"] = "Work Order Date is required.";
   if (!project.eicName?.trim()) errors["eicName"] = "EIC Name is required.";
+
+  // A typed date can be malformed or have a five-digit year (the backend
+  // rejects both); a "required" message above always takes priority.
+  const dateFields: Array<[keyof Project, string]> = [
+    ["projectStartDate", "Project Start Date"],
+    ["projectEndDate", "Project End Date"],
+    ["workOrderDate", "Work Order Date"],
+  ];
+  // Only while it is visible on the form (Project Status = Completed).
+  if (project.projectStatus === "Completed") dateFields.push(["actualCompletionDate", "Actual Completion Date"]);
+  for (const [field, label] of dateFields) {
+    const error = dateInputError(label, project[field] as string | undefined);
+    if (error && !errors[field]) errors[field] = error;
+  }
 
   return errors;
 };
@@ -88,6 +103,8 @@ export const validatePaymentMilestonesTab = (project: Project): Record<string, s
     if (single?.paymentPercentage === undefined || single.paymentPercentage <= 0) {
       errors["milestone_pct_0"] = "Payment % must be greater than 0.";
     }
+    const dueError = dateInputError("Due Date", single?.dueDate);
+    if (dueError) errors["milestone_due_0"] = dueError;
   } else {
     project.paymentMilestones.forEach((milestone, index) => {
       if (!milestone.milestoneName?.trim()) {
@@ -96,6 +113,8 @@ export const validatePaymentMilestonesTab = (project: Project): Record<string, s
       if (milestone.paymentPercentage === undefined || milestone.paymentPercentage <= 0) {
         errors[`milestone_pct_${index}`] = "Payment % must be greater than 0.";
       }
+      const dueError = dateInputError("Due Date", milestone.dueDate);
+      if (dueError) errors[`milestone_due_${index}`] = dueError;
     });
   }
 

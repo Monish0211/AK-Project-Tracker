@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dateInput } from "../../../shared/utils/dateInput.js";
 import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
 
 /**
@@ -28,8 +29,8 @@ import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
 export const createResourceSchema = z.object({
   employeeNo: z.string().trim().min(1, "Employee Number is required."),
 
-  assignmentStartDate: z.coerce.date().optional().nullable(),
-  assignmentEndDate: z.coerce.date().optional().nullable(),
+  assignmentStartDate: dateInput("Assignment Start Date").optional().nullable(),
+  assignmentEndDate: dateInput("Assignment End Date").optional().nullable(),
   assignmentStatus: z.enum(["Active", "Released"]).default("Active"),
 
   workingDays: z.coerce.number().min(0, "Working Days cannot be negative.").default(0),
@@ -53,8 +54,8 @@ export type CreateResourceInput = z.infer<typeof createResourceSchema>;
  * decision, not silent client control of this field.
  */
 export const updateResourceSchema = z.object({
-  assignmentStartDate: z.coerce.date().optional().nullable(),
-  assignmentEndDate: z.coerce.date().optional().nullable(),
+  assignmentStartDate: dateInput("Assignment Start Date").optional().nullable(),
+  assignmentEndDate: dateInput("Assignment End Date").optional().nullable(),
   assignmentStatus: z.enum(["Active", "Released"]).optional(),
 
   workingDays: z.coerce.number().min(0, "Working Days cannot be negative.").optional(),
