@@ -41,7 +41,7 @@ function projectBody(suffix: string, extra: Record<string, unknown> = {}) {
     poMonth: "2026-10", prCategory: "India", prNo: `PR-${TAG}-${suffix}`, client: "Alloc <Client> & Co",
     department: "Process", domesticForeign: "Domestic", projectTitle: `Alloc Project ${suffix}`,
     workOrderStatus: "Received", projectStartDate: new Date("2026-01-01").toISOString(), projectStatus: "Active",
-    workOrderNumber: `WO-${TAG}-${suffix}`, workOrderDate: new Date("2026-01-01").toISOString(), eicName: "EIC",
+    workOrderNumber: `WO-${TAG}-${suffix}`, workOrderDate: new Date("2026-01-01").toISOString(), rfqNo: "RFQ-TEST", eicName: "EIC",
     contractType: "LUMP SUM", pmoCoordinator: "Typed Name", ...extra,
   };
 }

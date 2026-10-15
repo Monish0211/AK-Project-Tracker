@@ -48,6 +48,7 @@ function projectBody(prNo: string) {
     projectStatus: "Active",
     workOrderNumber: `${prNo}-WO`,
     workOrderDate: new Date("2026-01-01").toISOString(),
+    rfqNo: "RFQ-TEST",
     eicName: "EIC",
     contractType: "LUMP SUM",
     pmoCoordinator: "PMO",

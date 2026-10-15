@@ -42,6 +42,7 @@ interface ColumnDef {
 const PROJECTS_COLUMNS: ColumnDef[] = [
   { header: "PR Number", key: "prNo", width: 18, required: true },
   { header: "PR Category", key: "prCategory", width: 18, required: false, validationType: "list", lookupColumn: "B" },
+  { header: "RFQ No.", key: "rfqNo", width: 18, required: true },
   { header: "PO Month", key: "poMonth", width: 14, validationType: "date", numFmt: "mmm-yyyy" },
   { header: "Client Name", key: "client", width: 22, required: true },
   { header: "Department", key: "department", width: 24, required: true, validationType: "list", lookupColumn: "A" },
@@ -303,7 +304,7 @@ function addInstructionsSheet(workbook: ExcelJS.Workbook) {
     ["Required Sheets", "Do not rename, delete, or reorder: Projects, Quantity Details, Payment Milestones, Expense Budget, Lookup, Instructions."],
     ["Joining Key", "Every row in Quantity Details / Payment Milestones / Expense Budget must repeat the same PR Number as its project's row in Projects."],
     ["Multiple Rows", "One project may have several Quantity Activities, several Payment Milestones, and several Expense Budget lines — give each its own row. Never combine several activities into a single row."],
-    ["Mandatory Fields", "Columns shaded light gray are mandatory (e.g. PR Number, Client Name, Project Title, Department, Work Order Value on Projects; Description/Qty/UOM/Unit Rate on Quantity Details)."],
+    ["Mandatory Fields", "Columns shaded light gray are mandatory (e.g. PR Number, RFQ No., Client Name, Project Title, Department, Work Order Value on Projects; Description/Qty/UOM/Unit Rate on Quantity Details)."],
     ["Date Format", "Dates display as dd-mmm-yyyy (e.g. 02-Feb-2026). PO Month displays as mmm-yyyy."],
     ["Currency", "Work Order Value, rates and budgets are entered in the project's own Currency; the portal converts to INR using the Exchange Rate."],
     ["Dropdowns", "Department, Currency, Contract Type, Project Status, Work Order Status, Payment Terms, UOM and Expense Category must be chosen from their dropdown lists (sourced from the hidden Lookup sheet)."],
@@ -346,6 +347,7 @@ function projectToRow(p: Project) {
   return {
     prNo: p.prNo || "",
     prCategory,
+    rfqNo: p.rfqNo || "",
     poMonth: p.poMonth ? parsePoMonthToDate(p.poMonth) : undefined,
     client: p.client || "",
     department: p.department || "",
@@ -430,6 +432,7 @@ function buildSampleProject(): Project {
   return {
     ...createEmptyProject(),
     prNo: "PR-SAMPLE-001",
+    rfqNo: "RFQ-SAMPLE-001",
     poMonth: "2026-01",
     client: "Sample Client Ltd",
     department: "Design Engineering Services",
@@ -575,6 +578,7 @@ function cellDateKey(cell: ExcelJS.Cell | undefined): string {
 
 const COLUMN_ALIASES: Record<string, string[]> = {
   "pr number": ["pr number", "pr no", "pr_number", "pr_no", "prno", "pr #", "pr#"],
+  "rfq no.": ["rfq no.", "rfq no", "rfq number", "rfq_no", "rfqno", "rfq"],
   "pr category": ["pr category", "pr_category", "prcategory", "category", "region", "location", "country", "pr type"],
   "po month": ["po month", "po_month", "pomonth", "month", "po date"],
   "client name": ["client name", "client", "client_name", "customer", "customer name", "customer_name"],
@@ -700,6 +704,7 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
     const prNo = cellText(get("PR Number"));
     const prCategoryRaw = cellText(get("PR Category"));
     const prCategory = inferPrCategory(prNo, prCategoryRaw);
+    const rfqNo = cellText(get("RFQ No.")).trim();
     const client = cellText(get("Client Name"));
     const projectTitle = cellText(get("Project Title"));
     const department = cellText(get("Department"));
@@ -714,6 +719,9 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
     const manhourBudgetHours = cellNumber(get("Budget Hours"));
 
     if (!prNo) errors.push(`Projects, Row ${r}: PR Number is missing.`);
+    // Never defaulted or generated — a project without its real RFQ No. is
+    // rejected, like any other missing mandatory column value.
+    if (!rfqNo) errors.push(`Projects, Row ${r}: RFQ No. is missing.`);
     if (!client) errors.push(`Projects, Row ${r}: Client Name is missing.`);
     if (!projectTitle) errors.push(`Projects, Row ${r}: Project Title is missing.`);
     if (!department) errors.push(`Projects, Row ${r}: Department is missing.`);
@@ -753,6 +761,7 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
       prNo,
       rowNum: r,
       fields: {
+        rfqNo,
         client,
         department,
         prCategory,
@@ -954,6 +963,7 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
     return {
       ...createEmptyProject(),
       prNo: draft.prNo,
+      rfqNo: draft.fields.rfqNo,
       poMonth: draft.fields.poMonth,
       prCategory: draft.fields.prCategory,
       domesticForeign: draft.fields.domesticForeign,

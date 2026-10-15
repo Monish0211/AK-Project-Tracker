@@ -46,6 +46,7 @@ function projectBody(suffix: string, extra: Record<string, unknown> = {}) {
     projectStatus: "Active",
     workOrderNumber: `WO-${TAG}-${suffix}`,
     workOrderDate: new Date("2026-01-01").toISOString(),
+    rfqNo: "RFQ-TEST",
     eicName: "EIC",
     contractType: "LUMP SUM",
     pmoCoordinator: "Typed Name",

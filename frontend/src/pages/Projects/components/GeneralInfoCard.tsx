@@ -234,6 +234,28 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCus
             />
           </Field>
 
+          <Field label="RFQ No." required={true} error={errors["rfqNo"]}>
+            <Input
+              type="text"
+              data-field="rfqNo"
+              value={project.rfqNo || ""}
+              onChange={(e) => {
+                setProject({
+                  ...project,
+                  rfqNo: e.target.value,
+                });
+                clearError?.("rfqNo");
+              }}
+              onBlur={(e) => {
+                const trimmed = e.target.value.trim();
+                if (trimmed !== e.target.value) setProject({ ...project, rfqNo: trimmed });
+              }}
+              invalid={!!errors["rfqNo"]}
+              maxLength={100}
+              placeholder="Enter RFQ No."
+            />
+          </Field>
+
           <Field label="Project Title" required={true} error={errors["projectTitle"]}>
             <Input
               type="text"

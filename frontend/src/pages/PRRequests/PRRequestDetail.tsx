@@ -40,6 +40,7 @@ const FIELD_LABELS: [string, string][] = [
   ["workOrderNumber", "Work Order Number"],
   ["workOrderDate", "Work Order Date"],
   ["eicName", "EIC Name"],
+  ["rfqNo", "RFQ No."],
   ["contractType", "Contract Type"],
   ["pmoCoordinator", "PMO Coordinator"],
 ];

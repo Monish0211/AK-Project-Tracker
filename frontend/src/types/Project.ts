@@ -19,6 +19,8 @@ export interface Project {
   prCategory: string;
 
   prNo: string;
+  /** RFQ No. — required on the General tab; absent on projects created before the field existed. */
+  rfqNo?: string;
   client: string;
   department: string;
   domesticForeign: string;

@@ -59,6 +59,7 @@ function projectPayload(overrides: { prCategory: unknown; prNo: unknown }, suffi
     projectStartDate: new Date("2026-01-01").toISOString(),
     projectStatus: "Active",
     workOrderNumber: `${TAG}-${suffix}-WO`,
+    rfqNo: "RFQ-TEST",
     eicName: "EIC",
     workOrderDate: new Date("2026-01-01").toISOString(),
     contractType: "LUMP SUM",

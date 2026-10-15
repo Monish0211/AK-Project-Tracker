@@ -117,6 +117,7 @@ export function createEmptyProject(): Project {
     prCategory: "",
 
     prNo: "",
+    rfqNo: "",
     client: "",
     department: "",
     domesticForeign: "",

@@ -13,6 +13,7 @@ import {
   updatePRRequestProjectData,
 } from "../../services/prRequestService";
 import { projectToDraftPayload } from "./draftMapping";
+import { validateGeneralTab } from "../../utils/projectValidation";
 
 /**
  * The footer for an Accounts/PMO Manager REVIEWING a pending PR Request —
@@ -89,10 +90,19 @@ const PRRequestReviewFormButtons = ({ project, prRequestId, stage }: Props) => {
     try {
       // Same reasoning as handleApprove — persist any on-screen correction
       // before rejecting, so it's part of the historical record even for a
-      // request that's about to be finalized as Rejected.
-      await persistCurrentEdits();
+      // request that's about to be finalized as Rejected. Unlike Approve, an
+      // incomplete General section (e.g. a request saved before RFQ No.
+      // existed) must not block a rejection: those edits are skipped instead
+      // of saved, so invalid data is never stored and nothing is created.
+      const canPersist = Object.keys(validateGeneralTab(project)).length === 0;
+      if (canPersist) await persistCurrentEdits();
       await rejectPRRequest(prRequestId, rejectReason.trim());
-      showToast({ type: "success", message: "PR Request rejected." });
+      showToast({
+        type: "success",
+        message: canPersist
+          ? "PR Request rejected."
+          : "PR Request rejected. On-screen changes were not saved because the General section is incomplete.",
+      });
       navigate("/pr-requests?tab=queue");
     } catch (error) {
       showToast({ type: "error", message: error instanceof ApiError ? error.message : "Reject failed. Please try again." });

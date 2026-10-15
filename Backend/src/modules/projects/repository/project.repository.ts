@@ -14,6 +14,7 @@ export interface ProjectGeneralInfoData {
   poMonth: string;
   prCategory: string;
   prNo: string;
+  rfqNo?: string | null;
   client: string;
   department: string;
   domesticForeign: string;

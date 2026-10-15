@@ -36,6 +36,7 @@ const GeneralView = ({ project }: Props) => {
           <InfoField label="PO Month" value={project.poMonth ? formatMonthDisplay(project.poMonth) : ""} />
           <InfoField label="PR Category" value={inferPrCategory(project.prNo, project.prCategory)} />
           <InfoField label="PR Number" value={project.prNo} />
+          <InfoField label="RFQ No." value={project.rfqNo} />
           <InfoField label="Project Title" value={project.projectTitle} />
         </CardBody>
       </Card>

@@ -330,6 +330,7 @@ interface BackendProjectDto {
   poMonth: string;
   prCategory: string;
   prNo: string;
+  rfqNo: string | null;
   client: string;
   department: string;
   domesticForeign: string;
@@ -405,6 +406,7 @@ interface ProjectGeneralInfoPayload {
   poMonth: string;
   prCategory: string;
   prNo: string;
+  rfqNo?: string;
   client: string;
   department: string;
   domesticForeign: string;
@@ -465,6 +467,12 @@ function toGeneralInfoPayload(project: Project): ProjectGeneralInfoPayload {
     poMonth: project.poMonth,
     prCategory: project.prCategory,
     prNo: project.prNo,
+    // Omitted when blank rather than sent as "": every tab's Save PATCHes
+    // this payload, and a project created before RFQ No. existed must still
+    // be able to save Quantity/Payments/Budget. The General tab itself
+    // blocks saving until it is filled in (validateGeneralTab), and the
+    // backend rejects a blank value on create and update alike.
+    ...(project.rfqNo?.trim() ? { rfqNo: project.rfqNo.trim() } : {}),
     client: project.client,
     department: project.department,
     domesticForeign: project.domesticForeign,
@@ -560,6 +568,7 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     poMonth: dto.poMonth,
     prCategory: dto.prCategory,
     prNo: dto.prNo,
+    rfqNo: dto.rfqNo ?? "",
     client: dto.client,
     department: dto.department,
     domesticForeign: dto.domesticForeign,

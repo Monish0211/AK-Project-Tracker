@@ -373,18 +373,33 @@ export async function pmoManagerApprove(id: string, actor: AccessTokenPayload, r
     throw new AppError("You are not the assigned PMO Manager for this PR Request.", 403);
   }
 
+  // Same 409 the claim below gives, checked early so an already-finalized
+  // request never reaches the data validation that follows.
+  if (existing.status !== "Pending PMO Manager Approval") {
+    throw new AppError("This request was already approved or rejected by another action.", 409);
+  }
+
+  // Re-validated against the exact same schema the Draft form itself uses,
+  // BEFORE the status is claimed. Data saved before a field became required
+  // (e.g. RFQ No., Oct 2026) can fail here; checking first means such a
+  // request stays "Pending PMO Manager Approval" — correctable by the PMO
+  // Manager in the review form — instead of being left "Approved" with no
+  // Project. quantityItems/paymentMilestones are split out below —
+  // createProject() only ever accepts the flat General/Expense Budget fields
+  // (its own createProjectSchema), never these two arrays.
+  const parsed = prRequestProjectDataSchema.safeParse(existing.projectData);
+  if (!parsed.success) {
+    throw new AppError(
+      `This PR Request cannot be approved until it is complete: ${parsed.error.issues[0]?.message ?? "invalid project data."}`,
+      400
+    );
+  }
+  const { quantityItems, paymentMilestones, ...generalInfo } = parsed.data;
+
   const claimed = await repo.claimStatusTransition(id, "Pending PMO Manager Approval", "Approved");
   if (claimed.count === 0) {
     throw new AppError("This request was already approved or rejected by another action.", 409);
   }
-
-  // Re-validated against the exact same schema the Draft form itself uses —
-  // defense in depth only (the data already passed this schema at Draft-save
-  // time and is never edited after Send to Accounts), so this should never
-  // actually throw in practice. quantityItems/paymentMilestones are split
-  // out below — createProject() only ever accepts the flat General/Expense
-  // Budget fields (its own createProjectSchema), never these two arrays.
-  const { quantityItems, paymentMilestones, ...generalInfo } = prRequestProjectDataSchema.parse(existing.projectData);
 
   let createdProject: Awaited<ReturnType<typeof createProject>>;
   try {

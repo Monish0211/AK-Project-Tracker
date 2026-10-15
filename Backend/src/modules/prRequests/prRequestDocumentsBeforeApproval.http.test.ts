@@ -38,7 +38,7 @@ function projectData(prNo: string, extra: Record<string, unknown> = {}) {
     poMonth: "October 2026", prCategory: "India", prNo, client: "PR Coord Client", department: "PMO",
     domesticForeign: "Domestic", projectTitle: `PR Coord ${prNo}`, workOrderStatus: "Received",
     projectStartDate: "2026-10-01", projectStatus: "Not Started", workOrderNumber: `WO-${prNo}`,
-    workOrderDate: "2026-10-01", eicName: "EIC", contractType: "LUMP SUM", pmoCoordinator: "Typed Name", ...extra,
+    workOrderDate: "2026-10-01", rfqNo: "RFQ-TEST", eicName: "EIC", contractType: "LUMP SUM", pmoCoordinator: "Typed Name", ...extra,
   };
 }
 

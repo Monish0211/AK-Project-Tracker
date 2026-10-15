@@ -64,6 +64,7 @@ function buildProjectData(prNo: string, projectTitle: string) {
     projectStatus: "Not Started",
     workOrderNumber: `WO-${prNo}`,
     workOrderDate: "2026-01-01",
+    rfqNo: "RFQ-TEST",
     eicName: "Test EIC",
     contractType: "LUMP SUM",
     pmoCoordinator: "Test Coordinator",

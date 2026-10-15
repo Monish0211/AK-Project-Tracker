@@ -34,6 +34,8 @@ export interface PRRequestProjectData {
   poMonth: string;
   prCategory: string;
   prNo: string;
+  /** Optional in the type only because Drafts saved before RFQ No. existed don't carry it. */
+  rfqNo?: string;
   client: string;
   department: string;
   domesticForeign: string;

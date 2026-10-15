@@ -2,6 +2,15 @@ import { z } from "zod";
 import { PROJECT_STATUS_VALUES, WORK_ORDER_STATUS_VALUES } from "../project.constants.js";
 
 /**
+ * RFQ No. — the same rule on create and update: a string that is non-empty
+ * after trimming. A missing value on create, or null/""/"   " on either,
+ * gets `message` (zod's own "expected string" message would be unclear).
+ */
+function rfqNoField(message: string) {
+  return z.string({ error: message }).trim().min(1, message).max(100, "RFQ No. cannot exceed 100 characters.");
+}
+
+/**
  * Every required field here matches validateGeneralTab() in
  * frontend/src/utils/projectValidation.ts exactly — the frontend already
  * blocks Save/Save & Next until these pass client-side, so the backend
@@ -12,6 +21,10 @@ export const createProjectSchema = z.object({
   poMonth: z.string().trim().min(1, "PO Month is required."),
   prCategory: z.string().trim().min(1, "PR Category is required."),
   prNo: z.string().trim().min(1, "PR Number is required."),
+  // RFQ No. (Oct 2026) — free text (letters, digits, "-", "/" ...), trimmed,
+  // never blank. Also covers Excel import and PR Request drafts/approval,
+  // which reuse this schema.
+  rfqNo: rfqNoField("RFQ No. is required."),
   client: z.string().trim().min(1, "Client Name is required."),
   department: z.string().trim().min(1, "Department is required."),
   domesticForeign: z.string().trim().min(1, "Domestic / Foreign is required."),
@@ -124,6 +137,10 @@ export const updateProjectSchema = z.object({
   poMonth: z.string().trim().min(1).optional(),
   prCategory: z.string().trim().min(1).optional(),
   prNo: z.string().trim().min(1).optional(),
+  // RFQ No. — may be omitted (partial PATCHes from other screens, and
+  // projects that predate the field), but when sent it can never be blank or
+  // null, so an existing RFQ No. can only be replaced, not cleared.
+  rfqNo: rfqNoField("RFQ No. cannot be empty.").optional(),
   client: z.string().trim().min(1).optional(),
   department: z.string().trim().min(1).optional(),
   domesticForeign: z.string().trim().min(1).optional(),

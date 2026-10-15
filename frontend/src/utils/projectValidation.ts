@@ -6,6 +6,7 @@ export const validateGeneralTab = (project: Project): Record<string, string> => 
   if (!project.poMonth?.trim()) errors["poMonth"] = "PO Month is required.";
   if (!project.prCategory?.trim()) errors["prCategory"] = "PR Category is required.";
   if (!project.prNo?.trim()) errors["prNo"] = "PR Number is required.";
+  if (!project.rfqNo?.trim()) errors["rfqNo"] = "RFQ No. is required.";
   if (!project.projectTitle?.trim()) errors["projectTitle"] = "Project Title is required.";
   if (!project.client?.trim()) errors["client"] = "Client Name is required.";
   if (!project.department?.trim()) errors["department"] = "Department is required.";

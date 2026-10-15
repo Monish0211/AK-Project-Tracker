@@ -611,6 +611,12 @@ model Project {
   poMonth         String
   prCategory      String
   prNo            String
+  // RFQ No. (Oct 2026) — mandatory on every create and on any update that
+  // sends it (enforced in project.validators.ts, not here). Nullable only
+  // because projects created before this field have no RFQ No. on record;
+  // none is ever invented for them — it's filled in on their next General
+  // Information edit, which the form blocks until it's present.
+  rfqNo           String?
   client          String
   department      String
   domesticForeign String
