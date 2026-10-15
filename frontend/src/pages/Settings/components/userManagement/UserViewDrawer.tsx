@@ -39,6 +39,9 @@ const APPROVAL_FIELDS: { key: keyof UserApprovalRights; label: string }[] = [
   { key: "archiveProjects", label: "Archive Projects" },
   { key: "deleteProjectPermanently", label: "Delete Project Permanently" },
   { key: "raiseInvoice", label: "Raise Invoice" },
+  { key: "editInvoice", label: "Edit Invoice" },
+  { key: "deleteInvoice", label: "Delete Invoice" },
+  { key: "viewAllProjects", label: "View All Projects" },
 ];
 
 const formatDateTime = (iso?: string | null): string => {

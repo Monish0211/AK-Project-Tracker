@@ -6,6 +6,7 @@ import app from "../../app.js";
 import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
+import { invoiceEditDeleteGrants } from "./invoiceApprovalGrants.testutil.js";
 
 /**
  * Invoice Currency feature — Phase 1 backward-compatibility regression
@@ -73,7 +74,7 @@ test("Invoice Currency Phase 1 — existing (no-currency) callers remain byte-id
         roleId: engineerRole.id,
         forcePasswordChange: false,
         moduleAccess: { create: [{ moduleId: projectsModule.id }, { moduleId: invoicesModule.id }] },
-        approvalPermissions: { create: { approvalTypeId: raiseInvoiceApproval.id } },
+        approvalPermissions: { create: [{ approvalTypeId: raiseInvoiceApproval.id }, ...(await invoiceEditDeleteGrants())] },
       },
     });
     createdUserIds.push(userA.id, userB.id);

@@ -6,6 +6,7 @@ import app from "../../app.js";
 import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
+import { invoiceEditDeleteGrants } from "../invoices/invoiceApprovalGrants.testutil.js";
 
 /**
  * Request Invoice -> Invoice Raised -> Invoice Paid CC/Paid-email extension
@@ -95,7 +96,7 @@ test("Request Invoice -> Raised -> Paid — CC Members persistence and Paid-tran
     const userA = await makeUser("Requester", { moduleAccess: { create: { moduleId: invoicesModule.id } } });
     const userB = await makeUser("Raiser", {
       moduleAccess: { create: { moduleId: invoicesModule.id } },
-      approvalPermissions: { create: { approvalTypeId: raiseInvoiceApproval.id } },
+      approvalPermissions: { create: [{ approvalTypeId: raiseInvoiceApproval.id }, ...(await invoiceEditDeleteGrants())] },
     });
     const ccUser1 = await makeUser("CcOne");
     const ccUser2 = await makeUser("CcTwo");

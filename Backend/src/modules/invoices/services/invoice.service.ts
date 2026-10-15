@@ -1,12 +1,7 @@
 import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
-import {
-  assertProjectAccess,
-  assertProjectAccessById,
-  getProjectCreatorUserId,
-  hasUnrestrictedProjectVisibility,
-} from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccess, assertProjectAccessById, getProjectCreatorUserId, resolveProjectReadScope } from "../../../shared/utils/projectAccess.js";
 import { getUserDisplayName } from "../../../shared/utils/userDisplayName.js";
 import { userHasApprovalPermission } from "../../../shared/middleware/requireApprovalPermission.js";
 import { sendEmail } from "../../../shared/email/email.service.js";
@@ -69,6 +64,7 @@ import {
   resolveEffectiveLock,
   resolveUpdateAmounts,
 } from "../invoiceCurrency.rules.js";
+import { changedInvoiceContentFields } from "../invoiceEditPermission.rules.js";
 
 type InvoiceLineRow = NonNullable<Awaited<ReturnType<typeof getLineById>>>;
 type IngestLineRow = IngestInvoiceLinesInput["lines"][number];
@@ -672,6 +668,17 @@ export async function updateInvoiceLine(
   const isRaisingTransition = input.status === "Raised" && existing.status !== "Raised";
   if (isRaisingTransition && !(await userHasApprovalPermission(user.sub, ["Raise Invoice"]))) {
     throw new AppError("You do not have permission to raise this invoice.", 403);
+  }
+
+  // Invoice Edit/Delete approval rights (Oct 2026) — changing an invoice's
+  // CONTENT (number, date, quantity, amounts, milestone, description, client
+  // reference, remarks) requires "Edit Invoice", whether the change comes
+  // from Invoice History's Edit action or a workspace re-saving an existing
+  // invoice. A status-only change (or an unchanged re-send) is unaffected —
+  // confirmed rule; see invoiceEditPermission.rules.ts.
+  const changedContent = changedInvoiceContentFields(existing, input);
+  if (changedContent.length > 0 && !(await userHasApprovalPermission(user.sub, ["Edit Invoice"]))) {
+    throw new AppError("You do not have permission to edit invoices.", 403);
   }
 
   // Invoice Currency feature (Oct 2026) — the amount fields this PATCH
@@ -1311,7 +1318,7 @@ function toReportInvoiceLineDto(row: DashboardInvoiceLineRow): ReportInvoiceLine
  * amount).
  */
 export async function listAllInvoiceLinesForCaller(user: AccessTokenPayload): Promise<ReportInvoiceLineListDto> {
-  const callerUserId = hasUnrestrictedProjectVisibility(user.roleName) ? undefined : user.sub;
+  const callerUserId = await resolveProjectReadScope(user);
   const projects = await findAuthorizedProjects(callerUserId);
   const lines = await findInvoiceLinesForProjects(projects.map((p) => p.id));
   return { items: lines.map(toReportInvoiceLineDto) };

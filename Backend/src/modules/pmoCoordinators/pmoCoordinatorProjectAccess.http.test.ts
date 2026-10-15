@@ -76,10 +76,10 @@ test("PMO Coordinator — project access, Read Only exception, eligibility, revo
       prisma.module.findUniqueOrThrow({ where: { name: "Timesheets" } }),
     ]);
     const sensitiveApprovals = await prisma.approvalType.findMany({
-      where: { name: { in: ["Archive Projects", "Delete Project Permanently", "Raise Invoice"] } },
+      where: { name: { in: ["Archive Projects", "Delete Project Permanently", "Raise Invoice", "Edit Invoice", "Delete Invoice"] } },
       select: { id: true },
     });
-    assert.equal(sensitiveApprovals.length, 3, "approval types missing — run the migrations");
+    assert.equal(sensitiveApprovals.length, 5, "approval types missing — run the migrations");
     const passwordHash = await hashPassword("PmoAccessTest@123");
 
     async function makeUser(

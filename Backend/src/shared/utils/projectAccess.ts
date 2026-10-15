@@ -1,6 +1,7 @@
 import type { AccessTokenPayload } from "../types/auth.types.js";
 import { AppError } from "./AppError.js";
 import { prisma } from "./prismaClient.js";
+import { userHasApprovalPermission } from "../middleware/requireApprovalPermission.js";
 
 /**
  * Roles with unrestricted project visibility — every "may this caller see
@@ -80,20 +81,82 @@ export async function canAccessProject(user: AccessTokenPayload, project: Projec
   if (project.createdByUserId === user.sub) return true;
   // The project's assigned PMO Coordinator account — owner-equivalent access
   // to THIS project only. Read fresh from the project row on every request,
-  // so reassigning or clearing the coordinator revokes it immediately. It
-  // widens project-ownership only: module access, Read Only (see
-  // denyReadOnlyWritesExceptAssignedCoordinator), and every approval gate
-  // (Archive Projects, Delete Project Permanently, Raise Invoice) remain
-  // separate checks.
+  // so reassigning or clearing the coordinator revokes it immediately. Like
+  // View All Projects, it widens project-ownership only: module access,
+  // Read Only (see denyReadOnlyWritesExceptAssignedCoordinator), and every
+  // approval gate (Archive Projects, Delete Project Permanently,
+  // Raise/Edit/Delete Invoice) remain separate checks.
   if (project.pmoCoordinatorUserId !== null && project.pmoCoordinatorUserId === user.sub) return true;
   const grantedUserIds = await getProjectManagerGrantedUserIds(user.sub);
-  return grantedUserIds.includes(project.createdByUserId);
+  if (grantedUserIds.includes(project.createdByUserId)) return true;
+  // "View All Projects" approval right — PMO-Manager-equivalent project
+  // access (view AND edit) for a user an Administrator explicitly grants it
+  // to. Only project-ownership is widened: module access, Read Only, and every
+  // independent approval gate (Archive Projects, Delete Project Permanently,
+  // Raise/Edit/Delete Invoice) are separate checks that still apply.
+  return holdsViewAllProjects(user.sub);
 }
 
 export async function assertProjectAccess(user: AccessTokenPayload, project: ProjectOwnershipCheck): Promise<void> {
   if (!(await canAccessProject(user, project))) {
     throw new AppError("You do not have access to this project.", 403);
   }
+}
+
+/**
+ * "View All Projects" approval right (Oct 2026) — PMO-Manager-equivalent
+ * project access (view AND edit every project) for a user an Administrator
+ * explicitly grants it to (e.g. an Accounts user), without making them an
+ * Administrator/PMO Manager. Applied in canAccessProject() above (the one
+ * project-ownership check every read and write uses) and in
+ * resolveProjectReadScope() below (every cross-project list). It never
+ * replaces an independent gate: module access, Read Only (denyReadOnlyWrites),
+ * Archive Projects, Delete Project Permanently, and Raise/Edit/Delete Invoice
+ * are separate checks that still apply. Re-read from the database on every
+ * call (never trusted from the token), so granting or revoking takes effect
+ * immediately.
+ */
+export const VIEW_ALL_PROJECTS_APPROVAL = "View All Projects";
+
+async function holdsViewAllProjects(userId: string): Promise<boolean> {
+  return userHasApprovalPermission(userId, [VIEW_ALL_PROJECTS_APPROVAL]);
+}
+
+/**
+ * THE read-visibility rule for every cross-project list (projects, status
+ * counts, dashboard, notes register, invoice lines, resources, timesheets,
+ * reminders): `undefined` = may see every project; otherwise the caller's
+ * id, to be passed to projectOwnershipWhereOr() exactly as before. Unchanged
+ * for everyone except holders of "View All Projects".
+ */
+export async function resolveProjectReadScope(user: AccessTokenPayload): Promise<string | undefined> {
+  if (hasUnrestrictedProjectVisibility(user.roleName)) return undefined;
+  return (await holdsViewAllProjects(user.sub)) ? undefined : user.sub;
+}
+
+/**
+ * Read check for GET paths. Since "View All Projects" now widens
+ * canAccessProject() itself, read and write project access are the same rule
+ * (Read Only is still blocked from writing by denyReadOnlyWrites at route
+ * level); kept as a named read entry point so a future read-only grant can be
+ * added in one place without touching the read call sites again.
+ */
+export async function canReadProject(user: AccessTokenPayload, project: ProjectOwnershipCheck): Promise<boolean> {
+  return canAccessProject(user, project);
+}
+
+export async function assertProjectReadAccess(user: AccessTokenPayload, project: ProjectOwnershipCheck): Promise<void> {
+  if (!(await canReadProject(user, project))) {
+    throw new AppError("You do not have access to this project.", 403);
+  }
+}
+
+export async function assertProjectReadAccessById(projectId: string, user: AccessTokenPayload): Promise<void> {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: PROJECT_ACCESS_SELECT });
+  if (!project) {
+    throw new AppError("Project not found.", 404);
+  }
+  await assertProjectReadAccess(user, project);
 }
 
 /**

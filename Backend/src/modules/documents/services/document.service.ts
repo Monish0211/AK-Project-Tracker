@@ -1,7 +1,7 @@
 import path from "node:path";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
-import { assertProjectAccessById, assertProjectAccess } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccessById, assertProjectAccess, assertProjectReadAccessById } from "../../../shared/utils/projectAccess.js";
 import { findProjectByIdAny } from "../../projects/repository/project.repository.js";
 import { assertCanViewPRRequest } from "../../prRequests/services/prRequest.service.js";
 import { findPRRequestById } from "../../prRequests/repository/prRequest.repository.js";
@@ -226,7 +226,7 @@ async function persistDocument(args: {
 }
 
 export async function listDocumentsForProject(projectId: string, user: AccessTokenPayload) {
-  await assertProjectAccessById(projectId, user);
+  await assertProjectReadAccessById(projectId, user);
   const documents = await repo.findDocumentsByProjectId(projectId);
   return documents.map(toDocumentDto);
 }
@@ -253,7 +253,7 @@ export async function getDocumentForDownload(id: string, user: AccessTokenPayloa
   let subDir: string | undefined;
 
   if (doc.projectId) {
-    await assertProjectAccessById(doc.projectId, user);
+    await assertProjectReadAccessById(doc.projectId, user);
     subDir = await resolveProjectDocumentSubDir(doc.projectId);
   } else if (doc.prRequestId) {
     await assertPRRequestAccessById(doc.prRequestId, user);

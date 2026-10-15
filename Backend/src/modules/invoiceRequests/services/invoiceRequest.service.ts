@@ -2,7 +2,7 @@ import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { env } from "../../../shared/utils/env.js";
-import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccessById, assertProjectReadAccessById } from "../../../shared/utils/projectAccess.js";
 import { userHasApprovalPermission } from "../../../shared/middleware/requireApprovalPermission.js";
 import { findActiveUsersByIds } from "../../users/repository/user.repository.js";
 import { sendEmail } from "../../../shared/email/email.service.js";
@@ -133,7 +133,7 @@ export async function listInvoiceRequestsForProject(
   projectId: string,
   user: AccessTokenPayload
 ): Promise<InvoiceRequestDto[]> {
-  await assertProjectAccessById(projectId, user);
+  await assertProjectReadAccessById(projectId, user);
   const rows = await repo.findInvoiceRequestsForProject(projectId);
   return rows.map(toInvoiceRequestDto);
 }

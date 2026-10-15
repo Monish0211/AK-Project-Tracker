@@ -6,6 +6,7 @@ import app from "../../app.js";
 import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
+import { invoiceEditDeleteGrants } from "./invoiceApprovalGrants.testutil.js";
 
 /**
  * Manual invoice numbering (Oct 2026) — users enter their Tally invoice
@@ -54,7 +55,7 @@ test("Manual invoice numbering — validation, portal-wide uniqueness, no merge,
         roleId: role.id,
         forcePasswordChange: false,
         moduleAccess: { create: [{ moduleId: projectsModule.id }, { moduleId: invoicesModule.id }] },
-        approvalPermissions: { create: { approvalTypeId: raiseInvoice.id } },
+        approvalPermissions: { create: [{ approvalTypeId: raiseInvoice.id }, ...(await invoiceEditDeleteGrants())] },
       },
     });
     createdUserIds.push(user.id);

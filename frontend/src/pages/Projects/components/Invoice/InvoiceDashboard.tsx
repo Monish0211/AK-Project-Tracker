@@ -78,6 +78,11 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
   // Invoice") gate on POST /quantity/:quantityItemId/invoice-lines (and the
   // matching PATCH-transition check) remains the real, authoritative gate.
   const canRaiseInvoice = hasApprovalPermission(user, "Raise Invoice");
+  // Invoice Edit/Delete approval rights (Oct 2026) — same UI-courtesy layer;
+  // the backend's "Edit Invoice" content check (PATCH) and
+  // requireApprovalPermission("Delete Invoice") (DELETE) are authoritative.
+  const canEditInvoice = hasApprovalPermission(user, "Edit Invoice");
+  const canDeleteInvoice = hasApprovalPermission(user, "Delete Invoice");
 
   const [drawerState, setDrawerState] = useState<DrawerState | null>(null);
 
@@ -502,8 +507,8 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
           <InvoiceHistory
             project={project}
             onView={handleViewInvoiceLine}
-            onEdit={isReadOnly ? undefined : handleEditInvoiceLine}
-            onDelete={isReadOnly ? undefined : handleDeleteInvoiceLine}
+            onEdit={isReadOnly || !canEditInvoice ? undefined : handleEditInvoiceLine}
+            onDelete={isReadOnly || !canDeleteInvoice ? undefined : handleDeleteInvoiceLine}
             onUpdateInvoiceStatus={isReadOnly ? undefined : handleUpdateInvoiceCycleStatus}
             onPrintInvoice={handlePrintInvoice}
             onSendInvoiceTo={isReadOnly ? undefined : (item, line) => setSendInvoiceToTarget({ item, line })}

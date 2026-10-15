@@ -84,12 +84,18 @@ const NO_APPROVALS: UserApprovalRights = {
   archiveProjects: false,
   deleteProjectPermanently: false,
   raiseInvoice: false,
+  editInvoice: false,
+  deleteInvoice: false,
+  viewAllProjects: false,
 };
 
 const ALL_APPROVALS: UserApprovalRights = {
   archiveProjects: true,
   deleteProjectPermanently: true,
   raiseInvoice: true,
+  editInvoice: true,
+  deleteInvoice: true,
+  viewAllProjects: true,
 };
 
 function approvals(...keys: (keyof UserApprovalRights)[]): UserApprovalRights {
@@ -131,15 +137,19 @@ export const ROLE_MODULE_DEFAULTS: Record<SystemRole, UserModuleAccess> = {
   "PR Request User": modules("approvals"),
 };
 
+// Edit/Delete Invoice (Oct 2026) — pre-ticked for exactly the roles whose
+// default modules include Invoices, mirroring the backend migration that
+// preserved existing edit/delete access. Only a starting point for a NEW
+// user; the Administrator can untick them before saving.
 export const ROLE_APPROVAL_DEFAULTS: Record<SystemRole, UserApprovalRights> = {
   Administrator: ALL_APPROVALS,
-  "PMO Manager": approvals("archiveProjects"),
-  "Project Manager": NO_APPROVALS,
+  "PMO Manager": approvals("archiveProjects", "editInvoice", "deleteInvoice"),
+  "Project Manager": approvals("editInvoice", "deleteInvoice"),
   "Project Coordinator": NO_APPROVALS,
   "Department Head": approvals("archiveProjects"),
   Engineer: NO_APPROVALS,
-  Finance: NO_APPROVALS,
-  Accounts: NO_APPROVALS,
+  Finance: approvals("editInvoice", "deleteInvoice"),
+  Accounts: approvals("editInvoice", "deleteInvoice"),
   "Management Viewer": NO_APPROVALS,
   "Read Only": NO_APPROVALS,
   "PR Request User": NO_APPROVALS,

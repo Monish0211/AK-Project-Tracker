@@ -1,5 +1,5 @@
 import { AppError } from "../../../shared/utils/AppError.js";
-import { assertProjectAccessById, hasUnrestrictedProjectVisibility } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccessById, assertProjectReadAccessById, resolveProjectReadScope } from "../../../shared/utils/projectAccess.js";
 import { getUserDisplayName } from "../../../shared/utils/userDisplayName.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { findAuthorizedProjects } from "../../dashboard/repository/dashboard.repository.js";
@@ -11,7 +11,7 @@ import {
 
 export async function getNotesForProjectService(projectId: string, user?: AccessTokenPayload) {
   if (user) {
-    await assertProjectAccessById(projectId, user);
+    await assertProjectReadAccessById(projectId, user);
   }
   const notes = await getProjectNotesByProjectId(projectId);
   return notes.map((note) => ({
@@ -37,7 +37,7 @@ export async function getNotesForProjectService(projectId: string, user?: Access
  * other unrestricted-visibility list in the app.
  */
 export async function listAllNotesForCaller(user: AccessTokenPayload) {
-  const callerUserId = hasUnrestrictedProjectVisibility(user.roleName) ? undefined : user.sub;
+  const callerUserId = await resolveProjectReadScope(user);
   const projects = await findAuthorizedProjects(callerUserId);
   const prNoByProjectId = new Map(projects.map((p) => [p.id, p.prNo]));
 

@@ -6,6 +6,7 @@ import app from "../../app.js";
 import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
+import { invoiceEditDeleteGrants } from "./invoiceApprovalGrants.testutil.js";
 
 /**
  * P2 — Invoice amount write-time financial authority: invoiceAmountINR was
@@ -79,7 +80,7 @@ test("P2/P3 — invoice financial authority and milestone double-billing race", 
           roleId: engineerRole.id,
           forcePasswordChange: false,
           moduleAccess: { create: { moduleId: invoicesModule.id } },
-          approvalPermissions: { create: { approvalTypeId: raiseInvoiceApproval.id } },
+          approvalPermissions: { create: [{ approvalTypeId: raiseInvoiceApproval.id }, ...(await invoiceEditDeleteGrants())] },
         },
       }),
       prisma.portalUser.create({
@@ -91,7 +92,7 @@ test("P2/P3 — invoice financial authority and milestone double-billing race", 
           roleId: engineerRole.id,
           forcePasswordChange: false,
           moduleAccess: { create: { moduleId: invoicesModule.id } },
-          approvalPermissions: { create: { approvalTypeId: raiseInvoiceApproval.id } },
+          approvalPermissions: { create: [{ approvalTypeId: raiseInvoiceApproval.id }, ...(await invoiceEditDeleteGrants())] },
         },
       }),
       prisma.portalUser.create({
@@ -103,7 +104,7 @@ test("P2/P3 — invoice financial authority and milestone double-billing race", 
           roleId: adminRole.id,
           forcePasswordChange: false,
           moduleAccess: { create: { moduleId: invoicesModule.id } },
-          approvalPermissions: { create: { approvalTypeId: raiseInvoiceApproval.id } },
+          approvalPermissions: { create: [{ approvalTypeId: raiseInvoiceApproval.id }, ...(await invoiceEditDeleteGrants())] },
         },
       }),
     ]);

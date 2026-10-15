@@ -1,5 +1,5 @@
 import { AppError } from "../../../shared/utils/AppError.js";
-import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccessById, assertProjectReadAccessById } from "../../../shared/utils/projectAccess.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type { ExpenseDto, ExpenseListDto } from "../dto/expense.dto.js";
 import {
@@ -58,7 +58,7 @@ export async function createExpenseForProject(
 }
 
 export async function listExpensesForProject(projectId: string, user: AccessTokenPayload): Promise<ExpenseListDto> {
-  await assertProjectExists(projectId, user);
+  await assertProjectReadAccessById(projectId, user);
 
   const rows = await getExpensesByProjectId(projectId);
   // Concurrency-warning signal (see ExpenseListDto's own comment) — derived

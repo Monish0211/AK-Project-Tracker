@@ -1,5 +1,5 @@
 import { AppError } from "../../../shared/utils/AppError.js";
-import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccessById, assertProjectReadAccessById } from "../../../shared/utils/projectAccess.js";
 import { computeInvoiceProgress } from "../../../shared/utils/quantityProgress.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import {
@@ -116,7 +116,7 @@ export async function createQuantityForProject(
 }
 
 export async function listQuantityForProject(projectId: string, user: AccessTokenPayload): Promise<QuantityListDto> {
-  await assertProjectExists(projectId, user);
+  await assertProjectReadAccessById(projectId, user);
 
   const rows = await getQuantityByProjectId(projectId);
   const billedByItemId = await sumBilledQuantityByQuantityItemIds(rows.map((row) => row.id));

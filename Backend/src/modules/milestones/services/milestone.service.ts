@@ -1,7 +1,7 @@
 import { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import { AppError } from "../../../shared/utils/AppError.js";
-import { assertProjectAccessById } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccessById, assertProjectReadAccessById } from "../../../shared/utils/projectAccess.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { countNonCancelledLinesForMilestone } from "../../invoices/repository/invoice.repository.js";
 import { getWorkOrderValueForProject } from "../../quantity/services/quantity.service.js";
@@ -161,7 +161,7 @@ export async function createMilestoneForProject(
 }
 
 export async function listMilestonesForProject(projectId: string, user: AccessTokenPayload): Promise<MilestoneListDto> {
-  await assertProjectExists(projectId, user);
+  await assertProjectReadAccessById(projectId, user);
 
   const [rows, workOrderValueINR] = await Promise.all([
     getMilestonesByProjectId(projectId),

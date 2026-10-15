@@ -1,5 +1,5 @@
 import { AppError } from "../../../shared/utils/AppError.js";
-import { assertProjectAccessById, hasUnrestrictedProjectVisibility } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccessById, assertProjectReadAccessById, resolveProjectReadScope } from "../../../shared/utils/projectAccess.js";
 import { findEmployeeByEmployeeNo } from "../../employees/repository/employee.repository.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type { ResourceDto, ResourceListDto } from "../dto/resource.dto.js";
@@ -85,7 +85,7 @@ export async function createResourceForProject(
 }
 
 export async function listResourcesForProject(projectId: string, user: AccessTokenPayload): Promise<ResourceListDto> {
-  await assertProjectExists(projectId, user);
+  await assertProjectReadAccessById(projectId, user);
 
   const rows = await getResourcesByProjectId(projectId);
   return { items: rows.map((row) => toResourceDto(row)) };
@@ -112,7 +112,7 @@ export async function listAllAuthorizedResources(
   user: AccessTokenPayload,
   query?: ListResourcesQuery
 ): Promise<ResourceListDto> {
-  const callerUserId = hasUnrestrictedProjectVisibility(user.roleName) ? undefined : user.sub;
+  const callerUserId = await resolveProjectReadScope(user);
 
   // P2-02 — a real paginated path, taken only when the caller explicitly
   // asks for a page. Every existing caller (today: only
@@ -149,7 +149,7 @@ export async function listAllAuthorizedResources(
  * is filtered by projectOwnershipWhereOr() inside the repository query.
  */
 export async function listResourcesForEmployee(employeeNo: string, user: AccessTokenPayload): Promise<ResourceListDto> {
-  const callerUserId = hasUnrestrictedProjectVisibility(user.roleName) ? undefined : user.sub;
+  const callerUserId = await resolveProjectReadScope(user);
   const rows = await getResourcesByEmployeeNo(employeeNo, callerUserId);
   return { items: rows.map((row) => toResourceDto(row)) };
 }

@@ -93,11 +93,16 @@ router.patch(
 // Hard delete — only for a line the UI itself is removing before it was ever
 // really "raised" (see invoice.service.ts's deleteInvoiceLine()). Undoing an
 // already-raised invoice is a status PATCH to "Cancelled", not this.
+// Invoice Edit/Delete approval rights (Oct 2026) — every delete, whether from
+// Invoice History or a workspace removing a saved line, requires the
+// "Delete Invoice" approval on top of Invoices module access and the
+// service's project-ownership check.
 router.delete(
   "/invoice-lines/:id",
   authenticate,
   denyReadOnlyWrites,
   requireModuleAccess("Invoices"),
+  requireApprovalPermission("Delete Invoice"),
   deleteInvoiceLine
 );
 // Request Invoice workflow (Sept 2026) — Section C: "Send Invoice To." A

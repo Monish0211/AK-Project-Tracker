@@ -1,11 +1,6 @@
 import type { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
-import {
-  assertProjectAccess,
-  assertProjectAccessById,
-  hasUnrestrictedProjectVisibility,
-  projectOwnershipWhereOr,
-} from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccess, assertProjectAccessById, projectOwnershipWhereOr, assertProjectReadAccessById, resolveProjectReadScope } from "../../../shared/utils/projectAccess.js";
 import { getUserDisplayName } from "../../../shared/utils/userDisplayName.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
@@ -68,7 +63,7 @@ function toReminderDto(reminder: {
 }
 
 export async function listRemindersForProject(projectId: string, user: AccessTokenPayload) {
-  await assertProjectAccessById(projectId, user);
+  await assertProjectReadAccessById(projectId, user);
   const reminders = await getRemindersByProjectId(projectId);
   return { items: reminders.map(toReminderDto) };
 }
@@ -83,7 +78,7 @@ export async function listRemindersForProject(projectId: string, user: AccessTok
  * rule.
  */
 export async function listAllRemindersForCaller(user: AccessTokenPayload) {
-  const callerUserId = hasUnrestrictedProjectVisibility(user.roleName) ? undefined : user.sub;
+  const callerUserId = await resolveProjectReadScope(user);
   const whereOr = await projectOwnershipWhereOr(callerUserId);
   const reminders = await getAllRemindersForCaller(whereOr);
   return { items: reminders.map(toReminderDto) };

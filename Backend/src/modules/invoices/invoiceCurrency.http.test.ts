@@ -6,6 +6,7 @@ import app from "../../app.js";
 import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
+import { invoiceEditDeleteGrants } from "./invoiceApprovalGrants.testutil.js";
 
 /**
  * Invoice Currency feature (Oct 2026) — USD invoices, the project currency
@@ -64,7 +65,7 @@ test("Invoice Currency — all seven currencies, project currency lock, and INR 
         roleId: engineerRole.id,
         forcePasswordChange: false,
         moduleAccess: { create: [{ moduleId: projectsModule.id }, { moduleId: invoicesModule.id }] },
-        approvalPermissions: { create: { approvalTypeId: raiseInvoiceApproval.id } },
+        approvalPermissions: { create: [{ approvalTypeId: raiseInvoiceApproval.id }, ...(await invoiceEditDeleteGrants())] },
       },
     });
     createdUserIds.push(raiser.id);

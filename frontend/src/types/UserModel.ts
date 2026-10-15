@@ -69,6 +69,12 @@ export interface UserApprovalRights {
   deleteProjectPermanently: boolean;
   /** Request Invoice workflow (Sept 2026) — the actual new invoice creation/raise action. See Backend's requireApprovalPermission("Raise Invoice"). */
   raiseInvoice: boolean;
+  /** Invoice Edit/Delete approval rights (Oct 2026) — see Backend's "Edit Invoice" check in invoice.service.ts's updateInvoiceLine(). */
+  editInvoice: boolean;
+  /** See Backend's requireApprovalPermission("Delete Invoice") on DELETE /invoice-lines/:id. */
+  deleteInvoice: boolean;
+  /** "View All Projects" (Oct 2026) — read-only visibility of every project; grants no write access. See Backend's projectAccess.ts resolveProjectReadScope(). */
+  viewAllProjects: boolean;
 }
 
 export interface UserAccountSecurity {

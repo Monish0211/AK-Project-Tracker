@@ -1,6 +1,6 @@
 import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
-import { assertProjectAccess, hasUnrestrictedProjectVisibility } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccess, assertProjectReadAccess, resolveProjectReadScope } from "../../../shared/utils/projectAccess.js";
 import { validatePrCategoryPrNoRule } from "../project.constants.js";
 import { reconcileUnassignedEntriesForProject } from "../../timesheets/services/timesheet.service.js";
 import { renameProjectDocumentFolder } from "../../../shared/utils/documentStorage.js";
@@ -466,7 +466,7 @@ export async function getProjectById(id: string, user: AccessTokenPayload): Prom
   if (!project) {
     throw new AppError("Project not found.", 404);
   }
-  await assertProjectAccess(user, project);
+  await assertProjectReadAccess(user, project);
   return toProjectDto(project, await computeCommercialTotalsForOne(project.id));
 }
 
@@ -799,7 +799,7 @@ export async function listProjects(query: ListProjectsQuery, user: AccessTokenPa
   // rule. Every other role only ever sees projects they created plus
   // unclaimed legacy projects (createdByUserId: null) — never a second,
   // list-specific authorization concept.
-  const callerUserId = hasUnrestrictedProjectVisibility(user.roleName) ? undefined : user.sub;
+  const callerUserId = await resolveProjectReadScope(user);
 
   const { items, total } = await findProjectsPage(
     {
@@ -846,6 +846,6 @@ export async function listProjects(query: ListProjectsQuery, user: AccessTokenPa
  * identical in meaning to before.
  */
 export async function getProjectStatusCounts(user: AccessTokenPayload): Promise<SidebarStatusCounts> {
-  const callerUserId = hasUnrestrictedProjectVisibility(user.roleName) ? undefined : user.sub;
+  const callerUserId = await resolveProjectReadScope(user);
   return countProjectsByStatus(callerUserId);
 }
