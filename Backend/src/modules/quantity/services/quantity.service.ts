@@ -1,5 +1,6 @@
 import { AppError } from "../../../shared/utils/AppError.js";
-import { assertProjectAccessById, assertProjectReadAccessById } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccessById, assertProjectReadAccessById, authorizedProjectReadWhere } from "../../../shared/utils/projectAccess.js";
+import type { BulkPage } from "../../../shared/utils/bulkPageQuery.js";
 import { computeInvoiceProgress } from "../../../shared/utils/quantityProgress.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import {
@@ -7,11 +8,13 @@ import {
   deleteCancelledLinesForQuantityItem,
   sumBilledQuantityByQuantityItemIds,
 } from "../../invoices/repository/invoice.repository.js";
-import type { QuantityDto, QuantityListDto } from "../dto/quantity.dto.js";
+import type { QuantityDto, QuantityListDto, QuantityPageDto } from "../dto/quantity.dto.js";
 import {
+  countQuantityForProjects,
   createQuantity as createQuantityInRepository,
   deleteQuantity as deleteQuantityInRepository,
   getQuantityById,
+  getQuantityForProjectsPage,
   getQuantityByProjectId,
   sumWoValueByProjectId,
   updateQuantity as updateQuantityInRepository,
@@ -121,6 +124,21 @@ export async function listQuantityForProject(projectId: string, user: AccessToke
   const rows = await getQuantityByProjectId(projectId);
   const billedByItemId = await sumBilledQuantityByQuantityItemIds(rows.map((row) => row.id));
   return { items: rows.map((row) => toQuantityDto(row, billedByItemId.get(row.id) ?? 0)) };
+}
+
+/**
+ * Reports data consistency (Oct 2026) — every Quantity row across the
+ * projects the caller may read, one page at a time, mapped exactly like
+ * listQuantityForProject() (same billed-quantity rollup per page of ids).
+ */
+export async function listAllAuthorizedQuantity(user: AccessTokenPayload, { page, pageSize }: BulkPage): Promise<QuantityPageDto> {
+  const projectWhere = await authorizedProjectReadWhere(user);
+  const [rows, total] = await Promise.all([
+    getQuantityForProjectsPage(projectWhere, (page - 1) * pageSize, pageSize),
+    countQuantityForProjects(projectWhere),
+  ]);
+  const billedByItemId = await sumBilledQuantityByQuantityItemIds(rows.map((row) => row.id));
+  return { items: rows.map((row) => toQuantityDto(row, billedByItemId.get(row.id) ?? 0)), total, page, pageSize };
 }
 
 export async function updateQuantityItem(

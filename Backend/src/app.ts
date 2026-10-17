@@ -4,11 +4,11 @@ import express from "express";
 import { authRoutes } from "./modules/auth/index.js";
 import { userRoutes } from "./modules/users/index.js";
 import { projectRoutes } from "./modules/projects/index.js";
-import { quantityRoutes } from "./modules/quantity/index.js";
+import { quantityBulkRoutes, quantityRoutes } from "./modules/quantity/index.js";
 import { milestoneRoutes } from "./modules/milestones/index.js";
 import { reminderRoutes } from "./modules/reminders/index.js";
 import { invoiceRoutes } from "./modules/invoices/index.js";
-import { expenseRoutes, expenseImportRoutes } from "./modules/expenses/index.js";
+import { expenseBulkRoutes, expenseRoutes, expenseImportRoutes } from "./modules/expenses/index.js";
 import { employeeRoutes } from "./modules/employees/index.js";
 import { customerRoutes } from "./modules/customers/index.js";
 import { resourceRoutes } from "./modules/resources/index.js";
@@ -59,6 +59,11 @@ app.use("/users", userRoutes);
 // exact literal routes like GET /projects/resources match resourceRoutes
 // instead of getting swallowed by projectRoutes' /:id handler.
 app.use(resourceRoutes);
+// Reports data consistency (Oct 2026) — the literal GET /projects/expenses
+// and GET /projects/quantity bulk reads, mounted before /projects for the
+// same /:id-collision reason as resourceRoutes above.
+app.use(expenseBulkRoutes);
+app.use(quantityBulkRoutes);
 // projectNoteRoutes' literal GET /projects/notes must be mounted before
 // projectRoutes — otherwise projectRoutes' GET /:id (line 28 of
 // project.routes.ts) would match "/notes" first with id="notes" and this

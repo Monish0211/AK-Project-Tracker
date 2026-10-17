@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
+import { parseBulkPageQuery } from "../../../shared/utils/bulkPageQuery.js";
 import { requireUser } from "../../../shared/utils/requireUser.js";
 import * as quantityService from "../services/quantity.service.js";
 import { projectIdParamSchema, quantityIdParamSchema } from "../validators/quantity.validators.js";
@@ -36,6 +37,13 @@ export const getQuantityByProject = asyncHandler(async (req: Request, res: Respo
   const user = requireUser(req);
   const projectId = parseProjectIdParam(req);
   const result = await quantityService.listQuantityForProject(projectId, user);
+  res.status(200).json({ success: true, data: result });
+});
+
+// Reports data consistency (Oct 2026) — GET /projects/quantity.
+export const getAllAuthorizedQuantity = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  const result = await quantityService.listAllAuthorizedQuantity(user, parseBulkPageQuery(req));
   res.status(200).json({ success: true, data: result });
 });
 

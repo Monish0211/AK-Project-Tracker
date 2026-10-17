@@ -8,4 +8,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  // The Project Financial Report PDF worker is created as a module worker
+  // ({ type: "module" }); ES output lets it code-split, so jsPDF's optional
+  // html2canvas/DOMPurify/canvg imports stay separate, never-loaded chunks
+  // instead of being inlined into the worker file.
+  worker: { format: "es" },
 });

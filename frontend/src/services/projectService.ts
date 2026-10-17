@@ -746,7 +746,7 @@ export async function fetchArchivedProjectsFromApi(params: ProjectListParams = {
 }
 
 /** Fetches all active projects across all pages for complete, un-truncated report analytics. */
-interface BackendResourceDto {
+export interface BackendResourceDto {
   id: string;
   projectId: string;
   employeeNo: string;
@@ -759,7 +759,7 @@ interface BackendResourceDto {
   manhourCost?: number;
 }
 
-function mapBackendResourceDto(r: BackendResourceDto, employees: Employee[]): ProjectResource {
+export function mapBackendResourceDto(r: BackendResourceDto, employees: Employee[]): ProjectResource {
   const emp = employees.find((e) => e.employeeNo.trim().toLowerCase() === r.employeeNo.trim().toLowerCase());
   const rate = typeof r.hourlyRateSnapshot === "number" ? r.hourlyRateSnapshot : (emp?.manhourExpenses || 0);
   const cost = typeof r.manhourCost === "number" ? r.manhourCost : Math.round((r.totalHours || 0) * rate * 100) / 100;

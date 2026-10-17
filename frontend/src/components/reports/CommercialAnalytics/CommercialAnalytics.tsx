@@ -4,6 +4,8 @@ import { MilestoneChart } from "./MilestoneChart";
 import { ContractValueChart } from "./ContractValueChart";
 import { CommercialTable } from "./CommercialTable";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { INVOICE_NOT_AVAILABLE, NO_INVOICE_ACCESS_HINT, useInvoiceDataAvailable } from "../Shared/invoiceAccess";
+import { InvoiceDataUnavailable } from "../Shared/InvoiceDataUnavailable";
 
 interface Props {
   projects: any[];
@@ -12,6 +14,7 @@ interface Props {
 
 export function CommercialAnalytics({ projects, analytics }: Props) {
   const a = analytics;
+  const inv = useInvoiceDataAvailable();
 
   return (
     <div className="space-y-5 nu-fade-in">
@@ -26,25 +29,25 @@ export function CommercialAnalytics({ projects, analytics }: Props) {
 
         <KPIReportCard
           title="Invoiced Revenue"
-          value={formatBusinessINR(a.totalInvoiceRaised)}
-          subtitle="Realized commercial billing"
+          value={inv ? formatBusinessINR(a.totalInvoiceRaised) : INVOICE_NOT_AVAILABLE}
+          subtitle={inv ? "Realized commercial billing" : NO_INVOICE_ACCESS_HINT}
           icon={<Receipt size={18} />}
           tone="emerald"
         />
 
         <KPIReportCard
           title="Unbilled Commercial Balance"
-          value={formatBusinessINR(a.balanceToInvoice)}
-          subtitle="Remaining contract billing"
+          value={inv ? formatBusinessINR(a.balanceToInvoice) : INVOICE_NOT_AVAILABLE}
+          subtitle={inv ? "Remaining contract billing" : NO_INVOICE_ACCESS_HINT}
           icon={<DollarSign size={18} />}
           tone="amber"
         />
 
         <KPIReportCard
           title="Commercial Billed %"
-          value={`${a.totalWOValue > 0 ? ((a.totalInvoiceRaised / a.totalWOValue) * 100).toFixed(1) : 0}%`}
-          subtitle="Billed / Total Contract"
-          trend="Commercial Run Rate"
+          value={inv ? `${a.totalWOValue > 0 ? ((a.totalInvoiceRaised / a.totalWOValue) * 100).toFixed(1) : 0}%` : INVOICE_NOT_AVAILABLE}
+          subtitle={inv ? "Billed / Total Contract" : NO_INVOICE_ACCESS_HINT}
+          trend={inv ? "Commercial Run Rate" : undefined}
           trendType="positive"
           icon={<Percent size={18} />}
           tone="indigo"
@@ -52,7 +55,7 @@ export function CommercialAnalytics({ projects, analytics }: Props) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <MilestoneChart projects={projects} />
+        {inv ? <MilestoneChart projects={projects} /> : <InvoiceDataUnavailable title="Milestone Billing" />}
         <ContractValueChart projects={projects} />
       </div>
 

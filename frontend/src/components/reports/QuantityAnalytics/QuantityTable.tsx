@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { formatIndianNumber } from "../../../utils/quantityCalculations";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
+import { INVOICE_NOT_AVAILABLE, useInvoiceDataAvailable } from "../Shared/invoiceAccess";
 
 interface Props {
   projects: any[];
@@ -10,11 +11,32 @@ interface Props {
 
 export function QuantityTable({ projects }: Props) {
   const [search, setSearch] = useState("");
+  const invoiceDataAvailable = useInvoiceDataAvailable();
 
   const quantityRows = useMemo(() => {
     const list: any[] = [];
 
     projects.forEach((p) => {
+      // Without invoice access invoiceItems is empty, but contracted quantities
+      // (Projects module) are still shown — from the live quantity items, with
+      // the invoiced figures null ("Not available", blank in CSV/Excel).
+      if (!invoiceDataAvailable) {
+        (Array.isArray(p.quantityItems) ? p.quantityItems : []).forEach((q: { id?: string; description?: string; uom?: string; woQty?: number }) => {
+          list.push({
+            id: q.id || `${p.id}-${q.description}`,
+            prNo: p.prNo || "-",
+            client: p.client || "-",
+            projectTitle: p.projectTitle || "-",
+            activityName: q.description || "Engineering Activity",
+            uom: q.uom || "NOS",
+            orderedQty: q.woQty || 0,
+            billedQty: null,
+            remainingQty: null,
+            completionPct: null,
+          });
+        });
+        return;
+      }
       const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
       items.forEach((item: any) => {
         let billed = 0;
@@ -43,7 +65,7 @@ export function QuantityTable({ projects }: Props) {
     });
 
     return list;
-  }, [projects]);
+  }, [projects, invoiceDataAvailable]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return quantityRows;
@@ -109,6 +131,12 @@ export function QuantityTable({ projects }: Props) {
                   <td className="p-2.5 font-medium text-[var(--nu-text)] max-w-[200px] truncate">{row.activityName}</td>
                   <td className="p-2.5 text-center font-mono font-bold">{row.uom}</td>
                   <td className="p-2.5 text-center font-mono font-bold text-blue-600 dark:text-blue-400">{formatIndianNumber(row.orderedQty)}</td>
+                  {row.billedQty === null ? (
+                    <td colSpan={3} className="p-2.5 text-center text-[11px] italic text-[var(--nu-text-muted)]" title="Your account has no invoice access">
+                      {INVOICE_NOT_AVAILABLE}
+                    </td>
+                  ) : (
+                  <>
                   <td className="p-2.5 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">{formatIndianNumber(row.billedQty)}</td>
                   <td className="p-2.5 text-center font-mono font-bold text-amber-600 dark:text-amber-400">{formatIndianNumber(row.remainingQty)}</td>
                   <td className="p-2.5 text-right font-mono font-extrabold">
@@ -124,6 +152,8 @@ export function QuantityTable({ projects }: Props) {
                       {row.completionPct.toFixed(1)}%
                     </span>
                   </td>
+                  </>
+                  )}
                 </tr>
               ))}
             </tbody>

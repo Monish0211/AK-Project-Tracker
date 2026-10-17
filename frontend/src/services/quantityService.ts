@@ -15,7 +15,7 @@ import { apiClient } from "./apiClient";
 // sync/etc. keep working with zero changes of their own.
 
 /** Raw shape one row of GET/POST/PATCH /projects/:projectId/quantity or /quantity/:id returns — see Backend's QuantityDto. */
-interface BackendQuantityDto {
+export interface BackendQuantityDto {
   id: string;
   projectId: string;
   description: string;
@@ -69,7 +69,7 @@ function toQuantityPayload(item: QuantityItem): QuantityPayload {
   };
 }
 
-function toQuantityItem(dto: BackendQuantityDto): QuantityItem {
+export function toQuantityItem(dto: BackendQuantityDto): QuantityItem {
   return {
     id: dto.id,
     description: dto.description,

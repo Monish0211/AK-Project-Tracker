@@ -16,7 +16,7 @@ import { apiClient } from "./apiClient";
 // its own endpoints, its own business logic, per the Phase 3.5 design.
 
 /** Raw shape one row of GET/POST/PATCH /projects/:projectId/expenses or /expenses/:id returns — see Backend's ExpenseDto. */
-interface BackendExpenseDto {
+export interface BackendExpenseDto {
   id: string;
   projectId: string;
   category: string;
@@ -71,7 +71,7 @@ function toExpensePayload(item: NonManhourExpense): ExpensePayload {
   };
 }
 
-function toExpenseItem(dto: BackendExpenseDto): NonManhourExpense {
+export function toExpenseItem(dto: BackendExpenseDto): NonManhourExpense {
   return {
     id: dto.id,
     category: dto.category,

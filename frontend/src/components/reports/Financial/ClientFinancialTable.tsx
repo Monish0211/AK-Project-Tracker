@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
+import { INVOICE_NOT_AVAILABLE } from "../Shared/invoiceAccess";
 
 interface Props {
   customerList: any[];
@@ -62,6 +63,19 @@ export function ClientFinancialTable({ customerList }: Props) {
             </thead>
             <tbody className="divide-y divide-[var(--nu-border)]">
               {filtered.map((row) => {
+                // raised/received/outstanding are null when the viewer has no invoice access (see useReportsData).
+                if (row.raised === null) {
+                  return (
+                    <tr key={row.client} className="hover:bg-[var(--nu-surface-alt)]/50 transition">
+                      <td className="p-2.5 font-extrabold text-[var(--nu-text)]">{row.client}</td>
+                      <td className="p-2.5 text-center font-mono font-bold">{row.projectCount}</td>
+                      <td className="p-2.5 text-right font-mono font-bold">{formatBusinessINR(row.woValue)}</td>
+                      <td colSpan={4} className="p-2.5 text-center text-[11px] italic text-[var(--nu-text-muted)]" title="Your account has no invoice access">
+                        {INVOICE_NOT_AVAILABLE}
+                      </td>
+                    </tr>
+                  );
+                }
                 const colPct = row.raised > 0 ? (row.received / row.raised) * 100 : 0;
                 return (
                   <tr key={row.client} className="hover:bg-[var(--nu-surface-alt)]/50 transition">

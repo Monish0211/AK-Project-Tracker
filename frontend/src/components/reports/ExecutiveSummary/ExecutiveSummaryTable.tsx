@@ -2,58 +2,41 @@ import { useState, useMemo } from "react";
 import { Search, ChevronDown, ChevronUp } from "lucide-react";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
-import { getTotalInvoiceRaised, getTotalPaymentReceived } from "../../../services/invoiceProgressService";
-import { getTotalNonManhourCost } from "../../../services/expenseService";
+import { buildRegistryRow } from "../../../utils/reportRegistryRows";
+import { ProjectPdfButton } from "./ProjectPdfButton";
 
 interface Props {
   projects: any[];
+  /** The Reports PR No. filter ("ALL" when unset) — enables the header Export PDF button for exactly one project. */
+  selectedPrNo?: string;
+  /** false = the viewer has no Invoices module access: Raised/Received/Outstanding are "Not available" (blank in CSV/Excel). */
+  invoiceDataAvailable?: boolean;
 }
 
-export function ExecutiveSummaryTable({ projects }: Props) {
+const NOT_AVAILABLE = "Not available";
+const DASH = "—";
+
+/** Missing values (null) always sort after real numbers, whatever the direction. */
+function compareRows(valA: unknown, valB: unknown, asc: boolean): number {
+  const missingA = valA === null || valA === undefined;
+  const missingB = valB === null || valB === undefined;
+  if (missingA || missingB) return missingA === missingB ? 0 : missingA ? 1 : -1;
+  const a = typeof valA === "string" ? valA.toLowerCase() : valA;
+  const b = typeof valB === "string" ? valB.toLowerCase() : valB;
+  if ((a as number) < (b as number)) return asc ? -1 : 1;
+  if ((a as number) > (b as number)) return asc ? 1 : -1;
+  return 0;
+}
+
+export function ExecutiveSummaryTable({ projects, selectedPrNo = "ALL", invoiceDataAvailable = true }: Props) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState("prNo");
   const [sortAsc, setSortAsc] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
-  const tableData = useMemo(() => {
-    return projects.map((p) => {
-      const woVal = p.workOrderValueINR ?? p.workOrderValue ?? 0;
-      // Delegates to the same canonical invoiceProgressService.ts functions
-      // Dashboard/View Project use, rather than re-deriving the status rule
-      // here a second time — never the legacy project.paymentReceivedINR field.
-      const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      const raised = getTotalInvoiceRaised(items);
-      const received = Math.min(getTotalPaymentReceived(items), raised);
-      // Outstanding — Executive Summary's management-level KPI: Work Order
-      // Value minus Payment Received. Deliberately NOT Invoice Raised
-      // minus Payment Received (that's the Invoice module's own, separate
-      // Outstanding concept, left unchanged in invoiceProgressService.ts),
-      // and never the same as Balance to Invoice.
-      const outstanding = Math.max(0, woVal - received);
-      const nonManhour = getTotalNonManhourCost(p.nonManhourExpenses || []);
-      const manhour = (p.resources || []).reduce((acc: number, r: any) => acc + (r.manhourCost || 0), 0);
-      const expenses = nonManhour + manhour;
-      const profit = woVal - expenses;
-      const profitPct = woVal === 0 ? 0 : (profit / woVal) * 100;
-
-      return {
-        id: p.id,
-        prNo: p.prNo || "-",
-        client: p.client || "-",
-        projectTitle: p.projectTitle || "-",
-        department: p.department || "-",
-        status: p.projectStatus || "Active",
-        woValue: woVal,
-        raised,
-        received,
-        outstanding,
-        expenses,
-        profit,
-        profitPct,
-      };
-    });
-  }, [projects]);
+  // Same calculation as the Project Financial Report PDF — see buildRegistryRow().
+  const tableData = useMemo(() => projects.map((p) => buildRegistryRow(p, invoiceDataAvailable)), [projects, invoiceDataAvailable]);
 
   // Search filter
   const filteredData = useMemo(() => {
@@ -70,15 +53,7 @@ export function ExecutiveSummaryTable({ projects }: Props) {
 
   // Sort
   const sortedData = useMemo(() => {
-    return [...filteredData].sort((a: any, b: any) => {
-      let valA = a[sortField];
-      let valB = b[sortField];
-      if (typeof valA === "string") valA = valA.toLowerCase();
-      if (typeof valB === "string") valB = valB.toLowerCase();
-      if (valA < valB) return sortAsc ? -1 : 1;
-      if (valA > valB) return sortAsc ? 1 : -1;
-      return 0;
-    });
+    return [...filteredData].sort((a: any, b: any) => compareRows(a[sortField], b[sortField], sortAsc));
   }, [filteredData, sortField, sortAsc]);
 
   // Pagination
@@ -87,6 +62,9 @@ export function ExecutiveSummaryTable({ projects }: Props) {
     const start = (currentPage - 1) * pageSize;
     return sortedData.slice(start, start + pageSize);
   }, [sortedData, currentPage, pageSize]);
+
+  // Header Export PDF: only when the PR No. filter narrows the registry to exactly one project.
+  const singleProject = selectedPrNo !== "ALL" && projects.length === 1 ? projects[0] : null;
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortAsc(!sortAsc);
@@ -124,6 +102,12 @@ export function ExecutiveSummaryTable({ projects }: Props) {
           </div>
 
           <ReportExportButtons data={sortedData} filename="PMO_Executive_Summary_Report" />
+          <ProjectPdfButton
+            variant="button"
+            projectId={singleProject?.id ?? null}
+            prNo={singleProject?.prNo ?? ""}
+            disabledReason="Select a PR No. in the filters to export a project PDF"
+          />
         </div>
       </div>
 
@@ -167,6 +151,7 @@ export function ExecutiveSummaryTable({ projects }: Props) {
                 <th className="p-3.5 px-4 cursor-pointer text-right" onClick={() => handleSort("profitPct")}>
                   Profit %
                 </th>
+                <th className="p-3.5 px-4 text-center no-print">PDF</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--nu-border)]">
@@ -176,17 +161,34 @@ export function ExecutiveSummaryTable({ projects }: Props) {
                   <td className="p-3.5 px-4 font-semibold text-[var(--nu-text)] max-w-[140px] truncate">{row.client}</td>
                   <td className="p-3.5 px-4 font-medium text-[var(--nu-text)] max-w-[200px] truncate">{row.projectTitle}</td>
                   <td className="p-3.5 px-4 text-right font-mono font-bold">{formatBusinessINR(row.woValue)}</td>
-                  <td className="p-3.5 px-4 text-right font-mono text-blue-600 dark:text-blue-400 font-bold">{formatBusinessINR(row.raised)}</td>
-                  <td className="p-3.5 px-4 text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">{formatBusinessINR(row.received)}</td>
-                  <td className="p-3.5 px-4 text-right font-mono text-amber-600 dark:text-amber-400 font-bold">{formatBusinessINR(row.outstanding)}</td>
+                  {row.raised === null ? (
+                    <td colSpan={3} className="p-3.5 px-4 text-center text-[11px] italic text-[var(--nu-text-muted)]" title="Your account has no invoice access">
+                      {NOT_AVAILABLE}
+                    </td>
+                  ) : (
+                    <>
+                      <td className="p-3.5 px-4 text-right font-mono text-blue-600 dark:text-blue-400 font-bold">{formatBusinessINR(row.raised)}</td>
+                      <td className="p-3.5 px-4 text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">{formatBusinessINR(row.received ?? 0)}</td>
+                      <td className="p-3.5 px-4 text-right font-mono text-amber-600 dark:text-amber-400 font-bold">{formatBusinessINR(row.outstanding ?? 0)}</td>
+                    </>
+                  )}
                   <td className="p-3.5 px-4 text-right font-mono text-rose-600 dark:text-rose-400">{formatBusinessINR(row.expenses)}</td>
                   <td className={`p-3.5 px-4 text-right font-mono font-bold ${row.profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600"}`}>
                     {formatBusinessINR(row.profit)}
                   </td>
                   <td className="p-3.5 px-4 text-right font-mono font-extrabold">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] ${row.profitPct >= 20 ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300" : row.profitPct >= 0 ? "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300" : "bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300"}`}>
-                      {row.profitPct.toFixed(1)}%
-                    </span>
+                    {row.profitPct === null ? (
+                      <span className="text-[var(--nu-text-muted)]" title="Work Order Value is zero">
+                        {DASH}
+                      </span>
+                    ) : (
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] ${row.profitPct >= 20 ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300" : row.profitPct >= 0 ? "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300" : "bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300"}`}>
+                        {row.profitPct.toFixed(1)}%
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-3.5 px-4 text-center no-print">
+                    <ProjectPdfButton variant="icon" projectId={row.id} prNo={row.prNo === "-" ? "" : row.prNo} />
                   </td>
                 </tr>
               ))}

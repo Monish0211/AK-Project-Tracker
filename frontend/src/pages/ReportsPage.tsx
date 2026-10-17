@@ -3,7 +3,9 @@ import { useSearchParams } from "react-router-dom";
 import { useReportsData } from "../components/reports/useReportsData";
 import { ReportHeader, type ReportTabKey } from "../components/reports/Shared/ReportHeader";
 import { ReportFilters } from "../components/reports/Shared/ReportFilters";
-import { Loader2 } from "lucide-react";
+import { InvoiceAccessContext } from "../components/reports/Shared/invoiceAccess";
+import { InvoiceDataUnavailable } from "../components/reports/Shared/InvoiceDataUnavailable";
+import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 
 // Lazy-loaded report sub-modules for fast page load & memory optimization
 const ExecutiveSummary = lazy(() =>
@@ -73,6 +75,9 @@ export function ReportsPage() {
     resetFilters,
     analytics,
     authoritativeInvoiceLines,
+    invoiceDataAvailable,
+    liveStatus,
+    retryLiveData,
   } = useReportsData(initialFilters);
 
   const handleDrillDown = (target: string) => {
@@ -107,13 +112,40 @@ export function ReportsPage() {
         options={filterOptions}
       />
 
-      {/* Lazy-Loaded Active Analytics View */}
+      {/* Live data status — figures come only from live backend data (never the browser cache). */}
+      {liveStatus === "loading" && (
+        <div role="status" className="flex items-center gap-2 rounded-xl border border-[var(--nu-border)] bg-[var(--nu-surface)] px-4 py-2.5 text-xs text-[var(--nu-text-muted)]">
+          <Loader2 size={14} className="animate-spin" />
+          Loading live financial data…
+        </div>
+      )}
+      {liveStatus === "error" && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 px-4 py-2.5 text-xs text-rose-700 dark:text-rose-300">
+          <AlertTriangle size={14} />
+          <span className="flex-1">Couldn't load live financial data, so no figures are shown.</span>
+          <button
+            type="button"
+            onClick={retryLiveData}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 dark:border-rose-800 px-2.5 py-1 font-bold cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/40"
+          >
+            <RefreshCw size={12} />
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Lazy-Loaded Active Analytics View — only once live data has loaded,
+          so a loading or failed state never shows ₹0 placeholder figures. */}
+      {liveStatus === "ready" && (
+      <InvoiceAccessContext.Provider value={invoiceDataAvailable}>
       <Suspense fallback={<ReportFallback />}>
         {activeTab === "executive" && (
           <ExecutiveSummary
             projects={filteredProjects}
             analytics={analytics}
             onDrillDown={handleDrillDown}
+            selectedPrNo={filters.prNo}
+            invoiceDataAvailable={invoiceDataAvailable}
           />
         )}
         {activeTab === "financial" && (
@@ -122,20 +154,29 @@ export function ReportsPage() {
         {activeTab === "project-performance" && (
           <ProjectPerformance projects={filteredProjects} analytics={analytics} />
         )}
-        {activeTab === "invoice" && (
-          <InvoiceAnalytics
-            projects={filteredProjects}
-            analytics={analytics}
-            invoiceLines={authoritativeInvoiceLines}
-          />
-        )}
-        {activeTab === "collection" && (
-          <CollectionAnalytics
-            projects={filteredProjects}
-            analytics={analytics}
-            invoiceLines={authoritativeInvoiceLines}
-          />
-        )}
+        {/* Invoice and Collection analytics are built entirely from invoice
+            data: without invoice access they show one clear unavailable
+            state instead of empty charts and ₹0 cards. */}
+        {activeTab === "invoice" &&
+          (invoiceDataAvailable ? (
+            <InvoiceAnalytics
+              projects={filteredProjects}
+              analytics={analytics}
+              invoiceLines={authoritativeInvoiceLines}
+            />
+          ) : (
+            <InvoiceDataUnavailable title="Invoice Analytics" />
+          ))}
+        {activeTab === "collection" &&
+          (invoiceDataAvailable ? (
+            <CollectionAnalytics
+              projects={filteredProjects}
+              analytics={analytics}
+              invoiceLines={authoritativeInvoiceLines}
+            />
+          ) : (
+            <InvoiceDataUnavailable title="Collection Analytics" />
+          ))}
         {activeTab === "expense" && (
           <ExpenseAnalytics projects={filteredProjects} analytics={analytics} />
         )}
@@ -151,6 +192,8 @@ export function ReportsPage() {
           <CommercialAnalytics projects={filteredProjects} analytics={analytics} />
         )}
       </Suspense>
+      </InvoiceAccessContext.Provider>
+      )}
     </div>
   );
 }

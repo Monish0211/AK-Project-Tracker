@@ -5,10 +5,15 @@ import { formatBusinessINR } from "../../../utils/formatCurrency";
 interface Props {
   analytics: any;
   onDrillDown?: (target: string) => void;
+  /** false = the viewer has no Invoices module access: invoice KPIs read "Not available", never ₹0. */
+  invoiceDataAvailable?: boolean;
 }
 
-export function ExecutiveSummaryCards({ analytics, onDrillDown }: Props) {
+const NOT_AVAILABLE = "Not available";
+
+export function ExecutiveSummaryCards({ analytics, onDrillDown, invoiceDataAvailable = true }: Props) {
   const a = analytics;
+  const inv = invoiceDataAvailable;
 
   return (
     <div className="grid gap-3.5 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
@@ -23,8 +28,8 @@ export function ExecutiveSummaryCards({ analytics, onDrillDown }: Props) {
 
       <KPIReportCard
         title="Invoice Raised"
-        value={formatBusinessINR(a.totalInvoiceRaised)}
-        subtitle={`${a.invoiceCounts.raised + a.invoiceCounts.paid} cycle lines`}
+        value={inv ? formatBusinessINR(a.totalInvoiceRaised) : NOT_AVAILABLE}
+        subtitle={inv ? `${a.invoiceCounts.raised + a.invoiceCounts.paid} cycle lines` : "No invoice access"}
         icon={<Receipt size={16} />}
         tone="indigo"
         onClick={() => onDrillDown?.("raised")}
@@ -32,9 +37,9 @@ export function ExecutiveSummaryCards({ analytics, onDrillDown }: Props) {
 
       <KPIReportCard
         title="Payment Received"
-        value={formatBusinessINR(a.totalPaymentReceived)}
-        subtitle={`${a.collectionPercent.toFixed(1)}% collected`}
-        trend={`${a.collectionPercent.toFixed(0)}% Rate`}
+        value={inv ? formatBusinessINR(a.totalPaymentReceived) : NOT_AVAILABLE}
+        subtitle={inv ? `${a.collectionPercent.toFixed(1)}% collected` : "No invoice access"}
+        trend={inv ? `${a.collectionPercent.toFixed(0)}% Rate` : undefined}
         trendType="positive"
         icon={<Wallet size={16} />}
         tone="emerald"
@@ -43,9 +48,9 @@ export function ExecutiveSummaryCards({ analytics, onDrillDown }: Props) {
 
       <KPIReportCard
         title="Contract Outstanding"
-        value={formatBusinessINR(a.totalOutstanding)}
-        subtitle="Uncollected contract balance"
-        trend={a.totalOutstanding > 0 ? "Contract Balance" : "Clear"}
+        value={inv ? formatBusinessINR(a.totalOutstanding) : NOT_AVAILABLE}
+        subtitle={inv ? "Uncollected contract balance" : "No invoice access"}
+        trend={inv ? (a.totalOutstanding > 0 ? "Contract Balance" : "Clear") : undefined}
         trendType={a.totalOutstanding > 0 ? "negative" : "positive"}
         icon={<AlertCircle size={16} />}
         tone="amber"

@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { getTotalNonManhourCost } from "../../../services/expenseService";
+import { INVOICE_NOT_AVAILABLE, useInvoiceDataAvailable } from "../Shared/invoiceAccess";
 
 interface Props {
   projects: any[];
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function ExecutiveSummaryCharts({ projects, analytics }: Props) {
+  const invoiceDataAvailable = useInvoiceDataAvailable();
   // Chart 1: Top 6 Projects Revenue vs Expense
   const topProjectsData = useMemo(() => {
     return projects
@@ -65,10 +67,15 @@ export function ExecutiveSummaryCharts({ projects, analytics }: Props) {
       <div className="lg:col-span-8 bg-[var(--nu-surface)] border border-[var(--nu-border)] p-5 rounded-2xl space-y-4 shadow-xs">
         <div className="flex items-center justify-between border-b border-[var(--nu-border)] pb-3">
           <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--nu-text)]">
-            Contract Financial Comparisons (WO vs Raised vs Expenses)
+            {invoiceDataAvailable ? "Contract Financial Comparisons (WO vs Raised vs Expenses)" : "Contract Financial Comparisons (WO vs Expenses)"}
           </h4>
           <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">Top Projects</span>
         </div>
+        {!invoiceDataAvailable && (
+          <p role="note" className="text-[11px] text-[var(--nu-text-muted)]">
+            Invoice Raised: <strong>{INVOICE_NOT_AVAILABLE}</strong> — your account doesn't have access to invoice data, so it isn't plotted.
+          </p>
+        )}
 
         <div className="h-72 sm:h-80 w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -79,7 +86,7 @@ export function ExecutiveSummaryCharts({ projects, analytics }: Props) {
               <Tooltip formatter={(value: any) => [formatBusinessINR(Number(value)), ""]} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar dataKey="WO Value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Invoice Raised" fill="#10b981" radius={[4, 4, 0, 0]} />
+              {invoiceDataAvailable && <Bar dataKey="Invoice Raised" fill="#10b981" radius={[4, 4, 0, 0]} />}
               <Bar dataKey="Expenses" fill="#ef4444" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>

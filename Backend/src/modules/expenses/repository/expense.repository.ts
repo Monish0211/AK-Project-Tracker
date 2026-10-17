@@ -1,3 +1,4 @@
+import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import type { ProjectExpenseData } from "../expense.types.js";
 
@@ -21,6 +22,23 @@ export function getExpensesByProjectId(projectId: string) {
     where: { projectId, isActive: true },
     orderBy: { createdAt: "asc" },
   });
+}
+
+// Reports data consistency (Oct 2026) — one page of active expense rows
+// across every project matching `projectWhere` (the caller's authorized
+// projects, built by projectAccess.ts's authorizedProjectReadWhere()).
+// Deterministic order so offset pages never skip or repeat a row.
+export function getActiveExpensesForProjectsPage(projectWhere: Prisma.ProjectWhereInput, skip: number, take: number) {
+  return prisma.projectExpense.findMany({
+    where: { isActive: true, project: projectWhere },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    skip,
+    take,
+  });
+}
+
+export function countActiveExpensesForProjects(projectWhere: Prisma.ProjectWhereInput) {
+  return prisma.projectExpense.count({ where: { isActive: true, project: projectWhere } });
 }
 
 export function getExpenseById(id: string) {

@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
+import { parseBulkPageQuery } from "../../../shared/utils/bulkPageQuery.js";
 import { requireUser } from "../../../shared/utils/requireUser.js";
 import * as expenseService from "../services/expense.service.js";
 import { projectIdParamSchema, expenseIdParamSchema } from "../validators/expense.validators.js";
@@ -23,6 +24,13 @@ function parseExpenseIdParam(req: Request): string {
   }
   return result.data.id;
 }
+
+// Reports data consistency (Oct 2026) — GET /projects/expenses.
+export const getAllAuthorizedExpenses = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  const result = await expenseService.listAllAuthorizedExpenses(user, parseBulkPageQuery(req));
+  res.status(200).json({ success: true, data: result });
+});
 
 export const createExpense = asyncHandler(async (req: Request, res: Response) => {
   const user = requireUser(req);

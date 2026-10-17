@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import type { Project } from "../../types/Project";
 import type { Customer } from "../../types/CustomerModel";
-import { getProjects, fetchAllProjectsFromApi } from "../../services/projectService";
 import { getCustomers, loadCustomersForApp } from "../../services/customerService";
 import { getTotalNonManhourCost } from "../../services/expenseService";
-import { fetchAllInvoiceLinesForCaller, type ReportInvoiceLine } from "../../services/invoiceService";
+import type { ReportInvoiceLine } from "../../services/invoiceService";
+import { fetchLiveReportData } from "../../services/reportsLiveDataService";
 import { pmoDataChangedMatches } from "../../utils/pmoDataChanged";
 
 export interface ReportFilterState {
@@ -31,6 +31,9 @@ export const INITIAL_REPORT_FILTERS: ReportFilterState = {
   countryRegion: "ALL",
 };
 
+/** "loading" until the first live load settles; "error" only when no live data could be shown. */
+export type ReportsLiveStatus = "loading" | "ready" | "error";
+
 /**
  * `initialFilters` — optional, applied once at mount only (e.g. deep-linking
  * in from Completed Projects' "View Report" action with a specific PR
@@ -46,102 +49,110 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
     ...initialFilters,
   }));
 
-  // Issue #4 fix — Reports/Dashboard Invoice Raised discrepancy. Every
-  // invoice line across every authorized project, fetched from the SAME
-  // backend source Dashboard's own Invoice Raised KPI (and the previously
-  // unrouted frontend/src/pages/Reports/Reports.tsx implementation) already
-  // use — never read from, or derived from, the per-project localStorage
-  // `invoiceItems` mirror below, which only ever reflects whichever
-  // projects have actually been opened in THIS browser and was the root
-  // cause of this page showing ₹0 while Dashboard showed the correct total.
-  // See fetchAllInvoiceLinesForCaller()'s own comment in invoiceService.ts.
+  // Every invoice line across every authorized project — the same backend
+  // source Dashboard's Invoice Raised KPI uses (Issue #4 fix). Now loaded
+  // together with the projects by fetchLiveReportData(), so the KPI cards,
+  // the registry table and every per-project figure share one live snapshot.
   const [authoritativeInvoiceLines, setAuthoritativeInvoiceLines] = useState<ReportInvoiceLine[]>([]);
+  // false = the caller has no Invoices module access: invoice figures are
+  // "Not available" (blank in CSV/Excel), never ₹0.
+  const [invoiceDataAvailable, setInvoiceDataAvailable] = useState(true);
+  const [liveStatus, setLiveStatus] = useState<ReportsLiveStatus>("loading");
 
-  const loadData = () => {
-    setAllProjects(getProjects());
-    setAllCustomers(getCustomers());
-  };
+  // Reports data consistency fix (Oct 2026) — every financial figure on this
+  // page comes from live backend rows (see reportsLiveDataService.ts), never
+  // from the per-browser localStorage project mirror, which only held
+  // expense/quantity/invoice rows for projects this browser had opened and
+  // was never refreshed when someone else changed them. One request at a
+  // time: a change event arriving mid-load queues exactly one follow-up load.
+  const isMounted = useRef(true);
+  const inFlight = useRef(false);
+  const reloadQueued = useRef(false);
+  const hasLiveData = useRef(false);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    loadData();
-
-    fetchAllProjectsFromApi()
-      .then((items) => {
-        if (Array.isArray(items) && items.length > 0) {
-          setAllProjects(items);
-        }
+  const loadLiveData = useCallback(function load() {
+    if (inFlight.current) {
+      reloadQueued.current = true;
+      return;
+    }
+    inFlight.current = true;
+    fetchLiveReportData()
+      .then((live) => {
+        if (!isMounted.current) return;
+        hasLiveData.current = true;
+        setAllProjects(live.projects);
+        setAuthoritativeInvoiceLines(live.invoiceLines ?? []);
+        setInvoiceDataAvailable(live.invoiceLines !== null);
+        setLiveStatus("ready");
       })
       .catch((err) => {
-        console.warn("Failed to fetch projects for reports:", err);
+        console.warn("Failed to load live Reports data:", err);
+        // Keep the last good live snapshot if there is one; never fall back
+        // to the stale mirror for financial figures.
+        if (isMounted.current && !hasLiveData.current) setLiveStatus("error");
+      })
+      .finally(() => {
+        inFlight.current = false;
+        if (reloadQueued.current && isMounted.current) {
+          reloadQueued.current = false;
+          load();
+        }
       });
+  }, []);
+
+  const retryLiveData = useCallback(() => {
+    setLiveStatus((s) => (s === "error" ? "loading" : s));
+    loadLiveData();
+  }, [loadLiveData]);
+
+  useEffect(() => {
+    isMounted.current = true;
+    setAllCustomers(getCustomers());
+    loadLiveData();
 
     loadCustomersForApp()
-      .then((items) => setAllCustomers(items))
+      .then((items) => {
+        if (isMounted.current) setAllCustomers(items);
+      })
       .catch((err) => {
         console.warn("Failed to load Customer Master for reports:", err);
       });
 
-    // Perf fix — this used to be keyed on `[allProjects]` in a separate
-    // effect, so it re-fired every time that array got a new reference
-    // (mount, loadData()'s setAllProjects, AND fetchAllProjectsFromApi()'s
-    // async setAllProjects — none of which mean the invoice lines themselves
-    // actually changed, since fetchAllInvoiceLinesForCaller() isn't filtered
-    // by the project list at all, it's every authorized invoice line for the
-    // caller). Keying directly off the same "something real changed" signal
-    // (mount + pmo:data-changed/storage) this effect already listens to for
-    // loadData() preserves the exact same real-world refresh behavior
-    // (fetch once on load, refetch after a genuine change) without refiring
-    // on every incidental reference change.
-    const loadInvoiceLines = () => {
-      fetchAllInvoiceLinesForCaller()
-        .then((lines) => {
-          if (isMounted) setAuthoritativeInvoiceLines(lines);
-        })
-        .catch((err) => {
-          console.warn("Failed to load authoritative invoice lines for Reports:", err);
-        });
-    };
-    loadInvoiceLines();
-
-    // Perf fix — "pmo:data-changed"/"storage" fire from many unrelated
-    // services (project saves, timesheet/employee/customer refreshes, etc.),
-    // and this mount's own async loads above (fetchAllProjectsFromApi,
-    // loadCustomersForApp) each dispatch it too once they resolve — measured
-    // locally at 4 real dispatches within ~1.6s of a single Reports mount.
-    // loadData() itself is a cheap synchronous localStorage read (no
-    // network), so it stays immediate; only the network-calling
-    // loadInvoiceLines() is debounced, collapsing a same-second burst into
-    // one refetch shortly after the last event instead of one per event —
-    // same rationale and window as Sidebar.tsx's status-counts debounce.
-    // F6 targeting (Sept 2026 audit) — Reports figures are built from
-    // project/customer/employee/timesheet data; reminder snoozes and
-    // Settings -> User Management edits can never change anything this page
-    // shows, so they're excluded here. The "storage" listener below shares
-    // this same handler: a plain `storage` event carries no `detail` at all,
-    // and pmoDataChangedMatches() treats a missing detail as always
-    // relevant, so cross-tab sync is completely unaffected by this filter.
-    const RELEVANT_ENTITIES = ["project", "customer", "employee", "timesheet"] as const;
-    let invoiceDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const handleDataChanged = (event: Event) => {
-      if (!pmoDataChangedMatches(event, [...RELEVANT_ENTITIES])) return;
-      loadData();
-      if (invoiceDebounceTimer) clearTimeout(invoiceDebounceTimer);
-      invoiceDebounceTimer = setTimeout(() => {
-        invoiceDebounceTimer = null;
-        loadInvoiceLines();
+    // Refresh only on changes that can move a financial figure: project
+    // saves (invoices, quantities, expenses and milestones all dispatch
+    // entity "project") and timesheet imports (resource man-hour costs).
+    // Customer events just refresh the customer list. Debounced so a burst
+    // of saves collapses into one reload; the live loader never writes the
+    // mirror itself, so it cannot re-trigger this listener.
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        loadLiveData();
       }, 500);
     };
-    window.addEventListener("pmo:data-changed", handleDataChanged);
-    window.addEventListener("storage", handleDataChanged);
-    return () => {
-      isMounted = false;
-      if (invoiceDebounceTimer) clearTimeout(invoiceDebounceTimer);
-      window.removeEventListener("pmo:data-changed", handleDataChanged);
-      window.removeEventListener("storage", handleDataChanged);
+    const handleDataChanged = (event: Event) => {
+      if (!(event as CustomEvent).detail) {
+        scheduleReload();
+        return;
+      }
+      if (pmoDataChangedMatches(event, ["customer"])) setAllCustomers(getCustomers());
+      if (pmoDataChangedMatches(event, ["project", "timesheet"])) scheduleReload();
     };
-  }, []);
+    // Cross-tab: another tab saving projects rewrites the "projects" key.
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key === "projects") scheduleReload();
+    };
+    window.addEventListener("pmo:data-changed", handleDataChanged);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      isMounted.current = false;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener("pmo:data-changed", handleDataChanged);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [loadLiveData]);
 
   const linesByProjectId = useMemo(() => {
     const map = new Map<string, ReportInvoiceLine[]>();
@@ -292,15 +303,13 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
       else if (st.includes("cancelled")) cancelledCount++;
       else activeCount++;
 
-      // Invoices — authoritative backend lines only (Issue #4 fix), never
-      // project.invoiceItems for anything invoice-derived below. Ordered
-      // quantity (totalOrderedQty) is a QuantityItem-level figure with no
-      // equivalent on ReportInvoiceLine, so — and only so — it stays
-      // sourced from project.invoiceItems, unchanged; Quantity Analytics is
-      // not part of this fix.
-      const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
-      items.forEach((item: any) => {
-        totalOrderedQty += item.qty || 0;
+      // Invoices — authoritative backend lines only (Issue #4 fix). Ordered
+      // quantity is a QuantityItem figure (Projects module, not Invoices), so
+      // it comes from the live quantity items and stays correct for viewers
+      // without invoice access (invoiceItems is empty for them).
+      const quantityItems = Array.isArray(p.quantityItems) ? p.quantityItems : [];
+      quantityItems.forEach((item) => {
+        totalOrderedQty += item.woQty || 0;
       });
 
       const projectLines = linesByProjectId.get(p.id) ?? [];
@@ -462,10 +471,22 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
       },
 
       // Aggregation Lists
-      customerList: Object.values(customerMap).sort((a, b) => b.raised - a.raised),
-      departmentList: Object.values(deptMap).sort((a, b) => b.raised - a.raised),
+      // Without invoice access, invoice-derived per-client/department figures
+      // are null ("Not available" in the UI, blank cells in CSV/Excel — same
+      // keys and order), never zero; lists then rank by Work Order Value.
+      customerList: invoiceDataAvailable
+        ? Object.values(customerMap).sort((a, b) => b.raised - a.raised)
+        : Object.values(customerMap)
+            .map((c) => ({ ...c, raised: null, received: null, outstanding: null, outstandingReceivable: null }))
+            .sort((a, b) => b.woValue - a.woValue),
+      departmentList: invoiceDataAvailable
+        ? Object.values(deptMap).sort((a, b) => b.raised - a.raised)
+        : Object.values(deptMap)
+            .map((d) => ({ ...d, raised: null, received: null }))
+            .sort((a, b) => b.woValue - a.woValue),
+      invoiceDataAvailable,
     };
-  }, [filteredProjects, linesByProjectId]);
+  }, [filteredProjects, linesByProjectId, invoiceDataAvailable]);
 
   return {
     allProjects,
@@ -476,6 +497,9 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
     filterOptions,
     resetFilters: () => setFilters(INITIAL_REPORT_FILTERS),
     analytics,
+    invoiceDataAvailable,
+    liveStatus,
+    retryLiveData,
     // Reports drill-down detail-section fix (Sep 2026) — the same
     // authoritative backend invoice lines analytics above is already built
     // from (see linesByProjectId's own comment). Exposed additively so
@@ -484,7 +508,7 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
     // browser-local-only project.invoiceItems mirror — the same staleness
     // Issue #4 fixed for the aggregate totals, never migrated in these four
     // components. No new fetch: this is the single request already made
-    // above: fetchAllInvoiceLinesForCaller().
+    // above: fetchAllInvoiceLinesForCaller(), now part of fetchLiveReportData().
     authoritativeInvoiceLines,
   };
 }

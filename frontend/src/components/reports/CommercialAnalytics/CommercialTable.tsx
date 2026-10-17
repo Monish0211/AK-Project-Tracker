@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
+import { INVOICE_NOT_AVAILABLE, useInvoiceDataAvailable } from "../Shared/invoiceAccess";
 
 interface Props {
   projects: any[];
@@ -10,6 +11,7 @@ interface Props {
 
 export function CommercialTable({ projects }: Props) {
   const [search, setSearch] = useState("");
+  const invoiceDataAvailable = useInvoiceDataAvailable();
 
   const commercialRows = useMemo(() => {
     return projects.map((p) => {
@@ -22,8 +24,9 @@ export function CommercialTable({ projects }: Props) {
         });
       });
 
-      const balanceBilling = Math.max(0, woVal - raised);
-      const completionPct = woVal > 0 ? (raised / woVal) * 100 : 0;
+      // Without invoice access these are null: "Not available" here, blank in CSV/Excel.
+      const balanceBilling = invoiceDataAvailable ? Math.max(0, woVal - raised) : null;
+      const completionPct = invoiceDataAvailable ? (woVal > 0 ? (raised / woVal) * 100 : 0) : null;
 
       return {
         id: p.id,
@@ -34,12 +37,12 @@ export function CommercialTable({ projects }: Props) {
         region: p.domesticForeign || "Domestic",
         paymentTerms: p.paymentTerms || "Net 30 Days",
         woVal,
-        raised,
+        raised: invoiceDataAvailable ? raised : null,
         balanceBilling,
         completionPct,
       };
     });
-  }, [projects]);
+  }, [projects, invoiceDataAvailable]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return commercialRows;
@@ -107,6 +110,12 @@ export function CommercialTable({ projects }: Props) {
                   <td className="p-2.5 text-[var(--nu-text-muted)]">{row.paymentTerms}</td>
                   <td className="p-2.5 text-center font-extrabold text-[var(--nu-text-muted)]">{row.region}</td>
                   <td className="p-2.5 text-right font-mono font-bold">{formatBusinessINR(row.woVal)}</td>
+                  {row.raised === null || row.balanceBilling === null || row.completionPct === null ? (
+                    <td colSpan={3} className="p-2.5 text-center text-[11px] italic text-[var(--nu-text-muted)]" title="Your account has no invoice access">
+                      {INVOICE_NOT_AVAILABLE}
+                    </td>
+                  ) : (
+                  <>
                   <td className="p-2.5 text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">
                     {formatBusinessINR(row.raised)}
                   </td>
@@ -126,6 +135,8 @@ export function CommercialTable({ projects }: Props) {
                       {row.completionPct.toFixed(1)}%
                     </span>
                   </td>
+                  </>
+                  )}
                 </tr>
               ))}
             </tbody>

@@ -66,3 +66,15 @@ export interface ExpenseListDto {
   count: number;
   latestUpdatedAt: Date | null;
 }
+
+/**
+ * GET /projects/expenses response (Reports data consistency, Oct 2026) —
+ * one page of active expense rows across every project the caller may read.
+ * Each ExpenseDto already carries its projectId for grouping on the client.
+ */
+export interface ExpensePageDto {
+  items: ExpenseDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}

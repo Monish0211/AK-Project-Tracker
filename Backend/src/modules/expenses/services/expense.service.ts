@@ -1,9 +1,12 @@
 import { AppError } from "../../../shared/utils/AppError.js";
-import { assertProjectAccessById, assertProjectReadAccessById } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccessById, assertProjectReadAccessById, authorizedProjectReadWhere } from "../../../shared/utils/projectAccess.js";
+import type { BulkPage } from "../../../shared/utils/bulkPageQuery.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
-import type { ExpenseDto, ExpenseListDto } from "../dto/expense.dto.js";
+import type { ExpenseDto, ExpenseListDto, ExpensePageDto } from "../dto/expense.dto.js";
 import {
+  countActiveExpensesForProjects,
   createExpense as createExpenseInRepository,
+  getActiveExpensesForProjectsPage,
   deleteExpense as deleteExpenseInRepository,
   getExpenseById,
   getExpensesByProjectId,
@@ -68,6 +71,21 @@ export async function listExpensesForProject(projectId: string, user: AccessToke
     null
   );
   return { items: rows.map((row) => toExpenseDto(row)), count: rows.length, latestUpdatedAt };
+}
+
+/**
+ * Reports data consistency (Oct 2026) — every active expense row across the
+ * projects the caller may read, one page at a time. Same row filter as
+ * listExpensesForProject() (isActive only) and the same project-read rule,
+ * applied as a query filter instead of a per-project check.
+ */
+export async function listAllAuthorizedExpenses(user: AccessTokenPayload, { page, pageSize }: BulkPage): Promise<ExpensePageDto> {
+  const projectWhere = await authorizedProjectReadWhere(user);
+  const [rows, total] = await Promise.all([
+    getActiveExpensesForProjectsPage(projectWhere, (page - 1) * pageSize, pageSize),
+    countActiveExpensesForProjects(projectWhere),
+  ]);
+  return { items: rows.map((row) => toExpenseDto(row)), total, page, pageSize };
 }
 
 export async function updateExpenseItem(

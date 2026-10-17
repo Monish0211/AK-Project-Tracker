@@ -1,3 +1,4 @@
+import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import type { QuantityItemData } from "../quantity.types.js";
 
@@ -19,6 +20,23 @@ export function getQuantityByProjectId(projectId: string) {
     where: { projectId },
     orderBy: { createdAt: "asc" },
   });
+}
+
+// Reports data consistency (Oct 2026) — one page of QuantityItem rows
+// across every project matching `projectWhere` (the caller's authorized
+// projects, built by projectAccess.ts's authorizedProjectReadWhere()).
+// Deterministic order so offset pages never skip or repeat a row.
+export function getQuantityForProjectsPage(projectWhere: Prisma.ProjectWhereInput, skip: number, take: number) {
+  return prisma.quantityItem.findMany({
+    where: { project: projectWhere },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    skip,
+    take,
+  });
+}
+
+export function countQuantityForProjects(projectWhere: Prisma.ProjectWhereInput) {
+  return prisma.quantityItem.count({ where: { project: projectWhere } });
 }
 
 export function getQuantityById(id: string) {

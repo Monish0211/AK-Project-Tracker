@@ -75,3 +75,11 @@ export interface QuantityDto {
 export interface QuantityListDto {
   items: QuantityDto[];
 }
+
+/** GET /projects/quantity response (Reports data consistency, Oct 2026) — one page of Quantity rows across every project the caller may read; each row carries its projectId. */
+export interface QuantityPageDto {
+  items: QuantityDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}

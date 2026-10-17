@@ -212,3 +212,16 @@ export async function projectOwnershipWhereOr(callerUserId: string | undefined) 
     { pmoCoordinatorUserId: callerUserId },
   ];
 }
+
+/**
+ * Prisma `where` for every non-deleted project the caller may read — the
+ * list-side mirror of canReadProject(), built from the same
+ * resolveProjectReadScope() + projectOwnershipWhereOr() pair every other
+ * cross-project read uses. For the bulk child-collection reads that feed
+ * Reports (GET /projects/expenses, GET /projects/quantity), so a caller can
+ * never receive a row from a project the per-project endpoint would refuse.
+ */
+export async function authorizedProjectReadWhere(user: AccessTokenPayload): Promise<{ isDeleted: false; OR?: NonNullable<Awaited<ReturnType<typeof projectOwnershipWhereOr>>> }> {
+  const ownershipOr = await projectOwnershipWhereOr(await resolveProjectReadScope(user));
+  return ownershipOr ? { isDeleted: false, OR: ownershipOr } : { isDeleted: false };
+}
