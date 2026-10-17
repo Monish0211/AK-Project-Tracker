@@ -129,6 +129,34 @@ test("fetchAllPages walks every page and refuses to return a truncated list", as
   await assert.rejects(fetchAllPages(() => Promise.resolve({ items: [], total: 5 }), "short"), /incomplete: received 0 of 5/);
 });
 
+test("fetchAllPages (performance audit): later pages load in bounded parallel batches, in order, still complete-or-throw", async () => {
+  const { fetchAllPages } = await load("/src/services/reportsLiveDataService.ts");
+  const rows = Array.from({ length: 23 }, (_, i) => ({ i }));
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const requested = [];
+  const res = await fetchAllPages(async (page) => {
+    requested.push(page);
+    inFlight += 1;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await new Promise((r) => setTimeout(r, 5 + ((page * 7) % 11))); // out-of-order completion
+    inFlight -= 1;
+    return { items: rows.slice((page - 1) * 5, page * 5), total: 23 };
+  }, "test");
+  assert.deepEqual(res.items.map((r) => r.i), rows.map((r) => r.i), "rows keep page order");
+  assert.equal(res.requests, 5);
+  assert.equal(requested[0], 1, "page 1 first (it reveals the total)");
+  assert.ok(maxInFlight >= 2 && maxInFlight <= 3, `bounded concurrency, saw ${maxInFlight}`);
+
+  // Total grew while loading: the sequential tail fetches the extra page, exactly as before.
+  const grown = Array.from({ length: 12 }, (_, i) => ({ i }));
+  const g = await fetchAllPages(async (page) => ({ items: grown.slice((page - 1) * 5, page * 5), total: page === 1 ? 10 : 12 }), "grown");
+  assert.equal(g.items.length, 12);
+
+  // A page that comes back short still fails loudly instead of under-counting.
+  await assert.rejects(fetchAllPages(async (page) => ({ items: page === 3 ? [] : rows.slice((page - 1) * 5, page * 5), total: 23 }), "gap"), /incomplete/);
+});
+
 test("live load replaces every stale cached collection and uses the server work order value", async () => {
   const { fetchLiveReportData } = await load("/src/services/reportsLiveDataService.ts");
   const { calls, deps: d } = deps();

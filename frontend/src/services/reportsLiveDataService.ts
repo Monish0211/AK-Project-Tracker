@@ -66,21 +66,52 @@ const CHILD_PAGE_SIZE = 500;
 /** Runaway-loop bound, not an intended ceiling — an incomplete result throws instead of silently under-counting. */
 const MAX_PAGES = 200;
 
+/**
+ * Pages fetched at once after page 1 (performance audit, Oct 2026). Page 1
+ * reveals the total and page size; the rest were previously fetched strictly
+ * one after another, so Reports waited for the SUM of every page's latency on
+ * its slowest collection. Read-only GETs, bounded so the browser's
+ * per-host connection limit is not flooded.
+ */
+const PAGE_CONCURRENCY = 3;
+
 /** Walks every page of a paginated bulk endpoint; throws rather than ever returning a truncated list. */
 export async function fetchAllPages<T>(
   load: (page: number) => Promise<PagedList<T>>,
   label: string
 ): Promise<{ items: T[]; requests: number }> {
   const items: T[] = [];
-  let page = 1;
-  let total: number;
-  do {
-    const res = await load(page);
-    items.push(...(res.items ?? []));
-    total = res.total ?? items.length;
-    page += 1;
-    if ((res.items ?? []).length === 0) break;
-  } while (items.length < total && page <= MAX_PAGES);
+  const first = await load(1);
+  items.push(...(first.items ?? []));
+  let total = first.total ?? items.length;
+  let page = 2;
+  const pageSize = (first.items ?? []).length;
+
+  if (pageSize > 0 && items.length < total) {
+    // Known remaining pages: fetched in small parallel batches, appended in page order.
+    const lastPage = Math.min(MAX_PAGES, Math.ceil(total / pageSize));
+    let exhausted = false;
+    while (page <= lastPage && !exhausted) {
+      const batch = Array.from({ length: Math.min(PAGE_CONCURRENCY, lastPage - page + 1) }, (_, i) => page + i);
+      const results = await Promise.all(batch.map((p) => load(p)));
+      page += batch.length;
+      for (const res of results) {
+        const rows = res.items ?? [];
+        items.push(...rows);
+        total = res.total ?? total;
+        if (rows.length === 0) exhausted = true;
+      }
+    }
+    // Rows added on the server while loading (total grew): finish sequentially, exactly as before.
+    while (!exhausted && items.length < total && page <= MAX_PAGES) {
+      const res = await load(page);
+      const rows = res.items ?? [];
+      items.push(...rows);
+      total = res.total ?? items.length;
+      page += 1;
+      if (rows.length === 0) break;
+    }
+  }
   if (items.length < total) {
     throw new Error(`Live ${label} data was incomplete: received ${items.length} of ${total} rows.`);
   }
