@@ -40,6 +40,13 @@ export const createProjectSchema = z.object({
   completionRemarks: z.string().trim().min(1).optional().nullable(),
   completedBy: z.string().trim().min(1).optional().nullable(),
   completedTimestamp: dateInput("Completed Timestamp").optional().nullable(),
+  // Liquidated Damages (Oct 2026) — shape only; the completion/LD business
+  // rules (when LD may be recorded, amount range and precision, immutability)
+  // live in projectCompletion.rules.ts. ldRecordedByUserId/ldRecordedAt are
+  // deliberately absent: the server sets them from the session.
+  ldApplicable: z.boolean().optional(),
+  ldAmountINR: z.number().optional().nullable(),
+  ldRemarks: z.string().optional().nullable(),
 
   workOrderNumber: z.string().trim().min(1, "Work Order Number is required."),
   workOrderDate: dateInput("Work Order Date"),
@@ -156,6 +163,13 @@ export const updateProjectSchema = z.object({
   completionRemarks: z.string().trim().min(1).optional().nullable(),
   completedBy: z.string().trim().min(1).optional().nullable(),
   completedTimestamp: dateInput("Completed Timestamp").optional().nullable(),
+  // Liquidated Damages (Oct 2026) — shape only; the completion/LD business
+  // rules (when LD may be recorded, amount range and precision, immutability)
+  // live in projectCompletion.rules.ts. ldRecordedByUserId/ldRecordedAt are
+  // deliberately absent: the server sets them from the session.
+  ldApplicable: z.boolean().optional(),
+  ldAmountINR: z.number().optional().nullable(),
+  ldRemarks: z.string().optional().nullable(),
 
   workOrderNumber: z.string().trim().min(1).optional(),
   workOrderDate: dateInput("Work Order Date").optional(),

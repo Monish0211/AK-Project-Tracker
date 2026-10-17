@@ -1,7 +1,9 @@
+import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 
-export function createProjectNote(projectId: string, data: { message: string; createdBy: string }) {
-  return prisma.projectNote.create({
+/** `client` lets the completion audit note commit in the same transaction as the completion itself. */
+export function createProjectNote(projectId: string, data: { message: string; createdBy: string }, client: typeof prisma | Prisma.TransactionClient = prisma) {
+  return client.projectNote.create({
     data: {
       projectId,
       message: data.message,

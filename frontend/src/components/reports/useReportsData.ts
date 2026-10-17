@@ -261,16 +261,24 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
     let totalManhourExpenses = 0;
     let totalNonManhourExpenses = 0;
 
+    // Liquidated Damages (Oct 2026) — recorded deductions only. Never
+    // touches expenses, invoices or collections; Profit Before LD above is
+    // unchanged and Final Profit = Profit − LD.
+    let totalLdDeduction = 0;
+    let ldAppliedCount = 0;
+    let ldNotAppliedCount = 0;
+    let ldNotRecordedCount = 0;
+
     // Customer map for Customer Analytics
     const customerMap: Record<
       string,
-      { client: string; projectCount: number; activeProjectCount: number; woValue: number; raised: number; received: number; outstanding: number; outstandingReceivable: number; expenses: number }
+      { client: string; projectCount: number; activeProjectCount: number; woValue: number; raised: number; received: number; outstanding: number; outstandingReceivable: number; expenses: number; ld: number; finalProfit: number }
     > = {};
 
     // Department map for Financial / Performance Analytics
     const deptMap: Record<
       string,
-      { department: string; projectCount: number; woValue: number; raised: number; received: number; expenses: number }
+      { department: string; projectCount: number; woValue: number; raised: number; received: number; expenses: number; ld: number; finalProfit: number }
     > = {};
 
     filteredProjects.forEach((p) => {
@@ -289,6 +297,14 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
       totalManhourExpenses += manhour;
       totalNonManhourExpenses += nonManhour;
       totalExpenses += pExpenses;
+
+      const pLd = p.ldApplicable === true ? p.ldAmountINR || 0 : 0;
+      totalLdDeduction += pLd;
+      if (p.projectStatus === "Completed") {
+        if (p.ldApplicable === true) ldAppliedCount++;
+        else if (p.ldApplicable === false) ldNotAppliedCount++;
+        else ldNotRecordedCount++;
+      }
 
       // Approved Budget: Man-Hour Budget + Non-Man-Hour Budget
       const pBudget = (p.manhourBudgetAmount || 0) + (p.nonManhourBudgetAmount || 0);
@@ -379,7 +395,7 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
       // Customer map aggregation
       const clientName = p.client || "Other Clients";
       if (!customerMap[clientName]) {
-        customerMap[clientName] = { client: clientName, projectCount: 0, activeProjectCount: 0, woValue: 0, raised: 0, received: 0, outstanding: 0, outstandingReceivable: 0, expenses: 0 };
+        customerMap[clientName] = { client: clientName, projectCount: 0, activeProjectCount: 0, woValue: 0, raised: 0, received: 0, outstanding: 0, outstandingReceivable: 0, expenses: 0, ld: 0, finalProfit: 0 };
       }
       customerMap[clientName].projectCount += 1;
       if (isActive) {
@@ -391,17 +407,21 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
       customerMap[clientName].outstanding += Math.max(0, woVal - pReceived);
       customerMap[clientName].outstandingReceivable += Math.max(0, projectInvoiceRaised - pReceived);
       customerMap[clientName].expenses += pExpenses;
+      customerMap[clientName].ld += pLd;
+      customerMap[clientName].finalProfit += woVal - pExpenses - pLd;
 
       // Dept map aggregation
       const deptName = p.department || "General Engineering";
       if (!deptMap[deptName]) {
-        deptMap[deptName] = { department: deptName, projectCount: 0, woValue: 0, raised: 0, received: 0, expenses: 0 };
+        deptMap[deptName] = { department: deptName, projectCount: 0, woValue: 0, raised: 0, received: 0, expenses: 0, ld: 0, finalProfit: 0 };
       }
       deptMap[deptName].projectCount += 1;
       deptMap[deptName].woValue += woVal;
       deptMap[deptName].raised += projectInvoiceRaised;
       deptMap[deptName].received += pReceived;
       deptMap[deptName].expenses += pExpenses;
+      deptMap[deptName].ld += pLd;
+      deptMap[deptName].finalProfit += woVal - pExpenses - pLd;
     });
 
     const totalOutstanding = Math.max(0, totalWOValue - totalPaymentReceived);
@@ -412,6 +432,8 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
     const grossProfit = totalProfit;
     const totalProfitPercentage = totalWOValue === 0 ? 0 : (totalProfit / totalWOValue) * 100;
     const profitMarginPercent = totalProfitPercentage;
+    const totalFinalProfit = totalProfit - totalLdDeduction;
+    const finalProfitPercentage = totalWOValue === 0 ? 0 : (totalFinalProfit / totalWOValue) * 100;
     const collectionPercent = totalInvoiceRaised > 0 ? (totalPaymentReceived / totalInvoiceRaised) * 100 : 0;
     const remainingBudget = totalBudget - totalExpenses;
     const budgetVariance = totalBudget - totalExpenses;
@@ -432,6 +454,14 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
       budgetVariance,
       grossProfit,
       profitMarginPercent,
+      totalLdDeduction,
+      totalFinalProfit,
+      finalProfitPercentage,
+      ldCounts: {
+        applied: ldAppliedCount,
+        notApplied: ldNotAppliedCount,
+        notRecorded: ldNotRecordedCount,
+      },
       collectionPercent,
       totalManhourExpenses,
       totalNonManhourExpenses,

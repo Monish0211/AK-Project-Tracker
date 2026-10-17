@@ -18,9 +18,16 @@ import type {
   PaginatedProjectListDto,
   ProjectDto,
 } from "../dto/project.dto.js";
+import type { Prisma as PrismaTypes } from "../../../../generated/prisma/client.js";
+import { getUserDisplayName } from "../../../shared/utils/userDisplayName.js";
+import { COMPLETED_STATUS, completionNoteMessage, decideCompletion } from "../projectCompletion.rules.js";
+import type { ExistingCompletionState, RecordLd } from "../projectCompletion.rules.js";
+import { createProjectNote } from "../repository/projectNote.repository.js";
 import type { ProjectGeneralInfoData } from "../repository/project.repository.js";
 import {
   archiveProject as archiveProjectInRepository,
+  claimCompletionTransition,
+  claimLdRecording,
   countProjectsByStatus,
   createProject as createProjectInRepository,
   createProjectsBulk,
@@ -28,11 +35,13 @@ import {
   findActiveProjectsByPrNos,
   findProjectById,
   findProjectByIdAny,
+  findProjectByIdIn,
   findProjectsPage,
   hardDeleteProject as hardDeleteProjectInRepository,
   lockProjectCoordinatorForUpdate,
   restoreProject as restoreProjectInRepository,
   runProjectTransaction,
+  sumExpenseTotalsByProjectIds,
   updateProject as updateProjectInRepository,
 } from "../repository/project.repository.js";
 import type { SidebarStatusCounts } from "../repository/project.repository.js";
@@ -60,12 +69,17 @@ interface CommercialTotals {
    * historical request") is the correct, batched signal here.
    */
   hasOpenInvoiceRequest: boolean;
+  /** Oct 2026 — server-authoritative expense totals (see ProjectDto). */
+  manhourCostINR: number;
+  nonManhourCostINR: number;
 }
 
 const DEFAULT_COMMERCIAL_TOTALS: CommercialTotals = {
   workOrderValueINR: 0,
   pendingDueINR: 0,
   hasOpenInvoiceRequest: false,
+  manhourCostINR: 0,
+  nonManhourCostINR: 0,
 };
 
 /**
@@ -85,10 +99,11 @@ async function computeCommercialTotalsByProjectId(projectIds: string[]): Promise
   // hasOpenInvoiceRequest (Oct 2026) — one additional batched query
   // alongside the two already here, same shape/convention, never one per
   // project, never feeding into workOrderValueINR/pendingDueINR below.
-  const [quantityTotals, invoiceLines, openInvoiceRequestProjectIds] = await Promise.all([
+  const [quantityTotals, invoiceLines, openInvoiceRequestProjectIds, expenseTotals] = await Promise.all([
     groupQuantityTotals(projectIds),
     findInvoiceLinesForProjects(projectIds),
     findOpenInvoiceRequestProjectIds(projectIds),
+    sumExpenseTotalsByProjectIds(projectIds),
   ]);
 
   const woValueByProject = new Map(quantityTotals.map((row) => [row.projectId, row.woValue]));
@@ -111,6 +126,8 @@ async function computeCommercialTotalsByProjectId(projectIds: string[]): Promise
       workOrderValueINR,
       pendingDueINR,
       hasOpenInvoiceRequest: openRequestProjectIdSet.has(projectId),
+      manhourCostINR: expenseTotals.manhour.get(projectId) ?? 0,
+      nonManhourCostINR: expenseTotals.nonManhour.get(projectId) ?? 0,
     });
   }
 
@@ -149,6 +166,11 @@ function toProjectDto(
     completionRemarks: project.completionRemarks,
     completedBy: project.completedBy,
     completedTimestamp: project.completedTimestamp,
+    ldApplicable: project.ldApplicable,
+    ldAmountINR: project.ldAmountINR === null ? null : Number(project.ldAmountINR),
+    ldRemarks: project.ldRemarks,
+    ldRecordedByUserId: project.ldRecordedByUserId,
+    ldRecordedAt: project.ldRecordedAt,
     workOrderNumber: project.workOrderNumber,
     workOrderDate: project.workOrderDate,
     eicName: project.eicName,
@@ -185,7 +207,65 @@ function toProjectDto(
     workOrderValueINR: commercial.workOrderValueINR,
     pendingDueINR: commercial.pendingDueINR,
     hasOpenInvoiceRequest: commercial.hasOpenInvoiceRequest,
+    manhourCostINR: commercial.manhourCostINR,
+    nonManhourCostINR: commercial.nonManhourCostINR,
   };
+}
+
+type ProjectRow = NonNullable<Awaited<ReturnType<typeof findProjectById>>>;
+
+function toCompletionState(project: ProjectRow): ExistingCompletionState {
+  return {
+    projectStatus: project.projectStatus,
+    actualCompletionDate: project.actualCompletionDate,
+    completionRemarks: project.completionRemarks,
+    ldApplicable: project.ldApplicable,
+    ldAmountINR: project.ldAmountINR === null ? null : Number(project.ldAmountINR),
+    ldRemarks: project.ldRemarks,
+  };
+}
+
+/**
+ * Completion + LD writes (Oct 2026), run inside the save's transaction:
+ * claims the transition (fails if another request completed it first),
+ * records LD if this completion carries it (fails if LD was recorded
+ * concurrently), and — after the caller's general update — writes the
+ * server-side audit note. Any failure rolls the whole save back.
+ */
+async function claimCompletion(
+  tx: PrismaTypes.TransactionClient,
+  projectId: string,
+  decision: { isCompletion: boolean; recordLd: RecordLd | null },
+  userId: string
+): Promise<void> {
+  if (decision.isCompletion && !(await claimCompletionTransition(tx, projectId, COMPLETED_STATUS))) {
+    throw new AppError("This project was just marked Completed by another request. Please reload the project.", 409);
+  }
+  if (decision.recordLd) {
+    const claimed = await claimLdRecording(tx, projectId, { ...decision.recordLd, ldRecordedByUserId: userId, ldRecordedAt: new Date() });
+    if (!claimed) {
+      throw new AppError("Liquidated Damages were already recorded for this project by another request. Please reload the project.", 409);
+    }
+  }
+}
+
+async function writeCompletionNote(tx: PrismaTypes.TransactionClient, projectId: string, completedByName: string, ldNewlyRecorded: boolean): Promise<ProjectRow> {
+  const row = await findProjectByIdIn(tx, projectId);
+  await createProjectNote(
+    projectId,
+    {
+      message: completionNoteMessage({
+        actualCompletionDate: row.actualCompletionDate ?? new Date(),
+        completionRemarks: row.completionRemarks ?? "",
+        completedByName,
+        ld: { ldApplicable: row.ldApplicable, ldAmountINR: row.ldAmountINR === null ? null : Number(row.ldAmountINR), ldRemarks: row.ldRemarks },
+        ldNewlyRecorded,
+      }),
+      createdBy: completedByName,
+    },
+    tx
+  );
+  return row;
 }
 
 /**
@@ -307,6 +387,12 @@ export async function createProject(input: CreateProjectRequestInput, creatorUse
   assertPrCategoryPrNoRule(input.prCategory, input.prNo);
   await assertPrNoAvailable(input.prNo);
 
+  // Creating a project directly as Completed follows the same completion and
+  // LD rules as completing one later (projectCompletion.rules.ts).
+  const completion = decideCompletion(null, input);
+  if (!completion.ok) throw new AppError(completion.message, completion.status);
+  const completedByName = completion.isCompletion ? await getUserDisplayName(creatorUserId) : "";
+
   const data = { ...toGeneralInfoData(input), createdByUserId: creatorUserId };
   const entryId = input.pmoCoordinatorEntryId;
   // The coordinator account linked by this create, if any — the allocation
@@ -321,9 +407,14 @@ export async function createProject(input: CreateProjectRequestInput, creatorUse
     // the project keeps the coordinator as display text only, which never
     // grants access.
     created =
-      entryId === undefined
+      entryId === undefined && !completion.isCompletion
         ? await createProjectInRepository(data)
         : await runProjectTransaction(async (tx) => {
+            if (entryId === undefined) {
+              const row = await createProjectInRepository(data, tx);
+              if (completion.recordLd) await claimCompletion(tx, row.id, { isCompletion: false, recordLd: completion.recordLd }, creatorUserId);
+              return writeCompletionNote(tx, row.id, completedByName, completion.recordLd !== null);
+            }
             const coordinator = await resolveCoordinatorAssignment(tx, entryId, null);
             const row = await createProjectInRepository(
               {
@@ -335,7 +426,9 @@ export async function createProject(input: CreateProjectRequestInput, creatorUse
               tx
             );
             allocatedTo = coordinator.accountId;
-            return row;
+            if (!completion.isCompletion) return row;
+            if (completion.recordLd) await claimCompletion(tx, row.id, { isCompletion: false, recordLd: completion.recordLd }, creatorUserId);
+            return writeCompletionNote(tx, row.id, completedByName, completion.recordLd !== null);
           });
   } catch (err) {
     // P1-17 — a concurrent request created the same prNo between the check
@@ -559,6 +652,13 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
     await assertPrNoAvailable(input.prNo!, id);
   }
 
+  // Completion + Liquidated Damages (Oct 2026) — LD only on the completing
+  // save, never changed afterwards; completion needs date + 20-char remarks.
+  const completion = decideCompletion(toCompletionState(existing), input);
+  if (!completion.ok) throw new AppError(completion.message, completion.status);
+  const completionWrite = completion.isCompletion || completion.recordLd !== null;
+  const completedByName = completion.isCompletion ? await getUserDisplayName(user.sub) : "";
+
   const updateData = toUpdateData(input);
   const entryId = input.pmoCoordinatorEntryId;
   const isReadOnly = user.roleName === "Read Only";
@@ -586,9 +686,14 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
   let updated;
   try {
     updated =
-      entryId === undefined
+      entryId === undefined && !completionWrite
         ? await updateProjectInRepository(id, updateData)
         : await runProjectTransaction(async (tx) => {
+            if (completionWrite) await claimCompletion(tx, id, completion, user.sub);
+            if (entryId === undefined) {
+              const row = await updateProjectInRepository(id, updateData, tx);
+              return completion.isCompletion ? writeCompletionNote(tx, id, completedByName, completion.recordLd !== null) : row;
+            }
             // Compare against the coordinator as it stands under the row lock
             // (not the pre-transaction read), so concurrent saves of the same
             // assignment produce exactly one change — and one allocation email.
@@ -609,7 +714,7 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
               tx
             );
             if (changed) allocatedTo = coordinator.accountId;
-            return row;
+            return completion.isCompletion ? writeCompletionNote(tx, id, completedByName, completion.recordLd !== null) : row;
           });
   } catch (err) {
     // P1-17 — a concurrent request claimed this prNo between the check

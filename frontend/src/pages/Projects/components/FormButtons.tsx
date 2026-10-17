@@ -320,6 +320,10 @@ const FormButtons = ({
         actualCompletionDate: projectToSave.actualCompletionDate,
         completionRemarks: projectToSave.completionRemarks || "Project completed successfully.",
         completedBy: projectToSave.completedBy || "Administrator",
+        ld:
+          projectToSave.ldApplicable === true || projectToSave.ldApplicable === false
+            ? { ldApplicable: projectToSave.ldApplicable, ldAmountINR: projectToSave.ldAmountINR ?? null, ldRemarks: projectToSave.ldRemarks ?? null }
+            : null,
       });
       updateProject({
         ...projectToSave,

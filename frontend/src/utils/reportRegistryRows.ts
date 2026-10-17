@@ -13,6 +13,13 @@
  * null means "no value": Raised/Received/Outstanding when the viewer has no
  * invoice access (UI "Not available"), Profit % when Work Order Value is 0
  * (UI "—"). Both export as blank cells.
+ *
+ * Liquidated Damages (Oct 2026) — appended columns only (existing keys and
+ * order unchanged; `profit`/`profitPct` still mean Profit Before LD):
+ * ldStatus "Yes"/"No", null when LD was never recorded (blank cell, UI "Not
+ * recorded" for Completed projects); ldAmount 0 for No, null when not
+ * recorded; finalProfit = profit − recorded LD (= profit when none);
+ * finalProfitPct null when Work Order Value is 0.
  */
 import type { Project } from "../types/Project";
 import { computeProjectFinancials, type FinancialInvoiceLine } from "./projectFinancials";
@@ -31,10 +38,14 @@ export interface RegistryRow {
   expenses: number;
   profit: number;
   profitPct: number | null;
+  ldStatus: "Yes" | "No" | null;
+  ldAmount: number | null;
+  finalProfit: number;
+  finalProfitPct: number | null;
 }
 
 type RegistryProject = Pick<Project, "id" | "prNo" | "client" | "projectTitle" | "department" | "projectStatus" | "workOrderValueINR"> &
-  Partial<Pick<Project, "workOrderValue" | "resources" | "nonManhourExpenses" | "invoiceItems">>;
+  Partial<Pick<Project, "workOrderValue" | "resources" | "nonManhourExpenses" | "invoiceItems" | "ldApplicable" | "ldAmountINR">>;
 
 export function buildRegistryRow(p: RegistryProject, invoiceDataAvailable: boolean): RegistryRow {
   const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
@@ -44,6 +55,7 @@ export function buildRegistryRow(p: RegistryProject, invoiceDataAvailable: boole
     manhourCosts: (Array.isArray(p.resources) ? p.resources : []).map((r) => r.manhourCost ?? 0),
     nonManhourRows: Array.isArray(p.nonManhourExpenses) ? p.nonManhourExpenses : [],
     invoiceLines: invoiceDataAvailable ? lines : null,
+    ld: { ldApplicable: p.ldApplicable, ldAmountINR: p.ldAmountINR },
   });
 
   return {
@@ -60,5 +72,9 @@ export function buildRegistryRow(p: RegistryProject, invoiceDataAvailable: boole
     expenses: f.expenses,
     profit: f.profit,
     profitPct: f.profitPercent,
+    ldStatus: f.ldStatus === "Not recorded" ? null : f.ldStatus,
+    ldAmount: f.ldDeduction,
+    finalProfit: f.finalProfit,
+    finalProfitPct: f.finalProfitPercent,
   };
 }

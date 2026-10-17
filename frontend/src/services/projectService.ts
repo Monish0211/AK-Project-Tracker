@@ -1,5 +1,4 @@
 import type { Project, ProjectResource } from "../types/Project";
-import type { ProjectNote } from "../types/ProjectNote";
 import type { InvoiceLine, InvoiceLineStatus } from "../types/InvoiceItem";
 import type { Employee } from "../types/EmployeeModel";
 import { createEmptyProject, inferPrCategory, inferDomesticForeign } from "../utils/createEmptyProject";
@@ -219,6 +218,8 @@ export const completeProject = (
     actualCompletionDate: string;
     completionRemarks: string;
     completedBy?: string;
+    /** Liquidated Damages decision from the completion popup; omitted = keep whatever is recorded. */
+    ld?: { ldApplicable: boolean; ldAmountINR: number | null; ldRemarks: string | null } | null;
   }
 ): void => {
   const projects = getProjects();
@@ -229,17 +230,11 @@ export const completeProject = (
   const completedBy = completionData.completedBy || "Administrator";
   const timestamp = new Date().toISOString();
 
-  // 1. Create Project Note / Activity Timeline Entry matching ProjectNote interface
-  const completionNote: ProjectNote = {
-    id: `note-${Date.now()}`,
-    projectId: id,
-    message: `PROJECT COMPLETED\nCompletion Date: ${completionData.actualCompletionDate}\nCompleted By: ${completedBy}\nRemarks: ${completionData.completionRemarks}`,
-    createdBy: completedBy,
-    createdAt: timestamp,
-  };
-
-  const updatedNotes = Array.isArray(p.notes) ? [completionNote, ...p.notes] : [completionNote];
-
+  // 1. The "PROJECT COMPLETED" activity entry is now written server-side, as
+  // a ProjectNote in the same transaction as the completion (Oct 2026, with
+  // the LD decision and the authenticated user) — no browser-only copy, which
+  // would duplicate it in the timeline and could describe a save the server
+  // then rejected.
   projects[index] = {
     ...p,
     projectStatus: "Completed",
@@ -247,7 +242,9 @@ export const completeProject = (
     completionRemarks: completionData.completionRemarks,
     completedBy,
     completedTimestamp: timestamp,
-    notes: updatedNotes,
+    ...(completionData.ld
+      ? { ldApplicable: completionData.ld.ldApplicable, ldAmountINR: completionData.ld.ldAmountINR, ldRemarks: completionData.ld.ldRemarks }
+      : {}),
   };
 
   saveProjects(projects);
@@ -343,6 +340,12 @@ interface BackendProjectDto {
   completionRemarks: string | null;
   completedBy: string | null;
   completedTimestamp: string | null;
+  // Liquidated Damages (Oct 2026) — absent on a backend without the feature.
+  ldApplicable?: boolean | null;
+  ldAmountINR?: number | null;
+  ldRemarks?: string | null;
+  ldRecordedByUserId?: string | null;
+  ldRecordedAt?: string | null;
   workOrderNumber: string | null;
   workOrderDate: string | null;
   eicName: string | null;
@@ -392,6 +395,9 @@ interface BackendProjectDto {
   hasOpenInvoiceRequest: boolean;
   // Invoice Currency feature (Oct 2026) — absent on a backend without the feature.
   invoiceCurrency?: string | null;
+  // Server expense totals (Oct 2026) — absent on a backend without the feature.
+  manhourCostINR?: number;
+  nonManhourCostINR?: number;
 }
 
 interface BackendPaginatedProjectList {
@@ -455,6 +461,12 @@ interface ProjectGeneralInfoPayload {
   clientCoordinator: string | null;
   // Project Remarks — optional free-text timeline/delay explanation.
   remarks: string | null;
+  // Liquidated Damages (Oct 2026) — sent only once a decision exists (see
+  // toGeneralInfoPayload); the backend records it on the completing save
+  // and treats an identical re-send as a no-op.
+  ldApplicable?: boolean;
+  ldAmountINR?: number | null;
+  ldRemarks?: string | null;
 }
 
 /** Empty string -> null. The backend's optional string fields reject "" (min(1) once present) — omit-or-null is what they expect, matching Users module's own validator style. */
@@ -522,6 +534,16 @@ function toGeneralInfoPayload(project: Project): ProjectGeneralInfoPayload {
     projectCoordinator: orNull(project.projectCoordinator),
     clientCoordinator: orNull(project.clientCoordinator),
     remarks: orNull(project.remarks),
+    // LD only when a decision exists (the completion popup's, or the
+    // backend's recorded one echoed back unchanged). Never for not-recorded
+    // projects, so imports and ordinary saves can't invent a "No".
+    ...(project.ldApplicable === true || project.ldApplicable === false
+      ? {
+          ldApplicable: project.ldApplicable,
+          ldAmountINR: project.ldApplicable ? (project.ldAmountINR ?? null) : null,
+          ldRemarks: project.ldRemarks ?? null,
+        }
+      : {}),
   };
 }
 
@@ -630,6 +652,15 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     backendPendingDueINR: dto.pendingDueINR,
     hasOpenInvoiceRequest: dto.hasOpenInvoiceRequest,
     invoiceCurrency: dto.invoiceCurrency,
+    // Liquidated Damages + server expense totals (Oct 2026) — always the
+    // backend's values, never whatever this browser cached before.
+    ldApplicable: dto.ldApplicable ?? null,
+    ldAmountINR: dto.ldAmountINR ?? null,
+    ldRemarks: dto.ldRemarks ?? null,
+    ldRecordedByUserId: dto.ldRecordedByUserId ?? null,
+    ldRecordedAt: dto.ldRecordedAt ?? null,
+    backendManhourCostINR: dto.manhourCostINR,
+    backendNonManhourCostINR: dto.nonManhourCostINR,
   });
 }
 

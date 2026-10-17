@@ -43,6 +43,10 @@ export interface ReportProjectDetails {
   secondaryProjectManager: string | null;
   pmoCoordinator: string | null;
   workOrderValueINR: number;
+  /** Liquidated Damages (Oct 2026): null = not recorded (never shown as "No"). */
+  ldApplicable: boolean | null;
+  ldAmountINR: number | null;
+  ldRemarks: string | null;
 }
 
 export interface ReportManhourRow {
@@ -136,6 +140,9 @@ interface RawProject {
   secondaryProjectManager?: string | null;
   pmoCoordinator?: string | null;
   workOrderValueINR?: number | null;
+  ldApplicable?: boolean | null;
+  ldAmountINR?: number | null;
+  ldRemarks?: string | null;
 }
 
 interface RawExpense {
@@ -216,6 +223,9 @@ function mapProject(raw: RawProject): ReportProjectDetails {
     secondaryProjectManager: optionalText(raw.secondaryProjectManager),
     pmoCoordinator: optionalText(raw.pmoCoordinator),
     workOrderValueINR: num(raw.workOrderValueINR),
+    ldApplicable: raw.ldApplicable === true ? true : raw.ldApplicable === false ? false : null,
+    ldAmountINR: typeof raw.ldAmountINR === "number" && Number.isFinite(raw.ldAmountINR) ? raw.ldAmountINR : null,
+    ldRemarks: optionalText(raw.ldRemarks),
   };
 }
 

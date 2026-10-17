@@ -11,7 +11,8 @@ export function ProfitByClient({ customerList }: Props) {
     return customerList.slice(0, 6).map((c) => ({
       client: c.client.length > 12 ? c.client.slice(0, 12) + "..." : c.client,
       Revenue: c.woValue,
-      "Net Profit": c.woValue - (c.expenses || 0),
+      "Profit Before LD": c.woValue - (c.expenses || 0),
+      "Final Profit (after LD)": c.woValue - (c.expenses || 0) - (c.ld || 0),
     }));
   }, [customerList]);
 
@@ -33,7 +34,8 @@ export function ProfitByClient({ customerList }: Props) {
             <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), ""]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="Revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="Net Profit" fill="#10b981" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="Profit Before LD" fill="#10b981" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="Final Profit (after LD)" fill="#f59e0b" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

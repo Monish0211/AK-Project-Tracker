@@ -37,6 +37,15 @@ export interface Project {
   completedBy?: string;
   completedTimestamp?: string;
 
+  // Liquidated Damages (Oct 2026) — recorded once at completion by the
+  // backend (projectCompletion.rules.ts). ldApplicable null/undefined = not
+  // recorded (completed before this feature) — never treated as "No".
+  ldApplicable?: boolean | null;
+  ldAmountINR?: number | null;
+  ldRemarks?: string | null;
+  ldRecordedByUserId?: string | null;
+  ldRecordedAt?: string | null;
+
   // Work Order Details
   workOrderNumber?: string;
   workOrderDate?: string;
@@ -99,6 +108,11 @@ export interface Project {
   // source of truth once the real item arrays ARE populated.
   backendWorkOrderValueINR?: number;
   backendPendingDueINR?: number;
+  // Server-authoritative expense totals (Oct 2026) — SUM(resource manhourCost)
+  // and SUM(active expense totalCost) from the project list/detail API, so
+  // list screens (Completed Projects) never compute profit from the cache.
+  backendManhourCostINR?: number;
+  backendNonManhourCostINR?: number;
   // Invoice Request indicator (Oct 2026) — whether this project currently
   // has an Open InvoiceRequest. Deliberately independent of, and never
   // feeding into, the Invoice Status calculation below (Not Started /

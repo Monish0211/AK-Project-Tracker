@@ -8,6 +8,7 @@ import { getEmployees } from "./employeeService";
 import { getPmoCoordinatorOptions, getPmoCoordinators } from "./pmoCoordinatorService";
 import { UOM_OPTIONS } from "../utils/quantityCalculations";
 import { PROJECT_STATUS_OPTIONS, WORK_ORDER_STATUS_OPTIONS } from "../constants/projectStatus";
+import { projectLdSummary } from "../utils/projectFinancials";
 
 // ─────────────────────────────────────────────────────────────────────────
 // SINGLE SOURCE OF TRUTH: sheet names + column schema.
@@ -68,6 +69,13 @@ const PROJECTS_COLUMNS: ColumnDef[] = [
   { header: "Completed By", key: "completedBy", width: 18 },
   { header: "Completion Remarks", key: "completionRemarks", width: 34 },
   { header: "Remarks", key: "remarks", width: 30 },
+  // Liquidated Damages (Oct 2026) — export-only, appended last so existing
+  // column positions never move. Import ignores them (LD is recorded only
+  // through the completion popup); blank for projects that are not Completed.
+  { header: "LD Status", key: "ldStatus", width: 14 },
+  { header: "LD Amount (INR)", key: "ldAmount", width: 16, align: "right" },
+  { header: "Profit Before LD (INR)", key: "profitBeforeLd", width: 20, align: "right" },
+  { header: "Final Profit After LD (INR)", key: "finalProfitAfterLd", width: 22, align: "right" },
 ];
 
 const QUANTITY_COLUMNS: ColumnDef[] = [
@@ -309,6 +317,7 @@ function addInstructionsSheet(workbook: ExcelJS.Workbook) {
     ["Currency", "Work Order Value, rates and budgets are entered in the project's own Currency; the portal converts to INR using the Exchange Rate."],
     ["Dropdowns", "Department, Currency, Contract Type, Project Status, Work Order Status, Payment Terms, UOM and Expense Category must be chosen from their dropdown lists (sourced from the hidden Lookup sheet)."],
     ["PR Number Uniqueness", "Each PR Number must be unique — duplicates within the file, or a PR Number that already exists in the portal, will fail import."],
+    ["Liquidated Damages", "LD Status, LD Amount, Profit Before LD and Final Profit After LD (last Projects columns) are export-only and filled for Completed projects; LD is recorded only when completing a project in the portal, so import ignores these columns."],
     ["Import Behaviour", "If any row in any sheet fails validation, the entire import is rejected — nothing is partially imported. Fix the reported row numbers and re-upload."],
     ["Sample Template", "Download Sample Template uses this exact layout, prefilled with one example project (PR-SAMPLE-001) — replace the sample rows with your own data, keeping the same PR Number across its Quantity/Milestone/Expense rows."],
   ];
@@ -344,6 +353,7 @@ function projectToRow(p: Project) {
   const comm = getProjectCommercialSummary(p);
   const prCategory = inferPrCategory(p.prNo, p.prCategory);
   const domesticForeign = inferDomesticForeign(p.currency, prCategory, p.domesticForeign);
+  const ld = p.projectStatus === "Completed" ? projectLdSummary(p) : null;
   return {
     prNo: p.prNo || "",
     prCategory,
@@ -373,6 +383,11 @@ function projectToRow(p: Project) {
     completedBy: p.completedBy || "",
     completionRemarks: p.completionRemarks || "",
     remarks: p.remarks || "",
+    ldStatus: ld?.ldStatus,
+    // Not recorded -> blank amount (never 0, which would read as "No LD").
+    ldAmount: ld && ld.ldDeduction !== null ? ld.ldDeduction : undefined,
+    profitBeforeLd: ld?.profitBeforeLd,
+    finalProfitAfterLd: ld?.finalProfit,
   };
 }
 

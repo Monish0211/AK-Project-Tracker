@@ -230,8 +230,13 @@ test("CSV/Excel export keeps the column names and order; missing values export a
   // Exactly what ReportExportButtons does for both CSV and Excel.
   const ws = XLSX.utils.json_to_sheet(sanitizeExportRows(rows));
   const [header, line] = XLSX.utils.sheet_to_csv(ws).split("\n");
-  assert.equal(header, "id,prNo,client,projectTitle,department,status,woValue,raised,received,outstanding,expenses,profit,profitPct", "unchanged columns");
-  assert.equal(line, "p1,PR-QAFLOW-001,QA Flow Client,QA project,Training,Active,0,,,,300000.5,-300000.5,", "Not available / — export as blanks");
+  // Existing columns unchanged; LD columns (Oct 2026) are appended after them.
+  assert.equal(
+    header,
+    "id,prNo,client,projectTitle,department,status,woValue,raised,received,outstanding,expenses,profit,profitPct,ldStatus,ldAmount,finalProfit,finalProfitPct",
+    "unchanged columns, LD appended"
+  );
+  assert.equal(line, "p1,PR-QAFLOW-001,QA Flow Client,QA project,Training,Active,0,,,,300000.5,-300000.5,,,,-300000.5,", "Not available / — / LD not recorded export as blanks");
   // Excel: write a real .xlsx and read it back, as a spreadsheet app would.
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sanitizeExportRows(rows)), "Report Data");

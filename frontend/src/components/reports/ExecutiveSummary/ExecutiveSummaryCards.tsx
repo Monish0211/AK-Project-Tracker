@@ -1,4 +1,4 @@
-import { DollarSign, Receipt, Wallet, AlertCircle, TrendingUp, Percent } from "lucide-react";
+import { DollarSign, Receipt, Wallet, AlertCircle, TrendingUp, Percent, Gavel, BadgeIndianRupee } from "lucide-react";
 import { KPIReportCard } from "../Shared/KPIReportCard";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
 
@@ -69,12 +69,29 @@ export function ExecutiveSummaryCards({ analytics, onDrillDown, invoiceDataAvail
       <KPIReportCard
         title="Gross Profit %"
         value={`${a.profitMarginPercent.toFixed(1)}%`}
-        subtitle={`${formatBusinessINR(a.grossProfit)} net`}
+        subtitle={`${formatBusinessINR(a.grossProfit)} before LD`}
         trend={a.profitMarginPercent >= 20 ? "Healthy" : "Watch"}
         trendType={a.profitMarginPercent >= 20 ? "positive" : "negative"}
         icon={<Percent size={16} />}
         tone="cyan"
         onClick={() => onDrillDown?.("profit")}
+      />
+
+      <KPIReportCard
+        title="LD Deductions"
+        value={formatBusinessINR(a.totalLdDeduction)}
+        subtitle={`${a.ldCounts.applied} with LD · ${a.ldCounts.notApplied} without · ${a.ldCounts.notRecorded} not recorded`}
+        icon={<Gavel size={16} />}
+        tone="amber"
+      />
+
+      <KPIReportCard
+        title="Final Profit (after LD)"
+        value={formatBusinessINR(a.totalFinalProfit)}
+        subtitle={`${a.finalProfitPercentage.toFixed(1)}% of Work Order Value`}
+        trendType={a.totalFinalProfit >= 0 ? "positive" : "negative"}
+        icon={<BadgeIndianRupee size={16} />}
+        tone="emerald"
       />
     </div>
   );

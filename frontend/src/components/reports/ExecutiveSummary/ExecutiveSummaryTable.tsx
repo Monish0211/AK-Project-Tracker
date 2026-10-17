@@ -146,10 +146,22 @@ export function ExecutiveSummaryTable({ projects, selectedPrNo = "ALL", invoiceD
                   Expenses
                 </th>
                 <th className="p-3.5 px-4 cursor-pointer text-right" onClick={() => handleSort("profit")}>
-                  Profit
+                  Profit (before LD)
                 </th>
                 <th className="p-3.5 px-4 cursor-pointer text-right" onClick={() => handleSort("profitPct")}>
                   Profit %
+                </th>
+                <th className="p-3.5 px-4 cursor-pointer text-center" onClick={() => handleSort("ldStatus")}>
+                  LD
+                </th>
+                <th className="p-3.5 px-4 cursor-pointer text-right" onClick={() => handleSort("ldAmount")}>
+                  LD Amount
+                </th>
+                <th className="p-3.5 px-4 cursor-pointer text-right" onClick={() => handleSort("finalProfit")}>
+                  Final Profit (after LD)
+                </th>
+                <th className="p-3.5 px-4 cursor-pointer text-right" onClick={() => handleSort("finalProfitPct")}>
+                  Final %
                 </th>
                 <th className="p-3.5 px-4 text-center no-print">PDF</th>
               </tr>
@@ -186,6 +198,18 @@ export function ExecutiveSummaryTable({ projects, selectedPrNo = "ALL", invoiceD
                         {row.profitPct.toFixed(1)}%
                       </span>
                     )}
+                  </td>
+                  <td className="p-3.5 px-4 text-center text-[11px] font-semibold" data-ld-status={row.ldStatus ?? "none"}>
+                    {row.ldStatus ?? <span className="text-[var(--nu-text-muted)]">{row.status === "Completed" ? "Not recorded" : DASH}</span>}
+                  </td>
+                  <td className="p-3.5 px-4 text-right font-mono">
+                    {row.ldAmount === null ? <span className="text-[var(--nu-text-muted)]">{DASH}</span> : formatBusinessINR(row.ldAmount)}
+                  </td>
+                  <td className={`p-3.5 px-4 text-right font-mono font-bold ${row.finalProfit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600"}`}>
+                    {formatBusinessINR(row.finalProfit)}
+                  </td>
+                  <td className="p-3.5 px-4 text-right font-mono">
+                    {row.finalProfitPct === null ? <span className="text-[var(--nu-text-muted)]">{DASH}</span> : `${row.finalProfitPct.toFixed(1)}%`}
                   </td>
                   <td className="p-3.5 px-4 text-center no-print">
                     <ProjectPdfButton variant="icon" projectId={row.id} prNo={row.prNo === "-" ? "" : row.prNo} />

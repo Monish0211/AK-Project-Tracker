@@ -5,6 +5,8 @@ import { getApproxWorkingDays, getPlannedCompletionDate } from "../../../utils/p
 import { formatMonthDisplay } from "../../../services/timesheetService";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import InfoField from "./InfoField";
+import { ldStatusLabel } from "../../../utils/liquidatedDamages";
+import { formatIndianCurrency } from "../../../utils/formatCurrency";
 
 interface Props {
   project: Project;
@@ -69,6 +71,20 @@ const GeneralView = ({ project }: Props) => {
             value={project.actualCompletionDate ? formatDisplayDate(project.actualCompletionDate) : "—"}
           />
           <InfoField label="Completed By" value={project.completedBy || "—"} />
+          {project.projectStatus === "Completed" && (
+            <>
+              <InfoField label="LD Applicable" value={ldStatusLabel(project.ldApplicable)} />
+              <InfoField
+                label="LD Amount"
+                value={project.ldApplicable === true ? formatIndianCurrency(project.ldAmountINR ?? 0) : project.ldApplicable === false ? formatIndianCurrency(0) : "—"}
+              />
+              {project.ldRemarks && (
+                <div className="sm:col-span-2">
+                  <InfoField label="LD Reference / Remarks" value={project.ldRemarks} />
+                </div>
+              )}
+            </>
+          )}
           {project.completionRemarks && (
             <div className="sm:col-span-2">
               <InfoField label="Completion Remarks" value={project.completionRemarks} />

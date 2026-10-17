@@ -81,6 +81,67 @@ export function runProjectTransaction<T>(fn: (tx: Prisma.TransactionClient) => P
   return prisma.$transaction(fn);
 }
 
+export interface LdRecordData {
+  ldApplicable: boolean;
+  ldAmountINR: number | null;
+  ldRemarks: string | null;
+  ldRecordedByUserId: string;
+  ldRecordedAt: Date;
+}
+
+/**
+ * Liquidated Damages (Oct 2026) — the ONLY write path for the LD columns
+ * (they are deliberately not part of ProjectGeneralInfoData, so no ordinary
+ * update can touch them). Records LD only while it is still unrecorded:
+ * the `ldApplicable: null` condition makes two concurrent completions race
+ * safely — exactly one claims it, the other gets `false` (→ 409). The amount
+ * is written as a 2-decimal string so Decimal(14,2) stores it exactly.
+ */
+export async function claimLdRecording(client: DbClient, id: string, data: LdRecordData): Promise<boolean> {
+  const result = await client.project.updateMany({
+    where: { id, ldApplicable: null },
+    data: { ...data, ldAmountINR: data.ldAmountINR === null ? null : data.ldAmountINR.toFixed(2) },
+  });
+  return result.count === 1;
+}
+
+/**
+ * Completion guard (Oct 2026) — moves the project into "Completed" only if
+ * it is not already Completed. Run inside the completion transaction so two
+ * concurrent "mark completed" saves cannot both succeed (and both write a
+ * completion audit note); the loser gets `false` (→ 409).
+ */
+export async function claimCompletionTransition(client: DbClient, id: string, completedStatus: string): Promise<boolean> {
+  const result = await client.project.updateMany({
+    where: { id, isDeleted: false, NOT: { projectStatus: completedStatus } },
+    data: { projectStatus: completedStatus },
+  });
+  return result.count === 1;
+}
+
+/** Re-reads one project inside a transaction (after LD/transition claims), same row shape as findProjectById. */
+export function findProjectByIdIn(client: DbClient, id: string) {
+  return client.project.findFirstOrThrow({ where: { id, isDeleted: false } });
+}
+
+/**
+ * Server-authoritative expense totals per project (Oct 2026) — the same
+ * sources Reports and the Project Financial Report PDF use: every
+ * ProjectResource.manhourCost and every ACTIVE ProjectExpense.totalCost.
+ * Two batched groupBy queries for any number of projects, never one per project.
+ */
+export async function sumExpenseTotalsByProjectIds(projectIds: string[]) {
+  if (projectIds.length === 0) return { manhour: new Map<string, number>(), nonManhour: new Map<string, number>() };
+  const [manhour, nonManhour] = await Promise.all([
+    prisma.projectResource.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds } }, _sum: { manhourCost: true } }),
+    prisma.projectExpense.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, isActive: true }, _sum: { totalCost: true } }),
+  ]);
+  return {
+    manhour: new Map(manhour.map((row) => [row.projectId, row._sum.manhourCost ?? 0])),
+    nonManhour: new Map(nonManhour.map((row) => [row.projectId, row._sum.totalCost ?? 0])),
+  };
+}
+
 /**
  * Inside a coordinator-assignment transaction: locks the project row
  * (FOR UPDATE) and returns its coordinator account as it stands NOW. Two

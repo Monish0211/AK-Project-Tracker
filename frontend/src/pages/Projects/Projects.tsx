@@ -62,6 +62,7 @@ import {
   downloadWorkbook,
   parseProjectsWorkbook,
 } from "../../services/projectWorkbookService";
+import { projectLdSummary } from "../../utils/projectFinancials";
 
 type ProjectsMode = "repository" | "completed";
 
@@ -1157,6 +1158,15 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                 <th onClick={() => toggleSort("pendingDue")} className="p-3 font-extrabold uppercase select-none text-right sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Pending Due <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
+                {/* Liquidated Damages (Oct 2026) — from server expense totals, never the cache. */}
+                {mode === "completed" && (
+                  <>
+                    <th className="p-3 font-extrabold uppercase select-none text-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">LD Status</th>
+                    <th className="p-3 font-extrabold uppercase select-none text-right sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">LD Amount</th>
+                    <th className="p-3 font-extrabold uppercase select-none text-right sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Profit Before LD</th>
+                    <th className="p-3 font-extrabold uppercase select-none text-right sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">Final Profit After LD</th>
+                  </>
+                )}
                 <th className="p-3 font-extrabold uppercase select-none text-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Actions
                 </th>
@@ -1165,13 +1175,14 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
             <tbody>
               {paginatedProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-slate-400">
+                  <td colSpan={mode === "completed" ? 16 : 10} className="p-8 text-center text-slate-400">
                     No Projects Found matching selected filter criteria.
                   </td>
                 </tr>
               ) : (
                 paginatedProjects.map((p) => {
                   const comm = getRepositoryInvoiceSummary(p);
+                  const ld = mode === "completed" ? projectLdSummary(p) : null;
                   return (
                     <tr
                       key={p.id}
@@ -1225,6 +1236,22 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                       <td className={`p-3 text-right font-bold pmo-prno ${comm.pendingDue === 0 ? "text-emerald-600" : "text-amber-600"}`}>
                         {fmtCurrency(comm.pendingDue)}
                       </td>
+                      {ld && (
+                        <>
+                          <td className="p-3 text-center font-semibold" data-ld-status={ld.ldStatus}>
+                            {ld.ldStatus === "Not recorded" ? <span className="text-slate-400">Not recorded</span> : ld.ldStatus}
+                          </td>
+                          <td className="p-3 text-right font-bold pmo-prno">
+                            {ld.ldDeduction === null ? <span className="text-slate-400">—</span> : "₹\u202F" + ld.ldDeduction.toLocaleString("en-IN")}
+                          </td>
+                          <td className={`p-3 text-right font-bold pmo-prno ${ld.profitBeforeLd < 0 ? "text-red-600" : ""}`}>
+                            {"₹\u202F" + ld.profitBeforeLd.toLocaleString("en-IN")}
+                          </td>
+                          <td className={`p-3 text-right font-bold pmo-prno ${ld.finalProfit < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                            {"₹\u202F" + ld.finalProfit.toLocaleString("en-IN")}
+                          </td>
+                        </>
+                      )}
                       <td className="p-3 text-center">
                         <div className="pmo-act-wrap bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-900">
                           <button

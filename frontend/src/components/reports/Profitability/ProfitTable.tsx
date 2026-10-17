@@ -4,6 +4,7 @@ import { formatBusinessINR } from "../../../utils/formatCurrency";
 import { getTotalNonManhourCost } from "../../../services/expenseService";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
+import { computeLdBreakdown } from "../../../utils/projectFinancials";
 
 interface Props {
   projects: any[];
@@ -20,6 +21,7 @@ export function ProfitTable({ projects }: Props) {
       const totalExpenses = nonManhour + manhour;
       const profit = woValue - totalExpenses;
       const marginPct = woValue === 0 ? 0 : (profit / woValue) * 100;
+      const ld = computeLdBreakdown({ workOrderValueINR: woValue, expensesINR: totalExpenses, ldApplicable: p.ldApplicable, ldAmountINR: p.ldAmountINR });
 
       return {
         id: p.id,
@@ -33,6 +35,11 @@ export function ProfitTable({ projects }: Props) {
         totalExpenses,
         profit,
         marginPct,
+        // Liquidated Damages (Oct 2026) — appended columns; blank when not recorded.
+        ldStatus: ld.ldStatus === "Not recorded" ? null : ld.ldStatus,
+        ldAmount: ld.ldDeduction,
+        finalProfit: ld.finalProfit,
+        finalMarginPct: ld.finalProfitPercent,
       };
     });
   }, [projects]);
@@ -92,8 +99,12 @@ export function ProfitTable({ projects }: Props) {
                 <th className="p-2.5 text-right">Manhour Cost</th>
                 <th className="p-2.5 text-right">Non-MH Cost</th>
                 <th className="p-2.5 text-right">Total Expenses</th>
-                <th className="p-2.5 text-right">Net Profit</th>
+                <th className="p-2.5 text-right">Net Profit (before LD)</th>
                 <th className="p-2.5 text-right">Margin %</th>
+                <th className="p-2.5 text-center">LD</th>
+                <th className="p-2.5 text-right">LD Amount</th>
+                <th className="p-2.5 text-right">Final Profit (after LD)</th>
+                <th className="p-2.5 text-right">Final %</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--nu-border)]">
@@ -123,6 +134,12 @@ export function ProfitTable({ projects }: Props) {
                       {row.marginPct.toFixed(1)}%
                     </span>
                   </td>
+                  <td className="p-2.5 text-center font-semibold">{row.ldStatus ?? <span className="text-[var(--nu-text-muted)]">—</span>}</td>
+                  <td className="p-2.5 text-right font-mono">{row.ldAmount === null ? <span className="text-[var(--nu-text-muted)]">—</span> : formatBusinessINR(row.ldAmount)}</td>
+                  <td className={`p-2.5 text-right font-mono font-extrabold ${row.finalProfit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600"}`}>
+                    {formatBusinessINR(row.finalProfit)}
+                  </td>
+                  <td className="p-2.5 text-right font-mono">{row.finalMarginPct === null ? "—" : `${row.finalMarginPct.toFixed(1)}%`}</td>
                 </tr>
               ))}
             </tbody>

@@ -633,6 +633,20 @@ model Project {
   completedBy          String?
   completedTimestamp   DateTime?
 
+  // Liquidated Damages (Oct 2026) — recorded once, by the request that marks
+  // the project Completed (see projectCompletion.rules.ts); never editable
+  // through ordinary updates and kept if the project is reopened.
+  // ldApplicable: null = not recorded (completed before this feature, or
+  // bulk-imported) — never read as "No"; false = No; true = Yes.
+  // ldAmountINR: exact decimal INR, set only when ldApplicable is true.
+  // ldRecordedByUserId/ldRecordedAt: from the authenticated session, never
+  // from the request body.
+  ldApplicable       Boolean?
+  ldAmountINR        Decimal?  @db.Decimal(14, 2)
+  ldRemarks          String?
+  ldRecordedByUserId String?
+  ldRecordedAt       DateTime?
+
   // Work Order Details
   workOrderNumber String?
   workOrderDate   DateTime?

@@ -28,6 +28,14 @@ export interface ProjectDto {
   completedBy: string | null;
   completedTimestamp: Date | null;
 
+  // Liquidated Damages (Oct 2026) — see schema.prisma / projectCompletion.rules.ts.
+  // ldApplicable null = not recorded (never "No"); ldAmountINR set only when true.
+  ldApplicable: boolean | null;
+  ldAmountINR: number | null;
+  ldRemarks: string | null;
+  ldRecordedByUserId: string | null;
+  ldRecordedAt: Date | null;
+
   workOrderNumber: string | null;
   workOrderDate: Date | null;
   eicName: string | null;
@@ -116,6 +124,14 @@ export interface ProjectDto {
    * batched query, never N+1).
    */
   hasOpenInvoiceRequest: boolean;
+  /**
+   * Server-authoritative expense totals (Oct 2026) — SUM(ProjectResource.manhourCost)
+   * and SUM(active ProjectExpense.totalCost), batched per page like
+   * workOrderValueINR above. Lets list screens (Completed Projects) show
+   * Profit Before / After LD without reading the browser cache.
+   */
+  manhourCostINR: number;
+  nonManhourCostINR: number;
 }
 
 export interface PaginatedProjectListDto {

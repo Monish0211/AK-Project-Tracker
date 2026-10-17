@@ -10,9 +10,10 @@ import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { Input } from "../../../components/ui/Input";
 import { Select } from "../../../components/ui/Select";
 import { ProjectCompletionModal } from "../../../components/Projects/ProjectCompletionModal";
+import { computeProjectFinancials } from "../../../utils/projectFinancials";
+import { formatIndianCurrency } from "../../../utils/formatCurrency";
 
 import { FieldError } from "../../../components/ui/FieldError";
-import { completeProject, getProjectById } from "../../../services/projectService";
 import { PROJECT_STATUS_OPTIONS, WORK_ORDER_STATUS_OPTIONS } from "../../../constants/projectStatus";
 
 interface Props {
@@ -565,6 +566,20 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCus
                   className="w-full p-2.5 bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-xl text-xs text-[var(--nu-text)]"
                 />
               </div>
+
+              {/* Liquidated Damages (Oct 2026) — recorded once at completion, read-only afterwards. */}
+              <div className="sm:col-span-2 rounded-xl border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-3 text-xs" data-field="liquidatedDamages">
+                <FormLabel>Liquidated Damages (LD)</FormLabel>
+                {project.ldApplicable === true || project.ldApplicable === false ? (
+                  <p className="text-[var(--nu-text)] mt-1">
+                    <strong>{project.ldApplicable ? `Yes — ${formatIndianCurrency(project.ldAmountINR ?? 0)}` : "No"}</strong>
+                    {project.ldRemarks ? <span className="text-[var(--nu-text-muted)]"> · Ref: {project.ldRemarks}</span> : null}
+                    <span className="block text-[10px] text-[var(--nu-text-muted)] mt-1">Recorded at completion; it cannot be edited here.</span>
+                  </p>
+                ) : (
+                  <p className="text-[var(--nu-text-muted)] mt-1">Not recorded — this project was completed before LD was tracked.</p>
+                )}
+              </div>
             </>
           )}
         </CardBody>
@@ -772,25 +787,30 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCus
         isOpen={isCompletionModalOpen}
         projectTitle={project.projectTitle || "Untitled Project"}
         prNo={project.prNo || "—"}
+        recordedLd={{ ldApplicable: project.ldApplicable ?? null, ldAmountINR: project.ldAmountINR ?? null }}
+        workOrderValueINR={project.workOrderValueINR ?? null}
+        profitBeforeLd={
+          computeProjectFinancials({
+            workOrderValueINR: project.workOrderValueINR ?? 0,
+            manhourCosts: (project.resources ?? []).map((r) => r.manhourCost ?? 0),
+            nonManhourRows: project.nonManhourExpenses ?? [],
+            invoiceLines: [],
+          }).profitBeforeLd
+        }
         onConfirm={(data) => {
-          completeProject(project.id, {
+          // Form state only. The completion (and LD) reaches the server and
+          // the local projects cache on Save (FormButtons), never before —
+          // otherwise Completed Projects would show an unsaved completion
+          // that Reports (server data) correctly does not.
+          setProject((prev) => ({
+            ...prev,
+            projectStatus: "Completed",
             actualCompletionDate: data.actualCompletionDate,
             completionRemarks: data.completionRemarks,
             completedBy: data.completedBy,
-          });
-          const updated = getProjectById(project.id);
-          if (updated) {
-            setProject(updated);
-          } else {
-            setProject((prev) => ({
-              ...prev,
-              projectStatus: "Completed",
-              actualCompletionDate: data.actualCompletionDate,
-              completionRemarks: data.completionRemarks,
-              completedBy: data.completedBy,
-              completedTimestamp: new Date().toISOString(),
-            }));
-          }
+            completedTimestamp: new Date().toISOString(),
+            ...(data.ld ? { ldApplicable: data.ld.ldApplicable, ldAmountINR: data.ld.ldAmountINR, ldRemarks: data.ld.ldRemarks } : {}),
+          }));
           clearError?.("projectStatus");
           setIsCompletionModalOpen(false);
         }}

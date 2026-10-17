@@ -172,6 +172,7 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
     manhourCosts: data.manhourRows.map((r) => r.manhourCost),
     nonManhourRows: data.nonManhourRows,
     invoiceLines: data.invoiceRows,
+    ld: { ldApplicable: project.ldApplicable, ldAmountINR: project.ldAmountINR },
   });
   const inv = financials.invoice;
   const tPrepared = performance.now();
@@ -290,6 +291,19 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
       ...detail("PMO Coordinator", orText(project.pmoCoordinator)),
       ...(project.actualCompletionDate ? detail("Actual Completion", formatReportDate(project.actualCompletionDate)) : detail("", "")),
     ],
+    // Liquidated Damages (Oct 2026) — recorded at completion; null = not recorded.
+    [
+      ...detail("LD Applicable", financials.ldStatus),
+      ...detail("LD Amount", financials.ldDeduction === null ? NOT_RECORDED : formatReportINR(financials.ldDeduction)),
+    ],
+    ...(project.ldRemarks
+      ? [
+          [
+            { content: "LD Reference / Remarks", styles: { textColor: MUTED, fontSize: 7.5 } },
+            { content: project.ldRemarks, colSpan: 3, styles: { fontStyle: "bold" } },
+          ] as CellInput[],
+        ]
+      : []),
   ];
   autoTable(doc, {
     ...tableBase,
@@ -327,15 +341,39 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
     { label: "Payment Received", value: inv ? formatReportINR(inv.received) : "Not available", sub: inv ? "Paid invoices" : "No invoice access", color: GREEN },
     { label: "Outstanding", value: inv ? formatReportINR(inv.outstanding) : "Not available", sub: inv ? "Work Order Value − Received" : "No invoice access", color: AMBER },
     { label: "Total Expenses", value: formatReportINR(financials.expenses), sub: "Man-hour + Non-man-hour", color: ROSE },
-    { label: "Profit", value: formatReportINR(financials.profit), sub: `Profit % ${profitPct}`, color: financials.profit >= 0 ? GREEN : ROSE },
+    // Liquidated Damages (Oct 2026) — recorded at completion; never "₹ 0" for a project where LD was not recorded.
+    {
+      label: "LD Deduction",
+      value: financials.ldDeduction === null ? NOT_RECORDED : formatReportINR(financials.ldDeduction),
+      sub: financials.ldStatus === "Yes" ? "Deducted from profit" : financials.ldStatus === "No" ? "LD not applicable" : "LD not recorded",
+      color: AMBER,
+    },
+    { label: "Profit Before LD", value: formatReportINR(financials.profit), sub: `Profit % ${profitPct}`, color: financials.profit >= 0 ? GREEN : ROSE },
+    {
+      label: "Profit After LD",
+      value: formatReportINR(financials.finalProfit),
+      sub: `Profit % ${financials.finalProfitPercent === null ? DASH : `${financials.finalProfitPercent.toFixed(1)}%`}${financials.ldDeduction === null ? " · LD not recorded" : ""}`,
+      color: financials.finalProfit >= 0 ? GREEN : ROSE,
+    },
   ];
   const gap = 4;
-  const tileW = (CONTENT_W - gap * 2) / 3;
+  const cols = 4;
+  const rows = Math.ceil(tiles.length / cols);
+  const tileW = (CONTENT_W - gap * (cols - 1)) / cols;
   const tileH = 19;
-  ensureSpace(tileH * 2 + gap);
+  // Shrinks a label/sub line until it fits the tile (narrower with 4 across).
+  const fitText = (text: string, start: number, min: number) => {
+    let s = start;
+    doc.setFontSize(s);
+    while (s > min && doc.getTextWidth(text) > tileW - 6) {
+      s -= 0.25;
+      doc.setFontSize(s);
+    }
+  };
+  ensureSpace(tileH * rows + gap * (rows - 1));
   tiles.forEach((tile, i) => {
-    const x = MARGIN + (i % 3) * (tileW + gap);
-    const ty = y + Math.floor(i / 3) * (tileH + gap);
+    const x = MARGIN + (i % cols) * (tileW + gap);
+    const ty = y + Math.floor(i / cols) * (tileH + gap);
     doc.setFillColor(SOFT[0], SOFT[1], SOFT[2]);
     doc.setDrawColor(BORDER[0], BORDER[1], BORDER[2]);
     doc.setLineWidth(0.2);
@@ -343,6 +381,7 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
     doc.setFillColor(tile.color[0], tile.color[1], tile.color[2]);
     doc.rect(x, ty + 1.5, 1.2, tileH - 3, "F");
     setText(7.5, MUTED, "bold");
+    fitText(tile.label.toUpperCase(), 7.5, 6);
     doc.text(tile.label.toUpperCase(), x + 4, ty + 5);
     let size = 12;
     setText(size, tile.color, "bold");
@@ -352,9 +391,10 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
     }
     doc.text(tile.value, x + 4, ty + 11.5);
     setText(7, MUTED);
+    fitText(tile.sub, 7, 5.5);
     doc.text(tile.sub, x + 4, ty + 16);
   });
-  y += tileH * 2 + gap + 3;
+  y += tileH * rows + gap * (rows - 1) + 3;
 
   // 4. Comparison bars --------------------------------------------------
   sectionTitle("Financial Overview", undefined, 48);
@@ -363,7 +403,7 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
     { label: "Invoice Raised", value: inv ? inv.raised : null, color: BLUE },
     { label: "Payment Received", value: inv ? inv.received : null, color: GREEN },
     { label: "Total Expenses", value: financials.expenses, color: ROSE },
-    { label: "Profit", value: financials.profit, color: financials.profit >= 0 ? GREEN : ROSE },
+    { label: "Profit Before LD", value: financials.profit, color: financials.profit >= 0 ? GREEN : ROSE },
   ];
   const barMax = Math.max(1, ...bars.map((b) => Math.abs(b.value ?? 0)));
   const labelW = 34;
@@ -458,6 +498,38 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
       [
         { content: "Total Expenses", styles: { fontStyle: "bold", fillColor: SOFT, textColor: NAVY } },
         { content: formatReportINR(financials.expenses), styles: { fontStyle: "bold", fillColor: SOFT, textColor: NAVY } },
+      ],
+    ],
+    styles: { font: FONT, fontSize: 8.5, cellPadding: 1.6, textColor: TEXT },
+    columnStyles: { 1: { halign: "right" } },
+    alternateRowStyles: {},
+    pageBreak: "avoid",
+  });
+  y = lastTableY() + 4;
+
+  // 7b. Liquidated Damages breakdown (Oct 2026) ------------------------
+  // Profit Before LD − LD Deduction = Final Profit After LD. LD never
+  // changes expenses, invoices or collections; it may exceed profit.
+  const ldDeductionText =
+    financials.ldDeduction === null
+      ? "LD not recorded"
+      : financials.ldStatus === "No"
+        ? `Not applicable ${formatReportINR(0)}`
+        : `− ${formatReportINR(financials.ldDeduction)}`;
+  const finalPct = financials.finalProfitPercent === null ? DASH : `${financials.finalProfitPercent.toFixed(1)}%`;
+  const finalColor = financials.finalProfit >= 0 ? GREEN : ROSE;
+  autoTable(doc, {
+    ...tableBase,
+    startY: y,
+    theme: "plain",
+    tableWidth: 90,
+    margin: { left: PAGE_W - MARGIN - 90, right: MARGIN, top: continuationTop, bottom: FOOTER_RESERVE },
+    body: [
+      ["Profit Before LD", formatReportINR(financials.profitBeforeLd)],
+      ["LD Deduction", ldDeductionText],
+      [
+        { content: `Final Profit After LD (${finalPct})`, styles: { fontStyle: "bold", fillColor: SOFT, textColor: NAVY } },
+        { content: formatReportINR(financials.finalProfit), styles: { fontStyle: "bold", fillColor: SOFT, textColor: finalColor } },
       ],
     ],
     styles: { font: FONT, fontSize: 8.5, cellPadding: 1.6, textColor: TEXT },
