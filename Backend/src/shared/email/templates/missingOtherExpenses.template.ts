@@ -45,7 +45,7 @@ export function buildMissingOtherExpensesEmail(data: MissingExpenseEmailData): {
         <td style="padding:10px 14px; font-size:13px; color:#0F172A; font-weight:700; text-align:right;">${data.eligibleCount}</td>
       </tr>
       <tr>
-        <td style="padding:10px 14px; font-size:13px; color:#64748B; border-top:1px solid #E2E8F0;">Projects missing Other Project Expenses</td>
+        <td style="padding:10px 14px; font-size:13px; color:#64748B; border-top:1px solid #E2E8F0;">Projects missing Non-Man-Hour Expenses</td>
         <td style="padding:10px 14px; font-size:13px; color:#B45309; font-weight:700; text-align:right; border-top:1px solid #E2E8F0;">${count}</td>
       </tr>
     </table>`;
@@ -92,7 +92,7 @@ export function buildMissingOtherExpensesEmail(data: MissingExpenseEmailData): {
     "",
     `Generated: ${data.generatedAt}`,
     `Eligible projects checked: ${data.eligibleCount}`,
-    `Projects missing Other Project Expenses: ${count}`,
+    `Projects missing Non-Man-Hour Expenses: ${count}`,
     "",
     ...(count === 0
       ? ["Every eligible project has at least one Other Project Expenses record. No action is needed."]

@@ -144,6 +144,7 @@ test("email: user data is HTML-escaped, links are used as given, plain text and 
   assert.match(email.html, /does not assess man-hour expenses/);
   assert.match(email.text, /PR-<1> \| <script>alert\("x"\)<\/script> & Co/);
   assert.match(email.text, /Eligible projects checked: 12/);
+  assert.ok(email.html.includes("Projects missing Non-Man-Hour Expenses") && email.text.includes("Projects missing Non-Man-Hour Expenses: 1"), "summary label (renamed Oct 2026)");
   assert.equal(email.subject, "Weekly Report — Projects Missing Other Project Expenses");
 });
 
