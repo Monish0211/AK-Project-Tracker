@@ -235,6 +235,9 @@ export const apiClient = {
     request<T>(path, { method: "POST", body: data !== undefined ? JSON.stringify(data) : undefined }, options),
   patch: <T>(path: string, data?: unknown, options?: ApiRequestOptions): Promise<T> =>
     request<T>(path, { method: "PATCH", body: data !== undefined ? JSON.stringify(data) : undefined }, options),
+  // Full-replacement updates (e.g. Settings → Weekly Emails recipients, Oct 2026).
+  put: <T>(path: string, data?: unknown, options?: ApiRequestOptions): Promise<T> =>
+    request<T>(path, { method: "PUT", body: data !== undefined ? JSON.stringify(data) : undefined }, options),
   // `data` is optional — every existing caller passes none and is unaffected.
   // Added for Permanent Delete's Invoice Protection flag (see
   // projectService.ts's permanentlyDeleteProjectViaApi()), the first DELETE

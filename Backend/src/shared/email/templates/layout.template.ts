@@ -18,6 +18,8 @@ export interface EmailLayoutOptions {
   previewText?: string;
   /** Pre-rendered HTML for the email's own content — the layout only supplies the header/footer shell around it. */
   bodyHtml: string;
+  /** Card width in px (default 520). Wider only for table-heavy reports. */
+  maxWidthPx?: number;
 }
 
 /**
@@ -27,7 +29,7 @@ export interface EmailLayoutOptions {
  * or grid. Kept as plain string templates (no external templating engine)
  * to avoid adding a dependency for something this small.
  */
-export function renderEmailLayout({ previewText, bodyHtml }: EmailLayoutOptions): string {
+export function renderEmailLayout({ previewText, bodyHtml, maxWidthPx = 520 }: EmailLayoutOptions): string {
   const year = new Date().getFullYear();
 
   return `<!DOCTYPE html>
@@ -46,7 +48,7 @@ export function renderEmailLayout({ previewText, bodyHtml }: EmailLayoutOptions)
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F1F5F9; padding:32px 0;">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px; background-color:#FFFFFF; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(15,23,42,0.08);">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:${maxWidthPx}px; background-color:#FFFFFF; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(15,23,42,0.08);">
             <tr>
               <td style="background-color:#0F172A; padding:24px 32px;">
                 <span style="color:#FFFFFF; font-size:16px; font-weight:700; letter-spacing:0.02em;">

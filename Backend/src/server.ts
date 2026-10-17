@@ -3,6 +3,7 @@ import app from "./app.js";
 import { env } from "./shared/utils/env.js";
 import { verifyEmailConnection } from "./shared/email/transporter.js";
 import { startTimesheetPollScheduler } from "./shared/scheduler/timesheetPollScheduler.js";
+import { startMissingExpenseScheduler } from "./shared/scheduler/missingExpenseScheduler.js";
 
 app.listen(env.PORT, () => {
   console.log(`PMO Portal backend listening on port ${env.PORT} [${env.NODE_ENV}]`);
@@ -30,4 +31,7 @@ app.listen(env.PORT, () => {
   // shared/scheduler/timesheetPollScheduler.ts. Started here (not at module
   // load) so its loopback HTTP call always has a listening server to reach.
   startTimesheetPollScheduler();
+  // Weekly "Projects Missing Other Project Expenses" email — see
+  // shared/scheduler/missingExpenseScheduler.ts (DB-locked per ISO week).
+  startMissingExpenseScheduler();
 });

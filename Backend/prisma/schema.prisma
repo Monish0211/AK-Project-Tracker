@@ -154,6 +154,11 @@ model PortalUser {
   pmoCoordinatorProjects Project[]        @relation("ProjectPmoCoordinatorUser")
   pmoCoordinatorsCreated PmoCoordinator[] @relation("PmoCoordinatorCreatedBy")
 
+  // Weekly notification settings (Oct 2026) — settings this account last
+  // edited, and the notification CC lists this account is linked to.
+  notificationSettingsUpdated NotificationSetting[]      @relation("NotificationSettingUpdatedBy")
+  notificationCcEntries       NotificationCcRecipient[] @relation("NotificationCcRecipientUser")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -1776,4 +1781,80 @@ model PmoCoordinator {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// =============================================================================
+// WEEKLY NOTIFICATIONS (Oct 2026)
+// =============================================================================
+// Settings → Weekly Emails. One row per notification `key` (today only
+// "missing_other_project_expenses"). No row = the code defaults apply (see
+// missingExpenseNotification.rules.ts); the first save from Settings creates
+// the row. Only addresses are stored — never SMTP settings or secrets.
+model NotificationSetting {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  key     String @unique
+  toEmail String
+
+  updatedByUserId String?
+  updatedBy       PortalUser? @relation("NotificationSettingUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  ccRecipients NotificationCcRecipient[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// CC list of a NotificationSetting. `email` is what is sent to; when the
+// entry was picked from PMO Portal users, portalUserId links that account
+// (its real email is copied at selection time and re-validated on save).
+// Uniqueness is on the normalized (trimmed, lower-cased) address.
+model NotificationCcRecipient {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  settingId String
+  setting   NotificationSetting @relation(fields: [settingId], references: [id], onDelete: Cascade)
+
+  email           String
+  emailNormalized String
+
+  portalUserId String?
+  portalUser   PortalUser? @relation("NotificationCcRecipientUser", fields: [portalUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@unique([settingId, emailNormalized])
+  @@index([settingId])
+}
+
+// One row per scheduled-job period (e.g. jobName
+// "missing_other_project_expenses", periodKey "2026-W42"). The unique
+// (jobName, periodKey) pair is the cross-process lock and the idempotency
+// record: a second scheduler tick, a restart or another instance for the
+// same week finds the row and does not send again. Manual runs use their
+// own unique periodKey ("manual:<uuid>"), so they never block the weekly run.
+// status: RUNNING -> SENDING -> SENT | FAILED; NO_MISSING / DISABLED end a
+// run without sending; DELIVERY_UNKNOWN marks a send interrupted mid-way
+// (never re-sent automatically).
+model ScheduledJobRun {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  jobName   String
+  periodKey String
+  trigger   String // "scheduled" | "manual"
+  status    String
+  claimToken String
+  attempts  Int    @default(1)
+
+  eligibleCount Int?
+  missingCount  Int?
+  recipientCount Int?
+  error         String?
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([jobName, periodKey])
+  @@index([jobName, startedAt])
 }

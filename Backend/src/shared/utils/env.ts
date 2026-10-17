@@ -192,6 +192,35 @@ const envSchema = z.object({
   // booleanFromEnv treatment as SMTP_SECURE above. SMTP must also be
   // configured for a real send.
   PMO_ALLOCATION_EMAIL_ENABLED: booleanFromEnv,
+
+  // Weekly "Projects Missing Other Project Expenses" email (Oct 2026).
+  // - ..._EMAIL_ENABLED: real delivery switch; fail-safe default false. When
+  //   false the weekly check still runs and is recorded, but nothing is sent.
+  // - ..._MANUAL_TRIGGER_ENABLED: allows Administrators/PMO Managers to run
+  //   the job on demand (Settings → Weekly Emails). Default false, so it is
+  //   unavailable in production unless explicitly enabled.
+  // - ..._CRON / APP_TIMEZONE: weekly schedule (default Monday 09:00) and the
+  //   IANA timezone used for the schedule, the week key and report dates.
+  MISSING_EXPENSE_EMAIL_ENABLED: booleanFromEnv,
+  MISSING_EXPENSE_MANUAL_TRIGGER_ENABLED: booleanFromEnv,
+  MISSING_EXPENSE_CRON: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() !== "" ? value.trim() : undefined),
+    z.string().default("0 9 * * 1")
+  ),
+  APP_TIMEZONE: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() !== "" ? value.trim() : undefined),
+    z
+      .string()
+      .default("Asia/Kolkata")
+      .refine((tz) => {
+        try {
+          new Intl.DateTimeFormat("en-US", { timeZone: tz });
+          return true;
+        } catch {
+          return false;
+        }
+      }, "APP_TIMEZONE must be a valid IANA timezone, e.g. Asia/Kolkata")
+  ),
 });
 
 const parsed = envSchema.safeParse(process.env);
