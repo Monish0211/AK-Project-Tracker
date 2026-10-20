@@ -5,8 +5,10 @@ import { denyReadOnlyWrites } from "../../../shared/middleware/denyReadOnlyWrite
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import {
+  getMissingExpenseRunHistory,
   getMissingExpenseSettings,
   getMissingExpenseUserOptions,
+  previewMissingExpensePage,
   previewMissingExpenseReport,
   runMissingExpenseJobNow,
   updateMissingExpenseRecipients,
@@ -26,6 +28,8 @@ router.get("/", ...manage, getMissingExpenseSettings);
 router.put("/", ...manage, denyReadOnlyWrites, validate(updateMissingExpenseRecipientsSchema), updateMissingExpenseRecipients);
 router.get("/user-options", ...manage, getMissingExpenseUserOptions);
 router.post("/preview", ...manage, previewMissingExpenseReport);
+router.get("/preview", ...manage, previewMissingExpensePage); // paged, read-only
+router.get("/runs", ...manage, getMissingExpenseRunHistory);
 router.post("/run", ...manage, denyReadOnlyWrites, validate(runMissingExpenseJobSchema), runMissingExpenseJobNow);
 
 export default router;

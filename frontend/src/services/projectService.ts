@@ -569,8 +569,8 @@ function toDateOnly(iso: string | null): string {
  * (create/update/list/get) omits it and keeps the original lookup-by-id
  * behavior unchanged.
  */
-function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explicitBase?: Project): Project {
-  const existingLocal = explicitBase ?? getProjects().find((p) => p.id === dto.id);
+function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explicitBase?: Project, mirror?: ReadonlyMap<string, Project>): Project {
+  const existingLocal = explicitBase ?? (mirror ? mirror.get(dto.id) : getProjects().find((p) => p.id === dto.id));
   const base = existingLocal ?? createEmptyProject();
 
   return normalizeProject({
@@ -725,9 +725,24 @@ function buildProjectListQuery(params: ProjectListParams): URLSearchParams {
  * search and sidebar Quick Summary so a single list page cannot replace the
  * whole cache (and so those helpers never become KPI sources).
  */
+/**
+ * The local mirror indexed by id, read ONCE for a whole page of rows
+ * (performance audit, Oct 2026). Merging each row used to call getProjects()
+ * itself — a JSON.parse + normalizeProject of the entire mirror per row — so
+ * a page of N rows parsed the mirror N times (Reports: ~1,200 rows ≈ 19 s of
+ * blocked main thread on a large mirror). Keeps the FIRST entry per id, the
+ * same one getProjects().find() returned, so every merge result is identical.
+ */
+function mirrorById(): Map<string, Project> {
+  const byId = new Map<string, Project>();
+  for (const p of getProjects()) if (!byId.has(p.id)) byId.set(p.id, p);
+  return byId;
+}
+
 export async function queryProjectsFromApi(params: ProjectListParams = {}): Promise<ProjectListResult> {
   const result = await apiClient.get<BackendPaginatedProjectList>(`/projects?${buildProjectListQuery(params).toString()}`);
-  const items = result.items.map((dto) => mergeBackendGeneralInfoIntoLocalProject(dto));
+  const mirror = mirrorById();
+  const items = result.items.map((dto) => mergeBackendGeneralInfoIntoLocalProject(dto, undefined, mirror));
   return { items, total: result.total, page: result.page, pageSize: result.pageSize };
 }
 
@@ -771,7 +786,8 @@ export async function fetchArchivedProjectsFromApi(params: ProjectListParams = {
   query.set("isDeleted", "true");
 
   const result = await apiClient.get<BackendPaginatedProjectList>(`/projects?${query.toString()}`);
-  const items = result.items.map((dto) => mergeBackendGeneralInfoIntoLocalProject(dto));
+  const mirror = mirrorById();
+  const items = result.items.map((dto) => mergeBackendGeneralInfoIntoLocalProject(dto, undefined, mirror));
 
   return { items, total: result.total, page: result.page, pageSize: result.pageSize };
 }

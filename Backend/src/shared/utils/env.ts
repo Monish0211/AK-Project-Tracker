@@ -207,6 +207,15 @@ const envSchema = z.object({
     (value) => (typeof value === "string" && value.trim() !== "" ? value.trim() : undefined),
     z.string().default("0 9 * * 1")
   ),
+  // Weekly "Invoices Unpaid for 30+ Days" email (Oct 2026) — independent
+  // switches from the Other Project Expenses email, same fail-safe default
+  // false. Schedule defaults to Monday 11:00 in APP_TIMEZONE.
+  UNPAID_INVOICE_EMAIL_ENABLED: booleanFromEnv,
+  UNPAID_INVOICE_MANUAL_TRIGGER_ENABLED: booleanFromEnv,
+  UNPAID_INVOICE_CRON: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() !== "" ? value.trim() : undefined),
+    z.string().default("0 11 * * 1")
+  ),
   APP_TIMEZONE: z.preprocess(
     (value) => (typeof value === "string" && value.trim() !== "" ? value.trim() : undefined),
     z

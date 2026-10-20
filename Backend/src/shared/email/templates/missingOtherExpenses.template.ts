@@ -84,7 +84,7 @@ export function buildMissingOtherExpensesEmail(data: MissingExpenseEmailData): {
     ${summaryHtml}
     ${tableHtml}
     <p style="margin:16px 0 0; font-size:12px; color:#64748B;">${SCOPE_NOTE}</p>
-    <p style="margin:8px 0 0; font-size:12px; color:#64748B;">Excluded statuses: On Hold, Completed, Cancelled. Archived projects are not included.</p>
+    <p style="margin:8px 0 0; font-size:12px; color:#64748B;">Excluded statuses: Not Started, On Hold, Completed, Cancelled. Archived projects are not included.</p>
   `;
 
   const text = [
@@ -101,7 +101,7 @@ export function buildMissingOtherExpensesEmail(data: MissingExpenseEmailData): {
         )),
     "",
     SCOPE_NOTE,
-    "Excluded statuses: On Hold, Completed, Cancelled. Archived projects are not included.",
+    "Excluded statuses: Not Started, On Hold, Completed, Cancelled. Archived projects are not included.",
     "",
     `${EMAIL_BRAND.COMPANY_NAME} ${EMAIL_BRAND.PORTAL_NAME}`,
   ].join("\n");

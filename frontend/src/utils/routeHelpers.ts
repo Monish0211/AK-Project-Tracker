@@ -9,6 +9,8 @@ const ROUTE_TITLE_MAP = [
   { path: "/manpower", title: "Manpower" },
   { path: "/timesheets", title: "Timesheets" },
   { path: "/reports", title: "Reports" },
+  { path: "/settings/weekly-emails/:notification/preview", title: "Weekly Email Preview" },
+  { path: "/settings/weekly-emails/:notification/runs", title: "Weekly Email Runs" },
   { path: "/settings", title: "Settings" },
   { path: "/dashboard", title: "Dashboard" },
   { path: "/", title: "Dashboard" },

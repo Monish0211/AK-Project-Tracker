@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
 
 import Sidebar from "../components/Sidebar/Sidebar";
@@ -33,6 +33,11 @@ import Manpower from "../pages/Manpower/Manpower";
 import Timesheets from "../pages/Timesheets/Timesheets";
 import ReportsPage from "../pages/ReportsPage";
 import Settings from "../pages/Settings/Settings";
+
+/* Settings → Weekly Emails sub-pages (Oct 2026) — lazy: only admins open them, and only on demand. */
+const WeeklyEmailPreviewPage = lazy(() => import("../pages/Settings/WeeklyEmails/WeeklyEmailPreviewPage"));
+const WeeklyEmailRunsPage = lazy(() => import("../pages/Settings/WeeklyEmails/WeeklyEmailRunsPage"));
+const pageFallback = <div className="py-16 text-center text-[12px] text-[var(--nu-text-muted)]">Loading…</div>;
 
 /* PR Request & Two-Level Approval Workflow */
 import RequestPR from "../pages/PRRequests/RequestPR";
@@ -202,6 +207,16 @@ const MainLayout = () => {
               <Route
                 path="/settings"
                 element={<ModuleRoute module="Settings"><Settings /></ModuleRoute>}
+              />
+
+              <Route
+                path="/settings/weekly-emails/:notification/preview"
+                element={<ModuleRoute module="Settings"><Suspense fallback={pageFallback}><WeeklyEmailPreviewPage /></Suspense></ModuleRoute>}
+              />
+
+              <Route
+                path="/settings/weekly-emails/:notification/runs"
+                element={<ModuleRoute module="Settings"><Suspense fallback={pageFallback}><WeeklyEmailRunsPage /></Suspense></ModuleRoute>}
               />
 
               {/* ===========================

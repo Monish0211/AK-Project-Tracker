@@ -123,6 +123,8 @@ before(async () => {
   await mkProject("supersededOnly", "Active");
   await prisma.projectExpense.create({ data: { projectId: projectIds.supersededOnly!, category: "Travel", description: "old import", quantity: 1, unitCost: 10, totalCost: 10, isActive: false } });
   await mkProject("onHold", " on hold ");
+  await mkProject("notStarted", "Not Started");
+  await mkProject("notStartedVariant", " not-STARTED ");
   await mkProject("completed", "Completed");
   await mkProject("cancelled", "CANCELLED");
   await mkProject("archived", "Active", { isDeleted: true, deletedAt: new Date() });
@@ -164,8 +166,10 @@ test("eligibility (real DB): no-expense eligible projects are missing; a zero-va
   const report = buildMissingExpenseReport(mine);
   const missingKeys = Object.entries(projectIds).filter(([, id]) => report.missing.some((m) => m.id === id)).map(([k]) => k).sort();
   assert.deepEqual(missingKeys, ["budgetOnly", "kom", "manhourOnly", "noExpense", "supersededOnly", "xss"]);
-  // Eligible = all non-archived tagged projects minus On Hold / Completed / Cancelled.
+  // Eligible = all non-archived tagged projects minus Not Started / On Hold / Completed / Cancelled.
   assert.equal(report.eligibleCount, 7);
+  assert.ok(byKey("notStarted") && byKey("notStartedVariant"), "Not Started projects are fetched, then excluded by the rules");
+  assert.equal(report.missing.some((m) => m.id === projectIds.notStarted || m.id === projectIds.notStartedVariant), false);
 });
 
 // ── Settings and permissions ────────────────────────────────────────────────
@@ -247,6 +251,7 @@ test("job: missing projects → ONE consolidated email to the configured To + CC
     candidate("m1", "Active", 0, { client: `<img src=x onerror=alert(1)>` }),
     candidate("m2", "KoM Completed", 0),
     candidate("h1", "On Hold", 0),
+    candidate("n1", "Not Started", 0),
     candidate("e1", "Active", 4),
   ]);
   const r = await runMissingExpenseJob({ trigger: "scheduled", periodKey: `${TAG}-send` });
@@ -257,7 +262,12 @@ test("job: missing projects → ONE consolidated email to the configured To + CC
   assert.deepEqual(msg.cc, [userEmails.engineer, "outside@example.com"]);
   assert.equal(msg.subject, "Weekly Report — Projects Missing Other Project Expenses");
   const base = env.FRONTEND_URL.replace(/\/+$/, "");
-  assert.ok(msg.html.includes(`href="${base}/projects/view/m1"`) && msg.html.includes(`${base}/projects/view/m2`));
+  // "Open" = Edit Project → Other Project Expenses, by project id.
+  assert.ok(msg.html.includes(`href="${base}/projects/edit/m1?tab=expenses"`) && msg.html.includes(`${base}/projects/edit/m2?tab=expenses`));
+  assert.ok(msg.text?.includes(`${base}/projects/edit/m1?tab=expenses`));
+  assert.ok(!msg.html.includes("/projects/view/"));
+  assert.ok(!msg.html.includes("PR-" + TAG + "-n1"), "Not Started not listed");
+  assert.ok(msg.html.includes("Excluded statuses: Not Started, On Hold, Completed, Cancelled.") && msg.text?.includes("Excluded statuses: Not Started, On Hold, Completed, Cancelled."));
   assert.ok(!msg.html.includes("<img src=x"), "client value escaped");
   assert.ok(!msg.html.includes("PR-" + TAG + "-h1"), "excluded status not listed");
   assert.ok(msg.text?.includes("Eligible projects checked: 3"));
@@ -387,7 +397,11 @@ test("audit: Settings shows a stale SENDING run as delivery unknown (read-only �
   const row = await prisma.scheduledJobRun.create({ data: { jobName: MISSING_EXPENSE_JOB_NAME, periodKey: `${TAG}-view-sending`, trigger: "scheduled", status: "SENDING", claimToken: "dead", startedAt: new Date(Date.now() + 60_000) } });
   await prisma.$executeRaw`UPDATE "ScheduledJobRun" SET "updatedAt" = ${old} WHERE id = ${row.id}`;
   const res = await api("GET", "/notification-settings/missing-expenses", "admin");
-  const shown = res.data.recentRuns.find((r: { periodKey: string }) => r.periodKey === `${TAG}-view-sending`);
-  assert.equal(shown?.status, "DELIVERY_UNKNOWN");
+  assert.equal(res.data.lastRun?.periodKey, `${TAG}-view-sending`, "the newest run is the card's last run");
+  assert.equal(res.data.lastRun?.status, "DELIVERY_UNKNOWN");
+  assert.equal(res.data.lastRun?.retryable, false, "delivery unknown is never offered for retry");
+  const history = await api("GET", "/notification-settings/missing-expenses/runs?status=DELIVERY_UNKNOWN&pageSize=100", "admin");
+  const shown = history.data.items.find((r: { periodKey: string }) => r.periodKey === `${TAG}-view-sending`);
+  assert.equal(shown?.status, "DELIVERY_UNKNOWN", "the status filter matches what the row displays");
   assert.equal((await prisma.scheduledJobRun.findUniqueOrThrow({ where: { id: row.id } })).status, "SENDING", "view never writes");
 });

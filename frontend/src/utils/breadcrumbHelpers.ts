@@ -2,7 +2,7 @@ import { matchPath } from "react-router-dom";
 import {
   LayoutDashboard, FolderKanban, FolderPlus, PencilLine, Eye,
   Building2, Users, Clock3, Wallet, BarChart3, Settings,
-  CreditCard, FileText, Briefcase
+  CreditCard, FileText, Briefcase, History
 } from "lucide-react";
 import type { BreadcrumbItem } from "../types/BreadcrumbItem";
 import { getProjectById } from "../services/projectService";
@@ -62,6 +62,17 @@ export const getBreadcrumbs = (pathname: string): BreadcrumbItem[] => {
       { label: "Dashboard", icon: LayoutDashboard, href: "/", clickable: true },
       { label: "Projects", icon: FolderKanban, href: "/projects", clickable: true },
       { label: "Add Project", icon: FolderPlus, clickable: false, current: true }
+    ];
+  }
+
+  // Settings → Weekly Emails sub-pages (Preview Report / View All Runs)
+  const weeklyEmailMatch = matchPath("/settings/weekly-emails/:notification/:view", pathname);
+  if (weeklyEmailMatch) {
+    const isRuns = weeklyEmailMatch.params.view === "runs";
+    return [
+      { label: "Dashboard", icon: LayoutDashboard, href: "/", clickable: true },
+      { label: "Settings", icon: Settings, href: "/settings?tab=weeklyEmails", clickable: true },
+      { label: isRuns ? "Run History" : "Preview Report", icon: isRuns ? History : Eye, clickable: false, current: true }
     ];
   }
 

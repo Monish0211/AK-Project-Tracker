@@ -3,7 +3,7 @@ import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { requireUser } from "../../../shared/utils/requireUser.js";
 import * as service from "../services/missingExpense.service.js";
-import type { UpdateMissingExpenseRecipientsBody } from "../validators/missingExpense.validators.js";
+import { parseQuery, previewPageQuerySchema, runHistoryQuerySchema, type UpdateMissingExpenseRecipientsBody } from "../validators/missingExpense.validators.js";
 
 export const getMissingExpenseSettings = asyncHandler(async (_req: Request, res: Response) => {
   res.status(200).json({ success: true, data: await service.getSettingsView() });
@@ -21,6 +21,16 @@ export const getMissingExpenseUserOptions = asyncHandler(async (_req: Request, r
 
 export const previewMissingExpenseReport = asyncHandler(async (_req: Request, res: Response) => {
   res.status(200).json({ success: true, data: await service.previewReport() });
+});
+
+/** GET /preview?page=&pageSize= — one page of the report (read-only; never sends, never records a run). */
+export const previewMissingExpensePage = asyncHandler(async (req: Request, res: Response) => {
+  res.status(200).json({ success: true, data: await service.previewPage(parseQuery(previewPageQuerySchema, req.query)) });
+});
+
+/** GET /runs?page=&pageSize=&status=&trigger= — run history, newest first (read-only). */
+export const getMissingExpenseRunHistory = asyncHandler(async (req: Request, res: Response) => {
+  res.status(200).json({ success: true, data: await service.getRunHistory(parseQuery(runHistoryQuerySchema, req.query)) });
 });
 
 /** Manual trigger — 403 unless MISSING_EXPENSE_MANUAL_TRIGGER_ENABLED is "true" (off by default, so off in production). */

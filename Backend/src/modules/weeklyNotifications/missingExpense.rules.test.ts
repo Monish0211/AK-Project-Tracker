@@ -15,9 +15,8 @@ import {
 import { buildMissingOtherExpensesEmail } from "../../shared/email/templates/missingOtherExpenses.template.js";
 import { env } from "../../shared/utils/env.js";
 
-const EXCLUDED = ["On Hold", "Completed", "Cancelled"];
+const EXCLUDED = ["Not Started", "On Hold", "Completed", "Cancelled"];
 const ELIGIBLE = [
-  "Not Started",
   "Ongoing",
   "Active",
   "Allotted to Tech team",
@@ -32,7 +31,7 @@ const ELIGIBLE = [
 
 test("each excluded status is excluded, including case / whitespace / hyphen variants", () => {
   for (const s of EXCLUDED) assert.equal(isEligibleStatus(s), false, s);
-  for (const s of ["on hold", " ON HOLD ", "On  Hold", "on-hold", "On_Hold", "COMPLETED", " completed\t", "cancelled", "Canceled", "CANCELLED "]) {
+  for (const s of ["not started", " NOT STARTED ", "Not  Started", "not-started", "Not_Started", "on hold", " ON HOLD ", "On  Hold", "on-hold", "On_Hold", "COMPLETED", " completed\t", "cancelled", "Canceled", "CANCELLED "]) {
     assert.equal(isEligibleStatus(s), false, JSON.stringify(s));
   }
 });
@@ -44,6 +43,8 @@ test("every other dropdown status stays eligible — especially KoM Completed �
   }
   assert.equal(isEligibleStatus("kom completed"), true);
   assert.equal(isEligibleStatus("Completed Phase 1"), true, "only an exact excluded status is excluded");
+  assert.equal(isEligibleStatus("Started"), true);
+  assert.equal(isEligibleStatus("Not Started Yet"), true, "only an exact Not Started is excluded");
   assert.equal(isEligibleStatus("On-going"), true);
   assert.equal(isEligibleStatus("Ongoing"), true);
   assert.equal(isEligibleStatus(""), true, "a blank status is not one of the excluded statuses");
@@ -61,10 +62,12 @@ test("report: only eligible projects are counted; missing = zero Other Project E
     p("4", "Completed", 0), // excluded
     p("5", "On Hold", 0), // excluded
     p("6", "cancelled", 0), // excluded
+    p("8", "Not Started", 0), // excluded (Oct 2026)
+    p("9", "not-started", 0), // excluded — normalized
     p("7", "On-going", 3),
   ]);
-  assert.equal(report.eligibleCount, 4);
-  assert.deepEqual(report.missing.map((m) => m.id), ["1", "2"]);
+  assert.equal(report.eligibleCount, 4, "Not Started is not counted as eligible");
+  assert.deepEqual(report.missing.map((m) => m.id), ["1", "2"], "nor listed as missing");
 });
 
 test("report: missing list is sorted by PR No. (numeric-aware)", () => {

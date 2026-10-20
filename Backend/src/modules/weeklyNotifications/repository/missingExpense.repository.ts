@@ -1,3 +1,4 @@
+import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import type { CandidateProject } from "../missingExpense.rules.js";
 
@@ -15,6 +16,9 @@ import type { CandidateProject } from "../missingExpense.rules.js";
 export async function findCandidateProjects(): Promise<CandidateProject[]> {
   const rows = await prisma.project.findMany({
     where: { isDeleted: false },
+    // A fixed input order makes the report's order fully deterministic (its own
+    // sort is stable), so preview pages never shuffle between requests.
+    orderBy: { id: "asc" },
     select: {
       id: true,
       prNo: true,
@@ -141,5 +145,25 @@ export async function markDeliveryUnknown(id: string, staleBefore: Date): Promis
 }
 
 export async function findRecentRuns(jobName: string, take = 5) {
-  return prisma.scheduledJobRun.findMany({ where: { jobName }, orderBy: { startedAt: "desc" }, take });
+  return prisma.scheduledJobRun.findMany({ where: { jobName }, orderBy: [{ startedAt: "desc" }, { id: "desc" }], take });
+}
+
+export type RunWhere = Prisma.ScheduledJobRunWhereInput;
+
+/**
+ * One page of a job's run history, newest first. `id` breaks ties between
+ * runs started at the same instant, so pages never overlap or skip rows.
+ * Served by the (jobName, startedAt) index; count + page in one round trip.
+ */
+export async function findRunsPage(jobName: string, where: RunWhere, skip: number, take: number) {
+  const filter: RunWhere = { ...where, jobName };
+  const [total, rows] = await prisma.$transaction([
+    prisma.scheduledJobRun.count({ where: filter }),
+    prisma.scheduledJobRun.findMany({ where: filter, orderBy: [{ startedAt: "desc" }, { id: "desc" }], skip, take }),
+  ]);
+  return { total, rows };
+}
+
+export async function countRuns(jobName: string) {
+  return prisma.scheduledJobRun.count({ where: { jobName } });
 }

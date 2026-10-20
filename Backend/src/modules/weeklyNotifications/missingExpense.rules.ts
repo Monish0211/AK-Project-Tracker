@@ -16,7 +16,7 @@ export const MISSING_EXPENSE_SUBJECT = "Weekly Report — Projects Missing Other
  * excluded — "KoM Completed" stays eligible even though it contains
  * "Completed". "Canceled" is the US spelling of "Cancelled".
  */
-const EXCLUDED_STATUS_KEYS = new Set(["on hold", "completed", "cancelled", "canceled"]);
+const EXCLUDED_STATUS_KEYS = new Set(["not started", "on hold", "completed", "cancelled", "canceled"]);
 
 export function normalizeStatus(status: string | null | undefined): string {
   return (status ?? "").toLowerCase().replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
@@ -43,15 +43,22 @@ export interface MissingExpenseReport {
 }
 
 /**
- * Eligible = not On Hold / Completed / Cancelled (archived projects are already
+ * Eligible = not Not Started / On Hold / Completed / Cancelled (archived projects are already
  * excluded by the query). Missing = eligible AND zero Other Project Expenses
  * records — the record count, never the amount, decides.
  */
+/**
+ * PR-number order ("PR-9" before "PR-10"). One shared collator: identical to
+ * `a.localeCompare(b, "en", { numeric: true })` (which builds a new collator
+ * on every comparison — ~0.5 s for a few thousand projects).
+ */
+export const prNoCollator = new Intl.Collator("en", { numeric: true });
+
 export function buildMissingExpenseReport(projects: CandidateProject[]): MissingExpenseReport {
   const eligible = projects.filter((p) => isEligibleStatus(p.projectStatus));
   const missing = eligible
     .filter((p) => p.otherExpenseCount === 0)
-    .sort((a, b) => a.prNo.localeCompare(b.prNo, "en", { numeric: true }));
+    .sort((a, b) => prNoCollator.compare(a.prNo, b.prNo));
   return { eligibleCount: eligible.length, missing };
 }
 

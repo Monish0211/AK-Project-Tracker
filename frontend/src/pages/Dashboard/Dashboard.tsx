@@ -15,6 +15,7 @@ import DepartmentSummary from "./components/DepartmentSummary";
 import TopClients from "./components/TopClients";
 import RecentProjects from "./components/RecentProjects";
 import { useLiveRefresh } from "../../hooks/useLiveRefresh";
+import type { PmoEntity } from "../../utils/pmoDataChanged";
 import { ApiError } from "../../services/apiClient";
 import { fetchDashboardSummary, type DashboardSummary } from "../../services/dashboardSummaryService";
 import { DashboardSummaryProvider } from "./DashboardSummaryContext";
@@ -29,8 +30,15 @@ import { DashboardSummaryProvider } from "./DashboardSummaryContext";
 // no longer rendered here.
 const ENABLE_DASHBOARD_BACKGROUND = true;
 
+const DASHBOARD_REFRESH_ENTITIES: PmoEntity[] = ["project", "timesheet", "customer"];
+
 const Dashboard = () => {
-  const { refreshKey, lastUpdated, refresh } = useLiveRefresh();
+  // Every Dashboard figure is computed by GET /dashboard/summary from project,
+  // invoice, expense and timesheet rows on the server — so only saves of those
+  // (entity "project" covers invoices/quantities/expenses/milestones/notes),
+  // timesheet imports and customer edits re-request it. Employee/reminder/user
+  // cache loads (fired after every page load) no longer do.
+  const { refreshKey, lastUpdated, refresh } = useLiveRefresh(DASHBOARD_REFRESH_ENTITIES);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);

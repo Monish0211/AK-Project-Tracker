@@ -4,6 +4,7 @@ import { env } from "./shared/utils/env.js";
 import { verifyEmailConnection } from "./shared/email/transporter.js";
 import { startTimesheetPollScheduler } from "./shared/scheduler/timesheetPollScheduler.js";
 import { startMissingExpenseScheduler } from "./shared/scheduler/missingExpenseScheduler.js";
+import { startUnpaidInvoiceScheduler } from "./shared/scheduler/unpaidInvoiceScheduler.js";
 
 app.listen(env.PORT, () => {
   console.log(`PMO Portal backend listening on port ${env.PORT} [${env.NODE_ENV}]`);
@@ -34,4 +35,6 @@ app.listen(env.PORT, () => {
   // Weekly "Projects Missing Other Project Expenses" email — see
   // shared/scheduler/missingExpenseScheduler.ts (DB-locked per ISO week).
   startMissingExpenseScheduler();
+  // Weekly "Invoices Unpaid for 30+ Days" email — see shared/scheduler/unpaidInvoiceScheduler.ts.
+  startUnpaidInvoiceScheduler();
 });

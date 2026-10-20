@@ -9,7 +9,7 @@ import { loadExpensesForProject, getLastKnownExpensesMeta } from "../../services
 import type { ExpensesConcurrencySignal } from "../../services/otherProjectExpenseService";
 import { createEmptyProject } from "../../utils/createEmptyProject";
 import ProjectForm from "./components/ProjectForm";
-import type { TabKey } from "./components/ProjectForm";
+import { readEditProjectDeepLink } from "./editProjectDeepLink";
 import type { SubresourceLoadStatus } from "./components/FormButtons";
 import { Button } from "../../components/ui/Button";
 
@@ -32,10 +32,8 @@ const EditProject = () => {
   const { id } = useParams();
   const location = useLocation();
 
-  const navState = location.state as { tab?: TabKey; activityId?: string; invoiceLineId?: string } | null;
-  const initialTab = navState?.tab;
-  const initialActivityId = navState?.activityId;
-  const initialInvoiceLineId = navState?.invoiceLineId;
+  // Route state (in-app) or ?tab=…&invoiceLineId=… (weekly email links) — see readEditProjectDeepLink.
+  const { tab: initialTab, activityId: initialActivityId, invoiceLineId: initialInvoiceLineId } = readEditProjectDeepLink(location.state, location.search);
 
   // Phase 3.1: General Information is fetched fresh from the real backend
   // on every mount (not just read from whatever the local mirror already
