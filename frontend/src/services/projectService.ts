@@ -943,12 +943,16 @@ async function refreshProjectResourcesFromBackend(project: Project): Promise<Pro
   }
 }
 
-/** Fresh single-project fetch — GET /projects/:id. Returns undefined if not found (or soft-deleted). */
-export async function fetchProjectByIdFromApi(id: string): Promise<Project | undefined> {
+/**
+ * Fresh single-project fetch — GET /projects/:id. Returns undefined if not found (or soft-deleted).
+ * `includeResources: false` skips the follow-up GET /projects/:id/resources (a second, sequential request) for callers that
+ * never read Team Assigned — e.g. the invoice drawer opened from Invoice Tracker. The default is unchanged.
+ */
+export async function fetchProjectByIdFromApi(id: string, options: { includeResources?: boolean } = {}): Promise<Project | undefined> {
   try {
     const dto = await apiClient.get<BackendProjectDto>(`/projects/${id}`);
     let merged = mergeBackendGeneralInfoIntoLocalProject(dto);
-    merged = await refreshProjectResourcesFromBackend(merged);
+    if (options.includeResources !== false) merged = await refreshProjectResourcesFromBackend(merged);
     writeThroughProjectsMirror([merged]);
     return merged;
   } catch (err) {

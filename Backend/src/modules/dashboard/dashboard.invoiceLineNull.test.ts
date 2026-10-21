@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { prisma } from "../../shared/utils/prismaClient.js";
 import { findInvoiceLinesForProjects } from "./repository/dashboard.repository.js";
 import { hardDeleteProject } from "../projects/repository/project.repository.js";
@@ -32,6 +32,10 @@ import { hardDeleteProject } from "../projects/repository/project.repository.js"
  */
 
 const TAG = `dash-invln-${Date.now()}`;
+
+// hardDeleteProject() now records an invoice-history event per deleted line (Invoice Tracker, Oct 2026) and so
+// takes an audit context; this test calls the repository directly, outside any request.
+const TEST_AUDIT = { actorUserId: null, actorName: `${TAG} test`, source: "project_permanent_delete" } as const;
 
 function projectPayload(prNo: string): Parameters<typeof prisma.project.create>[0]["data"] {
   return {
@@ -119,7 +123,7 @@ test("findInvoiceLinesForProjects: normal multi-project/multi-item/multi-line co
       // (cascading QuantityItems) — no separate cleanup needed.
       for (const id of createdProjectIds) {
         await prisma.project.findUnique({ where: { id } }).then(async (p) => {
-          if (p) await hardDeleteProject(id);
+          if (p) await hardDeleteProject(id, TEST_AUDIT);
         });
       }
     }
@@ -155,7 +159,7 @@ test("findInvoiceLinesForProjects: survives DELETE /projects/:id/permanent racin
   let crashCount = 0;
   const lastMessages: string[] = [];
   const results = await Promise.allSettled(
-    projects.flatMap((p) => [findInvoiceLinesForProjects([p.id]), hardDeleteProject(p.id)])
+    projects.flatMap((p) => [findInvoiceLinesForProjects([p.id]), hardDeleteProject(p.id, TEST_AUDIT)])
   );
   for (const r of results) {
     if (r.status === "rejected") {
@@ -175,7 +179,7 @@ test("findInvoiceLinesForProjects: survives DELETE /projects/:id/permanent racin
   for (const p of projects) {
     const stillExists = await prisma.project.findUnique({ where: { id: p.id } });
     if (stillExists) {
-      await hardDeleteProject(p.id).catch(() => undefined);
+      await hardDeleteProject(p.id, TEST_AUDIT).catch(() => undefined);
     }
   }
 
@@ -184,4 +188,9 @@ test("findInvoiceLinesForProjects: survives DELETE /projects/:id/permanent racin
     0,
     `findInvoiceLinesForProjects crashed with the null-projectId TypeError ${crashCount}/${N} times. Example: ${lastMessages[0]}`
   );
+});
+
+// The history rows left by this file's permanent deletes (no FK, so nothing cascades them away).
+after(async () => {
+  await prisma.invoiceStatusEvent.deleteMany({ where: { actorName: TEST_AUDIT.actorName } });
 });

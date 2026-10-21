@@ -1,13 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { ListChecks } from "lucide-react";
 
 import type { Project } from "../../../../types/Project";
-import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
+import type { InvoiceItem, InvoiceLine } from "../../../../types/InvoiceItem";
 import type { InvoiceRequest } from "../../../../types/InvoiceRequest";
-import { updateProject } from "../../../../services/projectService";
-import { fetchInvoiceItemsFromApi, fetchProjectInvoiceCurrency, syncInvoiceLinesWithApi } from "../../../../services/invoiceService";
-import { ApiError } from "../../../../services/apiClient";
 import { getInvoiceRequestsForProject } from "../../../../services/invoiceRequestService";
 import { useAuth } from "../../../../auth/authContext";
 import { hasApprovalPermission } from "../../../../auth/permissions";
@@ -15,7 +12,8 @@ import { hasApprovalPermission } from "../../../../auth/permissions";
 import { CommercialSummary } from "./CommercialSummary";
 import { InvoiceSummaryPanel } from "./InvoiceSummaryPanel";
 import { ActivitiesTable } from "./ActivitiesTable";
-import { RaiseInvoiceDrawer } from "./RaiseInvoiceDrawer";
+import { useInvoiceLineActions } from "./useInvoiceLineActions";
+import { InvoiceActionDrawer } from "./InvoiceActionDrawer";
 import { RaiseInvoiceCycleModal } from "./RaiseInvoiceCycleModal";
 import { InvoiceWorkspaceModal } from "./InvoiceWorkspaceModal";
 import { LumpSumInvoiceWorkspaceModal } from "./LumpSumInvoiceWorkspaceModal";
@@ -27,7 +25,6 @@ import { RequestInvoiceModal } from "./RequestInvoiceModal";
 import { SendInvoiceToModal } from "./SendInvoiceToModal";
 import { InvoiceRequestStatusIndicator } from "./InvoiceRequestStatusIndicator";
 import { getInvoiceMethod, getInvoiceCyclesForProject, NEW_INVOICE_CYCLE } from "./InvoiceCalculations";
-import { logInvoiceDeletedAudit, logInvoiceCycleStatusChangedAudit } from "../../../../services/projectAuditService";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { Card, CardBody } from "../../../../components/ui/Card";
 import { usePmoToast } from "../../../../components/ui/usePmoToast";
@@ -41,12 +38,6 @@ interface Props {
   initialActivityId?: string | null;
   /** Deep-linked from a notification — scrolls to and highlights this invoice line in Invoice History. */
   initialInvoiceLineId?: string | null;
-}
-
-interface DrawerState {
-  item: InvoiceItem;
-  mode: "create" | "view" | "edit";
-  existingLine?: InvoiceLine;
 }
 
 /**
@@ -73,7 +64,9 @@ interface DrawerState {
 export function InvoiceDashboard({ project, setProject, readOnly = false, initialActivityId, initialInvoiceLineId }: Props) {
   const { showToast } = usePmoToast();
   const { user } = useAuth();
-  const isReadOnly = readOnly || !setProject;
+  // View / Edit / Delete / status-change and the save-to-server path are shared with Invoice Tracker (invoiceLineActions.ts).
+  const actions = useInvoiceLineActions({ project, setProject, readOnly, onSynced: () => refreshInvoiceRequestState() });
+  const { isReadOnly, canEditInvoice, canDeleteInvoice, persistProjectChange } = actions;
   // UI-courtesy layer only — the backend's requireApprovalPermission("Raise
   // Invoice") gate on POST /quantity/:quantityItemId/invoice-lines (and the
   // matching PATCH-transition check) remains the real, authoritative gate.
@@ -81,18 +74,6 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
   // Invoice Edit/Delete approval rights (Oct 2026) — same UI-courtesy layer;
   // the backend's "Edit Invoice" content check (PATCH) and
   // requireApprovalPermission("Delete Invoice") (DELETE) are authoritative.
-  const canEditInvoice = hasApprovalPermission(user, "Edit Invoice");
-  const canDeleteInvoice = hasApprovalPermission(user, "Delete Invoice");
-
-  const [drawerState, setDrawerState] = useState<DrawerState | null>(null);
-
-  // Invoice Currency feature (Oct 2026) — duplicate-submission guard. True
-  // while a persistProjectChange() sync is still talking to the backend. A
-  // second save in that window would diff against optimistic lines whose
-  // server ids don't exist yet (and could double-submit), so it is refused
-  // with a message instead. A ref, not state: the guard must see the
-  // current value synchronously, even for two clicks in the same frame.
-  const isSyncingRef = useRef(false);
 
   // Request Invoice workflow — whether this project already has an Open
   // Invoice Request (duplicate-submission UX only; the backend's own
@@ -224,171 +205,13 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
     }
   };
 
-  const handleViewInvoiceLine = (item: InvoiceItem, line: InvoiceLine) => {
-    setDrawerState({ item, mode: "view", existingLine: line });
-  };
+  const handleViewInvoiceLine = actions.openView;
+  const handleEditInvoiceLine = actions.openEdit;
 
-  const handleEditInvoiceLine = (item: InvoiceItem, line: InvoiceLine) => {
-    if (isReadOnly) return;
-    setDrawerState({ item, mode: "edit", existingLine: line });
-  };
-
-  // Invoice actions (Raise/Edit/Delete) must never depend on the user
-  // separately remembering to click "Update Project" at the bottom of the
-  // whole Edit Project form afterwards — that button only exists for the
-  // General/Quantity/Payments/etc. tabs. setProject alone only updates this
-  // page's in-memory React state; without also persisting here, a raised
-  // invoice looks saved (Invoice History shows it, KPIs update) but is
-  // silently lost the moment the page remounts (navigate away and back,
-  // refresh) — reopening Raise Invoice for that activity would then
-  // correctly, but confusingly, show no invoices at all. updateProject
-  // writes straight to the same localStorage record FormButtons' "Update
-  // Project" writes to, so an invoice raised/edited/deleted here is durable
-  // immediately, exactly like clicking Save Invoice implies.
-  //
-  // The backend is now the real source of truth (Invoice Backend Phase) —
-  // every one of the 5 callers below (drawer save, all 4 workspace modals,
-  // delete, status change) still builds its own `updatedProject` exactly as
-  // before; this is the ONE place that also reconciles with the API, so
-  // none of that existing UI/business logic needed to change. The
-  // localStorage write happens first (optimistic — same immediate UX as
-  // before there was a backend at all), then syncInvoiceLinesWithApi()
-  // diffs old vs. new InvoiceLines by id (POST new, PATCH changed, DELETE
-  // removed) and the backend's authoritative response — real ids for
-  // anything just created, current server-derived calculatedAmountINR/
-  // commercialAdjustmentINR — replaces the optimistic guess. If the backend
-  // call fails, the optimistic localStorage write still stands (same
-  // degraded behavior as before this phase existed) and the error is
-  // surfaced to the console rather than silently swallowed.
-  // Invoice Currency feature (Oct 2026) — the server's current lock for this
-  // project, or the value we already had if it can't be read (older backend
-  // or a transient failure). Never invents a lock.
-  const readServerInvoiceCurrency = async (fallback: Project["invoiceCurrency"]): Promise<Project["invoiceCurrency"]> => {
-    try {
-      const fresh = await fetchProjectInvoiceCurrency(project.id);
-      return fresh === undefined ? fallback : fresh;
-    } catch {
-      return fallback;
-    }
-  };
-
-  const persistProjectChange = (updatedProject: Project): boolean => {
-    if (isSyncingRef.current) {
-      showToast({
-        type: "error",
-        title: "Previous invoice change still saving",
-        message: "Please wait a moment for the previous invoice change to finish saving, then try again.",
-      });
-      return false;
-    }
-    isSyncingRef.current = true;
-
-    setProject?.(updatedProject);
-    updateProject({ ...updatedProject, updatedAt: new Date().toISOString() });
-
-    syncInvoiceLinesWithApi(project.id, project.invoiceItems, updatedProject.invoiceItems)
-      .then(async (reconciledItems) => {
-        // Re-read the lock too: a first raise establishes it and a delete may
-        // release it, so the copy loaded with the project is stale now. A
-        // new invoice opened next then starts from the server's real state.
-        const invoiceCurrency = await readServerInvoiceCurrency(updatedProject.invoiceCurrency);
-        const reconciledProject = { ...updatedProject, invoiceItems: reconciledItems, invoiceCurrency };
-        setProject?.(reconciledProject);
-        updateProject({ ...reconciledProject, updatedAt: new Date().toISOString() });
-        // Invoice Request lifecycle indicator — re-check after a real,
-        // backend-confirmed invoice change (Raise/status update/edit/delete
-        // all funnel through here) so Open -> Completed (and the fulfilled
-        // line's own status) is reflected without requiring a remount. The
-        // backend's own Raised-fulfillment/Paid-notification work is itself
-        // fire-and-forget server-side, so this can very occasionally still
-        // be a beat behind — never incorrect, just eventually consistent,
-        // same class of tradeoff as every other fire-and-forget path here.
-        refreshInvoiceRequestState();
-      })
-      .catch((error) => {
-        console.error("Failed to sync invoice changes with the backend:", error);
-        // Invoice Currency feature (Oct 2026) — a 4xx is the backend
-        // definitively rejecting the change (e.g. currency lock, invalid
-        // exchange rate, Work Order Value ceiling): show its actual reason,
-        // and replace the optimistic local state with what the server really
-        // holds, so the screen never shows an invoice that was never saved.
-        // Network/5xx failures keep the previous behavior (outcome unknown).
-        if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
-          showToast({
-            type: "error",
-            title: "Invoice change was rejected",
-            message: error.message,
-            duration: 0,
-          });
-          return Promise.all([fetchInvoiceItemsFromApi(project.id), readServerInvoiceCurrency(updatedProject.invoiceCurrency)])
-            .then(([serverItems, invoiceCurrency]) => {
-              const serverProject = { ...updatedProject, invoiceItems: serverItems, invoiceCurrency };
-              setProject?.(serverProject);
-              updateProject({ ...serverProject, updatedAt: new Date().toISOString() });
-            })
-            .catch((reloadError) => {
-              console.error("Failed to reload invoices after a rejected change:", reloadError);
-            });
-        }
-        showToast({
-          type: "error",
-          title: "Invoice change not saved to the server",
-          message: "Your change is showing locally, but saving it to the server failed. Please retry, or it may not persist.",
-          duration: 0,
-        });
-      })
-      .finally(() => {
-        isSyncingRef.current = false;
-      });
-    return true;
-  };
-
-  const handleDeleteInvoiceLine = (item: InvoiceItem, line: InvoiceLine) => {
-    if (isReadOnly || !setProject) return;
-
-    const updatedItems = project.invoiceItems.map((invoiceItem) =>
-      invoiceItem.id !== item.id
-        ? invoiceItem
-        : { ...invoiceItem, invoices: invoiceItem.invoices.filter((existing) => existing.id !== line.id) }
-    );
-    const updatedProject = { ...project, invoiceItems: updatedItems };
-    if (!persistProjectChange(updatedProject)) return;
-
-    // Audit Log "Invoice Deleted"
-    logInvoiceDeletedAudit(
-      project.id,
-      line.invoiceNo,
-      line.invoiceAmountINR,
-      "User deleted invoice line from Invoice History"
-    );
-  };
-
-  const handleUpdateInvoiceCycleStatus = (invoiceNo: string, newStatus: InvoiceLineStatus) => {
-    if (isReadOnly || !setProject) return;
-
-    let oldStatus = "Draft";
-    const updatedItems = (project.invoiceItems ?? []).map((item) => {
-      const updatedLines = (item.invoices ?? []).map((line) => {
-        if (line.invoiceNo === invoiceNo) {
-          oldStatus = line.status;
-          return { ...line, status: newStatus };
-        }
-        return line;
-      });
-      return { ...item, invoices: updatedLines };
-    });
-
-    const updatedProject = { ...project, invoiceItems: updatedItems };
-    if (!persistProjectChange(updatedProject)) return;
-
-    // Audit Log "Invoice Status Updated"
-    logInvoiceCycleStatusChangedAudit(project.id, invoiceNo, oldStatus, newStatus);
-  };
-
-  const handleSave = (updatedProject: Project) => {
-    if (!persistProjectChange(updatedProject)) return;
-    setDrawerState(null);
-  };
+  // persistProjectChange (the optimistic write + server sync, duplicate-submission guard and error handling) now lives in
+  // invoiceLineActions.ts, shared with Invoice Tracker — see persistInvoiceProjectChange().
+  const handleDeleteInvoiceLine = actions.deleteInvoiceLine;
+  const handleUpdateInvoiceCycleStatus = actions.updateInvoiceCycleStatus;
 
   // Shared by InvoiceSummaryPanel's "Print Invoice Document" button and
   // InvoiceHistory's per-row Print action — the ONE way to open the
@@ -398,18 +221,6 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
     setPrintInvoiceNo(invoiceNo);
     setIsPrintModalOpen(true);
   };
-
-  // The drawer must never operate on the snapshot captured at click time —
-  // re-resolve `item`/`existingLine` against the live `project` prop on
-  // every render so the dialog reflects the same, single source of truth
-  // as the rest of the module (Activities table, Invoice History, KPI
-  // cards) rather than a frozen independent copy.
-  const activeItem = drawerState
-    ? project.invoiceItems.find((invoiceItem) => invoiceItem.id === drawerState.item.id) ?? drawerState.item
-    : null;
-  const activeExistingLine = drawerState?.existingLine
-    ? activeItem?.invoices.find((line) => line.id === drawerState.existingLine!.id) ?? drawerState.existingLine
-    : drawerState?.existingLine;
 
   return (
     <div className="space-y-5">
@@ -552,29 +363,7 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
       )}
 
       {/* create/edit are only ever triggered when not read-only (handlers guard above); view is safe either way. */}
-      {drawerState && activeItem && (
-        <RaiseInvoiceDrawer
-          // Forces a full unmount/remount — never a prop update on a reused
-          // instance — whenever the target activity, mode, or invoice line
-          // changes. Without this, React's reconciler is free to treat two
-          // consecutive opens (e.g. Raise Invoice for Activity A, then
-          // Activity B) as the SAME component instance just receiving new
-          // props, which would let useState's lazy initializers keep
-          // whatever they first initialized to instead of recomputing for
-          // the new activity. Keying on identity makes "every open starts
-          // from a completely fresh, correctly-scoped dialog" a structural
-          // guarantee rather than something every piece of internal state
-          // has to get right on its own.
-          key={`${activeItem.id}:${drawerState.mode}:${activeExistingLine?.id ?? "new"}`}
-          project={project}
-          item={activeItem}
-          mode={drawerState.mode}
-          existingLine={activeExistingLine}
-          projectInvoiceCycle={selectedProjectCycle}
-          onClose={() => setDrawerState(null)}
-          onSave={handleSave}
-        />
-      )}
+      <InvoiceActionDrawer project={project} actions={actions} projectInvoiceCycle={selectedProjectCycle} />
     </div>
   );
 }

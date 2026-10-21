@@ -1,6 +1,7 @@
 import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import type { InvoiceLineData } from "../invoice.types.js";
+import { inTransaction, lockLine, recordEvents, type InvoiceAuditContext } from "./invoiceStatusEvent.repository.js";
 
 type Client = Prisma.TransactionClient | typeof prisma;
 
@@ -20,8 +21,13 @@ type Client = Prisma.TransactionClient | typeof prisma;
  * and duplicate-milestone-billing checks now run in — same convention as
  * milestone.repository.ts's createMilestone().
  */
-export function createLine(quantityItemId: string, data: InvoiceLineData, client: Client = prisma) {
-  return client.invoiceLine.create({ data: { ...data, quantityItemId } });
+export function createLine(quantityItemId: string, data: InvoiceLineData, audit: InvoiceAuditContext, client: Client = prisma) {
+  // Invoice Tracker (Oct 2026) — the CREATED history event is written in the same transaction as the line.
+  return inTransaction(client, async (tx) => {
+    const row = await tx.invoiceLine.create({ data: { ...data, quantityItemId } });
+    await recordEvents(tx, audit, [{ line: row, eventType: "CREATED", fromStatus: null, toStatus: row.status }]);
+    return row;
+  });
 }
 
 /**
@@ -35,8 +41,18 @@ export function createLine(quantityItemId: string, data: InvoiceLineData, client
  * ingestInvoiceLinesForProject() (mirrors milestone.service.ts's own
  * createMilestonesWithIdsSafely()/ingestMilestonesForProject()).
  */
-export function createLinesWithIds(rows: Array<InvoiceLineData & { id: string; quantityItemId: string }>) {
-  return prisma.invoiceLine.createManyAndReturn({ data: rows });
+export function createLinesWithIds(rows: Array<InvoiceLineData & { id: string; quantityItemId: string }>, audit: InvoiceAuditContext) {
+  // Invoice Tracker (Oct 2026) — IMPORTED events (earlier history unknown), atomic with the insert. A unique-constraint
+  // error still propagates unchanged, so the caller's conflict handling is unaffected.
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.invoiceLine.createManyAndReturn({ data: rows });
+    await recordEvents(
+      tx,
+      audit,
+      created.map((row) => ({ line: row, eventType: "IMPORTED" as const, fromStatus: null, toStatus: row.status }))
+    );
+    return created;
+  });
 }
 
 export function getLineById(id: string) {
@@ -57,13 +73,30 @@ export function getLinesByQuantityItemIds(quantityItemIds: string[]) {
 }
 
 /** P2/P3 — optional `tx`, same reasoning as createLine() above. */
-export function updateLine(id: string, data: Partial<InvoiceLineData>, client: Client = prisma) {
-  return client.invoiceLine.update({ where: { id }, data });
+export function updateLine(id: string, data: Partial<InvoiceLineData>, audit: InvoiceAuditContext, client: Client = prisma) {
+  // Invoice Tracker (Oct 2026) — the previous status is read under a row lock INSIDE the transaction, so the event
+  // always records the real previous status; nothing is recorded when the status did not actually change.
+  return inTransaction(client, async (tx) => {
+    const before = await lockLine(tx, id);
+    const row = await tx.invoiceLine.update({ where: { id }, data }); // throws P2025 when the line is gone, as before
+    if (before && before.status !== row.status) {
+      await recordEvents(tx, audit, [{ line: row, eventType: "STATUS_CHANGED", fromStatus: before.status, toStatus: row.status }]);
+    }
+    return row;
+  });
 }
 
 /** Optional `tx` (defaults to the plain client) so deleteInvoiceLine() can delete inside its currency-lock transaction. */
-export function deleteLine(id: string, client: Client = prisma) {
-  return client.invoiceLine.delete({ where: { id } });
+export function deleteLine(id: string, audit: InvoiceAuditContext, client: Client = prisma) {
+  // Invoice Tracker (Oct 2026) — DELETED event (history is kept: it has no FK to the line), atomic with the delete.
+  return inTransaction(client, async (tx) => {
+    const before = await lockLine(tx, id);
+    const row = await tx.invoiceLine.delete({ where: { id } }); // throws P2025 when the line is gone, as before
+    await recordEvents(tx, audit, [
+      { line: row, eventType: "DELETED", fromStatus: before?.status ?? row.status, toStatus: null },
+    ]);
+    return row;
+  });
 }
 
 /**
@@ -247,8 +280,20 @@ export async function sumBilledQuantityByQuantityItemIds(quantityItemIds: string
  * parent activity is being deleted anyway, clearing it first loses nothing
  * the guard was protecting.
  */
-export function deleteCancelledLinesForQuantityItem(quantityItemId: string) {
-  return prisma.invoiceLine.deleteMany({ where: { quantityItemId, status: "Cancelled" } });
+export function deleteCancelledLinesForQuantityItem(quantityItemId: string, audit: InvoiceAuditContext) {
+  // Invoice Tracker (Oct 2026) — one DELETED event per cleared Cancelled line, atomic with the delete.
+  return prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<{ id: string; invoiceNo: string; quantityItemId: string; status: string }[]>`
+      SELECT "id", "invoiceNo", "quantityItemId", "status" FROM "InvoiceLine"
+      WHERE "quantityItemId" = ${quantityItemId} AND "status" = 'Cancelled' FOR UPDATE`;
+    const result = await tx.invoiceLine.deleteMany({ where: { id: { in: locked.map((l) => l.id) } } });
+    await recordEvents(
+      tx,
+      audit,
+      locked.map((line) => ({ line, eventType: "DELETED" as const, fromStatus: line.status, toStatus: null }))
+    );
+    return result;
+  });
 }
 
 /**

@@ -20,6 +20,7 @@ import {
   updateQuantity as updateQuantityInRepository,
 } from "../repository/quantity.repository.js";
 import type { QuantityItemData } from "../quantity.types.js";
+import { buildInvoiceAudit } from "../../invoices/invoiceAudit.js";
 import type { CreateQuantityInput, UpdateQuantityInput } from "../validators/quantity.validators.js";
 
 /**
@@ -190,7 +191,7 @@ export async function deleteQuantityItem(id: string, user: AccessTokenPayload): 
 
   // Any lines left at this point are Cancelled (see the count check above) —
   // clear them so the FK's onDelete: Restrict doesn't block this delete.
-  await deleteCancelledLinesForQuantityItem(id);
+  await deleteCancelledLinesForQuantityItem(id, await buildInvoiceAudit(user, "quantity_activity_delete"));
   await deleteQuantityInRepository(id);
 }
 

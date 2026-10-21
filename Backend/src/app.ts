@@ -22,6 +22,7 @@ import { invoiceRequestRoutes } from "./modules/invoiceRequests/index.js";
 import { documentRoutes } from "./modules/documents/index.js";
 import { pmoCoordinatorRoutes } from "./modules/pmoCoordinators/index.js";
 import { missingExpenseNotificationRoutes, unpaidInvoiceNotificationRoutes } from "./modules/weeklyNotifications/index.js";
+import { invoiceTrackerRoutes } from "./modules/invoiceTracker/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { requestLogger } from "./shared/middleware/requestLogger.js";
 import { AppError } from "./shared/utils/AppError.js";
@@ -164,6 +165,8 @@ app.use("/pmo-coordinators", pmoCoordinatorRoutes);
 app.use("/notification-settings/missing-expenses", missingExpenseNotificationRoutes);
 // Weekly "Invoices Unpaid for 30+ Days" email settings (Settings → Weekly Emails, Oct 2026).
 app.use("/notification-settings/unpaid-invoices", unpaidInvoiceNotificationRoutes);
+// Invoice Tracker (Oct 2026) - monthly invoice activity per project, read-only.
+app.use("/invoice-tracker", invoiceTrackerRoutes);
 
 app.use((req, _res, next) => {
   next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));

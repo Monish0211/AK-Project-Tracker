@@ -44,6 +44,8 @@ import { useAuth } from "../../auth/authContext";
 import { canEditProject, canMutateData, hasApprovalPermission } from "../../auth/permissions";
 import { usePmoToast } from "../../components/ui/usePmoToast";
 import { InvoiceRequestFlag } from "../../components/ui/InvoiceRequestFlag";
+import { RepositoryInvoiceStatusBadge } from "../../components/Projects/RepositoryInvoiceStatusBadge";
+import { repositoryInvoiceSummary } from "../../utils/repositoryInvoiceStatus";
 import ExpenseImportModal from "./components/ExpenseInformation/ExpenseImportModal";
 
 /** Sort fields the backend's GET /projects can order by — see listProjectsQuerySchema. Anything else (Team/Commercial/Invoice columns, not modeled server-side yet) is synced with the default sort instead and left to this page's own client-side sort exactly as before. */
@@ -134,23 +136,8 @@ const getPrSeries = (prNo: string | null | undefined): string | null => {
 // with no risk of a temporal-dead-zone ordering issue.
 const getRepositoryInvoiceSummary = (
   p: Project
-): { pendingDue: number; invoiceStatus: "Not Started" | "Partially Paid" | "Paid" } => {
-  const workOrderValue = p.workOrderValueINR || 0;
-  const pendingDue =
-    typeof p.backendPendingDueINR === "number" ? p.backendPendingDueINR : workOrderValue;
-  const invoiceRaised = Math.max(workOrderValue - pendingDue, 0);
-
-  let invoiceStatus: "Not Started" | "Partially Paid" | "Paid";
-  if (invoiceRaised <= 0) {
-    invoiceStatus = "Not Started";
-  } else if (invoiceRaised >= workOrderValue) {
-    invoiceStatus = "Paid";
-  } else {
-    invoiceStatus = "Partially Paid";
-  }
-
-  return { pendingDue, invoiceStatus };
-};
+): { pendingDue: number; invoiceStatus: "Not Started" | "Partially Paid" | "Paid" } =>
+  repositoryInvoiceSummary(p.workOrderValueINR, p.backendPendingDueINR);
 
 const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const navigate = useNavigate();
@@ -699,23 +686,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   };
 
   // Render invoice status badges
-  const renderInvoiceStatusBadge = (status: string) => {
-    let cls = "bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-300";
-    let dot = "bg-orange-500";
-    if (status === "Paid") {
-      cls = "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300";
-      dot = "bg-emerald-500";
-    } else if (status === "Not Started") {
-      cls = "bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-300";
-      dot = "bg-red-500";
-    }
-    return (
-      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${cls}`}>
-        <span className={`w-1.5 h-1.5 rounded-full ${dot}`}></span>
-        {status}
-      </span>
-    );
-  };
+  const renderInvoiceStatusBadge = (status: string) => <RepositoryInvoiceStatusBadge status={status} />;
 
   return (
     <div className="space-y-4">

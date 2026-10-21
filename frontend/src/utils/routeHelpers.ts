@@ -5,6 +5,7 @@ const ROUTE_TITLE_MAP = [
   { path: "/projects/edit/:id", title: "Edit Project" },
   { path: "/projects/view/:id", title: "View Project" },
   { path: "/projects", title: "Projects" },
+  { path: "/invoice-tracker", title: "Invoice Tracker" },
   { path: "/customers", title: "Customer Master" },
   { path: "/manpower", title: "Manpower" },
   { path: "/timesheets", title: "Timesheets" },

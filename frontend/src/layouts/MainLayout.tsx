@@ -37,6 +37,7 @@ import Settings from "../pages/Settings/Settings";
 /* Settings → Weekly Emails sub-pages (Oct 2026) — lazy: only admins open them, and only on demand. */
 const WeeklyEmailPreviewPage = lazy(() => import("../pages/Settings/WeeklyEmails/WeeklyEmailPreviewPage"));
 const WeeklyEmailRunsPage = lazy(() => import("../pages/Settings/WeeklyEmails/WeeklyEmailRunsPage"));
+const InvoiceTracker = lazy(() => import("../pages/InvoiceTracker/InvoiceTracker"));
 const pageFallback = <div className="py-16 text-center text-[12px] text-[var(--nu-text-muted)]">Loading…</div>;
 
 /* PR Request & Two-Level Approval Workflow */
@@ -202,6 +203,11 @@ const MainLayout = () => {
               <Route
                 path="/reports"
                 element={<ModuleRoute module="Reports"><ReportsPage /></ModuleRoute>}
+              />
+
+              <Route
+                path="/invoice-tracker"
+                element={<ModuleRoute module="Invoices"><Suspense fallback={pageFallback}><InvoiceTracker /></Suspense></ModuleRoute>}
               />
 
               <Route

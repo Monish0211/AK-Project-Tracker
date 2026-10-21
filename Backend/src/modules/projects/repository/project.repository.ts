@@ -1,6 +1,7 @@
 import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import { projectOwnershipWhereOr } from "../../../shared/utils/projectAccess.js";
+import { recordProjectInvoiceDeletionEvents, type InvoiceAuditContext } from "../../invoices/repository/invoiceStatusEvent.repository.js";
 
 /**
  * All Prisma access for Projects lives here — the service layer never
@@ -240,8 +241,11 @@ export function restoreProject(id: string) {
  * PR identity survives on TimesheetEntry.rawProjectCode.
  * Both steps run in one $transaction — any failure rolls back everything.
  */
-export function hardDeleteProject(id: string) {
+export function hardDeleteProject(id: string, audit: InvoiceAuditContext) {
   return prisma.$transaction([
+    // Invoice Tracker (Oct 2026) — the project's invoice lines are about to disappear: record one DELETED event
+    // each first (same atomic transaction). The history rows themselves have no FK and survive the delete.
+    recordProjectInvoiceDeletionEvents(id, audit),
     prisma.invoiceLine.deleteMany({ where: { quantityItem: { projectId: id } } }),
     prisma.project.delete({ where: { id } }),
   ]);

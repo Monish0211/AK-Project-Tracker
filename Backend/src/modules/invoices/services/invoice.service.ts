@@ -50,6 +50,8 @@ import {
   sumInvoicedAmountForQuantityItem,
   updateLine as updateLineInRepository,
 } from "../repository/invoice.repository.js";
+import type { InvoiceAuditContext } from "../repository/invoiceStatusEvent.repository.js";
+import { buildInvoiceAudit } from "../invoiceAudit.js";
 import type {
   CreateInvoiceLineInput,
   IngestInvoiceLinesInput,
@@ -510,6 +512,7 @@ export async function createInvoiceLineForQuantityItem(
   // else. No DB write depends on concurrent sibling state, so this is safe
   // to resolve outside the locked transaction below.
   const createdBy = await getUserDisplayName(user.sub);
+  const audit = await buildInvoiceAudit(user, "invoice_create");
 
   // Invoice Currency feature (Oct 2026) — pure validation, before any lock
   // is taken: a request without currency fields resolves to INR with the
@@ -599,7 +602,7 @@ export async function createInvoiceLineForQuantityItem(
         createdBy,
       };
 
-      return createLineInRepository(quantityItemId, data, tx);
+      return createLineInRepository(quantityItemId, data, audit, tx);
     },
     // Same headroom reasoning as milestone.service.ts's createMilestoneForProject()
     // — this transaction can now block behind a slower concurrent write for
@@ -676,6 +679,7 @@ export async function updateInvoiceLine(
   // from Invoice History's Edit action or a workspace re-saving an existing
   // invoice. A status-only change (or an unchanged re-send) is unaffected —
   // confirmed rule; see invoiceEditPermission.rules.ts.
+  const audit = await buildInvoiceAudit(user, "invoice_update");
   const changedContent = changedInvoiceContentFields(existing, input);
   if (changedContent.length > 0 && !(await userHasApprovalPermission(user.sub, ["Edit Invoice"]))) {
     throw new AppError("You do not have permission to edit invoices.", 403);
@@ -816,6 +820,7 @@ export async function updateInvoiceLine(
           ...(input.status !== undefined && { status: input.status }),
           ...(needsRecompute && { unitPriceINR, calculatedAmountINR, commercialAdjustmentINR }),
         },
+        audit,
         tx
       );
       if (invoiceNoChanging) {
@@ -922,6 +927,7 @@ export async function deleteInvoiceLine(id: string, user: AccessTokenPayload): P
   }
   const parentQuantityItem = await getQuantityItemById(existing.quantityItemId);
   await assertProjectAccessById(parentQuantityItem.projectId, user);
+  const audit = await buildInvoiceAudit(user, "invoice_delete");
 
   // Invoice Currency feature (Oct 2026) — confirmed rule: a DELETE
   // recalculates the project's currency lock. The lock is released only if
@@ -938,7 +944,7 @@ export async function deleteInvoiceLine(id: string, user: AccessTokenPayload): P
       const currencyLockKey = `invoice-currency:${parentQuantityItem.projectId}`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${currencyLockKey}))`;
       try {
-        await deleteLineInRepository(id, tx);
+        await deleteLineInRepository(id, audit, tx);
       } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
           throw new AppError("Invoice line not found.", 404);
@@ -1132,6 +1138,7 @@ export async function listInvoiceItemsForProject(
 async function createLinesWithIdsSafely(
   rows: IngestLineRow[],
   existingById: Map<string, InvoiceLineRow>,
+  audit: InvoiceAuditContext,
   attempt = 1
 ): Promise<InvoiceLineRow[]> {
   if (rows.length === 0) {
@@ -1165,7 +1172,8 @@ async function createLinesWithIdsSafely(
         remarks: row.remarks ?? null,
         status: row.status,
         createdBy: row.createdBy,
-      }))
+      })),
+      audit
     );
   } catch (error) {
     if (!isUniqueConstraintViolation(error)) {
@@ -1196,7 +1204,7 @@ async function createLinesWithIdsSafely(
     recheckById.forEach((row, id) => existingById.set(id, row));
     const stillMissing = rows.filter((row) => !recheckById.has(row.id));
 
-    return createLinesWithIdsSafely(stillMissing, existingById, attempt + 1);
+    return createLinesWithIdsSafely(stillMissing, existingById, audit, attempt + 1);
   }
 }
 
@@ -1263,7 +1271,7 @@ export async function ingestInvoiceLinesForProject(
     await prisma.$transaction((tx) => registerInvoiceNumberForLine(tx, { projectId, invoiceNo, intent: undefined }));
   }
 
-  const created = await createLinesWithIdsSafely(rowsToCreate, existingById);
+  const created = await createLinesWithIdsSafely(rowsToCreate, existingById, await buildInvoiceAudit(user, "invoice_ingest"));
   const createdById = new Map(created.map((row) => [row.id, row]));
 
   const items = input.lines.map((line) => {

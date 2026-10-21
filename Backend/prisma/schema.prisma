@@ -138,6 +138,9 @@ model PortalUser {
   // while that InvoiceRequestCcMember row exists.
   invoiceRequestCcMemberships InvoiceRequestCcMember[]
 
+  // Invoice Tracker (Oct 2026) — audit events this user caused (SetNull: the event keeps its actorName snapshot).
+  invoiceStatusEvents InvoiceStatusEvent[] @relation("InvoiceStatusEventActor")
+
   // Documents feature — onDelete: Restrict on Document.uploadedBy (see that
   // model) means a user who has ever uploaded a document can never be
   // hard-deleted while it exists, same audit-trail-preservation treatment
@@ -1087,6 +1090,51 @@ model InvoiceLine {
   // business rule — a real hot-path equality filter, not merely "the field
   // exists".
   @@index([milestoneId])
+}
+
+/// Invoice Tracker (Oct 2026) — append-only history of invoice-line status
+/// changes. Written in the SAME transaction as the invoice write itself (see
+/// invoices/repository/invoiceStatusEvent.repository.ts); never updated or
+/// deleted by application code.
+///
+/// Deliberately NO foreign key to InvoiceLine or Project: a deleted invoice
+/// line, and even a permanently deleted project, must not erase its audit
+/// trail. projectId / prNo / invoiceNo are snapshots taken at the event.
+/// actorUserId is the authenticated server-side user (never client-supplied);
+/// actorName is a snapshot, so the trail stays readable if the user is later
+/// renamed or removed. occurredAt is database time (clock_timestamp()), and
+/// seq breaks ties for events written in one transaction.
+///
+/// There is NO backfill: invoices that predate this table simply have no
+/// events ("No recorded history") — nothing is inferred from createdAt,
+/// updatedAt, notes or notifications.
+///
+/// eventType: CREATED (fromStatus null) | STATUS_CHANGED | DELETED (toStatus
+/// null) | IMPORTED (ingest, fromStatus null — earlier history unknown).
+model InvoiceStatusEvent {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+  seq BigInt @default(autoincrement())
+
+  projectId     String
+  prNo          String
+  invoiceLineId String
+  invoiceNo     String
+
+  eventType  String
+  fromStatus String?
+  toStatus   String?
+
+  actorUserId String?
+  actor       PortalUser? @relation("InvoiceStatusEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorName   String
+  source      String
+
+  // timestamptz, unlike the older timestamp-without-tz columns: the server session zone is Asia/Calcutta, and a plain
+  // timestamp default would be read back by Prisma as UTC, 5.5 h wrong. An audit instant must be exact.
+  occurredAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+
+  @@index([invoiceLineId, occurredAt])
+  @@index([projectId, occurredAt])
 }
 
 // =============================================================================

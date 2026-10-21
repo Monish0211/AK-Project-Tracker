@@ -45,6 +45,7 @@ import {
   updateProject as updateProjectInRepository,
 } from "../repository/project.repository.js";
 import type { SidebarStatusCounts } from "../repository/project.repository.js";
+import { buildInvoiceAudit } from "../../invoices/invoiceAudit.js";
 import type {
   CreateProjectInput,
   CreateProjectRequestInput,
@@ -92,7 +93,8 @@ const DEFAULT_COMMERCIAL_TOTALS: CommercialTotals = {
  * projectCommercialTotals()) rather than re-deriving WO Value or the
  * invoice-raised calculation a second time anywhere.
  */
-async function computeCommercialTotalsByProjectId(projectIds: string[]): Promise<Map<string, CommercialTotals>> {
+// Exported for Invoice Tracker (Oct 2026): the same batched WO value / pending due / open-request source as Project Repository.
+export async function computeCommercialTotalsByProjectId(projectIds: string[]): Promise<Map<string, CommercialTotals>> {
   const result = new Map<string, CommercialTotals>();
   if (projectIds.length === 0) return result;
 
@@ -861,7 +863,7 @@ export async function permanentlyDeleteProject(id: string, user: AccessTokenPayl
   }
   await assertProjectAccess(user, existing);
 
-  await hardDeleteProjectInRepository(id);
+  await hardDeleteProjectInRepository(id, await buildInvoiceAudit(user, "project_permanent_delete"));
 
   // Priority #6 Phase 3B — after the delete has committed. Structurally
   // protected against duplicates: the row is gone once this line runs, so a

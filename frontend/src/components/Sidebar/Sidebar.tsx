@@ -14,6 +14,7 @@ import {
   NotebookText,
   PauseCircle,
   PlayCircle,
+  Receipt,
   Settings,
   Users,
   XCircle,
@@ -34,6 +35,8 @@ interface NavChild {
 
 interface NavItem {
   label: string;
+  /** The Module whose access shows this entry, when it differs from the label (Invoice Tracker → "Invoices"). */
+  module?: string;
   to?: string;
   icon: LucideIcon;
   children?: NavChild[];
@@ -58,6 +61,8 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Notes", to: "/notes", icon: NotebookText },
     ],
   },
+  // Invoice Tracker (Oct 2026) — reuses the existing Invoices module (no new permission); project scope is enforced by the API.
+  { label: "Invoice Tracker", module: "Invoices", to: "/invoice-tracker", icon: Receipt },
   { label: "Customer Master", to: "/customers", icon: Building2 },
   { label: "Manpower", to: "/manpower", icon: Users },
   { label: "Timesheets", to: "/timesheets", icon: Clock3 },
@@ -93,7 +98,7 @@ const Sidebar = () => {
   // to — item.label doubles as the exact Module name (e.g. "Projects",
   // "Customer Master") granted via Settings > User Management, so no
   // separate label-to-module mapping table is needed.
-  const visibleNavItems = NAV_ITEMS.filter((item) => hasModuleAccess(user, item.label));
+  const visibleNavItems = NAV_ITEMS.filter((item) => hasModuleAccess(user, item.module ?? item.label));
 
   const [statusCounts, setStatusCounts] = useState<Record<string, number | null>>({
     Active: null,
