@@ -103,13 +103,33 @@ function writeExpensesIntoMirror(projectId: string, items: NonManhourExpense[]):
   saveProjects(updated);
 }
 
+/** What GET /projects/:projectId/expenses returned, read WITHOUT touching the local mirror — for callers that read several lists at once (projectSubresourceLoader.ts). */
+export interface ExpensesRead {
+  items: NonManhourExpense[];
+  count: number;
+  latestUpdatedAt: string | null;
+}
+
+export async function readExpensesFromApi(projectId: string): Promise<ExpensesRead> {
+  const result = await apiClient.get<BackendExpenseListDto>(`/projects/${projectId}/expenses`);
+  return { items: result.items.map(toExpenseItem), count: result.count, latestUpdatedAt: result.latestUpdatedAt };
+}
+
+/** What a fetch does once its GET has answered: write the list through to the mirror and remember the concurrency baseline. */
+function applyExpensesRead(projectId: string, read: ExpensesRead): NonManhourExpense[] {
+  writeExpensesIntoMirror(projectId, read.items);
+  lastKnownMeta.set(projectId, { count: read.count, latestUpdatedAt: read.latestUpdatedAt });
+  return read.items;
+}
+
+/** Remembers the concurrency baseline of a list that was read but needs no mirror write (see projectSubresourceLoader.ts's fast path). */
+export function rememberExpensesBaseline(projectId: string, read: ExpensesRead): void {
+  lastKnownMeta.set(projectId, { count: read.count, latestUpdatedAt: read.latestUpdatedAt });
+}
+
 /** Fresh Other Project Expenses list for a project — GET /projects/:projectId/expenses. */
 export async function fetchExpensesFromApi(projectId: string): Promise<NonManhourExpense[]> {
-  const result = await apiClient.get<BackendExpenseListDto>(`/projects/${projectId}/expenses`);
-  const items = result.items.map(toExpenseItem);
-  writeExpensesIntoMirror(projectId, items);
-  lastKnownMeta.set(projectId, { count: result.count, latestUpdatedAt: result.latestUpdatedAt });
-  return items;
+  return applyExpensesRead(projectId, await readExpensesFromApi(projectId));
 }
 
 /**
@@ -130,10 +150,10 @@ export async function fetchExpensesFromApi(projectId: string): Promise<NonManhou
  * here the same way paymentMilestoneService.ts's loadMilestonesForProject()
  * already fixes it, rather than repeating it in a brand-new module.
  */
-export async function loadExpensesForProject(projectId: string): Promise<NonManhourExpense[]> {
+export async function loadExpensesForProject(projectId: string, prefetched?: ExpensesRead): Promise<NonManhourExpense[]> {
   const legacyLocalItems = getProjectById(projectId)?.nonManhourExpenses ?? [];
 
-  const backendItems = await fetchExpensesFromApi(projectId);
+  const backendItems = prefetched ? applyExpensesRead(projectId, prefetched) : await fetchExpensesFromApi(projectId);
   if (backendItems.length > 0) {
     return backendItems;
   }

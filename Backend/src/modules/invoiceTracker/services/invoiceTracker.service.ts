@@ -1,26 +1,55 @@
 import type { Prisma } from "../../../../generated/prisma/client.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { AppError } from "../../../shared/utils/AppError.js";
+import { env } from "../../../shared/utils/env.js";
 import { assertProjectReadAccessById, authorizedProjectReadWhere } from "../../../shared/utils/projectAccess.js";
 import { computeCommercialTotalsByProjectId } from "../../projects/services/project.service.js";
 import { findEventsForLines } from "../../invoices/repository/invoiceStatusEvent.repository.js";
+import { prNoCollator } from "../../weeklyNotifications/missingExpense.rules.js";
+import { daysFrom, zonedToday } from "../../weeklyNotifications/unpaidInvoice.rules.js";
 import { totalPagesFor } from "../../weeklyNotifications/weeklyPaging.js";
 import * as repo from "../repository/invoiceTracker.repository.js";
-import { groupInvoices, mergeInvoiceEvents, NOT_RAISED, parseMonth, paymentLabel, summarizeMonth, type MonthWindow } from "../invoiceTracker.rules.js";
-import type { TrackerListQuery } from "../validators/invoiceTracker.validators.js";
+import {
+  ALL_MONTHS,
+  financialsOf,
+  firstRaisedAt,
+  groupInvoices,
+  bestRecord,
+  inWindow,
+  invoiceTier,
+  invoicesDatedIn,
+  istMonthOf,
+  mergeInvoiceEvents,
+  normalizeStatus,
+  orderRecords,
+  parseMonth,
+  paymentLabel,
+  requestTier,
+  summarizeOutstanding,
+  summarizeRecords,
+  type InvoiceGroup,
+  type MonthWindow,
+  hasMixedLiveStatuses,
+  compareNewestFirst,
+  inInvoiceMonth,
+  invoicesUpTo,
+  latestRaisedGroup,
+  olderOutstanding,
+  type OrderableRecord,
+  type ProjectRecordState,
+  type RecordTier,
+} from "../invoiceTracker.rules.js";
+import type { OutstandingQuery, TrackerListQuery } from "../validators/invoiceTracker.validators.js";
 
-function windowOf(month: string): MonthWindow {
+/** null = every month ("All history"). */
+function windowOf(month: string): MonthWindow | null {
+  if (month === ALL_MONTHS) return null;
   const w = parseMonth(month);
-  if (!w) throw new AppError("month must be a real month in the form YYYY-MM.", 400);
+  if (!w) throw new AppError('month must be a real month in the form YYYY-MM, or "all".', 400);
   return w;
 }
 
-/**
- * The month's project table + exact month-wide totals. Totals cover EVERY project matching the search / status
- * filters (not just the visible page); the Raised / Not Raised / request filter narrows only the table.
- */
-export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerListQuery) {
-  const window = windowOf(query.month);
+async function scopedBase(user: AccessTokenPayload, query: { search?: string | undefined; projectStatus?: string | undefined }): Promise<Prisma.ProjectWhereInput> {
   const scope = await authorizedProjectReadWhere(user);
   const and: Prisma.ProjectWhereInput[] = [scope];
   if (query.search) {
@@ -33,31 +62,122 @@ export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerLi
     });
   }
   if (query.projectStatus) and.push({ projectStatus: query.projectStatus });
-  const base: Prisma.ProjectWhereInput = { AND: and };
+  return { AND: and };
+}
 
-  const tableWhere: Prisma.ProjectWhereInput =
-    query.filter === "raised"
-      ? { AND: [base, repo.raisedInMonthWhere(window)] }
-      : query.filter === "notRaised"
-        ? { AND: [base, { NOT: repo.raisedInMonthWhere(window) }] }
-        : query.filter === "requestPending"
-          ? { AND: [base, repo.OPEN_REQUEST_WHERE] }
-          : base;
+const dateOnly = (d: Date): string => d.toISOString().slice(0, 10);
 
-  const [projectCount, approvalPendingCount, lines, total, rows] = await Promise.all([
-    repo.countProjects(base),
-    repo.countProjects({ AND: [base, repo.OPEN_REQUEST_WHERE] }),
-    repo.findMonthLines(base, window),
-    query.filter === "all" ? repo.countProjects(base) : repo.countProjects(tableWhere),
-    repo.findProjectsPage(tableWhere, (query.page - 1) * query.pageSize, query.pageSize),
+/** An invoice with no usable invoice date is flagged for review — never silently given its creation date. */
+function withDateFlag<T extends { flags: string[] }>(fin: T, missing: boolean): T {
+  return missing ? { ...fin, flags: [...fin.flags, "Invoice date is missing or invalid — not in any month's report"] } : fin;
+}
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * The report's project table + exact period-wide totals. A project appears only when it has at least one workflow record in
+ * the selected month ("all" = any month): an invoice DATED in it (invoice date, never creation / raise / payment date) or an
+ * Invoice Request created in it (requests have no invoice date). Totals cover EVERY
+ * qualifying project matching the search / status filters (not just the visible page); the state filter narrows only
+ * the table.
+ */
+export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerListQuery) {
+  const window = windowOf(query.month);
+  const base = await scopedBase(user, query);
+
+  // Invoices: an invoice's date is its earliest usable line date, so candidate projects are found by any line dated in the
+  // month and then ALL of their lines are read to decide each invoice's real date.
+  const projectIds = window ? await repo.findProjectIdsWithInvoiceDateIn(base, window) : null;
+  const [lines, requests] = await Promise.all([
+    projectIds === null ? repo.findLinesInScope(base) : repo.findLinesForProjects(projectIds),
+    repo.findRequests(base, window),
   ]);
+  const allGroups = groupInvoices(lines);
+  const invoices = invoicesDatedIn(allGroups, window);
 
-  const { summary, byProject } = summarizeMonth(lines, projectCount, approvalPendingCount);
+  // The month view ranks raised-in-the-month records first, from each invoice's RECORDED raise (status history). One grouped
+  // read for the month's invoices; no raise time is invented for invoices that have none.
+  if (window) {
+    const raiseTimes = await repo.findFirstRaiseTimes(invoices.flatMap((g) => g.lines.map((l) => l.id)));
+    for (const g of invoices) {
+      let first: Date | null = null;
+      for (const l of g.lines) {
+        const t = raiseTimes.get(l.id);
+        if (t && (first === null || t < first)) first = t;
+      }
+      g.raisedAt = first;
+    }
+  }
+  const { byProject } = summarizeRecords(invoices, requests, window);
+
+  const matches = (st: ProjectRecordState): boolean =>
+    query.filter === "raised" ? st.raisedInvoiceCount > 0 : query.filter === "notRaised" ? st.raisedInvoiceCount === 0 : query.filter === "requestPending" ? st.openRequestCount > 0 : true;
+  const tableIds = [...byProject.entries()].filter(([, st]) => matches(st)).map(([id]) => id);
+
+  // The cards describe exactly the projects listed: search, project status AND the "Show" filter all apply to them.
+  const listed = new Set(tableIds);
+  const { summary } = summarizeRecords(
+    invoices.filter((g) => listed.has(g.projectId)),
+    requests.filter((r) => listed.has(r.projectId)),
+    window
+  );
+
+  // Page the qualifying projects in one stable order across ALL pages: group 1 (a record raised in the month) first, then the
+  // rest; inside a group the project whose best record has the newest relevant date first; then PR number, then id.
+  const perProject = new Map<string, OrderableRecord[]>();
+  const add = (projectId: string, rec: OrderableRecord) => {
+    const list = perProject.get(projectId);
+    if (list) list.push(rec);
+    else perProject.set(projectId, [rec]);
+  };
+  if (window) {
+    for (const g of invoices) {
+      if (!listed.has(g.projectId)) continue;
+      const tier = invoiceTier(g, window);
+      add(g.projectId, { kind: "invoice", id: g.key, tier, sortDate: (tier === 1 ? g.raisedAt : g.invoiceDate)! });
+    }
+    for (const r of requests) if (listed.has(r.projectId)) add(r.projectId, { kind: "request", id: r.id, tier: requestTier(), sortDate: r.createdAt });
+  }
+  const rank = new Map<string, { tier: RecordTier; sortDate: Date }>();
+  for (const [projectId, recs] of perProject) {
+    const best = bestRecord(recs);
+    if (best) rank.set(projectId, best);
+  }
+  const tierOf = (id: string): number => rank.get(id)?.tier ?? 0;
+  const dateOf = (id: string): number => rank.get(id)?.sortDate.getTime() ?? 0;
+  const allRows = await repo.findProjectsByIds(base, tableIds);
+  allRows.sort((a, b) => tierOf(a.id) - tierOf(b.id) || dateOf(b.id) - dateOf(a.id) || prNoCollator.compare(a.prNo, b.prNo) || (a.id < b.id ? -1 : 1));
+  const rows = allRows.slice((query.page - 1) * query.pageSize, query.page * query.pageSize);
+  const total = allRows.length;
+
   // The same batched WO value / pending due / open-request source Project Repository uses.
   const commercial = await computeCommercialTotalsByProjectId(rows.map((p) => p.id));
 
+  // HEADLINE per listed project: its latest raised invoice and the older outstanding ones. These need ALL of the project's invoices
+  // (any date). In a month view the lines read above cover only projects with an invoice in the month, so the listed page's projects
+  // (a request-only project has none loaded) are read in ONE batched query — always one, whatever the page holds. All history
+  // already read every line. Nothing here feeds the cards — they were computed above from the month's invoices only.
+  const pageIds = new Set(rows.map((p) => p.id));
+  const pageLines = window ? await repo.findLinesForProjects(rows.map((p) => p.id)) : lines.filter((l) => pageIds.has(l.projectId));
+  const pageGroups = new Map<string, InvoiceGroup[]>();
+  for (const g of groupInvoices(pageLines)) {
+    const list = pageGroups.get(g.projectId);
+    if (list) list.push(g);
+    else pageGroups.set(g.projectId, [g]);
+  }
+  const headlineOf = (projectId: string) => {
+    const groups = pageGroups.get(projectId) ?? [];
+    const latest = latestRaisedGroup(invoicesUpTo(groups, window));
+    const older = olderOutstanding(invoicesUpTo(groups, window), latest, groups);
+    return {
+      latestRaised: latest
+        ? { invoiceNo: latest.invoiceNo, invoiceDate: dateOnly(latest.invoiceDate!), amountINR: latest.amountINR, status: latest.status, paymentStatus: paymentLabel(latest.status), inMonth: window ? inInvoiceMonth(latest.invoiceDate, window) : null }
+        : null,
+      olderOutstanding: { count: older.count, amountINR: older.amountINR, knownAmountINR: older.knownAmountINR, unknownCount: older.unknownCount, undatedCount: older.undatedCount },
+    };
+  };
+
   return {
-    month: window.month,
+    month: query.month,
     summary,
     items: rows.map((p) => {
       const c = commercial.get(p.id);
@@ -70,7 +190,10 @@ export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerLi
         workOrderValueINR: c?.workOrderValueINR ?? 0,
         pendingDueINR: c?.pendingDueINR ?? 0,
         hasOpenInvoiceRequest: c?.hasOpenInvoiceRequest ?? false,
-        month: byProject.get(p.id) ?? NOT_RAISED,
+        /** 1 = has an invoice raised in the month, 2 = every other project (0 in all-history, which is PR-number order). */
+        sortTier: tierOf(p.id),
+        ...headlineOf(p.id),
+        records: byProject.get(p.id)!,
       };
     }),
     page: query.page,
@@ -80,60 +203,205 @@ export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerLi
   };
 }
 
-const dateOnly = (d: Date): string => d.toISOString().slice(0, 10);
-const round2 = (n: number): number => Math.round(n * 100) / 100;
+const REQUEST_LABEL = { Open: "Invoice Requested", Completed: "Completed" } as const;
 
-/** One project's invoices for the month (any status) with their recorded history — loaded when a row is expanded. */
-export async function getProjectInvoiceChain(user: AccessTokenPayload, projectId: string, month: string) {
+/**
+ * One project's workflow records for the month ("all" = every month): the invoices created in it (with their recorded
+ * status history) and the Invoice Requests created in it — loaded when a row is expanded.
+ */
+export async function getProjectRecords(user: AccessTokenPayload, projectId: string, month: string) {
   const window = windowOf(month);
   await assertProjectReadAccessById(projectId, user);
 
-  const [project, lines] = await Promise.all([repo.findProjectSummary(projectId), repo.findProjectLines(projectId)]);
+  const [project, lines, requests] = await Promise.all([repo.findProjectSummary(projectId), repo.findProjectLinesDetailed(projectId), repo.findProjectRequestsDetailed(projectId, window)]);
   if (!project) throw new AppError("Project not found.", 404);
 
-  const lineIds = lines.map((l) => l.id);
-  // Two batched reads for the whole project — never per invoice.
-  const [events, requests] = await Promise.all([findEventsForLines(lineIds), repo.findRequestsFulfilledBy(lineIds)]);
+  const allGroups = groupInvoices(lines.map((l) => ({ ...l, projectId })));
+  const groups = invoicesDatedIn(allGroups, window);
+  groups.sort((a, b) => (b.invoiceDate?.getTime() ?? 0) - (a.invoiceDate?.getTime() ?? 0) || (a.key < b.key ? -1 : 1));
 
+  // PREVIOUS invoices — billing context only: this project's other invoices whose usable invoice date is EARLIER than the month. They are
+  // never part of the month (and so never of its totals: the list endpoint that feeds the cards does not read this), and an invoice
+  // is in exactly one of the two lists. An invoice with no usable date is in neither — it is only counted so the UI can flag it; it is
+  // never placed in a month by its creation date. (All-history lists everything in `invoices`, so it has no previous section.)
+  const previousGroups = window ? allGroups.filter((g) => g.invoiceDate !== null && g.invoiceDate < window.dateStart) : [];
+  previousGroups.sort((a, b) => b.invoiceDate!.getTime() - a.invoiceDate!.getTime() || (a.key < b.key ? -1 : 1));
+  const undatedInvoiceCount = window ? allGroups.filter((g) => g.invoiceDate === null).length : 0;
+
+  // The sections of a month report (none for All history, which lists everything once in `invoices`):
+  //  - the LATEST RAISED invoice among those dated up to the end of the month (headline);
+  //  - the month's DRAFTS (never the headline);
+  //  - HISTORY = every other invoice dated up to the end of the month, newest first (earlier raised / paid / partially paid, older
+  //    drafts, cancelled, and this month's other raised invoices) — an invoice is in exactly one of headline / drafts / history;
+  //  - OLDER OUTSTANDING relative to the headline, traceable to rows of the history.
+  const context = window ? invoicesUpTo(allGroups, window) : [];
+  const latest = window ? latestRaisedGroup(context) : null;
+  const older = window ? olderOutstanding(context, latest, allGroups) : olderOutstanding([], null, []);
+  const draftGroups = window ? context.filter((g) => normalizeStatus(g.status) === "Draft" && inInvoiceMonth(g.invoiceDate, window)).sort(compareNewestFirst) : [];
+  const draftSet = new Set(draftGroups);
+  const historyGroups = context.filter((g) => g !== latest && !draftSet.has(g)).sort(compareNewestFirst);
+
+  const lineIds = [...groups, ...previousGroups].flatMap((g) => g.lines.map((l) => l.id));
+  // Two batched reads for the whole project — never per invoice.
+  const [events, fulfilled] = await Promise.all([findEventsForLines(lineIds), repo.findRequestsFulfilledBy(lineIds)]);
   const eventsByLine = new Map<string, typeof events>();
   for (const e of events) {
     const bucket = eventsByLine.get(e.invoiceLineId);
     if (bucket) bucket.push(e);
     else eventsByLine.set(e.invoiceLineId, [e]);
   }
-  const requestByLine = new Map(requests.map((r) => [r.fulfilledInvoiceLineId, r]));
+  const requestByLine = new Map(fulfilled.map((r) => [r.fulfilledInvoiceLineId, r]));
 
-  const groups = groupInvoices(lines.map((l) => ({ ...l, projectId })));
-  const invoices = groups.map((g) => {
-    const groupEvents = g.lines.flatMap((l) => eventsByLine.get(l.id) ?? []);
+  const orderable: OrderableRecord[] = [];
+  const toInvoice = (g: InvoiceGroup<(typeof lines)[number] & { projectId: string }>, current: boolean) => {
+    const timeline = mergeInvoiceEvents(g.lines.flatMap((l) => eventsByLine.get(l.id) ?? []));
+    const raisedIso = firstRaisedAt(timeline);
+    const raisedAtDate = raisedIso ? new Date(raisedIso) : null;
+    const tier = invoiceTier({ status: g.status, raisedAt: raisedAtDate }, window);
+    if (current) orderable.push({ kind: "invoice", id: g.key, tier, sortDate: (tier === 1 ? raisedAtDate : g.invoiceDate) ?? g.createdAt! });
     const request = g.lines.map((l) => requestByLine.get(l.id)).find((r) => r !== undefined);
     const currencies = [...new Set(g.lines.map((l) => l.currency))];
-    const first = g.lines[0]!;
-    const inSelectedMonth = g.lines.some((l) => l.invoiceDate >= window.start && l.invoiceDate < window.end);
-    const statuses = [...new Set(g.lines.map((l) => l.status))];
+    const statuses = [...new Set(g.lines.map((l) => normalizeStatus(l.status)))];
     const foreign = currencies.length === 1 && currencies[0] !== "INR";
+    const first = g.lines[0]!;
+    const mixed = statuses.length > 1;
     return {
       key: g.key,
       invoiceNo: g.invoiceNo,
-      invoiceDate: dateOnly(first.invoiceDate),
-      inSelectedMonth,
+      /** Workflow creation date — never changes when the status does. */
+      createdAt: g.createdAt!.toISOString(),
+      createdMonth: istMonthOf(g.createdAt!),
+      /** The invoice date (date-only); null when no line has a usable one — such an invoice is in no month's report. */
+      invoiceDate: g.invoiceDate ? dateOnly(g.invoiceDate) : null,
+      /** When recorded history first took it to Raised or beyond; null when none was recorded (never inferred). */
+      raisedAt: raisedIso,
+      /** Only an invoice dated in the selected month can be "raised this month"; a previous invoice never is. */
+      raisedInPeriod: current && tier === 1,
       amountINR: g.amountINR,
       currency: currencies.length === 1 ? currencies[0]! : "Mixed",
       originalAmount: foreign
-        ? round2(g.lines.filter((l) => l.status !== "Cancelled").reduce((s, l) => s + (l.invoiceAmountOriginal ?? l.invoiceAmountINR), 0))
+        ? round2(g.lines.filter((l) => normalizeStatus(l.status) !== "Cancelled").reduce((s, l) => s + (l.invoiceAmountOriginal ?? l.invoiceAmountINR), 0))
         : null,
       status: g.status,
-      mixedLineStatuses: statuses.length > 1,
+      mixedLineStatuses: mixed,
       paymentStatus: paymentLabel(g.status),
-      lines: g.lines.map((l) => ({ id: l.id, quantityItemId: l.quantityItemId, activity: l.quantityItem.description, status: l.status, amountINR: l.invoiceAmountINR })),
+      financials: withDateFlag(financialsOf(g.status, g.amountINR, mixed, hasMixedLiveStatuses(g.lines)), g.invoiceDate === null),
+      lines: g.lines.map((l) => ({ id: l.id, quantityItemId: l.quantityItemId, activity: l.quantityItem.description, status: normalizeStatus(l.status), amountINR: l.invoiceAmountINR })),
       // Record metadata only — when/who typed the invoice into the portal; NOT a status event.
       recordedInPortal: { at: first.createdAt.toISOString(), by: first.createdBy },
-      hasRecordedHistory: groupEvents.length > 0,
-      timeline: mergeInvoiceEvents(groupEvents),
+      hasRecordedHistory: timeline.length > 0,
+      timeline,
       // A request is project-level; it is linked to an invoice only when that invoice's raise fulfilled it.
       invoiceRequest: request ? { id: request.id, submittedAt: request.createdAt.toISOString(), submittedBy: request.requestedBy.fullName } : null,
     };
-  });
+  };
+  const invoices = groups.map((g) => toInvoice(g, true));
+  const previousInvoices = previousGroups.map((g) => toInvoice(g, false));
 
-  return { month: window.month, project, invoices };
+  for (const r of requests) orderable.push({ kind: "request", id: r.id, tier: requestTier(), sortDate: r.createdAt });
+
+  return {
+    month,
+    project,
+    invoices,
+    /** Earlier-dated invoices of this project, newest first — shown for billing context, never counted in the month (see above). */
+    previousInvoices,
+    /** Invoices of this project with no usable invoice date: in no month, listed in All history, flagged for review. */
+    undatedInvoiceCount,
+    /** The headline: key (into `invoices` / `previousInvoices`) of the latest raised invoice dated up to the month's end; null for All history or none. */
+    latestRaisedKey: latest?.key ?? null,
+    /** true = dated in the selected month; false = an older one, shown as the latest AVAILABLE; null = no month or none. */
+    latestRaisedInMonth: latest && window ? inInvoiceMonth(latest.invoiceDate, window) : null,
+    /** Draft invoices dated in the month, newest first. */
+    draftKeys: draftGroups.map((g) => g.key),
+    /** The previous-invoices table: every other invoice dated up to the month's end, newest first. */
+    historyKeys: historyGroups.map((g) => g.key),
+    /** Older invoices still outstanding relative to the headline — keys trace the figure to history rows; total null unless fully reliable. */
+    olderOutstanding: older,
+    /** Display order across both kinds: raised in the month first, then the other records (see the rules' ORDER note). */
+    order: orderRecords(orderable),
+    requests: requests.map((r) => ({
+      id: r.id,
+      /** Requests have no human number, only an id: a short reference for display. */
+      ref: r.id.slice(0, 8).toUpperCase(),
+      status: r.status,
+      label: REQUEST_LABEL[r.status as keyof typeof REQUEST_LABEL] ?? r.status,
+      createdAt: r.createdAt.toISOString(),
+      createdMonth: istMonthOf(r.createdAt),
+      requestedBy: r.requestedBy.fullName,
+      assignedTo: r.assignedTo.fullName,
+      /** Free text as typed by the requester — not a number. */
+      amountNote: r.invoiceAmountNote,
+      notes: r.notes,
+      /** The invoice whose raise fulfilled this request (Completed only). */
+      fulfilledByInvoiceNo: r.fulfilledInvoiceLine?.invoiceNo ?? null,
+    })),
+  };
+}
+
+/**
+ * The Outstanding view: every Raised / Partially Paid invoice from ALL original months. Nothing is copied or moved —
+ * an invoice stays in its creation month; this is just a cross-month filter on current status. Fully settled (Paid),
+ * Draft and Cancelled invoices are excluded. Raised → outstanding is the invoice amount; Partially Paid → the balance
+ * is not recorded anywhere, so the row is listed and flagged, never given a guessed figure.
+ */
+export async function getOutstanding(user: AccessTokenPayload, query: OutstandingQuery, now = new Date()) {
+  const base = await scopedBase(user, query);
+  const projectIds = await repo.findProjectIdsWithOutstandingLines(base);
+  const lines = await repo.findLinesForProjects(projectIds);
+  const groups = groupInvoices(lines).filter((g) => {
+    const s = normalizeStatus(g.status);
+    return s === "Raised" || s === "PartiallyPaid";
+  });
+  const projects = new Map((await repo.findProjectsByIds(base, projectIds)).map((p) => [p.id, p]));
+  // Today in India, formatted ONCE: building a date formatter per row was ~85% of this endpoint's time with ~1,700 invoices.
+  const today = zonedToday(now, env.APP_TIMEZONE);
+
+  const rows = groups
+    .filter((g) => projects.has(g.projectId))
+    .map((g) => {
+      const p = projects.get(g.projectId)!;
+      const statuses = [...new Set(g.lines.map((l) => normalizeStatus(l.status)))];
+      const mixed = statuses.length > 1;
+      const fin = financialsOf(g.status, g.amountINR, mixed, hasMixedLiveStatuses(g.lines));
+      const earliestLine = g.lines.reduce((a, b) => ((b.invoiceDate ?? a.invoiceDate!) < (a.invoiceDate ?? b.invoiceDate!) ? b : a));
+      return {
+        projectId: g.projectId,
+        prNo: p.prNo,
+        client: p.client,
+        projectTitle: p.projectTitle,
+        projectStatus: p.projectStatus,
+        invoiceNo: g.invoiceNo,
+        /** Original workflow creation date — unchanged by later payment. */
+        createdAt: g.createdAt ? g.createdAt.toISOString() : null,
+        createdMonth: g.createdAt ? istMonthOf(g.createdAt) : null,
+        invoiceDate: g.invoiceDate ? dateOnly(g.invoiceDate) : null,
+        status: g.status,
+        paymentStatus: paymentLabel(g.status),
+        amountINR: g.amountINR,
+        amountPaidINR: fin.amountPaidINR,
+        outstandingINR: fin.outstandingINR,
+        balance: fin.balance,
+        flags: fin.flags,
+        /** Calendar days from the invoice date to today in India (the weekly reminder's own rule); 0 for an invoice dated in the future, null with no usable date. */
+        daysOutstanding: g.invoiceDate ? Math.max(0, daysFrom(g.invoiceDate, today)) : null,
+        lineCount: g.lines.length,
+        /** The invoice's earliest line — View / Edit / Delete act on it (single-line invoices) or open the project. */
+        actionLine: { id: earliestLine.id, quantityItemId: earliestLine.quantityItemId! },
+      };
+    });
+  rows.sort((a, b) => (b.daysOutstanding ?? -1) - (a.daysOutstanding ?? -1) || prNoCollator.compare(a.prNo, b.prNo) || (a.invoiceNo < b.invoiceNo ? -1 : a.invoiceNo > b.invoiceNo ? 1 : 0));
+
+  const totals = summarizeOutstanding(rows);
+  const items = rows.slice((query.page - 1) * query.pageSize, query.page * query.pageSize);
+  return {
+    asOf: now.toISOString(),
+    timezone: env.APP_TIMEZONE,
+    totals,
+    items,
+    page: query.page,
+    pageSize: query.pageSize,
+    total: rows.length,
+    totalPages: totalPagesFor(rows.length, query.pageSize),
+  };
 }

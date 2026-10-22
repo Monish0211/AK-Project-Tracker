@@ -20,6 +20,8 @@ export interface UseInvoiceLineActionsOptions {
   /** Omit to mount in a read-only context — e.g. View Project's Invoices tab. */
   setProject?: Dispatch<SetStateAction<Project>> | undefined;
   readOnly?: boolean | undefined;
+  /** Runs when a save has begun talking to the server (Invoice Tracker shows "saving"). */
+  onSaving?: (() => void) | undefined;
   /** Runs after a save reaches the server (the dashboard refreshes its invoice-request indicator). */
   onSynced?: (() => void) | undefined;
   /** Runs when a save has finished, successfully or not (Invoice Tracker reloads its list). */
@@ -34,7 +36,7 @@ export interface UseInvoiceLineActionsOptions {
  * editor, one save path and one set of rules. The UI-courtesy permission flags mirror the backend's authoritative
  * "Edit Invoice" content check (PATCH) and requireApprovalPermission("Delete Invoice") (DELETE).
  */
-export function useInvoiceLineActions({ project, setProject, readOnly = false, onSynced, onSettled, initialDrawer = null }: UseInvoiceLineActionsOptions) {
+export function useInvoiceLineActions({ project, setProject, readOnly = false, onSaving, onSynced, onSettled, initialDrawer = null }: UseInvoiceLineActionsOptions) {
   const { showToast } = usePmoToast();
   const { user } = useAuth();
   const isReadOnly = readOnly || !setProject;
@@ -47,7 +49,7 @@ export function useInvoiceLineActions({ project, setProject, readOnly = false, o
   const syncingRef = useRef(false);
 
   const persistProjectChange = (updatedProject: Project): boolean =>
-    persistInvoiceProjectChange({ project, updatedProject, setProject, syncing: syncingRef, onSynced, onSettled, deps: realPersistDeps(showToast) });
+    persistInvoiceProjectChange({ project, updatedProject, setProject, syncing: syncingRef, onStart: onSaving, onSynced, onSettled, deps: realPersistDeps(showToast) });
 
   const openView = (item: InvoiceItem, line: InvoiceLine) => {
     setDrawerState({ item, mode: "view", existingLine: line });

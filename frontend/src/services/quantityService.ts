@@ -108,10 +108,15 @@ function writeQuantityIntoMirror(projectId: string, items: QuantityItem[]): void
   saveProjects(updated);
 }
 
+/** The server's Quantity list, read WITHOUT touching the local mirror — for callers that read several lists at once (projectSubresourceLoader.ts). */
+export async function readQuantityItemsFromApi(projectId: string): Promise<QuantityItem[]> {
+  const result = await apiClient.get<BackendQuantityListDto>(`/projects/${projectId}/quantity`);
+  return result.items.map(toQuantityItem);
+}
+
 /** Fresh Quantity list for a project — GET /projects/:projectId/quantity. */
 export async function fetchQuantityItemsFromApi(projectId: string): Promise<QuantityItem[]> {
-  const result = await apiClient.get<BackendQuantityListDto>(`/projects/${projectId}/quantity`);
-  const items = result.items.map(toQuantityItem);
+  const items = await readQuantityItemsFromApi(projectId);
   writeQuantityIntoMirror(projectId, items);
   return items;
 }
@@ -128,7 +133,7 @@ export async function fetchQuantityItemsFromApi(projectId: string): Promise<Quan
  * row from then on" approach already used for Excel Import's General
  * Information. A genuinely new/empty project just returns [].
  */
-export async function loadQuantityForProject(projectId: string): Promise<QuantityItem[]> {
+export async function loadQuantityForProject(projectId: string, prefetched?: QuantityItem[]): Promise<QuantityItem[]> {
   // Snapshot any pre-existing local Quantity items BEFORE the GET below —
   // fetchQuantityItemsFromApi() always writes through to the mirror, even
   // when the backend returns zero rows, which would otherwise overwrite
@@ -137,7 +142,15 @@ export async function loadQuantityForProject(projectId: string): Promise<Quantit
   // paymentMilestoneService.ts's loadMilestonesForProject() already applies).
   const legacyLocalItems = getProjectById(projectId)?.quantityItems ?? [];
 
-  const backendItems = await fetchQuantityItemsFromApi(projectId);
+  // `prefetched` = the server's list, already read by the caller (concurrently with the other lists): applying it is exactly what
+  // fetchQuantityItemsFromApi() does after its GET, so everything below behaves identically — only the waiting is gone.
+  let backendItems: QuantityItem[];
+  if (prefetched) {
+    writeQuantityIntoMirror(projectId, prefetched);
+    backendItems = prefetched;
+  } else {
+    backendItems = await fetchQuantityItemsFromApi(projectId);
+  }
   if (backendItems.length > 0) {
     return backendItems;
   }

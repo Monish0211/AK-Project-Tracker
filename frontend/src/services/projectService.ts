@@ -927,7 +927,7 @@ export async function fetchAllProjectsFromApi(): Promise<Project[]> {
  * is completely unmodified: it already reads project.resources exactly as
  * it always has.
  */
-async function refreshProjectResourcesFromBackend(project: Project): Promise<Project> {
+export async function refreshProjectResourcesFromBackend(project: Project): Promise<Project> {
   try {
     const result = await apiClient.get<{ items: BackendResourceDto[] }>(`/projects/${project.id}/resources`);
     const employees = getEmployees();

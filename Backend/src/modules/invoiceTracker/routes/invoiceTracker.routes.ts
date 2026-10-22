@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
-import { getInvoiceTrackerMonth, getInvoiceTrackerProjectInvoices } from "../controllers/invoiceTracker.controller.js";
+import { getInvoiceTrackerMonth, getInvoiceTrackerOutstanding, getInvoiceTrackerProjectInvoices } from "../controllers/invoiceTracker.controller.js";
 
 const router = Router();
 
@@ -12,6 +12,8 @@ const router = Router();
 const access = [authenticate, requireModuleAccess("Invoices")];
 
 router.get("/", ...access, getInvoiceTrackerMonth);
+router.get("/outstanding", ...access, getInvoiceTrackerOutstanding);
+// Path kept from the first release; it now returns the project's workflow records (invoices + invoice requests) for the month.
 router.get("/projects/:projectId/invoices", ...access, getInvoiceTrackerProjectInvoices);
 
 export default router;

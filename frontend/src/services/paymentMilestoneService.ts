@@ -102,16 +102,21 @@ function writeMilestonesIntoMirror(projectId: string, items: PaymentMilestone[])
   saveProjects(updated);
 }
 
+/** The server's Payment Milestones list, read WITHOUT touching the local mirror — for callers that read several lists at once (projectSubresourceLoader.ts). */
+export async function readMilestonesFromApi(projectId: string): Promise<PaymentMilestone[]> {
+  const result = await apiClient.get<BackendMilestoneListDto>(`/projects/${projectId}/milestones`);
+  return result.items.map(toMilestoneItem);
+}
+
 /** Fresh Payment Milestones list for a project — GET /projects/:projectId/milestones. */
 export async function fetchMilestonesFromApi(projectId: string): Promise<PaymentMilestone[]> {
-  const result = await apiClient.get<BackendMilestoneListDto>(`/projects/${projectId}/milestones`);
-  const items = result.items.map(toMilestoneItem);
+  const items = await readMilestonesFromApi(projectId);
   writeMilestonesIntoMirror(projectId, items);
   return items;
 }
 
 /** A row worth sending to Ingest — the same two conditions validatePaymentMilestonesTab() checks per row. Excludes createEmptyProject()'s own default filler milestone (empty name), which is otherwise indistinguishable from a real, not-yet-filled-in row and would only ever be rejected by the backend's validation. */
-function isCompleteMilestone(item: PaymentMilestone): boolean {
+export function isCompleteMilestone(item: PaymentMilestone): boolean {
   return !!item.milestoneName?.trim() && item.paymentPercentage > 0;
 }
 
@@ -136,7 +141,7 @@ function isCompleteMilestone(item: PaymentMilestone): boolean {
  * syncMilestonesWithApi) once the user actually fills them in and saves,
  * gated by validatePaymentMilestonesTab exactly like Quantity's own gate.
  */
-export async function loadMilestonesForProject(projectId: string): Promise<PaymentMilestone[]> {
+export async function loadMilestonesForProject(projectId: string, prefetched?: PaymentMilestone[]): Promise<PaymentMilestone[]> {
   // Snapshot any pre-existing local milestones BEFORE the GET below —
   // fetchMilestonesFromApi() always writes through to the mirror, even when
   // the backend returns zero rows, which would otherwise overwrite this
@@ -144,7 +149,14 @@ export async function loadMilestonesForProject(projectId: string): Promise<Payme
   // function exists to migrate, before it's ever read.
   const legacyLocalItems = getProjectById(projectId)?.paymentMilestones ?? [];
 
-  const backendItems = await fetchMilestonesFromApi(projectId);
+  // `prefetched` = the list already read by the caller; applying it is what fetchMilestonesFromApi() does after its GET.
+  let backendItems: PaymentMilestone[];
+  if (prefetched) {
+    writeMilestonesIntoMirror(projectId, prefetched);
+    backendItems = prefetched;
+  } else {
+    backendItems = await fetchMilestonesFromApi(projectId);
+  }
   if (backendItems.length > 0) {
     return backendItems;
   }

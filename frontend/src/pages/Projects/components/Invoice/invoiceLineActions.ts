@@ -4,6 +4,7 @@ import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../ty
 import { updateProject } from "../../../../services/projectService";
 import { fetchInvoiceItemsFromApi, fetchProjectInvoiceCurrency, syncInvoiceLinesWithApi } from "../../../../services/invoiceService";
 import { ApiError } from "../../../../services/apiClient";
+import { batchPmoDataChanged } from "../../../../utils/pmoDataChanged";
 
 /**
  * The invoice View / Edit / Delete / status-change logic that used to live inline in InvoiceDashboard.tsx, extracted
@@ -91,6 +92,8 @@ export interface PersistArgs {
   setProject: Dispatch<SetStateAction<Project>> | undefined;
   /** Duplicate-submission guard: a ref, not state, so two clicks in the same frame still see the current value. */
   syncing: { current: boolean };
+  /** Called once the guard has passed and the save has begun (Invoice Tracker shows "saving" and blocks a second action on the project). */
+  onStart?: (() => void) | undefined;
   /** Called after the server round trip succeeds (the dashboard refreshes its invoice-request state). */
   onSynced?: (() => void) | undefined;
   /** Called when the save has finished either way (Invoice Tracker refreshes its list from the server's truth). */
@@ -120,7 +123,7 @@ async function readServerInvoiceCurrency(projectId: string, fallback: Project["i
  * refused. This is the single place invoice edits and deletes reach the existing PATCH / DELETE endpoints, and so
  * the single place every invoice status-history event originates from the UI.
  */
-export function persistInvoiceProjectChange({ project, updatedProject, setProject, syncing, onSynced, onSettled, deps }: PersistArgs): boolean {
+export function persistInvoiceProjectChange({ project, updatedProject, setProject, syncing, onStart, onSynced, onSettled, deps }: PersistArgs): boolean {
   if (syncing.current) {
     deps.showToast({
       type: "error",
@@ -130,10 +133,14 @@ export function persistInvoiceProjectChange({ project, updatedProject, setProjec
     return false;
   }
   syncing.current = true;
+  onStart?.();
 
   setProject?.(updatedProject);
   deps.updateProject({ ...updatedProject, updatedAt: deps.now() });
 
+  // The optimistic write above announced the change; the server round trip (PATCH/POST/DELETE, the invoice re-read, the reconciled
+  // write) announces once more when it settles instead of once per step.
+  void batchPmoDataChanged(() =>
   deps
     .syncInvoiceLinesWithApi(project.id, project.invoiceItems, updatedProject.invoiceItems)
     .then(async (reconciledItems) => {
@@ -172,6 +179,6 @@ export function persistInvoiceProjectChange({ project, updatedProject, setProjec
     .finally(() => {
       syncing.current = false;
       onSettled?.();
-    });
+    }));
   return true;
 }

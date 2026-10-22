@@ -25,6 +25,8 @@ interface ConfirmDialogProps {
   /** "danger" for irreversible/destructive actions (red confirm button); "default" for safe/reversible ones. */
   variant?: "danger" | "default";
   icon?: ReactNode;
+  /** Keeps the dialog open but not yet confirmable (e.g. while the data the action needs is still loading). */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -37,6 +39,7 @@ export const ConfirmDialog = ({
   cancelLabel = "Cancel",
   variant = "default",
   icon,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) => {
@@ -111,7 +114,7 @@ export const ConfirmDialog = ({
             <Button ref={cancelButtonRef} variant="secondary" size="sm" onClick={onCancel}>
               {cancelLabel}
             </Button>
-            <Button variant={variant === "danger" ? "danger" : "primary"} size="sm" onClick={onConfirm}>
+            <Button variant={variant === "danger" ? "danger" : "primary"} size="sm" onClick={onConfirm} disabled={confirmDisabled}>
               {confirmLabel}
             </Button>
           </div>

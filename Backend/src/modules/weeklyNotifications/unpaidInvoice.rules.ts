@@ -88,8 +88,8 @@ export function calendarDaysSince(invoiceDate: Date, now: Date, timeZone: string
   return daysFrom(invoiceDate, zonedToday(now, timeZone));
 }
 
-/** Same count against an already-computed `today` (YYYY-MM-DD) — the report computes it once, not per line. */
-function daysFrom(invoiceDate: Date, today: string): number {
+/** Same count against an already-computed `today` (YYYY-MM-DD) — the report computes it once, not per line. Exported so a caller with many rows (Invoice Tracker's Outstanding view) does the same instead of building a date formatter per row. */
+export function daysFrom(invoiceDate: Date, today: string): number {
   const invoiceDay = invoiceDate.toISOString().slice(0, 10); // date-only value, stored at UTC midnight
   return Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${invoiceDay}T00:00:00Z`)) / 86_400_000);
 }

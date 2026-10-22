@@ -127,6 +127,23 @@ test("persist: a second change while one is still saving is refused with a messa
   await h.settle();
 });
 
+test("persist: onStart fires exactly once per ACCEPTED save (never for a refused second one), before the server round trip; a delete goes through the same guard", async () => {
+  const { persistInvoiceProjectChange, removeInvoiceLine } = await load(ACTIONS);
+  const h = harness();
+  const p = project();
+  let started = 0;
+  const args = (updated) => h.args(p, updated, { onStart: () => { started++; assert.equal(h.log.sync.length, 0, "announced before anything reaches the server"); } });
+  const afterDelete = removeInvoiceLine(p, p.invoiceItems[0], p.invoiceItems[0].invoices[0]);
+  assert.equal(persistInvoiceProjectChange(args(afterDelete)), true, "the delete is accepted");
+  assert.equal(started, 1);
+  assert.equal(persistInvoiceProjectChange(args(afterDelete)), false, "a repeated Delete while the first is saving is refused");
+  assert.equal(persistInvoiceProjectChange(args({ ...p })), false, "so is an Edit");
+  assert.equal(started, 1, "refused saves are not announced");
+  assert.equal(h.log.sync.length, 1, "exactly one mutation reached the server");
+  await h.settle();
+  assert.equal(started, 1);
+});
+
 test("persist: a rejected change (4xx) shows the server's message, reloads the server's invoices, and releases the guard", async () => {
   const { persistInvoiceProjectChange } = await load(ACTIONS);
   const { ApiError } = await load("/src/services/apiClient.ts");

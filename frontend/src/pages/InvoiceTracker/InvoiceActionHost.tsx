@@ -26,7 +26,7 @@ function Overlay({ children }: { children: React.ReactNode }) {
  * backend endpoints, approval gates and status-history recording apply. The project is loaded fresh from the API
  * first; nothing is opened against partial data.
  */
-export function InvoiceActionHost({ action, onClose, onSettled }: { action: TrackerAction; onClose: () => void; onSettled: () => void }) {
+export function InvoiceActionHost({ action, onClose, onSaving, onSettled }: { action: TrackerAction; onClose: () => void; onSaving: () => void; onSettled: () => void }) {
   const fetcher = useCallback(() => loadProjectInvoiceContext(action.projectId), [action.projectId]);
   const load = usePagedRequest(fetcher, `${action.projectId}:${action.lineId}:${action.mode}`);
 
@@ -46,6 +46,11 @@ export function InvoiceActionHost({ action, onClose, onSettled }: { action: Trac
       </Overlay>
     );
   }
+  if (!load.data && action.mode === "delete") {
+    // The confirmation does not need the project to be asked: it is on screen immediately, and Delete becomes available once the
+    // project (needed to act on) has loaded behind it.
+    return <ConfirmDialog open variant="danger" title="Delete Invoice?" message={`Delete invoice ${action.invoiceNo}? This cannot be undone.`} confirmLabel="Delete" cancelLabel="Cancel" confirmDisabled onCancel={onClose} onConfirm={() => undefined} />;
+  }
   if (!load.data) {
     return (
       <Overlay>
@@ -55,10 +60,10 @@ export function InvoiceActionHost({ action, onClose, onSettled }: { action: Trac
       </Overlay>
     );
   }
-  return <HostInner initialProject={load.data} action={action} onClose={onClose} onSettled={onSettled} />;
+  return <HostInner initialProject={load.data} action={action} onClose={onClose} onSaving={onSaving} onSettled={onSettled} />;
 }
 
-function HostInner({ initialProject, action, onClose, onSettled }: { initialProject: Project; action: TrackerAction; onClose: () => void; onSettled: () => void }) {
+function HostInner({ initialProject, action, onClose, onSaving, onSettled }: { initialProject: Project; action: TrackerAction; onClose: () => void; onSaving: () => void; onSettled: () => void }) {
   const [project, setProject] = useState<Project>(initialProject);
   const item = project.invoiceItems.find((i) => i.id === action.quantityItemId);
   const line = item?.invoices.find((l) => l.id === action.lineId);
@@ -67,6 +72,7 @@ function HostInner({ initialProject, action, onClose, onSettled }: { initialProj
   const actions = useInvoiceLineActions({
     project,
     setProject,
+    onSaving,
     onSettled,
     initialDrawer: action.mode !== "delete" && item && line ? { item, mode: action.mode, existingLine: line } : null,
   });

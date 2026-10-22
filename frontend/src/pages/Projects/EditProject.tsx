@@ -2,14 +2,13 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import type { Project } from "../../types/Project";
 import { getProjectById, normalizeProject, fetchProjectByIdFromApi, writeThroughProjectsMirror } from "../../services/projectService";
-import { loadQuantityForProject } from "../../services/quantityService";
-import { loadMilestonesForProject } from "../../services/paymentMilestoneService";
-import { loadInvoiceForProject } from "../../services/invoiceService";
-import { loadExpensesForProject, getLastKnownExpensesMeta } from "../../services/otherProjectExpenseService";
+import { loadProjectSubresources } from "../../services/projectSubresourceLoader";
+import { getLastKnownExpensesMeta } from "../../services/otherProjectExpenseService";
 import type { ExpensesConcurrencySignal } from "../../services/otherProjectExpenseService";
 import { createEmptyProject } from "../../utils/createEmptyProject";
 import ProjectForm from "./components/ProjectForm";
 import { readEditProjectDeepLink } from "./editProjectDeepLink";
+import { batchPmoDataChanged } from "../../utils/pmoDataChanged";
 import type { SubresourceLoadStatus } from "./components/FormButtons";
 import { Button } from "../../components/ui/Button";
 
@@ -76,7 +75,9 @@ const EditProject = () => {
 
     let isMounted = true;
 
-    fetchProjectByIdFromApi(id)
+    // One announcement for the whole load: the project, Quantity, Milestones, Invoices and Expenses each write through to the local
+    // mirror, and each used to announce "data changed" — five-plus times the app-wide listeners (notification rules, sidebar counts…) ran.
+    batchPmoDataChanged(() => fetchProjectByIdFromApi(id, { includeResources: false })
       .then(async (fetched) => {
         if (!isMounted || !fetched) {
           if (isMounted) setNotFound(!fetched);
@@ -96,94 +97,40 @@ const EditProject = () => {
         // there is no window where a stale flag could be visibly acted on.
         if (isMounted) setResourceLoadFailed(ALL_RESOURCES_UNCONFIRMED);
 
-        // Immediately load Quantity from the backend once General
-        // Information resolves, so the form never renders with stale
-        // Quantity data — a failure here still shows the project (General
-        // Information already loaded); Quantity simply falls back to
-        // whatever normalizeProject() already carried over.
-        //
-        // Bug fix (Sep 2026): Quantity used to be the one step of this
-        // chain NOT wrapped in its own try/catch — a Quantity failure fell
-        // all the way to the outer catch below, which skipped Milestones/
-        // Invoices/Expenses entirely (never even attempted) and discarded
-        // the final setProject/writeThroughProjectsMirror write. Now
-        // isolated exactly like the other three below: a Quantity failure
-        // no longer prevents Milestones/Invoices/Expenses from being
-        // attempted or the mirror from being written with whatever loaded.
+        // Once General Information resolves, the four lists are loaded before the form is ever shown, so it never renders with stale
+        // data. Each list is isolated: a failure still shows the project, and that list simply falls back to whatever the mirror
+        // already carried over (no failure prevents the other lists from loading or the mirror from being written).
         try {
-          let nextProject = fetched;
+          // The four lists are read at the same time (services/projectSubresourceLoader.ts). The one-time migration of older
+          // browser-stored data still runs in its original order inside it, and a list that depends on a migration waits for it. Each
+          // list's failure is isolated exactly as before: the project still shows, the list falls back to whatever the mirror carried
+          // over, and — P0 fix — only a genuine successful load (even one that legitimately returns zero rows) clears its flag. A
+          // failure leaves the flag at its safe `true` default, so Save stays blocked (FormButtons.tsx) rather than deleting rows.
+          const loaded = await loadProjectSubresources(id, fetched);
+          if (!isMounted) return;
+          let nextProject = loaded.project;
 
-          try {
-            const quantityItems = await loadQuantityForProject(id);
-            if (!isMounted) return;
-            nextProject = normalizeProject({ ...nextProject, quantityItems });
-            // P0 fix — only a genuine successful load (even one that
-            // legitimately returns zero rows) ever clears this flag. The
-            // catch below intentionally does NOT touch it, so it stays at
-            // its safe `true` default on any failure (timeout, network
-            // error, HTTP error, or a malformed response apiClient.ts
-            // already converts into a thrown error).
-            if (isMounted) setResourceLoadFailed((prev) => ({ ...prev, quantity: false }));
-          } catch {
-            // Fall through with nextProject as already set above. quantity
-            // stays flagged as failed — Save will be blocked (FormButtons.tsx).
+          if (loaded.quantityItems.ok) {
+            nextProject = normalizeProject({ ...nextProject, quantityItems: loaded.quantityItems.value });
+            setResourceLoadFailed((prev) => ({ ...prev, quantity: false }));
           }
 
-          // Payment Milestones load the same way, immediately after
-          // Quantity — this failure is isolated from Quantity's: if General
-          // Information and Quantity already loaded successfully above,
-          // Milestones failing to load (e.g. an incomplete legacy row the
-          // backend's Ingest validation rejects) never discards that
-          // progress. Milestones simply falls back to whatever the local
-          // mirror already had for this session.
-          try {
-            const paymentMilestones = await loadMilestonesForProject(id);
-            if (!isMounted) return;
-            nextProject = normalizeProject({ ...nextProject, paymentMilestones });
-            // P0 fix — see the Quantity block above for the exact rule.
-            if (isMounted) setResourceLoadFailed((prev) => ({ ...prev, milestones: false }));
-          } catch {
-            // Fall through with nextProject as already set above. milestones
-            // stays flagged as failed — Save will be blocked (FormButtons.tsx).
+          if (loaded.paymentMilestones.ok) {
+            nextProject = normalizeProject({ ...nextProject, paymentMilestones: loaded.paymentMilestones.value });
+            setResourceLoadFailed((prev) => ({ ...prev, milestones: false }));
           }
 
-          // Invoice data loads the same way, immediately after Payment
-          // Milestones (Invoice pricing can reference a milestone's
-          // percentage, so both Quantity and Milestones are already loaded
-          // by this point) — isolated the same way: a failure here never
-          // discards General Information/Quantity/Milestones already loaded
-          // above, it simply falls back to whatever the local mirror already
-          // had for this session. normalizeProject() still re-derives each
-          // InvoiceItem's description/qty/uom/unitPrice/totalPrice from
-          // `nextProject`'s own quantityItems either way (see
-          // invoiceSyncService.ts's syncInvoiceItemsWithQuantity()) — this
-          // load's job is only to bring in the backend's InvoiceLine history
-          // (`.invoices[]`), which that sync already preserves by id.
-          try {
-            const invoiceItems = await loadInvoiceForProject(id);
-            if (!isMounted) return;
-            nextProject = normalizeProject({ ...nextProject, invoiceItems });
-          } catch {
-            // Fall through with nextProject as already set above.
+          // Invoice pricing can reference a milestone's percentage, so Quantity and Milestones are applied first (as before);
+          // normalizeProject() re-derives each InvoiceItem's description/qty/uom/unitPrice/totalPrice from the quantity items.
+          if (loaded.invoiceItems.ok) {
+            nextProject = normalizeProject({ ...nextProject, invoiceItems: loaded.invoiceItems.value });
           }
 
-          // Other Project Expenses load the same way, immediately after
-          // Invoice — isolated the same way: a failure here never
-          // discards General Information/Quantity/Milestones already
-          // loaded above, it simply falls back to whatever the local mirror
-          // already had for this session.
-          try {
-            const nonManhourExpenses = await loadExpensesForProject(id);
-            if (!isMounted) return;
-            nextProject = normalizeProject({ ...nextProject, nonManhourExpenses });
-            // P0 fix — see the Quantity block above for the exact rule.
-            if (isMounted) setResourceLoadFailed((prev) => ({ ...prev, expenses: false }));
-            // Baseline capture is free — loadExpensesForProject() above
-            // already just ran the GET that populates this.
-            if (isMounted) setExpensesConcurrencyBaseline(getLastKnownExpensesMeta(id));
-          } catch {
-            // Fall through with nextProject as already set above. expenses
-            // stays flagged as failed — Save will be blocked (FormButtons.tsx).
+          if (loaded.nonManhourExpenses.ok) {
+            nextProject = normalizeProject({ ...nextProject, nonManhourExpenses: loaded.nonManhourExpenses.value });
+            setResourceLoadFailed((prev) => ({ ...prev, expenses: false }));
+            // Baseline capture is free — the expenses read above already recorded it.
+            setExpensesConcurrencyBaseline(getLastKnownExpensesMeta(id));
           }
 
           setProject(nextProject);
@@ -206,7 +153,7 @@ const EditProject = () => {
       })
       .catch(() => {
         if (isMounted) setNotFound(true);
-      })
+      }))
       .finally(() => {
         if (isMounted) setLoadedId(id);
       });

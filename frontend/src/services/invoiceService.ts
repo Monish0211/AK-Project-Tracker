@@ -256,10 +256,15 @@ export async function fetchProjectInvoiceCurrency(projectId: string): Promise<st
 
 /** Fresh Invoice Items list for a project — GET /projects/:projectId/invoice-items. One entry per QuantityItem belonging to the project (id === that QuantityItem's id), each carrying its own InvoiceLine history. */
 export async function fetchInvoiceItemsFromApi(projectId: string): Promise<InvoiceItem[]> {
-  const result = await apiClient.get<BackendInvoiceItemListDto>(`/projects/${projectId}/invoice-items`);
-  const items = result.items.map(toInvoiceItem);
+  const items = await readInvoiceItemsFromApi(projectId);
   writeInvoiceItemsIntoMirror(projectId, items);
   return items;
+}
+
+/** The server's Invoice Items, read WITHOUT touching the local mirror — for callers that read several lists at once (projectSubresourceLoader.ts). */
+export async function readInvoiceItemsFromApi(projectId: string): Promise<InvoiceItem[]> {
+  const result = await apiClient.get<BackendInvoiceItemListDto>(`/projects/${projectId}/invoice-items`);
+  return result.items.map(toInvoiceItem);
 }
 
 /**
@@ -282,7 +287,7 @@ export async function fetchInvoiceItemsFromApi(projectId: string): Promise<Invoi
  * new project (or one with no invoice history yet) just returns the
  * backend's already-correct, all-empty items.
  */
-export async function loadInvoiceForProject(projectId: string): Promise<InvoiceItem[]> {
+export async function loadInvoiceForProject(projectId: string, prefetched?: InvoiceItem[]): Promise<InvoiceItem[]> {
   // Snapshot any pre-existing local invoice history BEFORE the GET below —
   // fetchInvoiceItemsFromApi() always writes through to the mirror, which
   // would otherwise overwrite this project's invoiceItems with the (still
@@ -290,7 +295,14 @@ export async function loadInvoiceForProject(projectId: string): Promise<InvoiceI
   // ever read.
   const legacyLocalItems = getProjectById(projectId)?.invoiceItems ?? [];
 
-  const backendItems = await fetchInvoiceItemsFromApi(projectId);
+  // `prefetched` = the list already read by the caller; applying it is what fetchInvoiceItemsFromApi() does after its GET.
+  let backendItems: InvoiceItem[];
+  if (prefetched) {
+    writeInvoiceItemsIntoMirror(projectId, prefetched);
+    backendItems = prefetched;
+  } else {
+    backendItems = await fetchInvoiceItemsFromApi(projectId);
+  }
   const backendLineCount = backendItems.reduce((sum, item) => sum + item.invoices.length, 0);
   if (backendLineCount > 0) {
     return backendItems;

@@ -34,8 +34,39 @@ export interface PmoDataChangedDetail {
 
 export const PMO_DATA_CHANGED_EVENT = "pmo:data-changed";
 
+let batchDepth = 0;
+const pendingByEntity = new Map<PmoEntity, PmoDataChangedDetail>();
+
 export function dispatchPmoDataChanged(detail: PmoDataChangedDetail): void {
+  if (batchDepth > 0) {
+    // Inside batchPmoDataChanged(): remember it, say it once when the batch ends. Ids merge; an event without ids ("unknown which")
+    // keeps the merged one without ids, so a filtering listener never misses a change.
+    const earlier = pendingByEntity.get(detail.entity);
+    const ids = earlier ? (earlier.ids && detail.ids ? [...new Set([...earlier.ids, ...detail.ids])] : undefined) : detail.ids;
+    pendingByEntity.set(detail.entity, ids ? { entity: detail.entity, ids } : { entity: detail.entity });
+    return;
+  }
   window.dispatchEvent(new CustomEvent<PmoDataChangedDetail>(PMO_DATA_CHANGED_EVENT, { detail }));
+}
+
+/**
+ * Runs `run` and holds back every "pmo:data-changed" it causes, then announces each kind of change ONCE when it settles (success or
+ * failure). A screen that loads several things in a row — each write-through to the local mirror used to announce itself, and every
+ * announcement re-runs the app-wide listeners (notification rules, sidebar counts, ...) — now pays for one announcement, not one per
+ * step. Nothing is dropped and nothing is reordered relative to other kinds of change; only the timing within the batch moves.
+ */
+export async function batchPmoDataChanged<T>(run: () => Promise<T>): Promise<T> {
+  batchDepth += 1;
+  try {
+    return await run();
+  } finally {
+    batchDepth -= 1;
+    if (batchDepth === 0 && pendingByEntity.size > 0) {
+      const pending = [...pendingByEntity.values()];
+      pendingByEntity.clear();
+      for (const detail of pending) dispatchPmoDataChanged(detail);
+    }
+  }
 }
 
 /**
