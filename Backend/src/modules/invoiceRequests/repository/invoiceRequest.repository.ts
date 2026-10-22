@@ -22,7 +22,22 @@ function withDisplayRelations() {
     // same persisted set to compose the lifecycle's CC list — see
     // invoiceRequestEmail.rules.ts's buildInvoiceWorkflowCcList().
     ccMembers: { include: { portalUser: DISPLAY_SELECT } },
+    // Attachments (Oct 2026) — the files uploaded with the request. storageKey is internal: it is read by the email sender to
+    // locate the stored file and is never put on the DTO.
+    documents: {
+      select: { id: true, fileName: true, mimeType: true, fileSizeBytes: true, storageKey: true },
+      orderBy: { createdAt: "asc" as const },
+    },
   };
+}
+
+/** One already-stored attachment file, ready to be recorded against the new request. */
+export interface CreateInvoiceRequestDocumentData {
+  fileName: string;
+  storageKey: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  uploadedByUserId: string;
 }
 
 export interface CreateInvoiceRequestData {
@@ -37,16 +52,31 @@ export interface CreateInvoiceRequestData {
   notes: string | null;
   /** Already-validated, already-deduped active PortalUser ids — see invoiceRequest.service.ts's createInvoiceRequest(). */
   ccMemberUserIds: string[];
+  /** Attachments (Oct 2026) — files already written to storage; their metadata rows are created in the same transaction as the request. */
+  documents: CreateInvoiceRequestDocumentData[];
 }
 
 export function createInvoiceRequest(tx: Prisma.TransactionClient, data: CreateInvoiceRequestData) {
-  const { ccMemberUserIds, ...requestData } = data;
+  const { ccMemberUserIds, documents, ...requestData } = data;
   return tx.invoiceRequest.create({
     data: {
       ...requestData,
+      // Every new request starts "pending" — the notification email is sent after this transaction commits.
+      emailStatus: "pending",
+      emailUpdatedAt: new Date(),
       ccMembers: { create: ccMemberUserIds.map((portalUserId) => ({ portalUserId })) },
+      ...(documents.length > 0 ? { documents: { create: documents } } : {}),
     },
     include: withDisplayRelations(),
+  });
+}
+
+/** Records how the notification email ended. Only ever moves a request off "pending" (or between final outcomes after a retry). */
+export function updateInvoiceRequestEmailOutcome(id: string, emailStatus: string, emailDetail: string | null) {
+  return prisma.invoiceRequest.update({
+    where: { id },
+    data: { emailStatus, emailDetail, emailUpdatedAt: new Date() },
+    select: { id: true },
   });
 }
 

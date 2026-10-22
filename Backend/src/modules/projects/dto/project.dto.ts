@@ -114,6 +114,12 @@ export interface ProjectDto {
   workOrderValueINR: number;
   pendingDueINR: number;
   /**
+   * True when every non-Cancelled invoice line of this project has actually reached "Paid" (and there is at least one). The
+   * Project Repository's Invoice Status shows "Paid" only when the Work Order Value is fully invoiced AND this is true — fully
+   * invoiced alone is "Partially Paid". Server-computed from the same invoice lines as pendingDueINR, never from the browser cache.
+   */
+  allInvoicesPaid: boolean;
+  /**
    * Invoice Request indicator (Oct 2026) — whether this project currently
    * has an Open InvoiceRequest. Deliberately independent of, and never
    * feeding into, the Project Repository's own Invoice Status calculation

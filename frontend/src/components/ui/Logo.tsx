@@ -1,3 +1,4 @@
+import ifeLogo from "../../assets/brand/ife-logo-256.png";
 import logoLight from "../../assets/logo-light.jpg";
 import logoDark from "../../assets/logo-dark.png";
 import { useTheme } from "../../context/ThemeContext";
@@ -5,54 +6,56 @@ import { useTheme } from "../../context/ThemeContext";
 interface LogoProps {
   alt?: string;
   imageClassName?: string;
-  /** Overrides imageClassName for Dark Mode. Falls back to imageClassName if omitted. */
+  /** "wordmark" only: overrides imageClassName for Dark Mode. Falls back to imageClassName if omitted. */
   darkImageClassName?: string;
   containerClassName?: string;
+  /**
+   * "ife" (default) — the IFE logo, used by the Login page. "wordmark" — the original iFluids Engineering wordmark (light / dark
+   * theme files), which the loading screen keeps.
+   */
+  variant?: "ife" | "wordmark";
 }
 
 /**
- * Single source of truth for the iFluids logo. Imports both theme variants
- * as modules instead of referencing hardcoded "/logo-*.{jpg,png}" paths, so
- * Vite always resolves them to the correct URL under whatever base path is
- * active for the current build (plain "/" in dev, "/AK-Project-Tracker/" on
- * the GitHub Pages build) — a hardcoded absolute path 404s under a
- * non-root base.
+ * Single source of truth for the iFluids logos. The artwork is imported as modules instead of referenced by hardcoded "/…" paths, so
+ * Vite resolves them to the correct URL under whatever base path is active for the current build (plain "/" in dev,
+ * "/AK-Project-Tracker/" on the GitHub Pages build).
  *
- * Renders the official light-theme asset in Light Mode and the official
- * dark-theme asset in Dark Mode — the artwork itself is never recolored or
- * filtered, just swapped for the matching official file.
+ * variant "ife": the IFE logo — a self-contained rounded tile (its own blue background, transparent outside its corners), so it reads the
+ * same in Light and Dark Mode and needs no card, border or theme variant. Rendered at its natural aspect ratio (`object-contain`,
+ * height-driven by the caller's `imageClassName`), never stretched or cropped. The master image is
+ * src/assets/brand/ife-logo-master.png (unchanged, not imported); ife-logo-256.png is its optimised rendition.
  *
- * The two assets are NOT interchangeable drop-ins: logo-light.jpg is a
- * plain wordmark, but logo-dark.png is a fully self-contained tile that
- * already bakes in its own dark card frame + white inner panel around the
- * mark (confirmed by sampling its corner pixel — dark navy, not white/
- * transparent). Wrapping that tile in our own light card would just add a
- * third, redundant, invisible layer of chrome behind an already-opaque
- * image, and a large share of its own canvas is its own frame rather than
- * the mark — so at the same declared height it reads as smaller than the
- * light asset. To compensate: the card chrome (surface/border/shadow) is
- * only applied in Light Mode, and `darkImageClassName` lets each usage
- * render the Dark Mode asset at a taller height to offset its internal
- * framing. `containerClassName` (padding/margin) still applies in both
- * modes so surrounding layout spacing stays consistent either way.
+ * variant "wordmark": the original behaviour, unchanged — the official light-theme asset in Light Mode (on a white card) and the
+ * official dark-theme asset in Dark Mode (a self-contained tile that already bakes in its own frame, so no card there, and
+ * `darkImageClassName` lets a usage render it taller to offset that framing). The artwork is never recolored or filtered.
+ *
+ * `containerClassName` (padding/margin) applies in every case so surrounding layout spacing stays under the caller's control.
  */
-export function Logo({
-  alt = "iFluids Engineering Logo",
-  imageClassName = "h-9 w-auto object-contain",
-  darkImageClassName,
-  containerClassName = "px-5 py-3",
-}: LogoProps) {
+export function Logo({ variant = "ife", ...props }: LogoProps) {
+  return variant === "wordmark" ? <WordmarkLogo {...props} /> : <IfeLogo {...props} />;
+}
+
+type VariantProps = Omit<LogoProps, "variant">;
+
+function IfeLogo({ alt = "iFluids Engineering Logo", imageClassName = "h-9 w-auto object-contain", containerClassName = "px-5 py-3" }: VariantProps) {
+  return (
+    <span className={`inline-flex items-center justify-center ${containerClassName}`}>
+      <img src={ifeLogo} alt={alt} className={imageClassName} />
+    </span>
+  );
+}
+
+// Separate component so only the wordmark (theme-dependent) needs the ThemeProvider; the IFE logo is theme-independent.
+function WordmarkLogo({ alt = "iFluids Engineering Logo", imageClassName = "h-9 w-auto object-contain", darkImageClassName, containerClassName = "px-5 py-3" }: VariantProps) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
-  const logoSrc = isDark ? logoDark : logoLight;
-
   const wrapperClassName = isDark
     ? `inline-flex items-center justify-center ${containerClassName}`
     : `inline-flex items-center justify-center bg-white rounded-2xl border border-slate-200/80 shadow-md ${containerClassName}`;
-
   return (
     <span className={wrapperClassName}>
-      <img src={logoSrc} alt={alt} className={isDark ? (darkImageClassName ?? imageClassName) : imageClassName} />
+      <img src={isDark ? logoDark : logoLight} alt={alt} className={isDark ? (darkImageClassName ?? imageClassName) : imageClassName} />
     </span>
   );
 }

@@ -5,6 +5,7 @@ import { requireModuleAccess } from "../../../shared/middleware/requireModuleAcc
 import { validate } from "../../../shared/middleware/validate.js";
 import { createInvoiceRequest, getInvoiceRequestsForProject } from "../controllers/invoiceRequest.controller.js";
 import { createInvoiceRequestSchema } from "../validators/invoiceRequest.validators.js";
+import { parseInvoiceRequestUpload, unpackInvoiceRequestPayload } from "../invoiceRequestUpload.middleware.js";
 
 const router = Router();
 
@@ -21,6 +22,11 @@ router.post(
   authenticate,
   denyReadOnlyWrites,
   requireModuleAccess("Invoices"),
+  // Attachments (Oct 2026): a multipart body (JSON "payload" + files) is parsed and unpacked here; a plain JSON body passes
+  // straight through both, so the request without files is exactly what it was. Both run AFTER authentication/authorization, so
+  // an unauthorized caller's upload is never even read.
+  parseInvoiceRequestUpload,
+  unpackInvoiceRequestPayload,
   validate(createInvoiceRequestSchema),
   createInvoiceRequest
 );

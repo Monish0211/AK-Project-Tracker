@@ -21,8 +21,8 @@ const DEFAULT_TITLE = "iFluids PMO";
 // paths only, never accepted from the push payload (see the push handler
 // below) — the same "never trust external input for anything that resolves
 // to a resource" rule already applied to actionUrl.
-const DEFAULT_ICON = "/icons/pmo-192.png";
-const DEFAULT_BADGE = "/icons/pmo-badge.png";
+const DEFAULT_ICON = "/icons/ife-192.png";
+const DEFAULT_BADGE = "/icons/ife-badge-96.png";
 
 self.addEventListener("push", (event) => {
   let payload = {};

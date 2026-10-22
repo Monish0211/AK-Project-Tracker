@@ -169,6 +169,7 @@ export default function RotatingCarousel({ reducedMotion }: RotatingCarouselProp
         )}
         <Logo
           alt="iFluids Engineering"
+          variant="wordmark"
           imageClassName="h-11 sm:h-14 w-auto object-contain"
           darkImageClassName="h-14 sm:h-18 w-auto object-contain"
           containerClassName="px-0 py-0"

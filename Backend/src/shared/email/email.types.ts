@@ -12,12 +12,33 @@ export interface SendEmailOptions {
   text?: string;
   /** Project Notification System (Oct 2026) — optional CC list. Omit entirely for callers that don't need it. */
   cc?: string | string[];
+  /** Request Invoice attachments (Oct 2026) — optional. Omitted by every other caller, whose behaviour is unchanged. */
+  attachments?: EmailAttachment[];
 }
+
+/** A file read from disk at send time. `filename` is what the recipient sees; it must already be sanitized by the caller. */
+export interface EmailAttachment {
+  filename: string;
+  /** Absolute path of the stored file — streamed by Nodemailer, never loaded into the HTTP request's memory. */
+  path: string;
+  contentType: string;
+}
+
+/**
+ * How a failed send ended, so a caller can tell "definitely not delivered" from "we do not know":
+ *  - not_configured: SMTP is not set up — nothing was sent.
+ *  - size_rejected:  the mail server answered that the message is too large — definitely NOT delivered, safe to resend smaller.
+ *  - rejected:       the server (or the connection attempt) definitively refused the message — NOT delivered.
+ *  - unconfirmed:    no definitive answer (timeout / dropped connection) — the message MAY have been delivered. Never auto-retry.
+ */
+export type EmailFailureKind = "not_configured" | "size_rejected" | "rejected" | "unconfirmed";
 
 export interface SendEmailResult {
   success: boolean;
   /** Present only when success is false — never thrown, so a failed email can never crash the request that triggered it. */
   error?: string;
+  /** Present only when success is false. */
+  failure?: EmailFailureKind;
 }
 
 /** What every template function returns — the service layer never builds subject lines or HTML itself. */
@@ -106,6 +127,12 @@ export interface PRRequestRejectedEmailData {
  * contactNumber/emailId), the rest are free-text fields captured on the
  * request itself.
  */
+export interface InvoiceRequestAttachmentLine {
+  fileName: string;
+  /** Already formatted, e.g. "2.4 MB". */
+  sizeLabel: string;
+}
+
 export interface InvoiceRequestAssignedEmailData {
   assignedToName: string;
   requesterName: string;
@@ -122,6 +149,12 @@ export interface InvoiceRequestAssignedEmailData {
   address: string | null;
   notes: string | null;
   invoicesUrl: string;
+  /**
+   * Files uploaded with the request (Oct 2026). `attached` = they ride on THIS email. `not_attached` = they were uploaded and
+   * are retained, but could NOT be attached to this email — the email says so plainly and never claims they were received.
+   * Omitted entirely when the request had no files (the email is then exactly what it was before).
+   */
+  attachments?: { mode: "attached" | "not_attached"; files: InvoiceRequestAttachmentLine[]; notAttachedReason?: string };
 }
 
 /** Request Invoice workflow (Sept 2026) — Section B: sent to the original requester automatically, only after the invoice has actually, successfully been raised. */

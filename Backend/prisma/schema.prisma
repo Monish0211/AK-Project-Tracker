@@ -503,6 +503,21 @@ model InvoiceRequest {
   // relation rather than a comma-separated string.
   ccMembers InvoiceRequestCcMember[]
 
+  // Attachments (Oct 2026) — the optional files uploaded with this request. They are emailed to the responsible person
+  // (and CC) as real attachments, and ALSO kept here (Document.invoiceRequestId) so they survive for a manual resend or an
+  // audit. Deliberately NOT a Project/PR Request document: they never appear in the general Project Documents list.
+  documents Document[]
+
+  // Outcome of the assigned-person notification email — recorded after the fact because the email is sent AFTER the request
+  // is saved (the HTTP response never waits for SMTP). NULL = a request created before this field existed (outcome unknown).
+  //   pending | sent | sent_with_attachments | sent_without_attachments | failed | unconfirmed
+  // "unconfirmed" = the mail server's answer was lost (timeout/connection drop): the message may or may not have been
+  // delivered, so it is NEVER retried automatically (a retry could notify the same person twice).
+  emailStatus String?
+  // Short human-readable reason for any non-"sent*" status (never contains secrets or recipient lists).
+  emailDetail String?
+  emailUpdatedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1348,6 +1363,12 @@ model Document {
   customerId String?  @unique
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
+  // Request Invoice attachments (Oct 2026) — a fourth, optional parent. A Document with this set has NO projectId (so it never
+  // shows in the Project Documents list) and is not downloadable through the portal (see document.service.ts): it exists to be
+  // emailed with the request and kept for resend/audit. Files are stored flat, like PR Request documents.
+  invoiceRequestId String?
+  invoiceRequest   InvoiceRequest? @relation(fields: [invoiceRequestId], references: [id], onDelete: Cascade)
+
   fileName      String
   storageKey    String
   mimeType      String
@@ -1362,6 +1383,7 @@ model Document {
 
   @@index([projectId])
   @@index([prRequestId])
+  @@index([invoiceRequestId])
 }
 
 // =============================================================================

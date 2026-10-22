@@ -111,6 +111,16 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, isReadOnly]);
 
+  // The notification email is sent right AFTER the request is saved, so a just-submitted request starts as "pending". Look again
+  // a few times (never more) so its real outcome — sent / sent without attachments / unconfirmed / failed — shows up without a reload.
+  const emailStatus = openInvoiceRequest?.emailStatus;
+  useEffect(() => {
+    if (emailStatus !== "pending") return;
+    const timers = [4_000, 12_000, 30_000, 75_000].map((ms) => window.setTimeout(refreshInvoiceRequestState, ms));
+    return () => timers.forEach((t) => window.clearTimeout(t));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openInvoiceRequest?.id, emailStatus]);
+
   // The unified, project-wide "Raise Invoice" flow: ONE common button (in
   // ActivitiesTable's header) opens the Invoice Cycle picker; choosing a
   // cycle there opens the Invoice Workspace, which lists every activity in

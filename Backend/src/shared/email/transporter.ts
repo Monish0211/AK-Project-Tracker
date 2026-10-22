@@ -10,7 +10,15 @@ import { env } from "../utils/env.js";
  * working. Every other function in this file treats "not configured" as a
  * normal, expected state, never a fatal one.
  */
+// Test seam only — lets an automated test capture exactly what would be sent (recipients, CC, attachments) without any real SMTP
+// connection. Never set by application code; null in production, so every real send goes through the Nodemailer transport below.
+let testTransportOverride: Pick<Transporter, "sendMail"> | null = null;
+export function setEmailTransportForTests(transport: Pick<Transporter, "sendMail"> | null): void {
+  testTransportOverride = transport;
+}
+
 export function isEmailConfigured(): boolean {
+  if (testTransportOverride) return true;
   return Boolean(env.SMTP_HOST && env.SMTP_PORT && env.SMTP_USER && env.SMTP_PASS && env.SMTP_FROM_EMAIL);
 }
 
@@ -34,6 +42,7 @@ function createTransporter(): Transporter {
  * never throw just because SMTP isn't configured yet.
  */
 export function getTransporter(): Transporter {
+  if (testTransportOverride) return testTransportOverride as Transporter;
   if (!isEmailConfigured()) {
     throw new Error(
       "Email is not configured — set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, and SMTP_FROM_EMAIL in .env."

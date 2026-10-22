@@ -259,6 +259,10 @@ export async function getDocumentForDownload(id: string, user: AccessTokenPayloa
     await assertPRRequestAccessById(doc.prRequestId, user);
   } else if (doc.customerId) {
     await assertCustomerAccessById(doc.customerId, user);
+  } else if (doc.invoiceRequestId) {
+    // Request Invoice attachments travel by email only and are retained for resend/audit — they are deliberately NOT downloadable
+    // through the portal (no access rule exists for them), so this answers exactly like a document that is not there.
+    throw new AppError("Document not found.", 404);
   } else {
     // Should never happen (the application-layer invariant guarantees at
     // most one of Project/PR Request/Customer is set, and exactly one for

@@ -37,6 +37,16 @@ export interface InvoiceRequestDto {
   status: InvoiceRequestStatus;
   fulfilledInvoiceLineId: string | null;
 
+  /** Files uploaded with the request (names and sizes only — there is no portal download; they travel by email). */
+  attachments: { id: string; fileName: string; fileSizeBytes: number }[];
+  /**
+   * Outcome of the notification email: pending | sent | sent_with_attachments | sent_without_attachments | failed | unconfirmed.
+   * null = a request created before outcomes were recorded. "pending" means the email has not been attempted/finished yet — it
+   * must NOT be read as "the responsible person was notified".
+   */
+  emailStatus: string | null;
+  emailDetail: string | null;
+
   createdAt: Date;
   updatedAt: Date;
 }

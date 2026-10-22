@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  allActiveInvoiceLinesPaid,
   actualProjectCost,
   calculateDepartmentCompletion,
   calculateTimelineAlert,
@@ -271,4 +272,36 @@ test("classifyHealth: an unreadable end date counts as schedule-not-set, not a c
     pendingInvoicePercentage: 0,
   });
   assert.equal(bucket, "scheduleNotSet");
+});
+
+// Project Repository "Paid" guard (Oct 2026): Paid needs every non-Cancelled invoice actually Paid, not just a fully invoiced total.
+test("allActiveInvoiceLinesPaid — PR-12005: 1,32,000 Paid + 33,000 Raised is NOT all paid", () => {
+  assert.equal(allActiveInvoiceLinesPaid([{ status: "Paid" }, { status: "Raised" }]), false);
+});
+
+test("allActiveInvoiceLinesPaid — every non-Cancelled line Paid is all paid; Cancelled lines are ignored", () => {
+  assert.equal(allActiveInvoiceLinesPaid([{ status: "Paid" }, { status: "Paid" }]), true);
+  assert.equal(allActiveInvoiceLinesPaid([{ status: "Paid" }, { status: "Cancelled" }, { status: "Paid" }]), true);
+});
+
+test("allActiveInvoiceLinesPaid — Draft, Raised and Partially Paid each block it", () => {
+  for (const status of ["Draft", "Raised", "PartiallyPaid"]) {
+    assert.equal(allActiveInvoiceLinesPaid([{ status: "Paid" }, { status }]), false, status);
+  }
+});
+
+test("allActiveInvoiceLinesPaid — no invoices, or only Cancelled ones, is never 'all paid'", () => {
+  assert.equal(allActiveInvoiceLinesPaid([]), false);
+  assert.equal(allActiveInvoiceLinesPaid([{ status: "Cancelled" }, { status: "Cancelled" }]), false);
+});
+
+test("the invoiced-amount formulas are unchanged by the Paid guard", () => {
+  const lines = [
+    { status: "Paid", invoiceAmountINR: 132000 },
+    { status: "Raised", invoiceAmountINR: 33000 },
+    { status: "Cancelled", invoiceAmountINR: 5000 },
+  ];
+  assert.equal(invoiceRaisedFromLines(lines), 165000);
+  assert.equal(paymentReceivedFromLines(lines), 132000);
+  assert.deepEqual(projectCommercialTotals(165000, lines), { totalInvoiceRaised: 165000, totalPaymentReceived: 132000 });
 });

@@ -108,6 +108,8 @@ export interface Project {
   // source of truth once the real item arrays ARE populated.
   backendWorkOrderValueINR?: number;
   backendPendingDueINR?: number;
+  // True when every non-Cancelled invoice has actually reached "Paid" — the Project Repository shows "Paid" only with this.
+  backendAllInvoicesPaid?: boolean;
   // Server-authoritative expense totals (Oct 2026) — SUM(resource manhourCost)
   // and SUM(active expense totalCost) from the project list/detail API, so
   // list screens (Completed Projects) never compute profit from the cache.

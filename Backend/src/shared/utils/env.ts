@@ -178,6 +178,15 @@ const envSchema = z.object({
   // setting would just move the failure point, not remove it.
   DOCUMENT_UPLOAD_MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(64),
 
+  // Request Invoice attachments (Oct 2026) — the largest whole email (after MIME/base64 encoding, which grows files by ~37%)
+  // this app will hand to the SMTP server when a request carries attachments. NOT a verified provider limit: no SMTP provider or
+  // limit is documented in this repo, and the real one can only be confirmed with whoever runs the mailbox. 20 is deliberately
+  // below the 25 MB that common providers and recipient mailboxes enforce, leaving headroom. A request whose files do not fit is
+  // still saved (files kept), and its notification email says plainly that they could not be attached. Raise this ONLY after
+  // confirming the real limit. Upload limits themselves (5 files / 10 MB each / 20 MB total) are fixed in
+  // invoiceRequestAttachments.rules.ts.
+  INVOICE_REQUEST_EMAIL_MAX_MB: z.coerce.number().positive().default(20),
+
   // Customer GST Document Import/Extraction (Sep 2026) — a single GST
   // registration certificate is a tiny document (1-2 pages), nowhere near
   // the general Documents ceiling above; a dedicated, smaller default keeps

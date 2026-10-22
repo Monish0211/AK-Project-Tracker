@@ -392,6 +392,8 @@ interface BackendProjectDto {
   // ProjectDto and this file's writeThroughProjectsMirror() comment.
   workOrderValueINR: number;
   pendingDueINR: number;
+  // Every non-Cancelled invoice is actually Paid — absent on a backend that predates it (then "Paid" is never shown).
+  allInvoicesPaid?: boolean;
   hasOpenInvoiceRequest: boolean;
   // Invoice Currency feature (Oct 2026) — absent on a backend without the feature.
   invoiceCurrency?: string | null;
@@ -650,6 +652,7 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     // computeCommercialTotalsByProjectId()), so it's never stale here either.
     backendWorkOrderValueINR: dto.workOrderValueINR,
     backendPendingDueINR: dto.pendingDueINR,
+    backendAllInvoicesPaid: dto.allInvoicesPaid,
     hasOpenInvoiceRequest: dto.hasOpenInvoiceRequest,
     invoiceCurrency: dto.invoiceCurrency,
     // Liquidated Damages + server expense totals (Oct 2026) — always the

@@ -1,3 +1,4 @@
+import { promises as fs } from "node:fs";
 import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import { AppError } from "../../../shared/utils/AppError.js";
@@ -10,6 +11,15 @@ import { buildInvoiceRaisedSuccessfullyEmail } from "../../../shared/email/templ
 import { buildInvoiceRequestAssignedEmail } from "../../../shared/email/templates/invoiceRequestAssigned.template.js";
 import { buildInvoicePaidEmail } from "../../../shared/email/templates/invoicePaid.template.js";
 import { buildInvoiceWorkflowCcList } from "../invoiceRequestEmail.rules.js";
+import { deleteDocumentFile, generateStorageKey, readDocumentFilePath, writeDocumentFile } from "../../../shared/utils/documentStorage.js";
+import {
+  INVOICE_REQUEST_EMAIL_STATUS,
+  fitsEmailLimit,
+  formatFileSize,
+  validateAttachmentFiles,
+  type InvoiceRequestEmailStatus,
+  type UploadedAttachment,
+} from "../invoiceRequestAttachments.rules.js";
 import { notify } from "../../notifications/notification.service.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type { InvoiceRequestDto } from "../dto/invoiceRequest.dto.js";
@@ -41,6 +51,10 @@ function toInvoiceRequestDto(row: InvoiceRequestRow): InvoiceRequestDto {
     notes: row.notes,
     status: row.status as InvoiceRequestDto["status"],
     fulfilledInvoiceLineId: row.fulfilledInvoiceLineId,
+    // Names and sizes only — there is deliberately no storageKey / download URL (attachments travel by email, not the portal).
+    attachments: row.documents.map((d) => ({ id: d.id, fileName: d.fileName, fileSizeBytes: d.fileSizeBytes })),
+    emailStatus: row.emailStatus,
+    emailDetail: row.emailDetail,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -79,7 +93,8 @@ async function lockProjectForInvoiceRequestWrite(tx: Prisma.TransactionClient, p
 export async function createInvoiceRequest(
   projectId: string,
   input: CreateInvoiceRequestInput,
-  requester: AccessTokenPayload
+  requester: AccessTokenPayload,
+  files: readonly UploadedAttachment[] = []
 ): Promise<InvoiceRequestDto> {
   await assertProjectAccessById(projectId, requester);
 
@@ -100,33 +115,81 @@ export async function createInvoiceRequest(
   const validCcUsers = requestedCcIds.length > 0 ? await findActiveUsersByIds(requestedCcIds) : [];
   const ccMemberUserIds = validCcUsers.map((u) => u.id);
 
-  const created = await prisma.$transaction(async (tx) => {
-    await lockProjectForInvoiceRequestWrite(tx, projectId);
+  // Attachments (Oct 2026) — validated as a whole BEFORE anything is written or recorded: a bad file, a bad count or an over-size
+  // total rejects the request with nothing stored. (No files => an empty list => everything below behaves exactly as it always did.)
+  const attachments = validateAttachmentFiles(files);
 
-    const existingOpen = await repo.findOpenInvoiceRequestForProject(tx, projectId);
-    if (existingOpen) {
-      throw new AppError("An invoice request is already pending for this project.", 409);
+  // Files are written first (opaque UUID keys, flat storage), then the request and their metadata rows are created in ONE
+  // transaction. If ANY step fails — a later file's write, the duplicate-request 409, the database — every file written so far is
+  // deleted, so a rejected request never leaves orphan files behind.
+  const writtenKeys: string[] = [];
+  let created: InvoiceRequestRow;
+  try {
+    const documents: repo.CreateInvoiceRequestDocumentData[] = [];
+    for (const attachment of attachments) {
+      const storageKey = generateStorageKey();
+      await writeDocumentFile(storageKey, attachment.buffer);
+      writtenKeys.push(storageKey);
+      documents.push({
+        fileName: attachment.fileName,
+        storageKey,
+        mimeType: attachment.contentType,
+        fileSizeBytes: attachment.size,
+        uploadedByUserId: requester.sub,
+      });
     }
 
-    return repo.createInvoiceRequest(tx, {
-      projectId,
-      requestedByUserId: requester.sub,
-      assignedToUserId: input.assignedToUserId,
-      invoiceAmountNote: input.invoiceAmountNote ?? null,
-      copiesRequired: input.copiesRequired ?? null,
-      drawingsAvailable: input.drawingsAvailable ?? null,
-      printingDetails: input.printingDetails ?? null,
-      address: input.address ?? null,
-      notes: input.notes ?? null,
-      ccMemberUserIds,
+    created = await prisma.$transaction(async (tx) => {
+      await lockProjectForInvoiceRequestWrite(tx, projectId);
+
+      const existingOpen = await repo.findOpenInvoiceRequestForProject(tx, projectId);
+      if (existingOpen) {
+        throw new AppError("An invoice request is already pending for this project.", 409);
+      }
+
+      return repo.createInvoiceRequest(tx, {
+        projectId,
+        requestedByUserId: requester.sub,
+        assignedToUserId: input.assignedToUserId,
+        invoiceAmountNote: input.invoiceAmountNote ?? null,
+        copiesRequired: input.copiesRequired ?? null,
+        drawingsAvailable: input.drawingsAvailable ?? null,
+        printingDetails: input.printingDetails ?? null,
+        address: input.address ?? null,
+        notes: input.notes ?? null,
+        ccMemberUserIds,
+        documents,
+      });
     });
-  });
+  } catch (error) {
+    await removeStoredFiles(writtenKeys);
+    throw error;
+  }
 
   void notifyAssignedResponsiblePerson(created).catch((error) => {
     console.error("[invoiceRequests] notifyAssignedResponsiblePerson failed:", error instanceof Error ? error.message : error);
+    // The in-app notification (which runs first) failed, so the email stage never ran — say so rather than leave "pending" forever.
+    void recordEmailOutcome(created.id, INVOICE_REQUEST_EMAIL_STATUS.failed, "The notification could not be sent because of an internal error.");
   });
 
   return toInvoiceRequestDto(created);
+}
+
+/** Best-effort removal of files written for a request that did not get created — never throws (the original error matters more). */
+async function removeStoredFiles(storageKeys: readonly string[]): Promise<void> {
+  for (const key of storageKeys) {
+    await deleteDocumentFile(key).catch((error) => {
+      console.error(`[invoiceRequests] Failed to clean up attachment file ${key}:`, error instanceof Error ? error.message : error);
+    });
+  }
+}
+
+async function recordEmailOutcome(requestId: string, status: InvoiceRequestEmailStatus, detail: string | null): Promise<void> {
+  try {
+    await repo.updateInvoiceRequestEmailOutcome(requestId, status, detail);
+  } catch (error) {
+    console.error(`[invoiceRequests] Could not record email outcome "${status}" for request ${requestId}:`, error instanceof Error ? error.message : error);
+  }
 }
 
 export async function listInvoiceRequestsForProject(
@@ -150,10 +213,61 @@ async function notifyAssignedResponsiblePerson(request: InvoiceRequestRow): Prom
     entityId: request.projectId,
   });
 
+  const outcome = await sendAssignedEmail(request);
+  await recordEmailOutcome(request.id, outcome.status, outcome.detail);
+}
+
+interface EmailOutcome {
+  status: InvoiceRequestEmailStatus;
+  detail: string | null;
+}
+
+/** Turns a failed send into a recorded outcome. "unconfirmed" is kept distinct from "failed": the message may have been delivered. */
+function failureOutcome(result: { failure?: string }, prefix = ""): EmailOutcome {
+  const lead = prefix ? `${prefix} ` : "";
+  if (result.failure === "unconfirmed") {
+    return {
+      status: INVOICE_REQUEST_EMAIL_STATUS.unconfirmed,
+      detail: `${lead}The mail server did not confirm delivery (timeout or dropped connection). The email may or may not have been delivered; it was not resent, to avoid notifying twice.`,
+    };
+  }
+  const why =
+    result.failure === "not_configured"
+      ? "email is not configured on the server"
+      : result.failure === "size_rejected"
+        ? "the mail server rejected it as too large"
+        : "the mail server refused it";
+  return { status: INVOICE_REQUEST_EMAIL_STATUS.failed, detail: `${lead}The notification email was not sent: ${why}.` };
+}
+
+async function allFilesReadable(paths: readonly string[]): Promise<boolean> {
   try {
-    const email = buildInvoiceRequestAssignedEmail({
+    await Promise.all(paths.map((p) => fs.access(p)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Sends the "please raise this invoice" email and reports exactly how it ended. Recipients, CC (info@ifluids.com first, deduped),
+ * subject and project details are the same with or without files.
+ *
+ * With files: attached when the encoded message fits the configured ceiling; if it does not fit — or the server answers
+ * "too large" (a definitive, nothing-delivered refusal) — the notification is still sent WITHOUT the files and says plainly that
+ * they could not be attached. Any failure whose outcome is unknown (timeout / dropped connection) is NEVER retried: it is
+ * recorded as "unconfirmed", because a retry could notify the same person twice. The stored files are kept in every case.
+ */
+async function sendAssignedEmail(request: InvoiceRequestRow): Promise<EmailOutcome> {
+  try {
+    const files = request.documents.map((d) => ({
+      sizeBytes: d.fileSizeBytes,
+      line: { fileName: d.fileName, sizeLabel: formatFileSize(d.fileSizeBytes) },
+      attachment: { filename: d.fileName, path: readDocumentFilePath(d.storageKey), contentType: d.mimeType },
+    }));
+    const base = {
       assignedToName: request.assignedTo.fullName,
-      requesterName,
+      requesterName: request.requestedBy.fullName,
       prNo: request.project.prNo,
       projectTitle: request.project.projectTitle,
       client: request.project.client,
@@ -167,17 +281,48 @@ async function notifyAssignedResponsiblePerson(request: InvoiceRequestRow): Prom
       address: request.address,
       notes: request.notes,
       invoicesUrl: projectInvoicesUrl(request.projectId),
-    });
+    };
+    const to = request.assignedTo.email;
     const cc = buildInvoiceWorkflowCcList(request.ccMembers.map((m) => m.portalUser.email));
-    const result = await sendEmail({ to: request.assignedTo.email, cc, subject: email.subject, html: email.html });
-    if (!result.success) {
+
+    if (files.length === 0) {
+      const email = buildInvoiceRequestAssignedEmail(base);
+      const result = await sendEmail({ to, cc, subject: email.subject, html: email.html });
+      if (result.success) return { status: INVOICE_REQUEST_EMAIL_STATUS.sent, detail: null };
       console.error(`[invoiceRequests] Assigned email failed for ${request.assignedTo.email}: ${result.error}`);
+      return failureOutcome(result);
     }
+
+    const lines = files.map((f) => f.line);
+    const withFiles = buildInvoiceRequestAssignedEmail({ ...base, attachments: { mode: "attached", files: lines } });
+    const maxEmailBytes = Math.floor(env.INVOICE_REQUEST_EMAIL_MAX_MB * 1024 * 1024);
+
+    let notAttachedReason: string | null = null;
+    if (!(await allFilesReadable(files.map((f) => f.attachment.path)))) {
+      notAttachedReason = "A stored file could not be read.";
+    } else if (!fitsEmailLimit(files.map((f) => f.sizeBytes), Buffer.byteLength(withFiles.html), maxEmailBytes)) {
+      notAttachedReason = "Together they are larger than the size this system can safely send by email.";
+    }
+
+    if (!notAttachedReason) {
+      const result = await sendEmail({ to, cc, subject: withFiles.subject, html: withFiles.html, attachments: files.map((f) => f.attachment) });
+      if (result.success) return { status: INVOICE_REQUEST_EMAIL_STATUS.sentWithAttachments, detail: null };
+      console.error(`[invoiceRequests] Assigned email with attachments failed for ${request.assignedTo.email}: ${result.error}`);
+      // Only a definitive "too large" refusal makes a second, smaller email safe. Anything else — including "unknown" — stops here.
+      if (result.failure !== "size_rejected") return failureOutcome(result);
+      notAttachedReason = "The mail server rejected the message as too large.";
+    }
+
+    const withoutFiles = buildInvoiceRequestAssignedEmail({ ...base, attachments: { mode: "not_attached", files: lines, notAttachedReason } });
+    const result = await sendEmail({ to, cc, subject: withoutFiles.subject, html: withoutFiles.html });
+    if (result.success) {
+      return { status: INVOICE_REQUEST_EMAIL_STATUS.sentWithoutAttachments, detail: `The files were saved but NOT attached to the email. ${notAttachedReason}` };
+    }
+    console.error(`[invoiceRequests] Assigned email without attachments failed for ${request.assignedTo.email}: ${result.error}`);
+    return failureOutcome(result, `The files could not be attached. ${notAttachedReason}`);
   } catch (error) {
-    console.error(
-      "[invoiceRequests] Unexpected error while sending Assigned email:",
-      error instanceof Error ? error.message : error
-    );
+    console.error("[invoiceRequests] Unexpected error while sending Assigned email:", error instanceof Error ? error.message : error);
+    return { status: INVOICE_REQUEST_EMAIL_STATUS.failed, detail: "The notification email was not sent because of an internal error." };
   }
 }
 

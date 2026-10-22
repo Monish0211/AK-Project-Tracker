@@ -17,7 +17,9 @@ function parseProjectIdParam(req: Request): string {
 export const createInvoiceRequest = asyncHandler(async (req: Request, res: Response) => {
   const user = requireUser(req);
   const projectId = parseProjectIdParam(req);
-  const result = await invoiceRequestService.createInvoiceRequest(projectId, req.body as CreateInvoiceRequestInput, user);
+  // Attachments (Oct 2026) — present only for a multipart submission; a JSON submission has no req.files.
+  const files = Array.isArray(req.files) ? req.files : [];
+  const result = await invoiceRequestService.createInvoiceRequest(projectId, req.body as CreateInvoiceRequestInput, user, files);
   res.status(201).json({ success: true, data: result, message: "Invoice request sent." });
 });
 

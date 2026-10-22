@@ -218,7 +218,7 @@ test("the Repository invoice status is ONE shared rule (invoiced share of WO val
   assert.deepEqual(repositoryInvoiceSummary(undefined, undefined), { pendingDue: 0, invoiceStatus: "Not Started" });
   assert.deepEqual(repositoryInvoiceSummary(1000, -50), { pendingDue: -50, invoiceStatus: "Paid" });
   const projects = src("pages/Projects/Projects.tsx");
-  assert.match(projects, /repositoryInvoiceSummary\(p\.workOrderValueINR, p\.backendPendingDueINR\)/, "Project Repository uses the shared rule");
+  assert.match(projects, /repositoryInvoiceSummary\(p\.workOrderValueINR, p\.backendPendingDueINR, p\.backendAllInvoicesPaid === true\)/, "Project Repository uses the shared rule");
   assert.match(projects, /<RepositoryInvoiceStatusBadge status=\{status\} \/>/, "…and the shared badge");
   assert.match(src("pages/InvoiceTracker/InvoiceTracker.tsx"), /repositoryInvoiceSummary\(p\.workOrderValueINR, p\.pendingDueINR\)/, "Invoice Tracker uses the same");
 });

@@ -1,6 +1,7 @@
-import { Send } from "lucide-react";
+import { AlertTriangle, Paperclip, Send } from "lucide-react";
 import type { InvoiceRequest } from "../../../../types/InvoiceRequest";
 import { Badge } from "../../../../components/ui/Badge";
+import { emailOutcomeNote } from "../../../../utils/invoiceRequestAttachments";
 
 interface Props {
   /** The currently Open InvoiceRequest for this project, or null if none — see InvoiceDashboard.tsx's own fetch. */
@@ -22,10 +23,25 @@ interface Props {
 export function InvoiceRequestStatusIndicator({ invoiceRequest }: Props) {
   if (!invoiceRequest || invoiceRequest.status !== "Open") return null;
 
+  const hasAttachments = (invoiceRequest.attachments?.length ?? 0) > 0;
+  const emailNote = emailOutcomeNote(invoiceRequest.emailStatus, hasAttachments);
+
   return (
-    <Badge tone="info">
-      <Send size={11} />
-      Invoice Requested
-    </Badge>
+    <>
+      <Badge tone="info">
+        <Send size={11} />
+        Invoice Requested
+      </Badge>
+      {/* Attachment / email outcome (Oct 2026). Shown only when there is something worth knowing — a normal "sent" request shows
+          nothing extra, exactly as before. The tooltip carries the server's plain-language detail. */}
+      {emailNote && (
+        <span title={invoiceRequest.emailDetail ?? undefined}>
+          <Badge tone={emailNote.tone}>
+            {emailNote.tone === "neutral" ? <Paperclip size={11} /> : <AlertTriangle size={11} />}
+            {emailNote.label}
+          </Badge>
+        </span>
+      )}
+    </>
   );
 }

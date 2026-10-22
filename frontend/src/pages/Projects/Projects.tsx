@@ -137,7 +137,7 @@ const getPrSeries = (prNo: string | null | undefined): string | null => {
 const getRepositoryInvoiceSummary = (
   p: Project
 ): { pendingDue: number; invoiceStatus: "Not Started" | "Partially Paid" | "Paid" } =>
-  repositoryInvoiceSummary(p.workOrderValueINR, p.backendPendingDueINR);
+  repositoryInvoiceSummary(p.workOrderValueINR, p.backendPendingDueINR, p.backendAllInvoicesPaid === true);
 
 const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const navigate = useNavigate();

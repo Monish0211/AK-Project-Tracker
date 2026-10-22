@@ -38,6 +38,15 @@ export interface InvoiceRequest {
   status: InvoiceRequestStatus;
   fulfilledInvoiceLineId: string | null;
 
+  /** Files uploaded with the request — names and sizes only. They travel by email; the portal offers no download. */
+  attachments: { id: string; fileName: string; fileSizeBytes: number }[];
+  /**
+   * Outcome of the notification email: pending | sent | sent_with_attachments | sent_without_attachments | failed | unconfirmed.
+   * null = a request created before outcomes were recorded. "pending" does NOT mean the person was notified yet.
+   */
+  emailStatus: string | null;
+  emailDetail: string | null;
+
   createdAt: string;
   updatedAt: string;
 }

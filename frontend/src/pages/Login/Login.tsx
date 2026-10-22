@@ -592,9 +592,8 @@ export default function Login() {
           <div className="mb-6.5">
             <Logo
               alt="iFluids Engineering"
-              imageClassName="h-13.5 lg:h-15 w-auto object-contain"
-              darkImageClassName="h-18 lg:h-20 w-auto object-contain"
-              containerClassName="px-5 py-3 mb-5"
+              imageClassName="h-[4.5rem] lg:h-20 w-auto object-contain drop-shadow-md"
+              containerClassName="mb-5"
             />
 
             <h1 className="text-xl sm:text-2xl lg:text-[26px] font-extrabold text-slate-900 dark:text-white tracking-tight leading-snug">

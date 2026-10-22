@@ -3,13 +3,19 @@ import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccess, assertProjectReadAccess, resolveProjectReadScope } from "../../../shared/utils/projectAccess.js";
 import { validatePrCategoryPrNoRule } from "../project.constants.js";
 import { reconcileUnassignedEntriesForProject } from "../../timesheets/services/timesheet.service.js";
-import { renameProjectDocumentFolder } from "../../../shared/utils/documentStorage.js";
+import {
+  deleteDocumentFile,
+  removeProjectDocumentFolderIfEmpty,
+  renameProjectDocumentFolder,
+  sanitizePrNoForStorage,
+} from "../../../shared/utils/documentStorage.js";
+import { findStoredFilesForProjectDeletion } from "../../documents/repository/document.repository.js";
 import { notify, resolveProjectEventRecipients } from "../../notifications/notification.service.js";
 import {
   groupQuantityTotals,
   findInvoiceLinesForProjects,
 } from "../../dashboard/repository/dashboard.repository.js";
-import { projectCommercialTotals } from "../../dashboard/dashboard.formulas.js";
+import { allActiveInvoiceLinesPaid, projectCommercialTotals } from "../../dashboard/dashboard.formulas.js";
 import { findOpenInvoiceRequestProjectIds } from "../../invoiceRequests/repository/invoiceRequest.repository.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { notifyPmoCoordinatorAllocated, resolveCoordinatorAssignment } from "../../pmoCoordinators/index.js";
@@ -57,6 +63,8 @@ import type {
 interface CommercialTotals {
   workOrderValueINR: number;
   pendingDueINR: number;
+  /** Every non-Cancelled invoice line is actually Paid (none Draft / Raised / Partially Paid) — see allActiveInvoiceLinesPaid(). */
+  allInvoicesPaid: boolean;
   /**
    * Invoice Request indicator (Oct 2026) — deliberately NOT a replacement
    * for, or input into, the Invoice Status calculation below. The Project
@@ -78,6 +86,7 @@ interface CommercialTotals {
 const DEFAULT_COMMERCIAL_TOTALS: CommercialTotals = {
   workOrderValueINR: 0,
   pendingDueINR: 0,
+  allInvoicesPaid: false,
   hasOpenInvoiceRequest: false,
   manhourCostINR: 0,
   nonManhourCostINR: 0,
@@ -127,6 +136,7 @@ export async function computeCommercialTotalsByProjectId(projectIds: string[]): 
     result.set(projectId, {
       workOrderValueINR,
       pendingDueINR,
+      allInvoicesPaid: allActiveInvoiceLinesPaid(linesByProject.get(projectId) ?? []),
       hasOpenInvoiceRequest: openRequestProjectIdSet.has(projectId),
       manhourCostINR: expenseTotals.manhour.get(projectId) ?? 0,
       nonManhourCostINR: expenseTotals.nonManhour.get(projectId) ?? 0,
@@ -208,6 +218,7 @@ function toProjectDto(
     updatedAt: project.updatedAt,
     workOrderValueINR: commercial.workOrderValueINR,
     pendingDueINR: commercial.pendingDueINR,
+    allInvoicesPaid: commercial.allInvoicesPaid,
     hasOpenInvoiceRequest: commercial.hasOpenInvoiceRequest,
     manhourCostINR: commercial.manhourCostINR,
     nonManhourCostINR: commercial.nonManhourCostINR,
@@ -863,7 +874,25 @@ export async function permanentlyDeleteProject(id: string, user: AccessTokenPayl
   }
   await assertProjectAccess(user, existing);
 
+  // The Document rows go with the Project (cascade) but the physical files would stay on disk forever — collect them first.
+  const storedFiles = await findStoredFilesForProjectDeletion(id);
+
   await hardDeleteProjectInRepository(id, await buildInvoiceAudit(user, "project_permanent_delete"));
+
+  // The delete has committed: remove the files. Best-effort — a storage problem must never fail or undo a delete that already
+  // happened; it is logged and the (now unreferenced) file is left for manual cleanup.
+  let projectFolder: string | undefined;
+  try {
+    projectFolder = sanitizePrNoForStorage(existing.prNo);
+  } catch {
+    projectFolder = undefined; // an unsafe PR number could never have had a folder
+  }
+  for (const file of storedFiles) {
+    await deleteDocumentFile(file.storageKey, file.inProjectFolder ? projectFolder : undefined).catch((error) => {
+      console.error(`[projects] Could not remove stored file ${file.storageKey} after permanent delete:`, error instanceof Error ? error.message : error);
+    });
+  }
+  await removeProjectDocumentFolderIfEmpty(existing.prNo);
 
   // Priority #6 Phase 3B — after the delete has committed. Structurally
   // protected against duplicates: the row is gone once this line runs, so a

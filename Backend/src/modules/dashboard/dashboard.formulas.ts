@@ -36,6 +36,16 @@ export function invoiceRaisedFromLines(lines: { status: string; invoiceAmountINR
     .reduce((sum, line) => sum + line.invoiceAmountINR, 0);
 }
 
+/**
+ * Project Repository "Paid" guard (Oct 2026): true only when there is at least one non-Cancelled line AND every non-Cancelled
+ * line — Draft included — has actually reached status "Paid". Cancelled lines are ignored (same exclusion as invoiceRaisedFromLines).
+ * A Draft, Raised / Submitted or Partially Paid line anywhere means something invoiced is still waiting for payment.
+ */
+export function allActiveInvoiceLinesPaid(lines: { status: string }[]): boolean {
+  const active = lines.filter((line) => line.status !== "Cancelled");
+  return active.length > 0 && active.every((line) => line.status === "Paid");
+}
+
 /** Payment Received / Cash Realized: Paid lines only. */
 export function paymentReceivedFromLines(lines: { status: string; invoiceAmountINR: number }[]): number {
   return lines

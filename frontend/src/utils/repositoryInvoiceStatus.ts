@@ -5,13 +5,18 @@ export type RepositoryInvoiceStatus = "Not Started" | "Partially Paid" | "Paid";
  * Tracker so the two can never disagree. It asks only "how much of the Work Order Value has been invoiced", using the
  * backend-authoritative workOrderValueINR / backendPendingDueINR already on every project returned by the API.
  *
- * NOTE for readers: despite the labels, this is invoiced share, NOT payment. "Paid" means the whole Work Order Value
- * has been invoiced (Draft lines included, Cancelled excluded — see the backend's invoiceRaisedFromLines()); it says
- * nothing about money received. Actual payment status is a per-invoice status (Raised / Partially Paid / Paid).
+ * Not Started = nothing invoiced. Partially Paid = part of the Work Order Value invoiced, OR the whole value invoiced while any
+ * non-Cancelled invoice is not yet Paid (Draft lines count as invoiced, Cancelled are ignored — see the backend's
+ * invoiceRaisedFromLines()). Paid = the whole Work Order Value invoiced AND every non-Cancelled invoice actually marked Paid
+ * (`allInvoicesPaid`, computed by the server from the invoice lines). Fully invoiced alone is never "Paid" once that is supplied.
+ *
+ * `allInvoicesPaid` is optional on purpose: a caller that has no per-invoice information (the Invoice Tracker list) omits it and
+ * keeps the original invoiced-share rule unchanged. The Project Repository always supplies it explicitly.
  */
 export function repositoryInvoiceSummary(
   workOrderValueINR: number | undefined,
-  backendPendingDueINR: number | undefined
+  backendPendingDueINR: number | undefined,
+  allInvoicesPaid?: boolean
 ): { pendingDue: number; invoiceStatus: RepositoryInvoiceStatus } {
   const workOrderValue = workOrderValueINR || 0;
   const pendingDue = typeof backendPendingDueINR === "number" ? backendPendingDueINR : workOrderValue;
@@ -20,7 +25,7 @@ export function repositoryInvoiceSummary(
   let invoiceStatus: RepositoryInvoiceStatus;
   if (invoiceRaised <= 0) {
     invoiceStatus = "Not Started";
-  } else if (invoiceRaised >= workOrderValue) {
+  } else if (invoiceRaised >= workOrderValue && allInvoicesPaid !== false) {
     invoiceStatus = "Paid";
   } else {
     invoiceStatus = "Partially Paid";

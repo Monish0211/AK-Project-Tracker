@@ -12,6 +12,19 @@ const displayFields = {
   uploadedBy: { select: { fullName: true } },
 } as const;
 
+/**
+ * Every stored file that a permanent Project delete is about to orphan: the project's own documents (stored in its PR-number
+ * folder) and the attachments of its invoice requests (stored flat). The database rows disappear with the Project (ON DELETE
+ * CASCADE); the physical files do not, so the caller collects these BEFORE the delete and removes the files after it commits.
+ */
+export async function findStoredFilesForProjectDeletion(projectId: string): Promise<{ storageKey: string; inProjectFolder: boolean }[]> {
+  const rows = await prisma.document.findMany({
+    where: { OR: [{ projectId }, { invoiceRequest: { projectId } }] },
+    select: { storageKey: true, projectId: true },
+  });
+  return rows.map((row) => ({ storageKey: row.storageKey, inProjectFolder: row.projectId !== null }));
+}
+
 export function createDocument(data: {
   projectId?: string | null;
   prRequestId?: string | null;

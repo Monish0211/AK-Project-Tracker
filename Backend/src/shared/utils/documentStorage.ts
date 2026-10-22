@@ -166,6 +166,25 @@ export async function renameProjectDocumentFolder(oldPrNo: string, newPrNo: stri
 }
 
 /**
+ * After a project is permanently deleted and its files removed: drops that project's PR-number folder if (and only if) it is now
+ * empty. Best-effort and silent — a leftover empty folder is harmless, and a non-empty one (another Project that reused the same
+ * PR number) must never be touched.
+ */
+export async function removeProjectDocumentFolderIfEmpty(prNo: string): Promise<void> {
+  let safe: string;
+  try {
+    safe = sanitizePrNoForStorage(prNo);
+  } catch {
+    return; // an unsafe PR number can never have had a folder
+  }
+  try {
+    await fs.rmdir(path.join(storageDir, safe)); // rmdir refuses a non-empty directory
+  } catch {
+    /* missing or not empty — nothing to do */
+  }
+}
+
+/**
  * PR Request -> Project approval repoint — moves a document physically out
  * of the flat PR-Request storage area into the target Project's PR-number
  * folder, keeping it consistent with every other Project document. Called

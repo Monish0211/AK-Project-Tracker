@@ -8,7 +8,6 @@ import {
   ChevronDown,
   ClipboardCheck,
   Clock3,
-  Droplet,
   FolderKanban,
   LayoutDashboard,
   NotebookText,
@@ -26,6 +25,7 @@ import { hasModuleAccess } from "../../auth/permissions";
 import { usePmoToast } from "../ui/usePmoToast";
 import { Portal } from "../ui/Portal";
 import { pmoDataChangedMatches } from "../../utils/pmoDataChanged";
+import ifeLogo from "../../assets/brand/ife-logo-256.png";
 
 interface NavChild {
   label: string;
@@ -343,6 +343,11 @@ const Sidebar = () => {
     // however tall the page content makes it. That's what gives the gradient
     // background continuous coverage all the way down a long page instead of
     // stopping dead at 100vh and exposing the page background beneath it.
+    // Width is NOT transitioned: it is fixed by the 1440px breakpoint (72px icon rail below, 18rem above), while the labels and Quick
+    // Summary switch at that same breakpoint instantly. With `transition-all` the width used to animate over 300ms after the window
+    // was resized across 1440px — the content column re-flowed on every frame (a page-wide layout storm) and, for those frames, the
+    // squeezed sidebar showed vertical text and the content was briefly wider than the space left for it. Only the theme colours
+    // transition now.
     <aside
       className="
         pmo-sidebar
@@ -355,7 +360,7 @@ const Sidebar = () => {
         to-[var(--sidebar-to)]
         text-white
         pmo-sidebar-shadow
-        transition-all
+        transition-colors
         duration-300
       "
     >
@@ -469,6 +474,48 @@ const Sidebar = () => {
         .pmo-qs-row:hover .pmo-qs-icon { transform: scale(1.08); }
 
         /* ── Divider ────────────────────────────────────────────────── */
+        /* ── Brand block (logo glow / shine / gradient wordmark) — decorative only ───────────────── */
+        /* Both animations move ONLY transform / opacity (compositor-only: no layout, no paint per frame, no blur filter),
+           each on its own promoted layer, so they stay smooth even while the page is busy. */
+        .pmo-brand-glow {
+          background: radial-gradient(closest-side, rgba(34,211,238,.5), rgba(37,99,235,.28) 50%, rgba(37,99,235,.1) 68%, transparent 80%);
+          will-change: transform, opacity;
+          backface-visibility: hidden;
+          animation: pmoBrandGlow 5s ease-in-out infinite;
+        }
+        @keyframes pmoBrandGlow {
+          0%, 100% { opacity: .55; transform: scale(.94) translateZ(0); }
+          50%      { opacity: .95; transform: scale(1.06) translateZ(0); }
+        }
+        .pmo-brand-shine::after {
+          content: '';
+          position: absolute;
+          top: -20%; bottom: -20%; left: 0;
+          width: 38%;
+          background: linear-gradient(100deg, transparent, rgba(255,255,255,.55), transparent);
+          will-change: transform;
+          backface-visibility: hidden;
+          transform: translate3d(-150%, 0, 0) skewX(-18deg);
+          animation: pmoBrandShine 6.5s ease-in-out infinite;
+        }
+        @keyframes pmoBrandShine {
+          0%, 72% { transform: translate3d(-150%, 0, 0) skewX(-18deg); }
+          100%    { transform: translate3d(380%, 0, 0) skewX(-18deg); }
+        }
+        .pmo-brand-name {
+          background: linear-gradient(90deg, #ffffff 0%, #a5f3fc 55%, #38bdf8 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+        }
+        .pmo-brand-line {
+          background: linear-gradient(90deg, rgba(34,211,238,.95), rgba(59,130,246,.55) 60%, transparent);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .pmo-brand-glow { animation: none; opacity: .7; }
+          .pmo-brand-shine::after { display: none; }
+        }
+
         .pmo-divider {
           height: 1px;
           border: none;
@@ -529,18 +576,21 @@ const Sidebar = () => {
             gets compressed by the flex column, regardless of how tall
             Navigation or Quick Summary end up being. */}
         <div className="shrink-0 relative px-3 min-[1440px]:px-6 py-6 flex justify-center min-[1440px]:justify-start">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-900/40 shrink-0">
-            <Droplet
-              size={22}
-              className="text-white"
-            />
+        <div className="flex items-center gap-3.5">
+          {/* IFE logo — a self-contained rounded tile (transparent corners), shown at its natural 1:1 ratio at 44px — the same
+              in the 72px icon rail and beside the labels in the wide sidebar. A soft pulsing glow sits behind it, a hairline
+              ring frames it and a slow highlight sweeps across it (all decorative, all off under reduced motion). */}
+          <div className="pmo-brand-mark relative h-11 w-11 shrink-0">
+            <span aria-hidden="true" className="pmo-brand-glow absolute -inset-2 rounded-[1.5rem] pointer-events-none" />
+            <img src={ifeLogo} alt="iFluids Engineering" className="relative z-10 h-full w-full object-contain rounded-[22%] ring-1 ring-white/20 drop-shadow-lg" />
+            <span aria-hidden="true" className="pmo-brand-shine absolute inset-0 z-20 rounded-[22%] overflow-hidden pointer-events-none" />
           </div>
           <div className="hidden min-[1440px]:block">
-            <h1 className="text-lg font-bold tracking-tight">
+            <h1 className="pmo-brand-name text-[1.35rem] font-extrabold tracking-tight leading-none">
               iFluids
             </h1>
-            <p className="text-[10.5px] font-medium uppercase text-slate-400/80 tracking-[0.14em] leading-tight mt-0.5">
+            <span aria-hidden="true" className="pmo-brand-line mt-1.5 block h-[2px] w-14 rounded-full" />
+            <p className="text-[10.5px] font-semibold uppercase text-sky-200/70 tracking-[0.16em] leading-tight mt-1.5">
               Engineering PMO
             </p>
             <p className="text-[10px] font-medium text-slate-500/70 tracking-[0.1em] leading-tight">
