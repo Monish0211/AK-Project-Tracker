@@ -7,6 +7,8 @@ export interface CreateInvoiceRequestPayload {
   assignedToUserId: string;
   /** CC Members — selected PortalUser ids, re-validated server-side. The mandatory info@ifluids.com is never sent here — it's server-injected. */
   ccMemberUserIds?: string[];
+  /** Additional CC Email Addresses — free-typed addresses (people outside the PMO user list). Re-validated server-side; for the notification email only. Omit when none. */
+  additionalCcEmails?: string[];
   invoiceAmountNote?: string | null;
   copiesRequired?: string | null;
   drawingsAvailable?: string | null;

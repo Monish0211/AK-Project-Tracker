@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Paperclip, Send, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Send, X } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import type { EligibleInvoiceRaiser, InvoiceRequest } from "../../../../types/InvoiceRequest";
 import type { UserByRole } from "../../../../types/PRRequest";
@@ -13,15 +13,10 @@ import { usePmoToast } from "../../../../components/ui/usePmoToast";
 import { getUserFriendlyErrorMessage } from "../../../../utils/errorMessage";
 import { createInvoiceRequest, getEligibleInvoiceRaisers } from "../../../../services/invoiceRequestService";
 import { getUsersByRole } from "../../../../services/prRequestService";
-import {
-  ALLOWED_ATTACHMENT_LABELS,
-  ATTACHMENT_ACCEPT,
-  ATTACHMENT_LIMITS,
-  addAttachments,
-  emailSizeWarning,
-  formatFileSize,
-  totalAttachmentBytes,
-} from "../../../../utils/invoiceRequestAttachments";
+import { addAttachments, dragCarriesFiles } from "../../../../utils/invoiceRequestAttachments";
+import { addCcEmails } from "../../../../utils/invoiceRequestCcEmails";
+import { AttachmentDropZone } from "./AttachmentDropZone";
+import { CcEmailInput } from "./CcEmailInput";
 
 interface Props {
   project: Project;
@@ -64,7 +59,10 @@ export function RequestInvoiceModal({ project, onClose, onSubmitted }: Props) {
   // Optional attachments — kept in the form only until Send Request; the backend stores them with the request and emails them.
   const [attachments, setAttachments] = useState<File[]>([]);
   const [attachmentErrors, setAttachmentErrors] = useState<string[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Additional CC Email Addresses — typed addresses (people outside the PMO user list) shown as chips; the half-typed text is `ccDraft`.
+  const [ccEmails, setCcEmails] = useState<string[]>([]);
+  const [ccDraft, setCcDraft] = useState("");
+  const [ccErrors, setCcErrors] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,13 +113,12 @@ export function RequestInvoiceModal({ project, onClose, onSubmitted }: Props) {
     setCcMemberUserIds((prev) => prev.filter((existingId) => existingId !== id));
   };
 
-  const handleFilesChosen = (chosen: FileList | null) => {
-    if (!chosen || chosen.length === 0) return;
-    const result = addAttachments(attachments, Array.from(chosen));
+  // Files arrive from a drop or from the file picker; addAttachments() keeps the valid ones and reports why any were refused.
+  const handleFilesAdded = (chosen: File[]) => {
+    if (chosen.length === 0) return;
+    const result = addAttachments(attachments, chosen);
     setAttachments(result.files);
     setAttachmentErrors(result.errors);
-    // Clear the input so choosing the same file again (after removing it) fires a change event.
-    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleRemoveAttachment = (index: number) => {
@@ -129,8 +126,31 @@ export function RequestInvoiceModal({ project, onClose, onSubmitted }: Props) {
     setAttachmentErrors([]);
   };
 
+  // Adds what was typed or pasted: valid new addresses become chips, invalid ones are reported by name (the field is cleared either way).
+  const commitCcDraft = (text: string) => {
+    const result = addCcEmails(ccEmails, text);
+    setCcEmails(result.emails);
+    setCcErrors(result.errors);
+    setCcDraft("");
+  };
+
+  const handleRemoveCcEmail = (email: string) => {
+    setCcEmails((prev) => prev.filter((e) => e !== email));
+    setCcErrors([]);
+  };
+
   const handleSubmit = async () => {
     if (!assignedToUserId || isSubmitting) return;
+    // An address still being typed counts: add it now, and do not send while it (or another) is invalid.
+    let additionalCcEmails = ccEmails;
+    if (ccDraft.trim().length > 0) {
+      const result = addCcEmails(ccEmails, ccDraft);
+      setCcEmails(result.emails);
+      setCcErrors(result.errors);
+      setCcDraft("");
+      if (result.errors.length > 0) return;
+      additionalCcEmails = result.emails;
+    }
     setIsSubmitting(true);
     try {
       const created = await createInvoiceRequest(
@@ -138,6 +158,7 @@ export function RequestInvoiceModal({ project, onClose, onSubmitted }: Props) {
         {
           assignedToUserId,
           ccMemberUserIds,
+          ...(additionalCcEmails.length > 0 && { additionalCcEmails }),
           invoiceAmountNote: invoiceAmountNote.trim() || null,
           copiesRequired: copiesRequired.trim() || null,
           drawingsAvailable: drawingsAvailable.trim() || null,
@@ -168,7 +189,12 @@ export function RequestInvoiceModal({ project, onClose, onSubmitted }: Props) {
 
   return (
     <Portal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4" onClick={onClose}>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
+        onClick={onClose}
+        onDragOver={(e) => dragCarriesFiles(e.dataTransfer?.types) && e.preventDefault()}
+        onDrop={(e) => dragCarriesFiles(e.dataTransfer?.types) && e.preventDefault()}
+      >
         <div
           onClick={(e) => e.stopPropagation()}
           className="w-full max-w-lg max-h-[85vh] flex flex-col bg-[var(--nu-surface)] rounded-2xl shadow-2xl border border-[var(--nu-border)] overflow-hidden"
@@ -313,70 +339,20 @@ export function RequestInvoiceModal({ project, onClose, onSubmitted }: Props) {
               <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Any other context the responsible person should know..." />
             </div>
 
-            <div data-testid="request-invoice-attachments">
-              <FormLabel>Attachments (optional)</FormLabel>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept={ATTACHMENT_ACCEPT}
-                className="hidden"
-                onChange={(e) => handleFilesChosen(e.target.files)}
-                aria-label="Choose attachments"
-              />
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<Paperclip size={14} />}
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isSubmitting || attachments.length >= ATTACHMENT_LIMITS.maxFiles}
-              >
-                Add files
-              </Button>
-              <p className="text-[11px] text-[var(--nu-text-muted)] mt-1.5">
-                Up to {ATTACHMENT_LIMITS.maxFiles} files, {ATTACHMENT_LIMITS.maxFileBytes / (1024 * 1024)} MB each, {ATTACHMENT_LIMITS.maxTotalBytes / (1024 * 1024)} MB in total ({ALLOWED_ATTACHMENT_LABELS}).
-                They are attached to the email sent to the responsible person.
-              </p>
-              {attachmentErrors.length > 0 && (
-                <ul role="alert" className="mt-2 space-y-1 text-[12px] text-red-600 dark:text-red-400">
-                  {attachmentErrors.map((message, i) => (
-                    <li key={`${i}-${message}`}>{message}</li>
-                  ))}
-                </ul>
-              )}
-              {attachments.length > 0 && (
-                <ul className="mt-2 space-y-1.5">
-                  {attachments.map((file, index) => (
-                    <li
-                      key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
-                      className="flex items-center justify-between gap-2 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] px-3 py-1.5 text-[12.5px]"
-                    >
-                      <span className="min-w-0 truncate font-medium text-[var(--nu-text)]" title={file.name}>
-                        {file.name}
-                      </span>
-                      <span className="shrink-0 text-[var(--nu-text-muted)]">{formatFileSize(file.size)}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveAttachment(index)}
-                        disabled={isSubmitting}
-                        aria-label={`Remove ${file.name}`}
-                        className="shrink-0 rounded-full p-1 text-[var(--nu-text-muted)] hover:bg-black/10 dark:hover:bg-white/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <X size={12} />
-                      </button>
-                    </li>
-                  ))}
-                  <li className="text-[11px] text-[var(--nu-text-muted)]">
-                    {attachments.length} of {ATTACHMENT_LIMITS.maxFiles} files · {formatFileSize(totalAttachmentBytes(attachments))} of {ATTACHMENT_LIMITS.maxTotalBytes / (1024 * 1024)} MB
-                  </li>
-                </ul>
-              )}
-              {emailSizeWarning(attachments) && (
-                <p role="status" className="mt-2 text-[11.5px] text-amber-600 dark:text-amber-400">
-                  {emailSizeWarning(attachments)}
-                </p>
-              )}
-            </div>
+            <CcEmailInput
+              emails={ccEmails}
+              draft={ccDraft}
+              errors={ccErrors}
+              disabled={isSubmitting}
+              onDraftChange={(text) => {
+                setCcDraft(text);
+                if (ccErrors.length > 0) setCcErrors([]);
+              }}
+              onCommit={commitCcDraft}
+              onRemove={handleRemoveCcEmail}
+            />
+
+            <AttachmentDropZone files={attachments} errors={attachmentErrors} disabled={isSubmitting} onFilesAdded={handleFilesAdded} onRemove={handleRemoveAttachment} />
           </div>
 
           <div className="flex items-center justify-end gap-2.5 px-5 py-4 border-t border-[var(--nu-border)] bg-white dark:bg-slate-900">

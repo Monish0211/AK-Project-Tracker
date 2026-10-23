@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { uuidParamSchema } from "../../../shared/utils/uuidParam.js";
+import { MAX_ADDITIONAL_CC_EMAILS, normalizeAdditionalCcEmails } from "../invoiceRequestEmail.rules.js";
+
+/** An address in an error message: control characters removed and shortened, so a rejected value can never carry a line break into a message. */
+const forMessage = (value: string): string => value.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80);
 
 /**
  * Request Invoice — Section A. `assignedToUserId` is the "responsible
@@ -20,6 +24,20 @@ export const createInvoiceRequestSchema = z.object({
   // composed (see invoiceRequestEmail.rules.ts), so the frontend has no way
   // to omit or duplicate it.
   ccMemberUserIds: z.array(z.string().trim().min(1)).optional(),
+  // Additional CC Email Addresses (Oct 2026) — free-typed addresses, for people outside the PMO user list. Validated HERE, on the server,
+  // whatever the browser did: each must be one plain valid address; the result is trimmed, lower-cased and de-duplicated. They are added to
+  // the notification email's CC and can never replace the mandatory info@ifluids.com or the CC Members (see buildInvoiceWorkflowCcList).
+  additionalCcEmails: z
+    .array(z.string().max(320, "An email address is too long."))
+    .max(MAX_ADDITIONAL_CC_EMAILS, `You can add at most ${MAX_ADDITIONAL_CC_EMAILS} additional CC email addresses.`)
+    .refine((list) => normalizeAdditionalCcEmails(list).invalid.length === 0, {
+      error: (issue) => {
+        const bad = normalizeAdditionalCcEmails(issue.input as string[]).invalid[0] ?? "";
+        return `"${forMessage(bad)}" is not a valid email address.`;
+      },
+    })
+    .transform((list) => normalizeAdditionalCcEmails(list).emails)
+    .optional(),
   // Matches the team's existing manual "raise the invoice" email template —
   // all free text, all optional (a request must not be blocked on filling
   // these in if the requester doesn't have the detail handy yet).

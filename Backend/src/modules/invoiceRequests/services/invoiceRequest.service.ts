@@ -14,8 +14,10 @@ import { buildInvoiceWorkflowCcList } from "../invoiceRequestEmail.rules.js";
 import { deleteDocumentFile, generateStorageKey, readDocumentFilePath, writeDocumentFile } from "../../../shared/utils/documentStorage.js";
 import {
   INVOICE_REQUEST_EMAIL_STATUS,
+  emailContentTypeFor,
   fitsEmailLimit,
   formatFileSize,
+  isEmailConversationFileName,
   validateAttachmentFiles,
   type InvoiceRequestEmailStatus,
   type UploadedAttachment,
@@ -166,7 +168,9 @@ export async function createInvoiceRequest(
     throw error;
   }
 
-  void notifyAssignedResponsiblePerson(created).catch((error) => {
+  // The manually entered CC addresses are for THIS notification email only: they are not stored with the request (no schema change), so the later
+  // Raised / Paid emails keep using exactly the saved CC Members + info@ifluids.com, as before.
+  void notifyAssignedResponsiblePerson(created, input.additionalCcEmails ?? []).catch((error) => {
     console.error("[invoiceRequests] notifyAssignedResponsiblePerson failed:", error instanceof Error ? error.message : error);
     // The in-app notification (which runs first) failed, so the email stage never ran — say so rather than leave "pending" forever.
     void recordEmailOutcome(created.id, INVOICE_REQUEST_EMAIL_STATUS.failed, "The notification could not be sent because of an internal error.");
@@ -201,7 +205,7 @@ export async function listInvoiceRequestsForProject(
   return rows.map(toInvoiceRequestDto);
 }
 
-async function notifyAssignedResponsiblePerson(request: InvoiceRequestRow): Promise<void> {
+async function notifyAssignedResponsiblePerson(request: InvoiceRequestRow, additionalCcEmails: readonly string[] = []): Promise<void> {
   const requesterName = request.requestedBy.fullName;
 
   await notify([request.assignedToUserId], {
@@ -213,7 +217,7 @@ async function notifyAssignedResponsiblePerson(request: InvoiceRequestRow): Prom
     entityId: request.projectId,
   });
 
-  const outcome = await sendAssignedEmail(request);
+  const outcome = await sendAssignedEmail(request, additionalCcEmails);
   await recordEmailOutcome(request.id, outcome.status, outcome.detail);
 }
 
@@ -258,12 +262,12 @@ async function allFilesReadable(paths: readonly string[]): Promise<boolean> {
  * they could not be attached. Any failure whose outcome is unknown (timeout / dropped connection) is NEVER retried: it is
  * recorded as "unconfirmed", because a retry could notify the same person twice. The stored files are kept in every case.
  */
-async function sendAssignedEmail(request: InvoiceRequestRow): Promise<EmailOutcome> {
+async function sendAssignedEmail(request: InvoiceRequestRow, additionalCcEmails: readonly string[] = []): Promise<EmailOutcome> {
   try {
     const files = request.documents.map((d) => ({
       sizeBytes: d.fileSizeBytes,
-      line: { fileName: d.fileName, sizeLabel: formatFileSize(d.fileSizeBytes) },
-      attachment: { filename: d.fileName, path: readDocumentFilePath(d.storageKey), contentType: d.mimeType },
+      line: { fileName: d.fileName, sizeLabel: formatFileSize(d.fileSizeBytes), ...(isEmailConversationFileName(d.fileName) ? { kindLabel: "Email conversation" } : {}) },
+      attachment: { filename: d.fileName, path: readDocumentFilePath(d.storageKey), contentType: emailContentTypeFor(d.mimeType) },
     }));
     const base = {
       assignedToName: request.assignedTo.fullName,
@@ -283,7 +287,11 @@ async function sendAssignedEmail(request: InvoiceRequestRow): Promise<EmailOutco
       invoicesUrl: projectInvoicesUrl(request.projectId),
     };
     const to = request.assignedTo.email;
-    const cc = buildInvoiceWorkflowCcList(request.ccMembers.map((m) => m.portalUser.email));
+    const cc = buildInvoiceWorkflowCcList(
+      request.ccMembers.map((m) => m.portalUser.email),
+      additionalCcEmails,
+      [to] // the primary recipient is never also listed in CC
+    );
 
     if (files.length === 0) {
       const email = buildInvoiceRequestAssignedEmail(base);

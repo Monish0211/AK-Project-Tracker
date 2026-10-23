@@ -17,9 +17,22 @@ export const INVOICE_REQUEST_ATTACHMENT_LIMITS = {
 } as const;
 
 const OLE = [0xd0, 0xcf, 0x11, 0xe0]; // legacy .doc / .xls / .ppt (OLE Compound File)
+const OLE_FULL = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]; // the whole 8-byte Compound File header — what an Outlook .msg must start with
 const ZIP = [0x50, 0x4b, 0x03, 0x04]; // .docx / .xlsx / .pptx (Open XML = Zip)
 
-type AllowedType = { contentType: string; signature?: number[]; zipMarker?: string; text?: true; label: string };
+type AllowedType = {
+  contentType: string;
+  signature?: number[];
+  zipMarker?: string;
+  text?: true;
+  label: string;
+  /** (Oct 2026) A saved email message: plain text whose header block must look like real email headers (see looksLikeEmailMessage). */
+  emailHeaders?: true;
+  /** (Oct 2026) An Outlook message: a Compound File that also carries the MAPI properties stream every .msg has. */
+  outlookMsg?: true;
+  /** An exported email conversation — shown as such to the user and in the notification email. */
+  emailConversation?: true;
+};
 
 /** extension -> the ONLY content type this feature will ever attach for it (the browser-supplied MIME type is never used). */
 export const ALLOWED_ATTACHMENT_TYPES: Record<string, AllowedType> = {
@@ -35,9 +48,60 @@ export const ALLOWED_ATTACHMENT_TYPES: Record<string, AllowedType> = {
   ".jpeg": { contentType: "image/jpeg", signature: [0xff, 0xd8, 0xff], label: "JPEG" },
   ".csv": { contentType: "text/csv", text: true, label: "CSV" },
   ".txt": { contentType: "text/plain", text: true, label: "TXT" },
+  // Email conversations (Oct 2026). An exported conversation can also be a PDF (above) — that needs nothing new.
+  ".eml": { contentType: "message/rfc822", text: true, emailHeaders: true, emailConversation: true, label: "EML" },
+  ".msg": { contentType: "application/vnd.ms-outlook", signature: OLE_FULL, outlookMsg: true, emailConversation: true, label: "MSG" },
 };
 
-export const ALLOWED_ATTACHMENT_LABELS = "PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, CSV, TXT, PNG, JPG, JPEG";
+export const ALLOWED_ATTACHMENT_LABELS = "PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, CSV, TXT, PNG, JPG, JPEG, EML, MSG";
+
+/** True for a file name that is a saved email message (.eml / .msg): labelled "Email conversation" in the form and in the notification email. */
+export function isEmailConversationFileName(fileName: string): boolean {
+  return ALLOWED_ATTACHMENT_TYPES[path.extname(fileName).toLowerCase()]?.emailConversation === true;
+}
+
+/**
+ * The content type an attachment is SENT with. A saved email is stored truthfully as message/rfc822, but is never sent as that: Nodemailer
+ * embeds a message/rfc822 part as raw 8-bit text with an inline disposition, which invites mail clients to open and render untrusted message
+ * content by themselves. As application/octet-stream it is base64-encoded, delivered byte-for-byte, and does nothing until the recipient
+ * deliberately opens the attachment. Every other type is sent as stored.
+ */
+export function emailContentTypeFor(storedContentType: string): string {
+  return storedContentType.toLowerCase().startsWith("message/") ? "application/octet-stream" : storedContentType;
+}
+
+const EML_IDENTIFYING_HEADERS = new Set(["from", "to", "subject", "message-id", "received", "return-path", "sender", "reply-to", "delivered-to"]);
+const EML_KNOWN_HEADERS = new Set([...EML_IDENTIFYING_HEADERS, "cc", "bcc", "date", "mime-version", "content-type", "in-reply-to", "references", "thread-topic", "x-mailer", "user-agent", "x-unsent"]);
+
+/**
+ * Does this look like a saved email message (RFC 5322)? Looks ONLY at the header block — the lines before the first blank line — and
+ * only for its shape: every line is `Field-Name: value` or a folded continuation, there are at least two known email header names, and at
+ * least one of them identifies a message (From / To / Subject / Message-ID / Received …). The body, any MIME parts and any attachments inside
+ * are never read, decoded or interpreted, so nothing in the file can influence the server. (A .txt note that merely starts with "Note: …"
+ * does not pass.) An HTML/script/binary file renamed .eml does not pass either.
+ */
+export function looksLikeEmailMessage(buffer: Buffer): boolean {
+  const HEAD_LIMIT = 65536;
+  const bomLength = buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf ? 3 : 0;
+  const head = buffer.subarray(bomLength, bomLength + HEAD_LIMIT).toString("latin1");
+  const blank = head.search(/\r?\n\r?\n/);
+  if (blank === -1 && buffer.length - bomLength > HEAD_LIMIT) return false; // headers are never that long
+  const lines = (blank === -1 ? head : head.slice(0, blank)).split(/\r?\n/);
+  const names: string[] = [];
+  for (const line of lines) {
+    if (/^[ \t]/.test(line)) {
+      if (names.length === 0) return false; // a continuation with nothing to continue
+      continue;
+    }
+    const match = /^([!-9;-~]+):/.exec(line); // RFC 5322 field name: printable ASCII except ":"
+    if (!match) return false;
+    names.push(match[1]!.toLowerCase());
+  }
+  return names.length >= 2 && names.some((n) => EML_IDENTIFYING_HEADERS.has(n)) && names.filter((n) => EML_KNOWN_HEADERS.has(n)).length >= 2;
+}
+
+/** Name of the MAPI properties stream that every Outlook .msg contains; Compound File directory names are UTF-16LE. */
+const MSG_PROPERTIES_STREAM = Buffer.from("__properties_version1.0", "utf16le");
 
 /** Binary formats that must never hide behind a .csv/.txt name. */
 const FORBIDDEN_TEXT_SIGNATURES: number[][] = [
@@ -113,9 +177,12 @@ function assertContentsMatch(displayName: string, type: AllowedType, buffer: Buf
     if (FORBIDDEN_TEXT_SIGNATURES.some((sig) => matchesSignature(buffer, sig))) throw mismatch();
     const utf16Bom = (buffer[0] === 0xff && buffer[1] === 0xfe) || (buffer[0] === 0xfe && buffer[1] === 0xff);
     if (!utf16Bom && buffer.subarray(0, 65536).includes(0)) throw mismatch(); // binary data posing as text
+    if (type.emailHeaders && !looksLikeEmailMessage(buffer)) throw mismatch(); // text that is not an email message
     return;
   }
   if (!type.signature || !matchesSignature(buffer, type.signature)) throw mismatch();
+  // An Outlook message is a Compound File that also holds the MAPI properties stream; a Word / Excel file renamed .msg has none.
+  if (type.outlookMsg && !buffer.includes(MSG_PROPERTIES_STREAM)) throw mismatch();
   // Open XML files are Zips; a plain zip (or a renamed archive) must not pass as a Word/Excel/PowerPoint document.
   if (type.zipMarker && !(buffer.includes("[Content_Types].xml") && buffer.includes(type.zipMarker))) throw mismatch();
 }

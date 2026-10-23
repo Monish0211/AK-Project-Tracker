@@ -131,6 +131,8 @@ export interface InvoiceRequestAttachmentLine {
   fileName: string;
   /** Already formatted, e.g. "2.4 MB". */
   sizeLabel: string;
+  /** Optional short tag shown after the name, e.g. "Email conversation". Plain text — escaped by the template. */
+  kindLabel?: string;
 }
 
 export interface InvoiceRequestAssignedEmailData {

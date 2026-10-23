@@ -6,10 +6,13 @@ import { buildInvoiceRequestAssignedEmail } from "../../shared/email/templates/i
 import {
   ALLOWED_ATTACHMENT_TYPES,
   INVOICE_REQUEST_ATTACHMENT_LIMITS,
+  emailContentTypeFor,
   estimateEncodedAttachmentBytes,
   estimateEmailBytes,
   fitsEmailLimit,
   formatFileSize,
+  isEmailConversationFileName,
+  looksLikeEmailMessage,
   sanitizeAttachmentFileName,
   validateAttachmentFiles,
   type UploadedAttachment,
@@ -47,7 +50,7 @@ function rejects(files: UploadedAttachment[], status: number, messagePart: RegEx
 
 test("the approved limits are exactly 5 files / 10 MB each / 20 MB total", () => {
   assert.deepEqual(INVOICE_REQUEST_ATTACHMENT_LIMITS, { maxFiles: 5, maxFileBytes: 10 * MB, maxTotalBytes: 20 * MB });
-  assert.deepEqual(Object.keys(ALLOWED_ATTACHMENT_TYPES).sort(), [".csv", ".doc", ".docx", ".jpeg", ".jpg", ".png", ".pdf", ".ppt", ".pptx", ".txt", ".xls", ".xlsx"].sort());
+  assert.deepEqual(Object.keys(ALLOWED_ATTACHMENT_TYPES).sort(), [".csv", ".doc", ".docx", ".eml", ".jpeg", ".jpg", ".msg", ".png", ".pdf", ".ppt", ".pptx", ".txt", ".xls", ".xlsx"].sort(), "the approved types plus .eml and .msg (email conversations)");
 });
 
 test("every allowed type with a genuine signature is accepted, and its content type comes from the allowlist, not the browser", () => {
@@ -255,4 +258,129 @@ test("email: attached mode lists the files; not_attached mode says plainly they 
   assert.match(notAttached, /rejected the message as too large/);
   assert.match(notAttached, /ask the requester to send them to you directly/);
   assert.ok(!/Attachments \(\d\)/.test(notAttached), "must not present the files as attached");
+});
+
+// ───────── Email conversations (.eml / .msg / PDF) ─────────
+
+const eml = (body = "Please raise the invoice.\r\n", headers?: string[]) =>
+  Buffer.from(
+    (headers ?? [
+      "From: Asha <asha@example.com>",
+      "To: Priya <priya@example.com>",
+      "Subject: Re: Invoice for PR-123",
+      "Date: Fri, 23 Oct 2026 10:00:00 +0530",
+      "Message-ID: <abc@example.com>",
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=utf-8",
+    ]).join("\r\n") +
+      "\r\n\r\n" +
+      body
+  );
+const OLE8 = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+const msg = () => Buffer.concat([OLE8, Buffer.alloc(512), Buffer.from("__properties_version1.0", "utf16le"), Buffer.alloc(64)]);
+
+test("a saved email (.eml) is accepted, stored as message/rfc822, and recognised as an email conversation", () => {
+  const [accepted] = validateAttachmentFiles([file("Re Invoice request.eml", eml(), "message/rfc822")]);
+  assert.deepEqual([accepted!.fileName, accepted!.contentType], ["Re Invoice request.eml", "message/rfc822"]);
+  assert.ok(isEmailConversationFileName("Re Invoice request.eml"));
+  assert.ok(isEmailConversationFileName("THREAD.EML"));
+  assert.equal(isEmailConversationFileName("scan.pdf"), false, "a PDF is a document; whether it is an email export is the sender's word, not guessed");
+  // the real-world variants of the same thing
+  for (const variant of [
+    eml("body\n", ["From: a@example.com", "Subject: x"]), // minimal: two headers
+    Buffer.from("From: a@example.com\nTo: b@example.com\nSubject: LF-only line endings\n\nbody\n"), // LF line endings
+    Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), eml()]), // UTF-8 byte-order mark
+    eml("", ["Received: from mail.example.com by mx.example.com; Fri, 23 Oct 2026 10:00:00 +0530", "Return-Path: <a@example.com>"]), // headers only, no body
+    eml("x", ["X-Unsent: 1", "To: someone@example.com", "Subject: Draft saved from Outlook", "  folded continuation line"]),
+    Buffer.from("From: a@example.com\r\nTo: b@example.com\r\nSubject: =?UTF-8?B?w6l0w6k=?=\r\n\r\n\u00e9t\u00e9 body in UTF-8"),
+  ]) {
+    assert.equal(validateAttachmentFiles([file("m.eml", variant)]).length, 1);
+  }
+});
+
+test("an .eml is only accepted when it really is an email message: other text, markup, scripts and binaries renamed .eml are refused", () => {
+  const notEmail: [string, Buffer][] = [
+    ["plain text note", Buffer.from("Note: remember to call the client\r\nthanks\r\n")],
+    ["a single header-looking line", Buffer.from("Subject: only one line\r\n\r\nbody")],
+    ["no headers at all", Buffer.from("Hello,\r\nplease raise the invoice.\r\n")],
+    ["html page", Buffer.from("<html><body><script>alert(1)</script></body></html>")],
+    ["a script", Buffer.from("#!/bin/sh\nrm -rf /\n")],
+    ["a header block that stops being headers", Buffer.from("From: a@example.com\r\nTo: b@example.com\r\nthis line is not a header\r\n\r\nbody")],
+    ["a space before the colon", Buffer.from("From : a@example.com\r\nTo : b@example.com\r\n\r\nbody")],
+    ["a continuation line with nothing to continue", Buffer.from(" folded\r\nFrom: a@example.com\r\nTo: b@example.com\r\n\r\n")],
+    ["an mbox 'From ' line", Buffer.from("From a@example.com Fri Oct 23 10:00:00 2026\r\nSubject: x\r\n\r\nbody")],
+    ["only unknown headers", Buffer.from("X-One: 1\r\nX-Two: 2\r\n\r\nbody")],
+    ["a leading blank line", Buffer.from("\r\nFrom: a@example.com\r\nTo: b@example.com\r\n\r\nbody")],
+    ["binary data with a NUL", Buffer.concat([eml(), Buffer.from([0x00, 0x01])])],
+    ["a Windows executable", Buffer.concat([Buffer.from("MZ"), Buffer.alloc(200, 1)])],
+    ["a PDF", pdf()],
+    ["a zip", plainZip()],
+    ["a PNG", png()],
+  ];
+  for (const [label, buffer] of notEmail) rejects([file("x.eml", buffer)], 400, /does not look like a real EML file/);
+  // header block longer than any real one with no blank line
+  rejects([file("x.eml", Buffer.concat([eml("", ["From: a@example.com", "To: b@example.com"]).subarray(0, -2), Buffer.from(`X-Pad: ${"a".repeat(70000)}\r\n`)]))], 400, /does not look like a real EML file/);
+  rejects([file("x.eml", eml(), "application/x-msdownload")], 400, /not an allowed file type/, );
+});
+
+test("an Outlook message (.msg) needs the full Compound File header AND the MAPI properties stream; a renamed Word / Excel file or anything else is refused", () => {
+  const [accepted] = validateAttachmentFiles([file("Conversation.msg", msg(), "application/vnd.ms-outlook")]);
+  assert.deepEqual([accepted!.fileName, accepted!.contentType], ["Conversation.msg", "application/vnd.ms-outlook"]);
+  assert.ok(isEmailConversationFileName("Conversation.msg"));
+  const refused: [string, Buffer][] = [
+    ["a legacy .doc / .xls (Compound File without the properties stream)", Buffer.concat([OLE8, Buffer.alloc(600)])],
+    ["only the first four bytes of the signature", Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0]), Buffer.alloc(100), Buffer.from("__properties_version1.0", "utf16le")])],
+    ["the marker text in an ordinary file", Buffer.from("this file mentions __properties_version1.0 but is not an Outlook message")],
+    ["the marker in the wrong encoding", Buffer.concat([OLE8, Buffer.alloc(100), Buffer.from("__properties_version1.0", "latin1")])],
+    ["a Windows executable", Buffer.concat([Buffer.from("MZ"), Buffer.alloc(200, 1)])],
+    ["a zip", plainZip()],
+    ["an email saved as text", eml()],
+  ];
+  for (const [label, buffer] of refused) rejects([file("x.msg", buffer)], 400, /does not look like a real MSG file/);
+  rejects([file("x.msg", msg(), "application/x-msdownload")], 400, /not an allowed file type/);
+  // the existing Office types are unchanged by this
+  assert.equal(validateAttachmentFiles([file("old.doc", Buffer.concat([OLE8, Buffer.alloc(600)]))])[0]!.contentType, "application/msword");
+});
+
+test("a PDF export of an email conversation is just a PDF: it needs nothing new and is checked as before", () => {
+  assert.equal(validateAttachmentFiles([file("Conversation export.pdf", pdf())])[0]!.contentType, "application/pdf");
+  rejects([file("Conversation export.pdf", eml())], 400, /does not look like a real PDF file/);
+});
+
+test("email conversations share the ordinary limits: 5 files, 10 MB each, 20 MB total, no empty file, a safe unique name", () => {
+  const six = [file("a.eml", eml()), file("b.msg", msg()), file("c.pdf", pdf()), file("d.png", png()), file("e.txt", Buffer.from("t")), file("f.eml", eml())];
+  rejects(six, 400, /at most 5 files/);
+  assert.equal(validateAttachmentFiles(six.slice(0, 5)).length, 5);
+  rejects([file("empty.eml", Buffer.alloc(0))], 400, /is empty/);
+  const big = Buffer.concat([eml(), Buffer.alloc(10 * MB, 0x61)]);
+  rejects([file("big.eml", big)], 413, /larger than 10 MB/);
+  const names = validateAttachmentFiles([file("Thread.eml", eml()), file("thread.EML", eml())]).map((f) => f.fileName);
+  assert.deepEqual(names, ["Thread.eml", "thread (2).EML"], "two files never share a name in the email");
+  assert.equal(validateAttachmentFiles([file("../../etc/passwd/Thread.eml", eml())])[0]!.fileName, "Thread.eml", "no directory part survives");
+  rejects([file(".eml", eml())], 400, /no usable file name|not an allowed/);
+});
+
+test("looksLikeEmailMessage reads only the header block: it never needs, parses or runs the body", () => {
+  const hostileBody = "<script>alert(1)</script>\r\n" + "A".repeat(200000) + "\u0000\u0001binary and %PDF- and MZ inside the body";
+  assert.equal(looksLikeEmailMessage(Buffer.from(eml(hostileBody).toString("latin1"), "latin1")), true, "whatever the body holds, the verdict is about the headers");
+  assert.equal(looksLikeEmailMessage(Buffer.alloc(0)), false);
+});
+
+test("an email is SENT as an opaque attachment: message/* becomes application/octet-stream (base64, never rendered), every other type is unchanged", () => {
+  assert.equal(emailContentTypeFor("message/rfc822"), "application/octet-stream");
+  assert.equal(emailContentTypeFor("MESSAGE/RFC822"), "application/octet-stream");
+  assert.equal(emailContentTypeFor("message/partial"), "application/octet-stream");
+  for (const type of ["application/pdf", "application/vnd.ms-outlook", "image/png", "text/plain", "text/csv", "application/msword"]) assert.equal(emailContentTypeFor(type), type);
+});
+
+test("the notification email tags an email conversation in its attachment list, escaped; other files are listed exactly as before", () => {
+  const html = buildInvoiceRequestAssignedEmail({
+    assignedToName: "Priya", requesterName: "Asha", prNo: "PR-1", projectTitle: "T", client: "C", clientContactName: null, clientContactPhone: null, clientContactEmail: null,
+    invoiceAmountNote: null, copiesRequired: null, drawingsAvailable: null, printingDetails: null, address: null, notes: null, invoicesUrl: "https://x.test/p",
+    attachments: { mode: "attached", files: [{ fileName: "Re thread.eml", sizeLabel: "4 KB", kindLabel: "Email conversation" }, { fileName: "scan.pdf", sizeLabel: "2 KB" }, { fileName: "x.msg", sizeLabel: "9 KB", kindLabel: "<b>x</b>" }] },
+  }).html;
+  assert.match(html, /Re thread\.eml <span[^>]*>\(Email conversation · 4 KB\)<\/span>/);
+  assert.match(html, /scan\.pdf <span[^>]*>\(2 KB\)<\/span>/, "no tag on a plain document");
+  assert.match(html, /\(&lt;b&gt;x&lt;\/b&gt; · 9 KB\)/, "the tag is escaped like every other value");
+  assert.equal(/<b>x<\/b>/.test(html), false);
 });

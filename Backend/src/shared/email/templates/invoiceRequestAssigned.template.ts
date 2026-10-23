@@ -37,7 +37,7 @@ function row(label: string, rawValue: string | null, borderTop = true): string {
 function attachmentsBlock(attachments: InvoiceRequestAssignedEmailData["attachments"]): string {
   if (!attachments || attachments.files.length === 0) return "";
   const items = attachments.files
-    .map((f) => `<li style="margin:0 0 4px;">${escapeHtml(f.fileName)} <span style="color:#64748B;">(${escapeHtml(f.sizeLabel)})</span></li>`)
+    .map((f) => `<li style="margin:0 0 4px;">${escapeHtml(f.fileName)} <span style="color:#64748B;">(${f.kindLabel ? `${escapeHtml(f.kindLabel)} · ` : ""}${escapeHtml(f.sizeLabel)})</span></li>`)
     .join("");
   if (attachments.mode === "attached") {
     return `

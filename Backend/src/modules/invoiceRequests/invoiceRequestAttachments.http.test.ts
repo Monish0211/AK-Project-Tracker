@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import { after, before, mock, test } from "node:test";
 import { promises as fsp } from "node:fs";
 import path from "node:path";
@@ -588,4 +589,292 @@ test("permanent project deletion removes the stored files of the project's docum
   for (const p of paths) await assert.rejects(() => fsp.access(p), `${p} must be gone`);
   await assert.rejects(() => fsp.access(path.join(storageDir, prNo)), "the now-empty PR-number folder is removed too");
   assert.equal(await prisma.document.count({ where: { OR: [{ projectId: project.id }, { invoiceRequest: { projectId: project.id } }] } }), 0);
+});
+
+// ───────── Email conversations (.eml / .msg / PDF) and additional CC addresses (Oct 2026) ─────────
+// The recipients and attachments are checked on the REAL composed message (Nodemailer's own MIME output for exactly what the service handed
+// to the transport), not only on the options object — so "appears in the CC header" and "arrives byte-for-byte" are literally true.
+
+const requireCjs = createRequire(import.meta.url);
+const MailComposer = requireCjs("nodemailer/lib/mail-composer");
+
+const eml = (body = "Please raise the invoice for PR-123.\r\nThanks,\r\nAsha\r\n") =>
+  Buffer.from(
+    [
+      "From: Asha <asha@example.com>",
+      "To: Priya <priya@example.com>",
+      "Subject: Re: Invoice for PR-123",
+      "Date: Fri, 23 Oct 2026 10:00:00 +0530",
+      "Message-ID: <abc@example.com>",
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      body,
+    ].join("\r\n")
+  );
+const msg = () => Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.alloc(512), Buffer.from("__properties_version1.0", "utf16le"), Buffer.alloc(64)]);
+
+async function composed(mail: SentMail): Promise<string> {
+  const buffer: Buffer = await new Promise((resolve, reject) =>
+    new MailComposer({ from: "noreply@example.invalid", ...mail }).compile().build((error: Error | null, message: Buffer) => (error ? reject(error) : resolve(message)))
+  );
+  return buffer.toString("latin1");
+}
+/** The top-level header block of a composed message, unfolded, name (lower-case) -> value. */
+function topHeaders(rawMessage: string): Map<string, string> {
+  const head = rawMessage.slice(0, rawMessage.indexOf("\r\n\r\n")).replace(/\r\n[ \t]+/g, " ");
+  const headers = new Map<string, string>();
+  for (const line of head.split("\r\n")) {
+    const colon = line.indexOf(":");
+    if (colon > 0) headers.set(line.slice(0, colon).toLowerCase(), line.slice(colon + 1).trim());
+  }
+  return headers;
+}
+const addressList = (value: string | undefined): string[] => (value ?? "").split(",").map((a) => a.replace(/^.*<|>.*$/g, "").trim().toLowerCase()).filter(Boolean);
+/** Every attachment part of a composed message: its header text and its decoded bytes. */
+function attachmentParts(rawMessage: string): { head: string; bytes: Buffer }[] {
+  const boundary = /boundary="?([^";\r\n]+)/i.exec(rawMessage)![1]!;
+  return rawMessage
+    .split(`--${boundary}`)
+    .slice(1, -1)
+    .map((part) => {
+      const at = part.indexOf("\r\n\r\n");
+      return { head: part.slice(0, at).replace(/\r\n[ \t]+/g, " "), body: part.slice(at + 4).replace(/\r\n$/, "") };
+    })
+    .filter((p) => /Content-Disposition:\s*attachment/i.test(p.head))
+    .map((p) => ({ head: p.head, bytes: /Content-Transfer-Encoding:\s*base64/i.test(p.head) ? Buffer.from(p.body.replace(/\r\n/g, ""), "base64") : Buffer.from(p.body, "latin1") }));
+}
+
+test("an .eml conversation: stored as message/rfc822, listed as an email conversation, and SENT as an opaque base64 attachment — byte-identical, never embedded or rendered", async () => {
+  await resetProject();
+  const original = eml();
+  const res = await post(fx.A.token, multipart(basePayload(), [{ name: "Re Invoice for PR-123.eml", data: original, type: "message/rfc822" }]));
+  assert.equal(res.status, 201, res.json.message);
+  const created = res.json.data!;
+  assert.deepEqual(created.attachments.map((a) => [a.fileName, a.fileSizeBytes]), [["Re Invoice for PR-123.eml", original.length]]);
+  assert.equal((await waitForOutcome(created.id)).emailStatus, "sent_with_attachments");
+
+  const doc = await prisma.document.findFirstOrThrow({ where: { invoiceRequestId: created.id } });
+  assert.equal(doc.mimeType, "message/rfc822", "the evidence is stored as what it is");
+  assert.equal(doc.projectId, null);
+  assert.match(doc.storageKey, /^[0-9a-f-]{36}$/);
+  assert.ok((await fsp.readFile(path.join(storageDir, doc.storageKey))).equals(original), "the original file is kept unchanged");
+
+  const mail = attempts[0]!;
+  assert.equal(mail.attachments![0]!.contentType, "application/octet-stream", "an email is never offered to the mailer as message/rfc822");
+  assert.match(mail.html, /Re Invoice for PR-123\.eml <span[^>]*>\(Email conversation · /);
+
+  const rawMessage = await composed(mail);
+  const parts = attachmentParts(rawMessage);
+  assert.equal(parts.length, 1);
+  assert.match(parts[0]!.head, /Content-Type:\s*application\/octet-stream/i);
+  assert.match(parts[0]!.head, /Content-Transfer-Encoding:\s*base64/i);
+  assert.match(parts[0]!.head, /Content-Disposition:\s*attachment/i);
+  assert.ok(parts[0]!.bytes.equals(original), "decoded from the real message, the attachment is exactly the uploaded file");
+  assert.equal(/message\/rfc822/i.test(rawMessage), false, "no embedded-message part exists anywhere in the outgoing email");
+
+  const download = await fetch(`${fx.url}/documents/${doc.id}/download`, { headers: { Authorization: `Bearer ${fx.F.token}` } });
+  assert.equal(download.status, 404, "still no portal download");
+});
+
+test("an Outlook .msg conversation and a PDF export of a conversation are stored and attached like any other file", async () => {
+  await resetProject();
+  const outlook = msg();
+  const exportPdf = pdf(3000);
+  const res = await post(fx.A.token, multipart(basePayload(), [{ name: "Thread.msg", data: outlook, type: "application/vnd.ms-outlook" }, { name: "Thread export.pdf", data: exportPdf, type: "application/pdf" }]));
+  assert.equal(res.status, 201, res.json.message);
+  assert.equal((await waitForOutcome(res.json.data!.id)).emailStatus, "sent_with_attachments");
+  const docs = await prisma.document.findMany({ where: { invoiceRequestId: res.json.data!.id }, orderBy: { fileName: "asc" } });
+  assert.deepEqual(docs.map((d) => [d.fileName, d.mimeType]), [["Thread export.pdf", "application/pdf"], ["Thread.msg", "application/vnd.ms-outlook"]]);
+  const mail = attempts[0]!;
+  assert.deepEqual(mail.attachments!.map((a) => [a.filename, a.contentType]), [["Thread.msg", "application/vnd.ms-outlook"], ["Thread export.pdf", "application/pdf"]]);
+  assert.match(mail.html, /Thread\.msg <span[^>]*>\(Email conversation · /, "the Outlook message is tagged");
+  assert.match(mail.html, /Thread export\.pdf <span[^>]*>\([0-9.]+ KB\)/, "a PDF is listed as a document — it is not guessed to be an email");
+  const parts = attachmentParts(await composed(mail));
+  assert.deepEqual(parts.map((p) => p.bytes.length), [outlook.length, exportPdf.length]);
+  assert.ok(parts[0]!.bytes.equals(outlook) && parts[1]!.bytes.equals(exportPdf));
+});
+
+test("a request can mix an email conversation with the ordinary documents (five files) and still share the existing limits", async () => {
+  await resetProject();
+  const res = await post(fx.A.token, multipart(basePayload(), [
+    { name: "a.eml", data: eml() }, { name: "b.msg", data: msg() }, { name: "c.pdf", data: pdf() }, { name: "d.png", data: png() }, { name: "e.docx", data: openXml("word/") },
+  ]));
+  assert.equal(res.status, 201, res.json.message);
+  assert.equal((await waitForOutcome(res.json.data!.id)).emailStatus, "sent_with_attachments");
+  assert.equal(attempts[0]!.attachments!.length, 5);
+  await resetProject();
+  const stored = await listStoredFiles();
+  const six = await post(fx.A.token, multipart(basePayload(), [...["a", "b", "c", "d"].map((n) => ({ name: `${n}.eml`, data: eml() })), { name: "e.pdf", data: pdf() }, { name: "f.pdf", data: pdf() }]));
+  await assertRejectedCleanly(stored, six, 400, /at most 5 files/);
+});
+
+test("fake or malformed email files are refused cleanly: nothing stored, no request, no email — and a good file next to a bad one is not stored either", async () => {
+  await resetProject();
+  const stored = await listStoredFiles();
+  const cases: [string, UploadFile, RegExp][] = [
+    ["a text note named .eml", { name: "note.eml", data: Buffer.from("Note: call the client\r\nthanks\r\n") }, /does not look like a real EML file/],
+    ["an HTML page named .eml", { name: "page.eml", data: Buffer.from("<html><script>alert(1)</script></html>") }, /does not look like a real EML file/],
+    ["a zip named .eml", { name: "archive.eml", data: Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(100)]) }, /does not look like a real EML file/],
+    ["an executable named .eml", { name: "setup.eml", data: Buffer.concat([Buffer.from("MZ"), Buffer.alloc(200, 0x90)]) }, /does not look like a real EML file/],
+    ["an empty .eml", { name: "empty.eml", data: Buffer.alloc(0) }, /is empty/],
+    ["a Word document named .msg", { name: "doc.msg", data: Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.alloc(600)]) }, /does not look like a real MSG file/],
+    ["an email saved as text named .msg", { name: "mail.msg", data: eml() }, /does not look like a real MSG file/],
+    ["an executable named .msg", { name: "setup.msg", data: Buffer.concat([Buffer.from("MZ"), Buffer.alloc(200, 0x90)]) }, /does not look like a real MSG file/],
+    ["a blocked MIME type on an .eml", { name: "x.eml", data: eml(), type: "application/x-msdownload" }, /not an allowed file type/],
+  ];
+  for (const [label, file, message] of cases) {
+    await assertRejectedCleanly(stored, await post(fx.A.token, multipart(basePayload(), [file])), 400, message);
+    attempts = [];
+    void label;
+  }
+  await assertRejectedCleanly(stored, await post(fx.A.token, multipart(basePayload(), [{ name: "good.eml", data: eml() }, { name: "bad.eml", data: Buffer.from("not an email") }])), 400, /does not look like a real EML file/);
+});
+
+test("a duplicate request (409) with an email conversation and extra CC addresses removes the conversation file it wrote and sends nothing", async () => {
+  await resetProject();
+  const first = await post(fx.A.token, basePayload());
+  assert.equal(first.status, 201);
+  await waitForOutcome(first.json.data!.id);
+  const stored = await listStoredFiles();
+  attempts = [];
+  const dup = await post(fx.A.token, multipart({ ...basePayload(), additionalCcEmails: ["extra@customer.com"] }, [{ name: "Thread.eml", data: eml() }]));
+  assert.equal(dup.status, 409);
+  assert.deepEqual(await listStoredFiles(), stored, "the conversation written before the 409 is removed, the first request's files untouched");
+  assert.equal(await prisma.invoiceRequest.count({ where: { projectId: fx.projectId } }), 1);
+  assert.equal(attempts.length, 0);
+});
+
+test("a UI double-click (two identical submissions at once) creates ONE request, ONE email carrying the extra CC, and keeps only the winner's files", async () => {
+  await resetProject();
+  const stored = await listStoredFiles();
+  const submit = () => post(fx.A.token, multipart({ ...basePayload(), additionalCcEmails: ["Client.Contact@Customer.com"] }, [{ name: "Thread.eml", data: eml() }]));
+  const results = await Promise.all([submit(), submit()]);
+  assert.deepEqual(results.map((r) => r.status).sort(), [201, 409]);
+  const winner = results.find((r) => r.status === 201)!.json.data!;
+  assert.equal((await waitForOutcome(winner.id)).emailStatus, "sent_with_attachments");
+  await new Promise((r) => setTimeout(r, 400)); // a duplicate email, if there were one, would have arrived by now
+  assert.equal(attempts.length, 1, "exactly one notification email");
+  assert.ok(addressList(topHeaders(await composed(attempts[0]!)).get("cc")).includes("client.contact@customer.com"));
+  assert.equal(await prisma.invoiceRequest.count({ where: { projectId: fx.projectId } }), 1);
+  assert.equal((await listStoredFiles()).length - stored.length, 1, "only the winner's single file remains; the loser's was cleaned up");
+});
+
+// ── Additional CC Email Addresses ──
+
+test("additional CC addresses appear in the REAL outgoing message's Cc header — after info@ifluids.com and the saved members, lower-cased, de-duplicated — and the To is untouched", async () => {
+  await resetProject();
+  const res = await post(fx.A.token, {
+    ...basePayload(),
+    ccMemberUserIds: [fx.C.id],
+    additionalCcEmails: ["Client.Contact@Customer.com", " second@Customer.com ", "CLIENT.CONTACT@customer.com", fx.C.email.toUpperCase(), "INFO@IFLUIDS.COM", ""],
+  });
+  assert.equal(res.status, 201, res.json.message);
+  assert.equal((await waitForOutcome(res.json.data!.id)).emailStatus, "sent");
+  assert.equal(attempts.length, 1);
+  const mail = attempts[0]!;
+  const expected = ["info@ifluids.com", fx.C.email, "client.contact@customer.com", "second@customer.com"];
+  assert.deepEqual(mail.cc, expected, "mandatory first, members next, manual last; every duplicate gone");
+  assert.equal(mail.to, fx.B.email);
+  const headers = topHeaders(await composed(mail));
+  assert.deepEqual(addressList(headers.get("cc")), expected, "the actual Cc header of the composed email");
+  assert.deepEqual(addressList(headers.get("to")), [fx.B.email]);
+  assert.equal(headers.has("bcc"), false, "nobody is added as a hidden recipient");
+});
+
+test("a single additional address, and the same request with a file (multipart), both reach the Cc header", async () => {
+  await resetProject();
+  const json = await post(fx.A.token, { ...basePayload(), additionalCcEmails: ["one@customer.com"] });
+  assert.equal(json.status, 201);
+  await waitForOutcome(json.json.data!.id);
+  assert.deepEqual(addressList(topHeaders(await composed(attempts[0]!)).get("cc")), ["info@ifluids.com", "one@customer.com"]);
+
+  await resetProject();
+  const form = await post(fx.A.token, multipart({ ...basePayload(), additionalCcEmails: ["one@customer.com", "two@customer.com"] }, [{ name: "Thread.eml", data: eml() }]));
+  assert.equal(form.status, 201);
+  assert.equal((await waitForOutcome(form.json.data!.id)).emailStatus, "sent_with_attachments");
+  assert.deepEqual(addressList(topHeaders(await composed(attempts[0]!)).get("cc")), ["info@ifluids.com", "one@customer.com", "two@customer.com"]);
+  assert.equal(attachmentParts(await composed(attempts[0]!)).length, 1, "the file and the CC travel on the same email");
+});
+
+test("the extra CC addresses also reach the follow-up email when the files cannot be attached (too large for email, or refused by the server)", async () => {
+  await resetProject();
+  const tooLarge = await post(fx.A.token, multipart({ ...basePayload(), additionalCcEmails: ["extra@customer.com"] }, [{ name: "a.pdf", data: pdf(8 * MB) }, { name: "b.pdf", data: pdf(8 * MB) }]));
+  assert.equal(tooLarge.status, 201);
+  assert.equal((await waitForOutcome(tooLarge.json.data!.id)).emailStatus, "sent_without_attachments");
+  assert.deepEqual(attempts[0]!.cc, ["info@ifluids.com", "extra@customer.com"]);
+
+  await resetProject();
+  behavior = (mail) => {
+    if (mail.attachments?.length) throw Object.assign(new Error("552 5.3.4 Message size exceeds fixed limit"), { responseCode: 552, response: "552 5.3.4 Message size exceeds fixed limit", command: "DATA", code: "EMESSAGE" });
+  };
+  const refused = await post(fx.A.token, multipart({ ...basePayload(), additionalCcEmails: ["extra@customer.com"] }, [{ name: "Thread.eml", data: eml() }]));
+  assert.equal((await waitForOutcome(refused.json.data!.id)).emailStatus, "sent_without_attachments");
+  assert.equal(attempts.length, 2);
+  assert.deepEqual(attempts[0]!.cc, ["info@ifluids.com", "extra@customer.com"]);
+  assert.deepEqual(attempts[1]!.cc, attempts[0]!.cc, "the follow-up email has the same recipients");
+});
+
+test("manual addresses can never remove or replace the mandatory recipients: info@ifluids.com stays once and first, the saved members stay, the assignee is not repeated in CC", async () => {
+  await resetProject();
+  const res = await post(fx.A.token, { ...basePayload(), ccMemberUserIds: [fx.C.id], additionalCcEmails: ["Info@Ifluids.com", fx.B.email.toUpperCase(), "fresh@customer.com"] });
+  assert.equal(res.status, 201, res.json.message);
+  await waitForOutcome(res.json.data!.id);
+  const headers = topHeaders(await composed(attempts[0]!));
+  assert.deepEqual(addressList(headers.get("cc")), ["info@ifluids.com", fx.C.email, "fresh@customer.com"]);
+  assert.deepEqual(addressList(headers.get("to")), [fx.B.email]);
+  assert.deepEqual(res.json.data!.ccMembers.map((m) => m.id), [fx.C.id], "the saved CC members are unchanged");
+});
+
+test("an empty list, no field at all and no CC members are all backward compatible: the Cc is exactly info@ifluids.com plus the members, as before", async () => {
+  await resetProject();
+  const empty = await post(fx.A.token, { ...basePayload(), additionalCcEmails: [] });
+  assert.equal(empty.status, 201);
+  await waitForOutcome(empty.json.data!.id);
+  assert.deepEqual(attempts[0]!.cc, ["info@ifluids.com"]);
+  await resetProject();
+  const absent = await post(fx.A.token, { ...basePayload(), ccMemberUserIds: [fx.C.id] });
+  assert.equal(absent.status, 201);
+  await waitForOutcome(absent.json.data!.id);
+  assert.deepEqual(attempts[0]!.cc, ["info@ifluids.com", fx.C.email]);
+  await resetProject();
+  const blanks = await post(fx.A.token, multipart({ ...basePayload(), additionalCcEmails: ["", "  "] }, [{ name: "a.pdf", data: pdf() }]));
+  assert.equal(blanks.status, 201, "blank entries are simply ignored");
+  await waitForOutcome(blanks.json.data!.id);
+  assert.deepEqual(attempts[0]!.cc, ["info@ifluids.com"]);
+});
+
+test("invalid addresses are rejected by the SERVER whatever the browser did — nothing created, stored or emailed, even with files attached — with a message naming the address", async () => {
+  await resetProject();
+  const stored = await listStoredFiles();
+  const bad = ["not-an-email", "Name <name@customer.com>", "a@customer.com, b@customer.com", "user@customer", "user@@customer.com", "a@b.com\r\nBcc: attacker@example.com", "user@customer.com\nBcc: x@y.com"];
+  for (const value of bad) {
+    const json = await post(fx.A.token, { ...basePayload(), additionalCcEmails: ["fine@customer.com", value] });
+    await assertRejectedCleanly(stored, json, 400, /additionalCcEmails: "[^\r\n]*" is not a valid email address\./);
+    assert.equal(/[\r\n]/.test(json.json.message ?? ""), false, "the error message carries no line break");
+    const withFile = await post(fx.A.token, multipart({ ...basePayload(), additionalCcEmails: [value] }, [{ name: "Thread.eml", data: eml() }]));
+    await assertRejectedCleanly(stored, withFile, 400, /is not a valid email address\./);
+  }
+  const eleven = Array.from({ length: 11 }, (_, i) => `p${i}@customer.com`);
+  await assertRejectedCleanly(stored, await post(fx.A.token, { ...basePayload(), additionalCcEmails: eleven }), 400, /at most 10 additional CC email addresses/);
+  for (const wrong of ["a@customer.com", 5, [1], [null], [{ email: "a@customer.com" }]]) {
+    const res = await post(fx.A.token, { ...basePayload(), additionalCcEmails: wrong });
+    await assertRejectedCleanly(stored, res, 400, /additionalCcEmails/);
+  }
+  assert.equal((await post(fx.A.token, { ...basePayload(), additionalCcEmails: eleven.slice(0, 10) })).status, 201, "exactly ten is accepted");
+});
+
+test("the extra addresses are for this notification only: they are not echoed to anyone, not listed with the request, and not stored", async () => {
+  await resetProject();
+  const res = await post(fx.A.token, { ...basePayload(), additionalCcEmails: ["private.contact@customer.com"] });
+  assert.equal(res.status, 201);
+  await waitForOutcome(res.json.data!.id);
+  assert.equal(JSON.stringify(res.json).includes("private.contact@customer.com"), false, "not in the response to the requester");
+  for (const who of [fx.A, fx.B]) {
+    const list = await fetch(`${fx.url}/projects/${fx.projectId}/invoice-requests`, { headers: { Authorization: `Bearer ${who.token}` } });
+    assert.equal((await list.text()).includes("private.contact@customer.com"), false, "not in the request list any user can read");
+  }
+  const row = await prisma.invoiceRequest.findUniqueOrThrow({ where: { id: res.json.data!.id } });
+  assert.equal(JSON.stringify(row).includes("private.contact@customer.com"), false, "not stored with the request (no schema change)");
+  assert.equal(JSON.stringify(await prisma.notification.findMany({ where: { userId: { in: [fx.A.id, fx.B.id, fx.C.id] } } })).includes("private.contact@customer.com"), false, "not in any in-app notification");
 });

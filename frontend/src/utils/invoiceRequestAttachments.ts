@@ -12,9 +12,12 @@ export const ATTACHMENT_LIMITS = {
   maxTotalBytes: 20 * MB,
 } as const;
 
-export const ALLOWED_ATTACHMENT_EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".csv", ".txt", ".png", ".jpg", ".jpeg"] as const;
+export const ALLOWED_ATTACHMENT_EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".csv", ".txt", ".png", ".jpg", ".jpeg", ".eml", ".msg"] as const;
 
-export const ALLOWED_ATTACHMENT_LABELS = "PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, CSV, TXT, PNG, JPG, JPEG";
+export const ALLOWED_ATTACHMENT_LABELS = "PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, CSV, TXT, PNG, JPG, JPEG, EML, MSG";
+
+/** Saved email messages: exported email conversations (a PDF export of a conversation is an ordinary PDF). The server checks their real contents. */
+const EMAIL_CONVERSATION_EXTENSIONS = [".eml", ".msg"] as const;
 
 /** Value for <input type="file" accept> — a convenience for the file dialog only; the real check is below and on the server. */
 export const ATTACHMENT_ACCEPT = ALLOWED_ATTACHMENT_EXTENSIONS.join(",");
@@ -35,6 +38,26 @@ export function formatFileSize(bytes: number): string {
 function extensionOf(name: string): string {
   const dot = name.lastIndexOf(".");
   return dot > 0 ? name.slice(dot).toLowerCase() : "";
+}
+
+export type AttachmentKind = "email" | "image" | "document";
+
+/** What to show beside a selected file: a short type label and whether it is an email conversation (.eml / .msg). Judged from the file name only. */
+export function describeAttachment(fileName: string): { typeLabel: string; kind: AttachmentKind; isEmailConversation: boolean } {
+  const ext = extensionOf(fileName);
+  const isEmailConversation = (EMAIL_CONVERSATION_EXTENSIONS as readonly string[]).includes(ext);
+  const kind: AttachmentKind = isEmailConversation ? "email" : [".png", ".jpg", ".jpeg"].includes(ext) ? "image" : "document";
+  return { typeLabel: ext ? ext.slice(1).toUpperCase() : "FILE", kind, isEmailConversation };
+}
+
+/** True when a drag carries files (not text or a link) — only then does the drop zone light up and accept the drop. */
+export function dragCarriesFiles(types: ArrayLike<string> | null | undefined): boolean {
+  return !!types && Array.from(types).includes("Files");
+}
+
+/** The files of a drop or a file-picker selection as a plain array (never throws, empty when there are none). */
+export function filesFromList(list: { length: number; [index: number]: File } | null | undefined): File[] {
+  return list ? Array.from({ length: list.length }, (_, i) => list[i]!) : [];
 }
 
 type FileLike = Pick<File, "name" | "size"> & { lastModified?: number };

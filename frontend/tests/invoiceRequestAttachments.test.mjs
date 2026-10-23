@@ -40,8 +40,8 @@ const fakeFile = (name, size, lastModified = 1) => ({ name, size, lastModified }
 test("limits are exactly 5 files / 10 MB each / 20 MB total, and the allowed types are the approved list", async () => {
   const m = await load("/src/utils/invoiceRequestAttachments.ts");
   assert.deepEqual({ ...m.ATTACHMENT_LIMITS }, { maxFiles: 5, maxFileBytes: 10 * MB, maxTotalBytes: 20 * MB });
-  assert.deepEqual([...m.ALLOWED_ATTACHMENT_EXTENSIONS].sort(), [".csv", ".doc", ".docx", ".jpeg", ".jpg", ".pdf", ".png", ".ppt", ".pptx", ".txt", ".xls", ".xlsx"]);
-  assert.equal(m.ATTACHMENT_ACCEPT, ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.png,.jpg,.jpeg");
+  assert.deepEqual([...m.ALLOWED_ATTACHMENT_EXTENSIONS].sort(), [".csv", ".doc", ".docx", ".eml", ".jpeg", ".jpg", ".msg", ".pdf", ".png", ".ppt", ".pptx", ".txt", ".xls", ".xlsx"]);
+  assert.equal(m.ATTACHMENT_ACCEPT, ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.png,.jpg,.jpeg,.eml,.msg");
 });
 
 test("valid files are added with no errors, in the order chosen, and the existing selection is kept", async () => {
@@ -65,7 +65,7 @@ test("each invalid file is skipped with its own clear message and the good ones 
   ]);
   assert.deepEqual(result.files.map((f) => f.name), ["ok.pdf"]);
   assert.equal(result.errors.length, 5);
-  assert.match(result.errors[0], /"run\.exe" is not an allowed file type\. Allowed types: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, CSV, TXT, PNG, JPG, JPEG\./);
+  assert.match(result.errors[0], /"run\.exe" is not an allowed file type\. Allowed types: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, CSV, TXT, PNG, JPG, JPEG, EML, MSG\./);
   assert.match(result.errors[1], /"page\.html" is not an allowed file type/);
   assert.match(result.errors[2], /"empty\.pdf" is empty/);
   assert.match(result.errors[3], /"huge\.pdf" is 10\.0 MB — each file must be 10 MB or smaller/);
@@ -213,12 +213,12 @@ test("indicator: 'pending' is never shown as sent — it reads 'Sending…' for 
 
 // ---------------------------------------------------------------- the modal
 
-test("modal: the Attachments section sits after Special Note and before the Cancel / Send Request actions; every existing field remains", () => {
+test("modal: the CC addresses and Attachments sections sit after Special Note and before the Cancel / Send Request actions; every existing field remains", () => {
   const modal = src("pages/Projects/components/Invoice/RequestInvoiceModal.tsx");
   const order = [
     modal.indexOf("<FormLabel>Special Note (optional)</FormLabel>"),
-    modal.indexOf('data-testid="request-invoice-attachments"'),
-    modal.indexOf("<FormLabel>Attachments (optional)</FormLabel>"),
+    modal.indexOf("<CcEmailInput"),
+    modal.indexOf("<AttachmentDropZone"),
     modal.indexOf(">\n              Cancel\n"),
     modal.lastIndexOf("Send Request"),
   ];
@@ -234,11 +234,12 @@ test("modal: the Attachments section sits after Special Note and before the Canc
 
 test("modal: a file picker with multiple selection, the approved accept list, per-file remove buttons and the limits shown", () => {
   const modal = src("pages/Projects/components/Invoice/RequestInvoiceModal.tsx");
-  assert.match(modal, /type="file"[\s\S]*multiple[\s\S]*accept=\{ATTACHMENT_ACCEPT\}/);
-  assert.match(modal, /aria-label=\{`Remove \$\{file\.name\}`\}/);
-  assert.match(modal, /formatFileSize\(file\.size\)/, "each selected file shows its size");
-  assert.match(modal, /ALLOWED_ATTACHMENT_LABELS/);
-  assert.match(modal, /role="alert"/, "validation errors are announced");
+  const zone = src("pages/Projects/components/Invoice/AttachmentDropZone.tsx");
+  assert.match(zone, /type="file"[\s\S]*multiple[\s\S]*accept=\{ATTACHMENT_ACCEPT\}/);
+  assert.match(zone, /aria-label=\{`Remove \$\{file\.name\}`\}/);
+  assert.match(zone, /formatFileSize\(file\.size\)/, "each selected file shows its size");
+  assert.match(zone, /ALLOWED_ATTACHMENT_LABELS/);
+  assert.match(zone, /role="alert"/, "validation errors are announced");
   assert.match(modal, /createInvoiceRequest\(\s*project\.id,\s*\{[\s\S]*\},\s*attachments\s*\)/, "the selected files go to the service together with the existing fields");
 });
 
