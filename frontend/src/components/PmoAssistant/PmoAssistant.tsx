@@ -59,6 +59,31 @@ const SNOOZE_OPTIONS: { option: SnoozeOption; label: string }[] = [
 
 type ViewMode = "home" | "employee" | "customer" | "project" | "timesheet" | "reminders" | "help";
 
+// Perf fix (Oct 2026) — opening the panel used to re-download customers,
+// employees, EVERY project (+ all resources) and reminders on every single
+// open. Each of those writes through the shared localStorage mirrors and
+// broadcasts "pmo:data-changed", which makes the whole app (notification
+// engine, sidebar counts, live-refresh pages...) recompute — measured at
+// ~400ms per broadcast and ~3s of blocked main thread per open, which is why
+// clicking the assistant and selecting inside it felt frozen. Now each
+// "Find X" view loads only its own data, only when that view is entered, and
+// not again while what it already loaded is still fresh. Module level so the
+// freshness survives the panel being closed and reopened.
+type PanelDataKey = "customers" | "employees" | "projects" | "timesheets" | "reminders";
+const PANEL_DATA_FRESH_MS: Record<PanelDataKey, number> = {
+  customers: 5 * 60_000,
+  employees: 5 * 60_000,
+  projects: 5 * 60_000,
+  timesheets: 5 * 60_000,
+  reminders: 60_000,
+};
+const panelDataLoadedAt: Partial<Record<PanelDataKey, number>> = {};
+const isPanelDataFresh = (key: PanelDataKey): boolean =>
+  Date.now() - (panelDataLoadedAt[key] ?? 0) < PANEL_DATA_FRESH_MS[key];
+const markPanelDataLoaded = (key: PanelDataKey): void => {
+  panelDataLoadedAt[key] = Date.now();
+};
+
 export const PmoAssistant: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeView, setActiveView] = useState<ViewMode>("home");
@@ -86,6 +111,20 @@ export const PmoAssistant: React.FC = () => {
   const handleOpenView = (view: ViewMode) => {
     setActiveView(view);
     setSearchQuery("");
+    // Cheap synchronous re-read of the shared localStorage mirrors (kept
+    // current by every other page and by the reminder scheduler) so the view
+    // never starts from older data than the app already has — the network
+    // refresh for the view only runs when its data is no longer fresh.
+    if (view === "reminders") {
+      setReminders(reminderService.getPendingReminders());
+      setProjects(getProjects());
+    } else if (view === "project") {
+      setProjects(getProjects());
+    } else if (view === "employee") {
+      setEmployees(getEmployees());
+    } else if (view === "customer") {
+      setCustomers(getCustomers());
+    }
   };
 
   const handleBackToHome = () => {
@@ -102,11 +141,13 @@ export const PmoAssistant: React.FC = () => {
   const canAccessTimesheets = hasModuleAccess(user, "Timesheets");
 
   useEffect(() => {
-    if (!isOpen || !canAccessCustomerMaster) return;
+    if (!isOpen || activeView !== "customer" || !canAccessCustomerMaster || isPanelDataFresh("customers")) return;
     let isMounted = true;
     loadCustomersForApp()
       .then((items) => {
-        if (isMounted) setCustomers(items);
+        if (!isMounted) return;
+        markPanelDataLoaded("customers");
+        setCustomers(items);
       })
       .catch(() => {
         /* keep cache / empty — assistant search is best-effort */
@@ -114,7 +155,7 @@ export const PmoAssistant: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [isOpen, canAccessCustomerMaster]);
+  }, [isOpen, activeView, canAccessCustomerMaster]);
 
   // getEmployees() is a pure localStorage read (see employeeService.ts) —
   // it only has data once something has already called loadEmployeesForApp()
@@ -125,11 +166,13 @@ export const PmoAssistant: React.FC = () => {
   // cache and always reports no matches — same reasoning as the customer
   // load effect above, mirrored for employees.
   useEffect(() => {
-    if (!isOpen || !canAccessManpower) return;
+    if (!isOpen || activeView !== "employee" || !canAccessManpower || isPanelDataFresh("employees")) return;
     let isMounted = true;
     loadEmployeesForApp()
       .then((result) => {
-        if (isMounted) setEmployees(result.employees);
+        if (!isMounted) return;
+        markPanelDataLoaded("employees");
+        setEmployees(result.employees);
       })
       .catch(() => {
         /* keep cache / empty — assistant search is best-effort */
@@ -137,7 +180,7 @@ export const PmoAssistant: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [isOpen, canAccessManpower]);
+  }, [isOpen, activeView, canAccessManpower]);
 
   // getProjects() is the same pure-localStorage-mirror pattern as
   // getEmployees() — it only has data once fetchProjectsFromApi() (the
@@ -147,11 +190,13 @@ export const PmoAssistant: React.FC = () => {
   // not the Projects page's own paginated fetchProjectsFromApi(), since
   // the assistant needs to search everything, not one filtered page.
   useEffect(() => {
-    if (!isOpen || !canAccessProjects) return;
+    if (!isOpen || activeView !== "project" || !canAccessProjects || isPanelDataFresh("projects")) return;
     let isMounted = true;
     fetchAllProjectsFromApi()
       .then((items) => {
-        if (isMounted) setProjects(items);
+        if (!isMounted) return;
+        markPanelDataLoaded("projects");
+        setProjects(items);
       })
       .catch(() => {
         /* keep cache / empty — assistant search is best-effort */
@@ -159,7 +204,7 @@ export const PmoAssistant: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [isOpen, canAccessProjects]);
+  }, [isOpen, activeView, canAccessProjects]);
 
   // getAllTimesheetImports() self-triggers its own IndexedDB hydration and
   // doesn't require visiting Timesheets first (unlike Employees/Projects
@@ -169,11 +214,13 @@ export const PmoAssistant: React.FC = () => {
   // via waitForTimesheetHydration() instead of leaving a stale/incomplete
   // snapshot on screen until the user happens to type again.
   useEffect(() => {
-    if (!isOpen || !canAccessTimesheets) return;
+    if (!isOpen || activeView !== "timesheet" || !canAccessTimesheets || isPanelDataFresh("timesheets")) return;
     let isMounted = true;
     waitForTimesheetHydration()
       .then((months) => {
-        if (isMounted) setTimesheetImports(months);
+        if (!isMounted) return;
+        markPanelDataLoaded("timesheets");
+        setTimesheetImports(months);
       })
       .catch(() => {
         /* keep cache / empty — assistant search is best-effort */
@@ -181,7 +228,7 @@ export const PmoAssistant: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [isOpen, canAccessTimesheets]);
+  }, [isOpen, activeView, canAccessTimesheets]);
 
   // Reminders are a Projects sub-resource (same as the backend's own
   // requireModuleAccess("Projects") gate on every /reminders route — see
@@ -194,12 +241,14 @@ export const PmoAssistant: React.FC = () => {
   // authorization filtering is needed or added here; this call simply
   // refreshes the same shared mirror reminderScheduler.ts already reads.
   useEffect(() => {
-    if (!isOpen || !canAccessProjects) return;
+    if (!isOpen || activeView !== "reminders" || !canAccessProjects || isPanelDataFresh("reminders")) return;
     let isMounted = true;
     reminderService
       .refreshAllReminders()
       .then(() => {
-        if (isMounted) setReminders(reminderService.getPendingReminders());
+        if (!isMounted) return;
+        markPanelDataLoaded("reminders");
+        setReminders(reminderService.getPendingReminders());
       })
       .catch(() => {
         /* keep cache — assistant search is best-effort, same as every other Find X loader above */
@@ -207,7 +256,7 @@ export const PmoAssistant: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [isOpen, canAccessProjects]);
+  }, [isOpen, activeView, canAccessProjects]);
 
   // Sept 2026 — Assistant/ReminderCard consistency fix. Without this, an
   // already-open Assistant panel kept showing stale Active Reminders data
@@ -471,7 +520,7 @@ export const PmoAssistant: React.FC = () => {
           is null (no placeholder) since the orb is a floating overlay, not
           layout-affecting; nothing shifts on screen while its chunk loads. */}
       <Suspense fallback={null}>
-        <PmoAssistantOrb onTogglePanel={handleOrbTogglePanel} />
+        <PmoAssistantOrb onTogglePanel={handleOrbTogglePanel} panelOpen={isOpen} />
       </Suspense>
 
       {/* Floating Assistant Panel (Fixed Viewport Overlay Anchored Relative to
