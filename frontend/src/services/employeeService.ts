@@ -473,7 +473,18 @@ function writeThroughEmployeesMirror(employees: Employee[]): void {
   const current = getEmployees();
   const byId = new Map(current.map((e) => [e.id, e]));
   employees.forEach((e) => byId.set(e.id, e));
-  saveEmployees(Array.from(byId.values()));
+  const merged = Array.from(byId.values());
+
+  // Perf (Oct 2026) — see projectService.writeThroughProjectsMirror(): an
+  // unchanged refresh must not rewrite storage or broadcast
+  // "pmo:data-changed" (an app-wide recompute). Real changes save + broadcast
+  // exactly as before.
+  try {
+    if (localStorage.getItem(STORAGE_KEY) === JSON.stringify(merged)) return;
+  } catch {
+    // Unreadable storage — fall through to the normal save below.
+  }
+  saveEmployees(merged);
 }
 
 export interface EmployeeListParams {

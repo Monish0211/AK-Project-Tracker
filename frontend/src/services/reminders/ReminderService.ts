@@ -309,8 +309,15 @@ class ReminderServiceFacade {
     const backendIds = new Set(backendItems.map((r) => r.id));
     const legacyOnly = repository.getAll().filter((r) => !backendIds.has(r.id));
     const combined = [...backendItems, ...legacyOnly];
-    repository.saveAll(combined);
-    this.emitChange();
+    // Perf (Oct 2026) — an unchanged refresh (the Assistant panel re-reads
+    // reminders whenever it is used) must not rewrite the mirror or broadcast
+    // "pmo:data-changed" / "pmo:reminders-changed", which recompute the
+    // notification engine and every live-refresh page for no reason. Real
+    // changes (and the very first hydration) still save + broadcast as before.
+    if (JSON.stringify(combined) !== JSON.stringify(repository.getAll())) {
+      repository.saveAll(combined);
+      this.emitChange();
+    }
     return combined;
   }
 

@@ -684,7 +684,21 @@ export function writeThroughProjectsMirror(projects: Project[]): void {
   const current = getProjects();
   const byId = new Map(current.map((p) => [p.id, p]));
   projects.forEach((p) => byId.set(p.id, p));
-  saveProjects(Array.from(byId.values()));
+  const merged = Array.from(byId.values());
+
+  // Perf (Oct 2026) — a refresh that returns exactly what is already stored
+  // (the common case: the Assistant, Reports and the Projects page all
+  // re-read the same server data) must not rewrite ~300KB of localStorage or
+  // broadcast "pmo:data-changed". That broadcast makes the notification
+  // engine, sidebar counts and every live-refresh page recompute (~400ms
+  // each) even though nothing changed. Real changes still save + broadcast
+  // exactly as before.
+  try {
+    if (localStorage.getItem(STORAGE_KEY) === JSON.stringify(merged.map(normalizeProject))) return;
+  } catch {
+    // Unreadable/over-quota storage — fall through to the normal save below.
+  }
+  saveProjects(merged);
 }
 
 export interface ProjectListParams {
