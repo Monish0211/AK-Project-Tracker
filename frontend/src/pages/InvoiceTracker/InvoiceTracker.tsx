@@ -5,11 +5,8 @@ import { useAuth } from "../../auth/authContext";
 import { canMutateData, hasApprovalPermission } from "../../auth/permissions";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
-import { InvoiceRequestFlag } from "../../components/ui/InvoiceRequestFlag";
 import { PROJECT_STATUS_OPTIONS } from "../../constants/projectStatus";
 import { ALL_MONTHS, fetchTrackerMonth, type TrackerMonthPage, type TrackerProjectRow } from "../../services/invoiceTrackerService";
-import { INVOICE_LINE_STATUS_TONE } from "../Projects/components/Invoice/InvoiceCalculations";
-import type { InvoiceLineStatus } from "../../types/InvoiceItem";
 import { formatIndianCurrency } from "../../utils/formatCurrency";
 import { PaginationBar, StateMessage } from "../Settings/components/weeklyEmails/WeeklyEmailPaging";
 import { usePagedRequest, usePageParams } from "../Settings/components/weeklyEmails/useWeeklyEmailPaging";
@@ -17,8 +14,10 @@ import { InvoiceActionHost } from "./InvoiceActionHost";
 import { InvoiceChain, type TrackerAction } from "./InvoiceChain";
 import { MonthSelect } from "./MonthSelect";
 import { OutstandingSection } from "./OutstandingView";
+import { RaisedAmountCard } from "./RaisedBreakdown";
+import type { BreakdownQuery } from "./raisedBreakdownLogic";
 import { StatCard } from "./StatCard";
-import { beginSaving, currentMonthIST, endSaving, formatDateOnly, isSaving, formatMonthLabel, isValidMonth, olderOutstandingLines, parseFilter, parseView, statusLabel, TRACKER_FILTERS, TRACKER_VIEWS, type SavingMap, type TrackerView } from "./trackerFormat";
+import { beginSaving, currentMonthIST, endSaving, isSaving, formatMonthLabel, isValidMonth, latestRecordCaption, olderOutstandingLines, parseFilter, parseView, SUMMARY_STATUS_LABEL, SUMMARY_STATUS_TONE, TRACKER_FILTERS, TRACKER_VIEWS, type SavingMap, type TrackerView } from "./trackerFormat";
 
 const FILTER_KEYS = ["view", "month", "search", "filter", "projectStatus"] as const;
 const controlClass =
@@ -42,15 +41,23 @@ const SUMMARY_GRID = "grid gap-3 grid-cols-1 @min-[420px]:grid-cols-2 @min-[880p
 const fmt = (n: number) => n.toLocaleString("en-IN");
 const plural = (n: number, one: string, many = `${one}s`) => `${fmt(n)} ${n === 1 ? one : many}`;
 
-/** The period-wide figures — computed on the server over every matching project, never from the visible page. */
-export function TrackerSummaryCards({ data }: { data: TrackerMonthPage }) {
+/**
+ * The period-wide figures — computed on the server over every matching project, never from the visible page. With `query` (the month and
+ * filters the list is showing) the "Raised invoice amount" card opens a breakdown of exactly that figure; `refreshKey` changes whenever the
+ * page reloads its data, `onRefresh` lets the breakdown ask for that if it finds the card out of date.
+ */
+export function TrackerSummaryCards({ data, query, refreshKey = 0, onRefresh }: { data: TrackerMonthPage; query?: BreakdownQuery; refreshKey?: number; onRefresh?: () => void }) {
   const s = data.summary;
   const scope = data.month === ALL_MONTHS ? "all months" : formatMonthLabel(data.month);
   return (
     <div className={SUMMARY_GRID} data-summary data-scope={data.month}>
       <StatCard label="Workflow records" value={fmt(s.recordCount)} accent="blue" icon={FolderKanban} hint={`${plural(s.invoiceCount, "invoice")} · ${plural(s.requestCount, "request")} · ${plural(s.projectCount, "project")}`} />
       <StatCard label="Raised invoices" value={fmt(s.invoicesRaised)} accent="emerald" icon={ReceiptText} hint="Raised, Partially Paid and Paid — never Draft, Cancelled or requests" />
-      <StatCard label="Raised invoice amount" value={formatIndianCurrency(s.raisedAmountINR)} accent="emerald" icon={IndianRupee} hint={`Invoices dated in ${scope}`} />
+      {query ? (
+        <RaisedAmountCard value={formatIndianCurrency(s.raisedAmountINR)} totalINR={s.raisedAmountINR} hint={`Invoices dated in ${scope}`} query={query} refreshKey={refreshKey} onRefresh={onRefresh} />
+      ) : (
+        <StatCard label="Raised invoice amount" value={formatIndianCurrency(s.raisedAmountINR)} accent="emerald" icon={IndianRupee} hint={`Invoices dated in ${scope}`} />
+      )}
       <StatCard label="Pending approval amount" value="Not recorded" muted accent="rose" icon={BellRing} hint={`${plural(s.pendingApproval.count, "open invoice request")} · requests carry no amount`} />
       <StatCard
         label="Amount collected"
@@ -81,37 +88,32 @@ export function TrackerSummaryCards({ data }: { data: TrackerMonthPage }) {
 const warnPill = "inline-flex items-center gap-1 rounded-full border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20 px-2 py-0.5 text-[10.5px] font-semibold text-amber-700 dark:text-amber-400";
 
 /**
- * The project row's headline — instead of one chip per historical status: the latest raised invoice (amount first), or an
- * explicit "No invoice raised this month" (with the latest available one, dated, beneath it), and a compact warning when
- * older invoices are still outstanding. Drafts and requests are only counted in the next column.
+ * LATEST INVOICE AMOUNT — the amount of the project's latest record (its latest invoice or approval request, see LatestRecord). An
+ * approval request has no amount yet, so it shows a dash; once Accounts raises the invoice it shows the amount they entered. Beneath it:
+ * which record that is and its date, so an older record is never mistaken for a current-month invoice. A compact warning stays when
+ * older invoices are still outstanding. Amounts of different records are never combined.
  */
-export function LatestInvoiceCell({ project, month }: { project: TrackerProjectRow; month: string }) {
-  const l = project.latestRaised;
-  const isAll = month === ALL_MONTHS;
+export function LatestAmountCell({ project }: { project: TrackerProjectRow }) {
+  const l = project.latestRecord;
   const warnings = olderOutstandingLines(project.olderOutstanding, formatIndianCurrency, true);
   return (
-    <div className="space-y-1 min-w-[11rem]" data-cell="latest-invoice">
-      {l && (isAll || l.inMonth) ? (
-        <div data-latest-invoice={l.invoiceNo}>
-          <div className="text-[14px] font-extrabold leading-tight text-[var(--nu-text)]" data-latest-amount>
-            {formatIndianCurrency(l.amountINR)}
+    <div className="space-y-1 min-w-[10rem]" data-cell="latest-amount">
+      {l ? (
+        <div data-latest-record={l.reference} data-latest-kind={l.kind}>
+          <div className={`text-[14px] font-extrabold leading-tight ${l.amountINR === null ? "text-[var(--nu-text-muted)]" : "text-[var(--nu-text)]"}`} data-latest-amount>
+            {l.amountINR === null ? <span aria-label="No invoice amount yet">—</span> : formatIndianCurrency(l.amountINR)}
           </div>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className="text-[11.5px] font-semibold text-[var(--nu-text)]">{l.invoiceNo}</span>
-            <Badge tone={INVOICE_LINE_STATUS_TONE[l.status as InvoiceLineStatus] ?? "neutral"} dot className="text-[10.5px] whitespace-nowrap">
-              <span data-latest-status={l.status}>{statusLabel(l.status)}</span>
-            </Badge>
+          <div className="text-[11px] text-[var(--nu-text-muted)]" data-latest-caption>
+            {latestRecordCaption(l)}
+            {l.inMonth === false && <span data-earlier-month> · earlier month</span>}
           </div>
-          <div className="text-[11px] text-[var(--nu-text-muted)]">Invoice date {formatDateOnly(l.invoiceDate)}</div>
         </div>
       ) : (
-        <div data-no-invoice-this-month>
-          <div className="text-[12px] font-semibold text-[var(--nu-text-muted)]">{isAll ? "No raised invoice" : "No invoice raised this month"}</div>
-          {l && (
-            <div className="text-[11px] text-[var(--nu-text-muted)]" data-latest-available>
-              Latest available: {l.invoiceNo} · {formatIndianCurrency(l.amountINR)} · {statusLabel(l.status)} · {formatDateOnly(l.invoiceDate)}
-            </div>
-          )}
+        <div data-no-record>
+          <div className="text-[14px] font-extrabold leading-tight text-[var(--nu-text-muted)]" data-latest-amount>
+            <span aria-label="No invoice amount">—</span>
+          </div>
+          <div className="text-[11px] text-[var(--nu-text-muted)]">No invoice or request yet</div>
         </div>
       )}
       {warnings.map((w) => (
@@ -121,6 +123,23 @@ export function LatestInvoiceCell({ project, month }: { project: TrackerProjectR
         </div>
       ))}
     </div>
+  );
+}
+
+/** STATUS — where the project's latest record is in its lifecycle: Pending Approval → Raised → (Partially) Paid. */
+export function LatestStatusCell({ project }: { project: TrackerProjectRow }) {
+  const l = project.latestRecord;
+  if (!l) {
+    return (
+      <span className="text-[12px] text-[var(--nu-text-muted)]" data-no-status>
+        —
+      </span>
+    );
+  }
+  return (
+    <Badge tone={SUMMARY_STATUS_TONE[l.status]} dot className="text-[10.5px]">
+      <span data-latest-status={l.status}>{SUMMARY_STATUS_LABEL[l.status]}</span>
+    </Badge>
   );
 }
 
@@ -141,16 +160,14 @@ export function TrackerTable({ data, month, expanded, onToggle, renderChain }: {
           <th className={th}>Client Name</th>
           <th className={th}>Project Title</th>
           <th className={`${th} text-right whitespace-nowrap`}>WO Value</th>
-          <th className={`${th} whitespace-nowrap`}>{month === ALL_MONTHS ? "Latest raised invoice" : "Latest raised invoice (this month)"}</th>
-          <th className={`${th} whitespace-nowrap`}>Records</th>
+          <th className={`${th} whitespace-nowrap`}>Latest Invoice Amount</th>
+          <th className={`${th} whitespace-nowrap`}>Status</th>
           <th className={`${th} text-right`}>Actions</th>
         </tr>
       </thead>
       <tbody>
         {data.items.map((p, index) => {
           const open = expanded.has(p.id);
-          const r = p.records;
-          const requestCount = r.openRequestCount + r.completedRequestCount;
           return (
             <Fragment key={p.id}>
               <tr className={`border-b border-slate-100 dark:border-slate-800/80 hover:bg-blue-50/20 dark:hover:bg-slate-800/30 transition-all duration-100 ${open ? "bg-blue-50/30 dark:bg-slate-800/40" : ""}`} data-project={p.prNo} data-expanded={open}>
@@ -176,16 +193,10 @@ export function TrackerTable({ data, month, expanded, onToggle, renderChain }: {
                 <td className="p-3">{p.projectTitle}</td>
                 <td className="p-3 text-right whitespace-nowrap font-semibold">{formatIndianCurrency(p.workOrderValueINR)}</td>
                 <td className="p-3">
-                  <LatestInvoiceCell project={p} month={month} />
+                  <LatestAmountCell project={p} />
                 </td>
-                <td className="p-3 whitespace-nowrap" data-record-counts>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="text-[11.5px] text-[var(--nu-text)]">
-                      {plural(r.invoiceCount, "invoice")}
-                      {r.draftInvoiceCount > 0 ? ` · ${plural(r.draftInvoiceCount, "draft")}` : ""} · {plural(requestCount, "request")}
-                    </span>
-                    {p.hasOpenInvoiceRequest && <InvoiceRequestFlag />}
-                  </span>
+                <td className="p-3 whitespace-nowrap">
+                  <LatestStatusCell project={p} />
                 </td>
                 <td className="p-3 text-right whitespace-nowrap">
                   <Button variant="ghost" size="sm" onClick={() => onToggle(p.id)} aria-label={`${open ? "Hide" : "Show"} records for ${p.prNo}`}>
@@ -213,7 +224,7 @@ export function TrackerTable({ data, month, expanded, onToggle, renderChain }: {
 }
 
 const HERO_TEXT: Record<TrackerView, string> = {
-  month: "Invoices dated in the selected month (by invoice date). Each project shows its latest raised invoice, amount first; projects with an invoice raised that month come first. Expand a project for its drafts and requests, previous invoices and recorded history.",
+  month: "Projects with an invoice dated in the selected month or an invoice request made in it. Each row shows the project's latest invoice or approval request: its amount (a dash while approval is pending) and its status. Expand a project for all its records, latest first, with their recorded history.",
   outstanding: "Unpaid invoices from every month, oldest first, for follow-up. An invoice keeps its original month when it is paid; nothing is copied forward.",
   history: "Every workflow record from every month. Statuses and history are exactly what Edit Project → Invoices has saved; earlier invoices show “No recorded history”.",
 };
@@ -406,7 +417,7 @@ export default function InvoiceTracker() {
         />
       ) : (
         <>
-          {data && <TrackerSummaryCards data={data} />}
+          {data && <TrackerSummaryCards data={data} query={{ month, search, projectStatus, filter }} refreshKey={refreshTick + listTick} onRefresh={refresh} />}
 
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm flex flex-col min-h-0">
             <div className="flex items-center justify-between gap-3 p-4 border-b border-slate-200 dark:border-slate-800">

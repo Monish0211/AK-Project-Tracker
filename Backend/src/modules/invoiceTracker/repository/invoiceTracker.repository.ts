@@ -122,6 +122,18 @@ export function findProjectLinesDetailed(projectId: string) {
   });
 }
 
+/**
+ * ALL invoice requests of the given projects (any date, any status) — ONE query for however many projects, only the fields the project
+ * row's latest record needs. The row needs requests of every date: the latest record is "up to the end of the month", not "created in it".
+ */
+export function findRequestsForProjects(projectIds: string[]) {
+  if (projectIds.length === 0) return Promise.resolve([]);
+  return prisma.invoiceRequest.findMany({
+    where: { projectId: { in: projectIds } },
+    select: { id: true, projectId: true, status: true, createdAt: true, fulfilledInvoiceLineId: true },
+  });
+}
+
 /** One project's invoice requests with who / what, created in the window (null = all). */
 export function findProjectRequestsDetailed(projectId: string, window: MonthWindow | null) {
   return prisma.invoiceRequest.findMany({
@@ -130,7 +142,8 @@ export function findProjectRequestsDetailed(projectId: string, window: MonthWind
       id: true, status: true, createdAt: true, updatedAt: true, invoiceAmountNote: true, notes: true,
       requestedBy: { select: { fullName: true } },
       assignedTo: { select: { fullName: true } },
-      fulfilledInvoiceLine: { select: { invoiceNo: true } },
+      fulfilledInvoiceLineId: true,
+      fulfilledInvoiceLine: { select: { invoiceNo: true, invoiceDate: true } },
     },
     orderBy: [{ createdAt: "desc" }, { id: "asc" }],
   });

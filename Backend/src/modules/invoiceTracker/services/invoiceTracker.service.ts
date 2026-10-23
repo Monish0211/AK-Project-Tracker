@@ -30,13 +30,19 @@ import {
   type InvoiceGroup,
   type MonthWindow,
   hasMixedLiveStatuses,
+  isRaisedStatus,
   compareNewestFirst,
   inInvoiceMonth,
   invoicesUpTo,
   latestRaisedGroup,
   olderOutstanding,
+  isValidInvoiceDate,
+  orderAllRecords,
+  selectLatestRecord,
+  shortRequestRef,
   type OrderableRecord,
   type ProjectRecordState,
+  type SummaryRequest,
   type RecordTier,
 } from "../invoiceTracker.rules.js";
 import type { OutstandingQuery, TrackerListQuery } from "../validators/invoiceTracker.validators.js";
@@ -74,13 +80,11 @@ function withDateFlag<T extends { flags: string[] }>(fin: T, missing: boolean): 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 /**
- * The report's project table + exact period-wide totals. A project appears only when it has at least one workflow record in
- * the selected month ("all" = any month): an invoice DATED in it (invoice date, never creation / raise / payment date) or an
- * Invoice Request created in it (requests have no invoice date). Totals cover EVERY
- * qualifying project matching the search / status filters (not just the visible page); the state filter narrows only
- * the table.
+ * The month's selection — ONE place decides which invoices and requests a report contains and which projects it lists. The project
+ * table, the summary cards AND the Raised-amount breakdown all read it, so the breakdown can never add up different invoices than the
+ * card it explains. (Moved out of getTrackerMonth unchanged.)
  */
-export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerListQuery) {
+async function selectMonth(user: AccessTokenPayload, query: TrackerListQuery) {
   const window = windowOf(query.month);
   const base = await scopedBase(user, query);
 
@@ -121,6 +125,19 @@ export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerLi
     window
   );
 
+  return { window, base, lines, requests, invoices, byProject, tableIds, listed, summary };
+}
+
+/**
+ * The report's project table + exact period-wide totals. A project appears only when it has at least one workflow record in
+ * the selected month ("all" = any month): an invoice DATED in it (invoice date, never creation / raise / payment date) or an
+ * Invoice Request created in it (requests have no invoice date). Totals cover EVERY
+ * qualifying project matching the search / status filters (not just the visible page); the state filter narrows only
+ * the table.
+ */
+export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerListQuery) {
+  const { window, base, lines, requests, invoices, byProject, tableIds, listed, summary } = await selectMonth(user, query);
+
   // Page the qualifying projects in one stable order across ALL pages: group 1 (a record raised in the month) first, then the
   // rest; inside a group the project whose best record has the newest relevant date first; then PR number, then id.
   const perProject = new Map<string, OrderableRecord[]>();
@@ -157,7 +174,19 @@ export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerLi
   // (a request-only project has none loaded) are read in ONE batched query — always one, whatever the page holds. All history
   // already read every line. Nothing here feeds the cards — they were computed above from the month's invoices only.
   const pageIds = new Set(rows.map((p) => p.id));
-  const pageLines = window ? await repo.findLinesForProjects(rows.map((p) => p.id)) : lines.filter((l) => pageIds.has(l.projectId));
+  // The latest record of each listed project also needs its requests of every date (an open request from last month is still pending):
+  // read together with the lines, in one batched query for the whole page.
+  const [pageLines, pageRequestRows] = await Promise.all([
+    window ? repo.findLinesForProjects(rows.map((p) => p.id)) : Promise.resolve(lines.filter((l) => pageIds.has(l.projectId))),
+    repo.findRequestsForProjects(rows.map((p) => p.id)),
+  ]);
+  const pageRequests = new Map<string, SummaryRequest[]>();
+  for (const r of pageRequestRows) {
+    const list = pageRequests.get(r.projectId);
+    const lite = { id: r.id, status: r.status, createdAt: r.createdAt, fulfilledInvoiceLineId: r.fulfilledInvoiceLineId };
+    if (list) list.push(lite);
+    else pageRequests.set(r.projectId, [lite]);
+  }
   const pageGroups = new Map<string, InvoiceGroup[]>();
   for (const g of groupInvoices(pageLines)) {
     const list = pageGroups.get(g.projectId);
@@ -169,6 +198,11 @@ export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerLi
     const latest = latestRaisedGroup(invoicesUpTo(groups, window));
     const older = olderOutstanding(invoicesUpTo(groups, window), latest, groups);
     return {
+      /**
+       * The ONE record the project row shows (Latest Invoice Amount + Status): the project's latest invoice or approval request up to the end
+       * of the selected month — see selectLatestRecord() in the rules. null = the project has no relevant record yet.
+       */
+      latestRecord: selectLatestRecord(groups, pageRequests.get(projectId) ?? [], window),
       latestRaised: latest
         ? { invoiceNo: latest.invoiceNo, invoiceDate: dateOnly(latest.invoiceDate!), amountINR: latest.amountINR, status: latest.status, paymentStatus: paymentLabel(latest.status), inMonth: window ? inInvoiceMonth(latest.invoiceDate, window) : null }
         : null,
@@ -203,6 +237,67 @@ export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerLi
   };
 }
 
+/**
+ * RAISED INVOICE AMOUNT — BREAKDOWN. The invoices behind the card's total, grouped by project: exactly the raised-class invoices
+ * (Raised, Partially Paid, Paid) of the projects the report LISTS, taken from the same selection as the card (selectMonth), so the
+ * total here IS `summary.raisedAmountINR` and the invoice count IS `summary.invoicesRaised`. An invoice counts once, at its live (non-
+ * cancelled) lines' amount, in the month of its invoice date. Drafts, cancelled invoices and requests are not in it. All projects'
+ * totals are returned in a stable order (largest first); only the visible page of projects carries its invoices.
+ */
+export async function getRaisedBreakdown(user: AccessTokenPayload, query: TrackerListQuery) {
+  const { window, base, invoices, listed } = await selectMonth(user, query);
+  const raised = invoices.filter((g) => listed.has(g.projectId) && isRaisedStatus(g.status));
+
+  const byProject = new Map<string, InvoiceGroup[]>();
+  for (const g of raised) {
+    const list = byProject.get(g.projectId);
+    if (list) list.push(g);
+    else byProject.set(g.projectId, [g]);
+  }
+  const info = new Map((await repo.findProjectsByIds(base, [...byProject.keys()])).map((p) => [p.id, p]));
+  const all = [...byProject.entries()]
+    .filter(([id]) => info.has(id))
+    .map(([id, groups]) => {
+      const p = info.get(id)!;
+      const sorted = [...groups].sort(compareNewestFirst);
+      return {
+        projectId: id,
+        prNo: p.prNo,
+        client: p.client,
+        projectTitle: p.projectTitle,
+        projectStatus: p.projectStatus,
+        invoiceCount: sorted.length,
+        totalINR: round2(sorted.reduce((sum, g) => sum + g.amountINR, 0)),
+        invoices: sorted.map((g) => ({
+          key: g.key,
+          invoiceNo: g.invoiceNo,
+          /** The invoice date (date-only). null only in "all" for an invoice with no usable date — it is in no month. */
+          invoiceDate: g.invoiceDate ? dateOnly(g.invoiceDate) : null,
+          status: normalizeStatus(g.status),
+          amountINR: g.amountINR,
+          /** Lines of this invoice that are Cancelled: they are not part of `amountINR`. */
+          cancelledLineCount: g.lines.filter((l) => normalizeStatus(l.status) === "Cancelled").length,
+        })),
+      };
+    })
+    .sort((a, b) => b.totalINR - a.totalINR || prNoCollator.compare(a.prNo, b.prNo) || (a.projectId < b.projectId ? -1 : 1));
+
+  const totalINR = round2(all.reduce((sum, p) => sum + p.totalINR, 0));
+  const invoiceCount = all.reduce((sum, p) => sum + p.invoiceCount, 0);
+  return {
+    month: query.month,
+    totalINR,
+    invoiceCount,
+    projectCount: all.length,
+    projects: all.slice((query.page - 1) * query.pageSize, query.page * query.pageSize),
+    page: query.page,
+    pageSize: query.pageSize,
+    totalPages: totalPagesFor(all.length, query.pageSize),
+    /** Echoed so a client can tell which period / window the figures describe. */
+    periodStart: window ? dateOnly(window.dateStart) : null,
+  };
+}
+
 const REQUEST_LABEL = { Open: "Invoice Requested", Completed: "Completed" } as const;
 
 /**
@@ -213,11 +308,20 @@ export async function getProjectRecords(user: AccessTokenPayload, projectId: str
   const window = windowOf(month);
   await assertProjectReadAccessById(projectId, user);
 
-  const [project, lines, requests] = await Promise.all([repo.findProjectSummary(projectId), repo.findProjectLinesDetailed(projectId), repo.findProjectRequestsDetailed(projectId, window)]);
+  const [project, lines, allRequests] = await Promise.all([repo.findProjectSummary(projectId), repo.findProjectLinesDetailed(projectId), repo.findProjectRequestsDetailed(projectId, null)]);
   if (!project) throw new AppError("Project not found.", 404);
+  // Requests mirror invoices: the month's own (created in it) and the EARLIER ones, for context. A request created after the month's end
+  // is the future of this report and is not returned. "All history" has every request in `requests`.
+  const requests = window ? allRequests.filter((r) => inWindow(r.createdAt, window)) : allRequests;
+  const previousRequests = window ? allRequests.filter((r) => r.createdAt.getTime() < window.start.getTime()) : [];
 
   const allGroups = groupInvoices(lines.map((l) => ({ ...l, projectId })));
   const groups = invoicesDatedIn(allGroups, window);
+  const latestRecord = selectLatestRecord(
+    allGroups,
+    allRequests.map((r) => ({ id: r.id, status: r.status, createdAt: r.createdAt, fulfilledInvoiceLineId: r.fulfilledInvoiceLineId })),
+    window
+  );
   groups.sort((a, b) => (b.invoiceDate?.getTime() ?? 0) - (a.invoiceDate?.getTime() ?? 0) || (a.key < b.key ? -1 : 1));
 
   // PREVIOUS invoices — billing context only: this project's other invoices whose usable invoice date is EARLIER than the month. They are
@@ -300,6 +404,24 @@ export async function getProjectRecords(user: AccessTokenPayload, projectId: str
 
   for (const r of requests) orderable.push({ kind: "request", id: r.id, tier: requestTier(), sortDate: r.createdAt });
 
+  const mapRequest = (r: (typeof allRequests)[number]) => ({
+    id: r.id,
+    /** Requests have no human number, only an id: a short reference for display. */
+    ref: shortRequestRef(r.id),
+    status: r.status,
+    label: REQUEST_LABEL[r.status as keyof typeof REQUEST_LABEL] ?? r.status,
+    createdAt: r.createdAt.toISOString(),
+    createdMonth: istMonthOf(r.createdAt),
+    requestedBy: r.requestedBy.fullName,
+    assignedTo: r.assignedTo.fullName,
+    /** Free text as typed by the requester — not a number. */
+    amountNote: r.invoiceAmountNote,
+    notes: r.notes,
+    /** The invoice whose raise fulfilled this request (Completed only), and that invoice's date (date-only) so its own month can be found. */
+    fulfilledByInvoiceNo: r.fulfilledInvoiceLine?.invoiceNo ?? null,
+    fulfilledByInvoiceDate: r.fulfilledInvoiceLine && isValidInvoiceDate(r.fulfilledInvoiceLine.invoiceDate) ? dateOnly(r.fulfilledInvoiceLine.invoiceDate) : null,
+  });
+
   return {
     month,
     project,
@@ -320,22 +442,19 @@ export async function getProjectRecords(user: AccessTokenPayload, projectId: str
     olderOutstanding: older,
     /** Display order across both kinds: raised in the month first, then the other records (see the rules' ORDER note). */
     order: orderRecords(orderable),
-    requests: requests.map((r) => ({
-      id: r.id,
-      /** Requests have no human number, only an id: a short reference for display. */
-      ref: r.id.slice(0, 8).toUpperCase(),
-      status: r.status,
-      label: REQUEST_LABEL[r.status as keyof typeof REQUEST_LABEL] ?? r.status,
-      createdAt: r.createdAt.toISOString(),
-      createdMonth: istMonthOf(r.createdAt),
-      requestedBy: r.requestedBy.fullName,
-      assignedTo: r.assignedTo.fullName,
-      /** Free text as typed by the requester — not a number. */
-      amountNote: r.invoiceAmountNote,
-      notes: r.notes,
-      /** The invoice whose raise fulfilled this request (Completed only). */
-      fulfilledByInvoiceNo: r.fulfilledInvoiceLine?.invoiceNo ?? null,
-    })),
+    /**
+     * The project's latest record up to the end of the month — the SAME record the project row shows. `id` is an invoice's key (in
+     * `invoices` / `previousInvoices`) or a request's id (in `requests` / `previousRequests`). null = none.
+     */
+    latestRecord,
+    /**
+     * EVERY record this view lists — current and earlier invoices (any status) and requests — with the latest record first, then the rest
+     * newest first. By record date, then creation instant, then id; an invoice with no usable date comes last.
+     */
+    recordOrder: orderAllRecords([...groups, ...previousGroups], [...requests, ...previousRequests], latestRecord && { kind: latestRecord.kind, id: latestRecord.id }),
+    requests: requests.map(mapRequest),
+    /** Requests created before the selected month, newest first within recordOrder — for context, never in the month's totals. */
+    previousRequests: previousRequests.map(mapRequest),
   };
 }
 

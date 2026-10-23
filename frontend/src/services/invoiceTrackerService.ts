@@ -105,6 +105,33 @@ export interface LatestRaisedInvoice {
   inMonth: boolean | null;
 }
 
+/** The lifecycle states the project row shows. Pending Approval = an open Invoice Request (nothing raised, no amount). */
+export type SummaryStatus = "PendingApproval" | "Raised" | "PartiallyPaid" | "Paid";
+
+/**
+ * THE project's latest record — the one the project row shows (Latest Invoice Amount + Status): its latest raised-class invoice or open
+ * approval request up to the end of the selected month (everything for "all"). One record; amounts and statuses of different records are
+ * never combined. The server decides it from stored dates and ids only (see selectLatestRecord in the backend rules).
+ */
+export interface LatestRecord {
+  kind: "invoice" | "request";
+  /** An invoice's key (as in the chain) or a request's id. */
+  id: string;
+  /** The invoice number, or the request's short reference. */
+  reference: string;
+  /** "YYYY-MM-DD": the invoice date, or the India day the request was created. */
+  recordDate: string;
+  /** The amount Accounts entered; null for a request (no amount until an invoice is raised). */
+  amountINR: number | null;
+  status: SummaryStatus;
+  /** A request this invoice fulfilled (the same lifecycle). */
+  requestRef: string | null;
+  /** Only for a request whose invoice is dated after the selected month: that invoice, so its amount can be found in its own month. */
+  raisedLater: { invoiceNo: string; invoiceDate: string | null } | null;
+  /** The record date is inside the selected month; null for "all". */
+  inMonth: boolean | null;
+}
+
 export interface TrackerProjectRow {
   id: string;
   prNo: string;
@@ -114,6 +141,9 @@ export interface TrackerProjectRow {
   workOrderValueINR: number;
   pendingDueINR: number;
   hasOpenInvoiceRequest: boolean;
+  /** What the row shows. null = the project has no relevant record (for example only a Draft) — the row says so. */
+  latestRecord: LatestRecord | null;
+  /** The latest RAISED invoice the older-outstanding warning is measured from. The row no longer shows it. */
   latestRaised: LatestRaisedInvoice | null;
   olderOutstanding: OlderOutstandingSummary;
   records: ProjectRecordState;
@@ -205,6 +235,8 @@ export interface TrackerRequest {
   amountNote: string | null;
   notes: string | null;
   fulfilledByInvoiceNo: string | null;
+  /** That invoice's date (date-only): the month its amount is counted in. null when unknown. */
+  fulfilledByInvoiceDate: string | null;
 }
 
 export interface TrackerChain {
@@ -217,6 +249,12 @@ export interface TrackerChain {
   /** Invoices of this project with no usable invoice date: in no month (so in neither list above); listed in All history. 0 for "all". */
   undatedInvoiceCount: number;
   requests: TrackerRequest[];
+  /** Requests created BEFORE the selected month — for context, never in the month's totals. Empty for "all" (every request is in `requests`). */
+  previousRequests: TrackerRequest[];
+  /** The project's latest record (the SAME one its row shows): an invoice key (in `invoices` / `previousInvoices`) or a request id. null = none. */
+  latestRecord: LatestRecord | null;
+  /** EVERY record this view lists, invoices of any status and requests: the latest record first, then the rest newest to oldest. */
+  recordOrder: { kind: "invoice" | "request"; id: string }[];
   /** Key (in `invoices` or `previousInvoices`) of the latest raised invoice up to the end of the month; null for All history or none. */
   latestRaisedKey: string | null;
   /** Dated in the selected month (true), an older one shown for context (false), or no month / none (null). */
@@ -305,6 +343,49 @@ export function outstandingQueryString(q: OutstandingQuery): string {
   if (q.projectStatus) params.set("projectStatus", q.projectStatus);
   return params.toString();
 }
+
+/** One invoice behind the "Raised invoice amount" card. */
+export interface RaisedBreakdownInvoice {
+  key: string;
+  invoiceNo: string;
+  /** "YYYY-MM-DD"; null only in "All history" for an invoice with no usable date (it is in no month). */
+  invoiceDate: string | null;
+  status: Exclude<SummaryStatus, "PendingApproval">;
+  /** The invoice amount the card adds up: its live (non-cancelled) lines. */
+  amountINR: number;
+  /** Cancelled lines of this invoice — they are not in `amountINR`. */
+  cancelledLineCount: number;
+}
+
+export interface RaisedBreakdownProject {
+  projectId: string;
+  prNo: string;
+  client: string;
+  projectTitle: string;
+  projectStatus: string;
+  invoiceCount: number;
+  totalINR: number;
+  invoices: RaisedBreakdownInvoice[];
+}
+
+/**
+ * GET /invoice-tracker/raised-breakdown — the invoices the "Raised invoice amount" card adds up, grouped by project (largest first),
+ * for the SAME month / search / project status / "Show" filter as the list. `totalINR` and `invoiceCount` describe the WHOLE report on
+ * every page and equal the card's `summary.raisedAmountINR` / `summary.invoicesRaised`; only `projects` is paged.
+ */
+export interface RaisedBreakdownPage {
+  month: string;
+  totalINR: number;
+  invoiceCount: number;
+  projectCount: number;
+  projects: RaisedBreakdownProject[];
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  periodStart: string | null;
+}
+
+export const fetchRaisedBreakdown = (q: TrackerQuery) => apiClient.get<RaisedBreakdownPage>(`/invoice-tracker/raised-breakdown?${trackerQueryString(q)}`);
 
 export const fetchTrackerMonth = (q: TrackerQuery) => apiClient.get<TrackerMonthPage>(`/invoice-tracker?${trackerQueryString(q)}`);
 

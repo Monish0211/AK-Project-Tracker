@@ -9,6 +9,11 @@ export const getInvoiceTrackerMonth = asyncHandler(async (req: Request, res: Res
   res.status(200).json({ success: true, data });
 });
 
+export const getInvoiceTrackerRaisedBreakdown = asyncHandler(async (req: Request, res: Response) => {
+  const data = await service.getRaisedBreakdown(requireUser(req), parseWith(trackerListQuerySchema, req.query));
+  res.status(200).json({ success: true, data });
+});
+
 export const getInvoiceTrackerProjectInvoices = asyncHandler(async (req: Request, res: Response) => {
   const { projectId } = parseWith(trackerProjectParamSchema, req.params);
   const { month } = parseWith(trackerChainQuerySchema, req.query);

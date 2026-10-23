@@ -1,6 +1,7 @@
 import type { InvoiceLineStatus } from "../../types/InvoiceItem";
-import { INVOICE_LINE_STATUS_LABEL } from "../Projects/components/Invoice/InvoiceCalculations";
-import type { TimelineEvent, TrackerFilter } from "../../services/invoiceTrackerService";
+import type { Tone } from "../../components/ui/Badge";
+import { INVOICE_LINE_STATUS_LABEL, INVOICE_LINE_STATUS_TONE } from "../Projects/components/Invoice/InvoiceCalculations";
+import type { LatestRecord, SummaryStatus, TimelineEvent, TrackerFilter } from "../../services/invoiceTrackerService";
 
 /** "2026-10" — the current calendar month in Asia/Kolkata (the portal's business time zone). */
 export function currentMonthIST(now: Date = new Date()): string {
@@ -48,6 +49,28 @@ export function formatInstant(iso: string): string {
 }
 
 export const statusLabel = (status: string | null): string => (status ? (INVOICE_LINE_STATUS_LABEL[status as InvoiceLineStatus] ?? status) : "—");
+
+/** The project row's Status: an open request is "Pending Approval"; an invoice is exactly the status Accounts saved. */
+export const SUMMARY_STATUS_LABEL: Record<SummaryStatus, string> = { PendingApproval: "Pending Approval", Raised: "Raised", PartiallyPaid: "Partially Paid", Paid: "Paid" };
+export const SUMMARY_STATUS_TONE: Record<SummaryStatus, Tone> = {
+  PendingApproval: "accent",
+  Raised: INVOICE_LINE_STATUS_TONE.Raised,
+  PartiallyPaid: INVOICE_LINE_STATUS_TONE.PartiallyPaid,
+  Paid: INVOICE_LINE_STATUS_TONE.Paid,
+};
+
+/**
+ * The line under the amount that says WHICH record it is and when — so a row never looks like a current-month invoice when it is an
+ * older record, and a request (no amount) says what it is waiting for or where its invoice went.
+ */
+export function latestRecordCaption(r: Pick<LatestRecord, "kind" | "reference" | "recordDate" | "status" | "raisedLater">): string {
+  if (r.kind === "invoice") return `${r.reference} · Invoice date ${formatDateOnly(r.recordDate)}`;
+  if (r.raisedLater) {
+    const where = r.raisedLater.invoiceDate ? `dated ${formatDateOnly(r.raisedLater.invoiceDate)}` : "with no usable invoice date";
+    return `Request ${r.reference} · ${formatDateOnly(r.recordDate)} · invoice ${r.raisedLater.invoiceNo} ${where}`;
+  }
+  return `Request ${r.reference} · ${formatDateOnly(r.recordDate)} · awaiting invoice`;
+}
 
 /** One line of the timeline: what happened, from the recorded previous and new status. */
 export function describeEvent(e: Pick<TimelineEvent, "eventType" | "fromStatus" | "toStatus" | "lineCount">): string {

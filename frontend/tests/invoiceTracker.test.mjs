@@ -96,18 +96,31 @@ const invoice = (over = {}) => ({
   recordedInPortal: { at: "2026-01-11T00:00:00.000Z", by: "Direct Entry" }, hasRecordedHistory: true, timeline: [event()], invoiceRequest: null, ...over,
 });
 const request = (over = {}) => ({
-  id: "r1", ref: "R1AB23CD", status: "Open", label: "Invoice Requested", createdAt: "2026-03-03T06:00:00.000Z", createdMonth: "2026-03", requestedBy: "Priya", assignedTo: "Asha", amountNote: null, notes: null, fulfilledByInvoiceNo: null, ...over,
+  id: "r1", ref: "R1AB23CD", status: "Open", label: "Invoice Requested", createdAt: "2026-03-03T06:00:00.000Z", createdMonth: "2026-03", requestedBy: "Priya", assignedTo: "Asha", amountNote: null, notes: null, fulfilledByInvoiceNo: null, fulfilledByInvoiceDate: null, ...over,
 });
 // A chain payload as the server builds it: the headline (latest raised invoice up to the month's end), the month's drafts, the history, the older-outstanding figure.
 const RAISED = ["Raised", "Submitted", "PartiallyPaid", "Paid"];
+const SUMMARY_OF = (status) => (status === "Submitted" ? "Raised" : status);
+const newestFirst = (a, b) => (b.invoiceDate ?? "").localeCompare(a.invoiceDate ?? "");
 const chainData = (invoices, requests = [], month = "2026-03", order = undefined, previousInvoices = [], undatedInvoiceCount = 0, over = {}) => {
   const all = [...invoices, ...previousInvoices].filter((i) => i.invoiceDate);
   const raised = all.filter((i) => RAISED.includes(i.status)).sort((a, b) => (b.invoiceDate < a.invoiceDate ? -1 : b.invoiceDate > a.invoiceDate ? 1 : 0));
   const latest = month === "all" ? null : (raised[0] ?? null);
   const drafts = month === "all" ? [] : invoices.filter((i) => i.status === "Draft" && i.invoiceDate);
   const history = month === "all" ? [] : all.filter((i) => i !== latest && !drafts.includes(i)).sort((a, b) => (b.invoiceDate < a.invoiceDate ? -1 : b.invoiceDate > a.invoiceDate ? 1 : 0));
+  // The server's latest RECORD: the newest raised invoice here (a test that needs a request as the latest record passes `latestRecord`).
+  const top = all.filter((i) => RAISED.includes(i.status)).sort(newestFirst)[0] ?? null;
+  const derived = top ? { kind: "invoice", id: top.key, reference: top.invoiceNo, recordDate: top.invoiceDate, amountINR: top.amountINR, status: SUMMARY_OF(top.status), requestRef: null, raisedLater: null, inMonth: month === "all" ? null : top.invoiceDate.slice(0, 7) === month } : null;
+  const latestRecord = "latestRecord" in over ? over.latestRecord : derived;
+  const isLatest = (kind, id) => latestRecord?.kind === kind && latestRecord?.id === id;
+  // …and the order the server lists: the latest record first, then everything else newest to oldest (invoices of every status, then requests).
+  const recordOrder = order ?? [
+    ...(latestRecord ? [{ kind: latestRecord.kind, id: latestRecord.id }] : []),
+    ...[...invoices, ...previousInvoices].filter((i) => !isLatest("invoice", i.key)).sort(newestFirst).map((i) => ({ kind: "invoice", id: i.key })),
+    ...requests.filter((r) => !isLatest("request", r.id)).map((r) => ({ kind: "request", id: r.id })),
+  ];
   return {
-    month, project: { id: "p1", prNo: "PR-1", client: "C", projectTitle: "T", projectStatus: "Active" }, invoices, previousInvoices, undatedInvoiceCount, requests,
+    month, project: { id: "p1", prNo: "PR-1", client: "C", projectTitle: "T", projectStatus: "Active" }, invoices, previousInvoices, undatedInvoiceCount, requests, previousRequests: [], latestRecord, recordOrder,
     latestRaisedKey: latest?.key ?? null, latestRaisedInMonth: latest ? latest.invoiceDate.slice(0, 7) === month : null,
     draftKeys: drafts.map((i) => i.key), historyKeys: history.map((i) => i.key),
     olderOutstanding: { count: 0, amountINR: 0, knownAmountINR: 0, unknownCount: 0, undatedCount: 0, keys: [] },
@@ -186,8 +199,11 @@ const zero = { raised: 0, partiallyPaid: 0, paid: 0, draft: 0, cancelled: 0 };
 const records = (over = {}) => ({ recordCount: 0, invoiceCount: 0, byStatus: { ...zero }, raisedInvoiceCount: 0, raisedInPeriodCount: 0, raisedAmountINR: 0, draftInvoiceCount: 0, cancelledInvoiceCount: 0, openRequestCount: 0, completedRequestCount: 0, ...over });
 const row = (n, over = {}) => ({
   id: `p${n}`, prNo: `PR-${n}`, client: `Client ${n}`, projectTitle: `Title ${n}`, projectStatus: "Active", workOrderValueINR: 2_000_000, pendingDueINR: 500_000, hasOpenInvoiceRequest: false,
-  latestRaised: null, olderOutstanding: { count: 0, amountINR: 0, knownAmountINR: 0, unknownCount: 0, undatedCount: 0 }, records: records(), ...over,
+  latestRecord: null, latestRaised: null, olderOutstanding: { count: 0, amountINR: 0, knownAmountINR: 0, unknownCount: 0, undatedCount: 0 }, records: records(), ...over,
 });
+/** The block of one record in the rendered chain (an invoice by `data-invoice`, a request by `data-request`). */
+const recordBlock = (html, attr, id) => html.slice(html.indexOf(`${attr}="${id}"`), html.indexOf("</li>", html.indexOf(`${attr}="${id}"`)));
+const moneyOf = (block, id) => block.slice(block.indexOf(`data-money="${id}"`), block.indexOf("</div>", block.indexOf(`data-money="${id}"`))).replace(/^[^>]*>/, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 const summary = (over = {}) => ({
   projectCount: 5, projectsRaised: 3, projectsAwaitingApproval: 1, recordCount: 13, invoiceCount: 11, requestCount: 2, invoicesRaised: 8, raisedAmountINR: 7950,
   byStatus: { raised: 6, partiallyPaid: 1, paid: 1, draft: 2, cancelled: 1 }, requests: { open: 1, completed: 1 },
@@ -248,7 +264,8 @@ test("the Repository's invoiced-share badge is unchanged and still used only by 
   assert.match(projects, /<RepositoryInvoiceStatusBadge status=\{status\} \/>/, "…and the shared badge");
   const tracker = src("pages/InvoiceTracker/InvoiceTracker.tsx");
   assert.doesNotMatch(tracker, /repositoryInvoiceSummary|RepositoryInvoiceStatusBadge/, "the Tracker's status column is the invoices' own statuses, not a billing-progress badge");
-  assert.match(tracker, /LatestInvoiceCell/);
+  assert.match(tracker, /LatestAmountCell/);
+  assert.match(tracker, /LatestStatusCell/);
   assert.doesNotMatch(tracker, /ProjectStatusChips/, "no chip per historical status in the project row");
 });
 
@@ -323,19 +340,22 @@ test("chain: a month shows its records; all history tags each with its creation 
   const month = render(chainData([invoice({ key: "a", invoiceNo: "NEW-1" })], [request()]));
   assert.match(month, /NEW-1/);
   assert.match(month, /data-record="request"/);
-  assert.match(month, /data-section="drafts-requests"/);
-  assert.match(month, /invoice requests/i);
+  assert.match(month, /data-section="records"/);
   assert.match(month, />R1AB23CD</, "a request is identified by its short reference");
-  assert.match(month, /Invoice Requested/);
+  assert.match(month, /Pending Approval/, "an open request is Pending Approval");
   assert.match(month, /Waiting for Accounts to raise the invoice/);
-  assert.match(month, /03 Mar 2026, 11:30 am IST/);
-  assert.match(month, /Priya · assigned to Asha/);
-  assert.match(month, /data-request-amount[^>]*>Not recorded</, "a request has no numeric amount");
+  const req = recordBlock(month, "data-request", "r1");
+  assert.match(req, /03 Mar 2026, 11:30 am IST/);
+  assert.match(flat(req), /Requested by Priya/);
+  assert.match(flat(req), /Assigned to Asha/);
+  assert.match(moneyOf(req, "amount"), /^Invoice amount — Nothing raised yet$/, "a request has no invoice amount");
+  assert.match(moneyOf(req, "note"), /Amount note \(free text\) Not recorded/);
   assert.equal((month.match(/data-month-badge/g) ?? []).length, 0);
-  const completed = render(chainData([], [request({ status: "Completed", label: "Completed", fulfilledByInvoiceNo: "INV-9", amountNote: "about 7 lakh" })]));
-  assert.match(completed, /Fulfilled by invoice <strong[^>]*>INV-9<\/strong>/);
-  assert.match(completed, /about 7 lakh \(free text\)/);
+  const completed = render(chainData([], [request({ status: "Completed", label: "Completed", fulfilledByInvoiceNo: "INV-9", fulfilledByInvoiceDate: "2026-04-04", amountNote: "about 7 lakh" })]));
+  assert.match(completed, /Fulfilled by invoice <strong[^>]*>INV-9<\/strong> dated 04 Apr 2026/);
+  assert.match(moneyOf(completed, "note"), /Amount note \(free text\) about 7 lakh/);
   assert.match(completed, /data-request-status="Completed"/);
+  assert.equal(/Pending Approval/.test(completed), false, "a completed request is no longer pending");
   const all = render(chainData([invoice({ key: "a", invoiceNo: "A", createdMonth: "2026-09" }), invoice({ key: "b", invoiceNo: "B", createdMonth: "2026-03" })], [request({ createdMonth: "2026-02" })], "all"));
   assert.equal((all.match(/data-month-badge/g) ?? []).length, 3, "every record names the month it was created in");
   assert.ok(all.includes("Created September 2026") && all.includes("Created March 2026") && all.includes("Created February 2026"));
@@ -615,11 +635,11 @@ test("the default month is the CURRENT India month, from the same helper that al
   // the one value feeds the selector, the request and the cards' scope
   assert.match(text, /fetchTrackerMonth\(\{ month, page, pageSize, search, projectStatus, filter \}\)/);
   assert.match(text, /<MonthSelect value=\{selectedMonth\}/);
-  assert.match(text, /<TrackerSummaryCards data=\{data\} \/>/);
+  assert.match(text, /<TrackerSummaryCards data=\{data\} query=\{\{ month, search, projectStatus, filter \}\}/, "the cards get the exact month and filters the list shows (the Raised amount breakdown explains that same query)");
   assert.match(text, /data-scope=\{data\.month\}/);
 });
 
-test("chain (All history): invoices follow the server's order, requests are listed apart; every saved status reads correctly", async () => {
+test("chain (All history): records follow the server's order — invoices and requests interleaved, nothing regrouped; every saved status reads correctly", async () => {
   const { InvoiceChainView } = await load("/src/pages/InvoiceTracker/InvoiceChain.tsx");
   const render = (data) => renderToStaticMarkup(h(InvoiceChainView, { data, loading: false, canEdit: true, canDelete: true, onAction() {} }));
   const statuses = [
@@ -636,8 +656,8 @@ test("chain (All history): invoices follow the server's order, requests are list
   ];
   const html = render(chainData(invoices, reqs, "all", order));
   const seq = [...html.matchAll(/data-(?:invoice|request)="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(seq, ["R", "X", "P", "D", "C", "q1", "q2"], "invoices in the server's order, then the requests in their own section — never interleaved");
-  const block = (key) => html.slice(html.indexOf(`data-invoice="${key}"`), html.indexOf("</li>", html.indexOf(`data-invoice="${key}"`)));
+  assert.deepEqual(seq, ["R", "X", "P", "q1", "D", "q2", "C"], "exactly the server's order, one list");
+  const block = (key) => recordBlock(html, "data-invoice", key);
   assert.match(block("R"), /Raised \/ Submitted/);
   assert.match(block("D"), />Draft</);
   assert.match(block("P"), />Partially Paid</);
@@ -646,9 +666,7 @@ test("chain (All history): invoices follow the server's order, requests are list
   for (const [k, , pay] of statuses) assert.match(block(k), new RegExp(`Payment: ${pay}`), `payment wording for ${k}`);
   assert.match(html, /data-request-status="Open"/);
   assert.match(html, /data-request-status="Completed"/);
-  // older payloads without an explicit order still render everything (invoices, then requests)
-  const legacy = render({ ...chainData(invoices.slice(0, 2), [reqs[0]], "all"), order: undefined });
-  assert.deepEqual([...legacy.matchAll(/data-(?:invoice|request)="([^"]+)"/g)].map((m) => m[1]), ["D", "R", "q1"]);
+  assert.match(html, /data-section="records"/);
 });
 
 // ───────── Latest raised invoice · drafts and requests · previous invoices ─────────
@@ -671,134 +689,133 @@ const sectionOf = (html, name) => {
 };
 const flat = (html) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
-test("expanded project: the LATEST RAISED invoice is the headline (amount first), then drafts and requests, then collapsed previous invoices — and no invoice is in two sections", async () => {
-  // March: INV-9 Paid (12 Mar) is the latest raised invoice even though a NEWER Draft (20 Mar) exists; INV-5 (4 Mar) and INV-1 (Feb) are older.
+test("expanded project: ONE list — the project's latest record first and marked, then everything else newest to oldest; no record twice, nothing hidden", async () => {
+  // March: INV-9 Paid (12 Mar) is the latest record even though a NEWER Draft (20 Mar) exists; INV-5 (4 Mar) and INV-1 (Feb) are older.
   const latest = made("INV-9", "Paid", "2026-03-12", 450000);
   const draft = made("INV-D", "Draft", "2026-03-20", 80000);
   const older = made("INV-5", "Raised", "2026-03-04", 120000);
   const feb = made("INV-1", "Raised", "2026-02-10", 60000);
   const cancelled = made("INV-X", "Cancelled", "2026-03-02", 10000);
   const data = chainData([latest, draft, older, cancelled], [request()], "2026-03", undefined, [feb], 0, {
-    latestRaisedKey: "INV-9", latestRaisedInMonth: true, draftKeys: ["INV-D"], historyKeys: ["INV-5", "INV-X", "INV-1"],
     olderOutstanding: { count: 2, amountINR: 180000, knownAmountINR: 180000, unknownCount: 0, undatedCount: 0, keys: ["INV-5", "INV-1"] },
   });
   const html = await renderChain(data);
-  const head = sectionOf(html, "latest");
-  const dr = sectionOf(html, "drafts-requests");
-  const prev = sectionOf(html, "previous");
-  assert.match(head, /Latest raised invoice · March 2026/);
-  assert.match(head, /data-latest-amount[^>]*>₹[\s ]?4,50,000\.00</, "the amount is the largest text of the headline");
-  assert.ok(head.includes("INV-9") && head.includes(">Paid<") && /Invoice date 12 Mar 2026/.test(flat(head)));
-  assert.match(head, /Inferred from Paid status/, "Amount paid is labelled as inferred");
-  assert.equal(head.includes("INV-D"), false, "a newer Draft never replaces the latest raised invoice");
-  assert.ok(dr.includes('data-invoice="INV-D"') && dr.includes('data-request="r1"'), "the draft and the request sit together, apart from the headline");
-  assert.equal(dr.includes("INV-9") || dr.includes("INV-5"), false);
-  assert.match(flat(dr), /Not raised invoices/, "…and are labelled as not raised");
-  assert.deepEqual([...prev.matchAll(/data-invoice="([^"]+)"/g)].map((m) => m[1]), ["INV-5", "INV-X", "INV-1"], "history: every other invoice up to the month's end, as the server ordered it (cancelled included)");
-  const keys = [...html.matchAll(/data-invoice="([^"]+)"/g)].map((m) => m[1]);
-  assert.equal(new Set(keys).size, keys.length, "each invoice appears exactly once on the page");
-  assert.deepEqual(keys, ["INV-9", "INV-D", "INV-5", "INV-X", "INV-1"]);
-  assert.ok(html.indexOf('data-section="latest"') < html.indexOf('data-section="drafts-requests"') && html.indexOf('data-section="drafts-requests"') < html.indexOf('data-section="previous"'));
+  const seq = [...html.matchAll(/data-(?:invoice|request)="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(seq, ["INV-9", "INV-D", "INV-5", "INV-X", "INV-1", "r1"], "latest record first, then newest to oldest; the draft and the request are listed too");
+  assert.equal(new Set(seq).size, seq.length, "each record appears exactly once on the page");
+  assert.equal((html.match(/data-latest-pill/g) ?? []).length, 1, "exactly one record is marked Latest");
+  assert.equal((html.match(/data-latest-record="true"/g) ?? []).length, 1);
+  const top = recordBlock(html, "data-invoice", "INV-9");
+  assert.match(top, /data-latest-pill/);
+  assert.match(moneyOf(top, "amount"), /4,50,000\.00/);
+  assert.match(moneyOf(top, "invoice-date"), /12 Mar 2026/);
+  assert.match(moneyOf(top, "paid"), /Inferred from Paid status/, "Amount paid is labelled as inferred");
+  assert.equal(/data-latest-pill/.test(recordBlock(html, "data-invoice", "INV-D")), false, "a newer Draft is listed but is not the latest record");
+  assert.match(recordBlock(html, "data-invoice", "INV-D"), />Draft</);
+  assert.match(recordBlock(html, "data-invoice", "INV-X"), />Cancelled</, "cancelled invoices stay in the history");
+  assert.equal((html.match(/data-tag="older-outstanding"/g) ?? []).length, 2, "only the counted older invoices are tagged");
+  assert.ok(recordBlock(html, "data-invoice", "INV-5").includes('data-tag="older-outstanding"') && recordBlock(html, "data-invoice", "INV-1").includes('data-tag="older-outstanding"'));
+  assert.equal(/data-section="(latest|previous|drafts-requests|current|requests)"/.test(html), false, "the old separate sections are gone");
+  assert.match(flat(html), /Records \(6\)/);
+  assert.match(flat(html), /up to the end of March 2026 — latest first/);
   assert.equal(/data-no-invoice-this-month/.test(html), false);
 });
 
-test("previous invoices: collapsed by default with a count and an Expand history control; rows carry their own date, status, amount and settlement", async () => {
+test("earlier invoices keep their own date, status, amount and settlement in the same list; no number is invented for a Partially Paid invoice", async () => {
   const latest = made("INV-9", "Paid", "2026-03-12", 450000);
   const paid = made("INV-3", "Paid", "2026-01-30", 333000);
   const raised = made("INV-5", "Raised", "2026-02-02", 5000, { raisedAt: "2026-02-03T05:30:00.000Z" });
   const part = made("INV-6", "PartiallyPaid", "2025-12-01", 125000);
-  const data = chainData([latest], [], "2026-03", undefined, [raised, paid, part], 0, { latestRaisedKey: "INV-9", latestRaisedInMonth: true, draftKeys: [], historyKeys: ["INV-5", "INV-3", "INV-6"] });
-  const html = await renderChain(data);
-  const prev = sectionOf(html, "previous");
-  assert.match(prev, /^<details[^>]*data-previous/, "a native, keyboard-accessible collapsible");
-  assert.equal(/<details[^>]*\sopen[\s=>]/.test(prev.slice(0, 220)), false, "collapsed by default");
-  assert.match(flat(prev), /Previous invoices \(3\)/, "the number of historical invoices");
-  assert.match(prev, /Expand history/);
-  assert.match(prev, /Collapse history/, "…and the way back (shown while open)");
-  assert.match(prev, /Earlier invoices for this project, shown for billing context/);
-  const row = (key) => flat(prev.slice(prev.indexOf(`data-invoice="${key}"`), prev.indexOf("</tr>", prev.indexOf(`data-invoice="${key}"`))));
-  assert.match(row("INV-3"), /Paid 30 Jan 2026 .*3,33,000\.00 .*3,33,000\.00 Inferred from Paid status .*0\.00 Settled \(Paid\)/);
-  assert.match(row("INV-5"), /Raised \/ Submitted 02 Feb 2026 .*5,000\.00 .*0\.00 Awaiting payment .*5,000\.00 Owed in full/);
-  assert.match(row("INV-6"), /Partially Paid 01 Dec 2025 .*Not recorded No amount stored .*Not recorded Balance not stored/, "no number is invented for a Partially Paid invoice");
-  assert.match(row("INV-6"), /Review: Paid amount and balance are not recorded/);
-  assert.equal(/data-raised-this-month/.test(prev), false);
+  const html = await renderChain(chainData([latest], [], "2026-03", undefined, [raised, paid, part], 0));
+  assert.deepEqual([...html.matchAll(/data-invoice="([^"]+)"/g)].map((m) => m[1]), ["INV-9", "INV-5", "INV-3", "INV-6"], "newest to oldest after the latest");
+  const b = (key) => recordBlock(html, "data-invoice", key);
+  assert.match(moneyOf(b("INV-3"), "invoice-date"), /30 Jan 2026/);
+  assert.match(moneyOf(b("INV-3"), "amount"), /3,33,000\.00/);
+  assert.match(moneyOf(b("INV-3"), "paid"), /3,33,000\.00 Inferred from Paid status/);
+  assert.match(moneyOf(b("INV-3"), "outstanding"), /0\.00 Settled \(Paid\)/);
+  assert.match(moneyOf(b("INV-5"), "invoice-date"), /02 Feb 2026/);
+  assert.match(moneyOf(b("INV-5"), "paid"), /0\.00 Awaiting payment/);
+  assert.match(moneyOf(b("INV-5"), "outstanding"), /5,000\.00 Owed in full/);
+  assert.match(moneyOf(b("INV-6"), "paid"), /Not recorded No amount stored/);
+  assert.match(moneyOf(b("INV-6"), "outstanding"), /Not recorded Balance not stored/);
+  assert.equal(/₹/.test(moneyOf(b("INV-6"), "paid")) || /₹/.test(moneyOf(b("INV-6"), "outstanding")), false);
+  assert.match(b("INV-6"), /Review: Paid amount and balance are not recorded/);
+  assert.equal((html.match(/data-raised-this-month/g) ?? []).length, 0);
 });
 
-test("a month with no raised invoice says so; the latest AVAILABLE raised invoice is shown separately, with its real date", async () => {
+test("a month whose latest record is an OLDER invoice: it is still listed first and marked Latest, with its real date; a Draft this month is just a Draft", async () => {
   const old = made("INV-5", "Raised", "2026-01-15", 120000);
   const draft = made("INV-D", "Draft", "2026-03-05", 9000);
-  const data = chainData([draft], [request()], "2026-03", undefined, [old], 0, { latestRaisedKey: "INV-5", latestRaisedInMonth: false, draftKeys: ["INV-D"], historyKeys: [] });
-  const html = await renderChain(data);
-  assert.match(html, /data-no-invoice-this-month[^>]*>No invoice raised this month/);
-  const head = sectionOf(html, "latest");
-  assert.match(head, /Latest available raised invoice/);
-  assert.equal(/Latest raised invoice · /.test(head), false, "it is not presented as this month's invoice");
-  assert.match(flat(head), /INV-5/);
-  assert.match(flat(head), /Invoice date 15 Jan 2026/);
-  assert.match(sectionOf(html, "drafts-requests"), /data-invoice="INV-D"/, "the Draft is a draft, not the headline");
-  // a project that has never raised anything: only the statement
-  const none = await renderChain(chainData([draft], [], "2026-03", undefined, [], 0, { draftKeys: ["INV-D"] }));
-  assert.match(none, /No invoice raised this month/);
-  assert.equal(/data-record="latest-raised"/.test(none), false);
-  assert.match(none, /No previous invoices for this project\./);
+  const html = await renderChain(chainData([draft], [request()], "2026-03", undefined, [old], 0));
+  assert.deepEqual([...html.matchAll(/data-(?:invoice|request)="([^"]+)"/g)].map((m) => m[1]), ["INV-5", "INV-D", "r1"]);
+  const top = recordBlock(html, "data-invoice", "INV-5");
+  assert.match(top, /data-latest-pill/);
+  assert.match(moneyOf(top, "invoice-date"), /15 Jan 2026/, "its own date, never presented as a March invoice");
+  assert.equal(/data-latest-pill/.test(recordBlock(html, "data-invoice", "INV-D")), false, "the Draft is a draft, not the latest record");
+  assert.equal(/No invoice raised this month|data-no-invoice-this-month/.test(html), false);
+  // a project that has never raised anything and has no request: the Draft is listed, nothing is marked Latest
+  const none = await renderChain(chainData([draft], [], "2026-03", undefined, [], 0));
+  assert.equal(/data-latest-pill/.test(none), false);
+  assert.match(none, /data-invoice="INV-D"/);
 });
 
-test("request-only project: 'No invoice raised this month', the request in its own table, and a completed request is neither raised nor paid", async () => {
-  const html = await renderChain(chainData([], [request(), request({ id: "r2", ref: "R2ZZ99YY", status: "Completed", label: "Completed", fulfilledByInvoiceNo: "INV-9", amountNote: "about 7 lakh" })], "2026-03"));
-  assert.match(html, /No invoice raised this month/);
-  const dr = sectionOf(html, "drafts-requests");
-  assert.match(dr, /data-request="r1"/);
-  assert.match(dr, /data-request-status="Completed"/);
-  assert.match(dr, />R1AB23CD</);
-  assert.match(dr, /data-request-amount[^>]*>Not recorded</, "a request has no numeric amount");
-  assert.match(dr, /about 7 lakh \(free text\)/);
-  assert.match(flat(dr), /Fulfilled by invoice INV-9 — a completed request is not a payment/);
-  assert.match(flat(dr), /Waiting for Accounts to raise the invoice/);
-  assert.equal(/data-record="latest-raised"|data-record="previous-invoice"|data-invoice=/.test(html), false, "no invoice at all is shown for a request");
+test("request-only project: the request is the latest record (no amount); a completed request is neither raised nor paid; empty states are honest", async () => {
+  const pending = request();
+  const done = request({ id: "r2", ref: "R2ZZ99YY", status: "Completed", label: "Completed", fulfilledByInvoiceNo: "INV-9", amountNote: "about 7 lakh" });
+  const latestRecord = { kind: "request", id: "r1", reference: "R1AB23CD", recordDate: "2026-03-03", amountINR: null, status: "PendingApproval", requestRef: null, raisedLater: null, inMonth: true };
+  const html = await renderChain(chainData([], [pending, done], "2026-03", undefined, [], 0, { latestRecord }));
+  assert.deepEqual([...html.matchAll(/data-request="([^"]+)"/g)].map((m) => m[1]), ["r1", "r2"], "the pending request is first");
+  assert.match(recordBlock(html, "data-request", "r1"), /data-latest-pill/);
+  assert.equal(/data-latest-pill/.test(recordBlock(html, "data-request", "r2")), false);
+  assert.match(recordBlock(html, "data-request", "r1"), /Pending Approval/);
+  assert.match(moneyOf(recordBlock(html, "data-request", "r1"), "amount"), /—/, "no amount until an invoice is raised");
+  assert.match(recordBlock(html, "data-request", "r2"), /data-request-status="Completed"/);
+  assert.match(flat(recordBlock(html, "data-request", "r2")), /Fulfilled by invoice INV-9 — a completed request is not a payment/);
+  assert.match(flat(recordBlock(html, "data-request", "r2")), /about 7 lakh/);
+  assert.match(flat(html), /Waiting for Accounts to raise the invoice/);
+  assert.equal(/data-invoice=/.test(html), false, "no invoice is shown for a request");
   const empty = await renderChain(chainData([], [], "2026-03"));
-  assert.match(empty, /No drafts or invoice requests for March 2026\./);
+  assert.match(empty, /data-records-empty/);
+  assert.match(flat(empty), /This project has no invoice dated, and no request made, up to the end of March 2026\./);
+  const emptyAll = await renderChain(chainData([], [], "all"));
+  assert.match(flat(emptyAll), /This project has no invoices or invoice requests\./);
 });
 
-test("older outstanding warning: count and total when reliable; total withheld when a balance is unknown; undated outstanding invoices are flagged, never counted; traceable to history rows", async () => {
+test("older outstanding warning: count and total when reliable; total withheld when a balance is unknown; undated outstanding invoices are flagged, never counted; traceable to the tagged records", async () => {
   const latest = made("INV-9", "Paid", "2026-03-12", 450000);
   const o1 = made("INV-5", "Raised", "2026-02-02", 120000);
   const o2 = made("INV-4", "PartiallyPaid", "2026-01-02", 90000);
   const paidOld = made("INV-1", "Paid", "2025-12-02", 50000);
-  const base = { latestRaisedKey: "INV-9", latestRaisedInMonth: true, draftKeys: [], historyKeys: ["INV-5", "INV-4", "INV-1"] };
-  const run = (older) => renderChain(chainData([latest], [], "2026-03", undefined, [o1, o2, paidOld], 0, { ...base, olderOutstanding: { keys: [], ...older } }));
+  const run = (older) => renderChain(chainData([latest], [], "2026-03", undefined, [o1, o2, paidOld], 0, { olderOutstanding: { keys: [], ...older } }));
   const reliable = await run({ count: 1, amountINR: 120000, knownAmountINR: 120000, unknownCount: 0, undatedCount: 0, keys: ["INV-5"] });
-  assert.match(flat(reliable), /1 older invoice outstanding — ₹[\s ]?1,20,000\.00/);
+  assert.match(flat(reliable), /1 older invoice outstanding — ₹[\s ]?1,20,000\.00/);
   assert.match(reliable, /role="status" data-older-outstanding/);
-  assert.match(reliable, /Review in Previous invoices/, "a way to inspect the records behind the figure");
-  const row = (html, key) => html.slice(html.indexOf(`data-invoice="${key}"`), html.indexOf("</tr>", html.indexOf(`data-invoice="${key}"`)));
-  assert.match(row(reliable, "INV-5"), /data-tag="older-outstanding"/, "the counted invoice is tagged in the history");
-  assert.equal(/data-tag="older-outstanding"/.test(row(reliable, "INV-1")), false, "a Paid older invoice is not outstanding");
-  assert.equal(/data-tag="older-outstanding"/.test(row(reliable, "INV-4")), false, "only the counted keys are tagged");
+  assert.match(reliable, /Show these records/, "a way to jump to the records behind the figure");
+  assert.match(recordBlock(reliable, "data-invoice", "INV-5"), /data-tag="older-outstanding"/, "the counted invoice is tagged in the list");
+  assert.equal(/data-tag="older-outstanding"/.test(recordBlock(reliable, "data-invoice", "INV-1")), false, "a Paid older invoice is not outstanding");
+  assert.equal(/data-tag="older-outstanding"/.test(recordBlock(reliable, "data-invoice", "INV-4")), false, "only the counted keys are tagged");
   const unknown = await run({ count: 2, amountINR: null, knownAmountINR: 120000, unknownCount: 1, undatedCount: 0, keys: ["INV-5", "INV-4"] });
   assert.match(flat(unknown), /2 older invoices outstanding — total not recorded \(1 without a recorded balance, needs review\)/);
   assert.equal(/2 older invoices outstanding — ₹/.test(flat(unknown)), false, "no partial or guessed total");
   const undated = await run({ count: 0, amountINR: 0, knownAmountINR: 0, unknownCount: 0, undatedCount: 2, keys: [] });
   assert.match(flat(undated), /2 outstanding invoices with no usable invoice date — cannot be placed before or after the latest invoice; see the Outstanding tab/);
-  assert.equal(/Review in Previous invoices/.test(undated), false, "nothing in the history to review for undated ones");
+  assert.equal(/Show these records/.test(undated), false, "nothing to jump to for undated ones");
   const none = await run({ count: 0, amountINR: 0, knownAmountINR: 0, unknownCount: 0, undatedCount: 0, keys: [] });
   assert.equal(/data-older-outstanding/.test(none), false, "no warning when nothing older is outstanding");
 });
 
-test("previous invoices: dated-this-month tag, View / Edit / Delete under the same permissions, callbacks name that invoice, multi-line invoices keep per-line actions", async () => {
+test("every record keeps View / Edit / Delete under the same permissions; callbacks name that invoice; multi-line invoices keep per-line actions", async () => {
   const latest = made("INV-9", "Raised", "2026-03-12", 1000);
   const sameMonth = made("INV-8", "Paid", "2026-03-02", 500);
   const feb = made("INV-1", "Raised", "2026-02-10", 60000);
-  const data = chainData([latest, sameMonth], [], "2026-03", undefined, [feb], 0, { latestRaisedKey: "INV-9", latestRaisedInMonth: true, draftKeys: [], historyKeys: ["INV-8", "INV-1"] });
+  const data = chainData([latest, sameMonth], [], "2026-03", undefined, [feb], 0);
   const html = await renderChain(data, false, false);
-  const prev = sectionOf(html, "previous");
-  const r8 = prev.slice(prev.indexOf('data-invoice="INV-8"'), prev.indexOf("</tr>", prev.indexOf('data-invoice="INV-8"')));
-  assert.match(r8, /data-tag="this-month"/, "an older raised invoice of the SAME month is in the history, tagged");
-  assert.equal(/data-tag="this-month"/.test(prev.slice(prev.indexOf('data-invoice="INV-1"'))), false);
-  assert.ok(prev.includes('aria-label="View invoice INV-1"') && !prev.includes("Edit invoice INV-1") && !prev.includes("Delete invoice INV-1"));
+  const r1 = recordBlock(html, "data-invoice", "INV-1");
+  assert.ok(r1.includes('aria-label="View invoice INV-1"') && !r1.includes("Edit invoice INV-1") && !r1.includes("Delete invoice INV-1"), "view only without the rights");
   const full = await renderChain(data, true, true);
-  assert.ok(sectionOf(full, "previous").includes("Edit invoice INV-1") && sectionOf(full, "previous").includes("Delete invoice INV-1"));
-  assert.equal(/Delete invoice INV-1/.test(sectionOf(await renderChain(data, true, false), "previous")), false);
-  assert.equal(/Edit invoice INV-1/.test(sectionOf(await renderChain(data, false, true), "previous")), false);
+  assert.ok(recordBlock(full, "data-invoice", "INV-1").includes("Edit invoice INV-1") && recordBlock(full, "data-invoice", "INV-1").includes("Delete invoice INV-1"));
+  assert.equal(/Delete invoice INV-1/.test(await renderChain(data, true, false)), false);
+  assert.equal(/Edit invoice INV-1/.test(await renderChain(data, false, true)), false);
   // a click calls back with that invoice's line
   const { InvoiceChainView } = await load("/src/pages/InvoiceTracker/InvoiceChain.tsx");
   const calls = [];
@@ -818,72 +835,128 @@ test("previous invoices: dated-this-month tag, View / Edit / Delete under the sa
   mine.forEach((b) => b.props.onClick());
   assert.deepEqual(calls.map((c) => [c.mode, c.invoiceNo, c.lineId, c.projectId]), [["view", "INV-1", "l-INV-1", "p1"], ["edit", "INV-1", "l-INV-1", "p1"], ["delete", "INV-1", "l-INV-1", "p1"]]);
   const multi = made("INV-M", "Raised", "2026-02-11", 3, { lines: [{ id: "a", quantityItemId: "q1", activity: "Eng", status: "Raised", amountINR: 1 }, { id: "b", quantityItemId: "q2", activity: "Draw", status: "Raised", amountINR: 2 }] });
-  const mh = await renderChain(chainData([latest], [], "2026-03", undefined, [multi], 0, { latestRaisedKey: "INV-9", latestRaisedInMonth: true, historyKeys: ["INV-M"] }));
-  assert.match(mh, /2 lines/);
-  assert.equal((mh.match(/aria-label="View invoice INV-M"/g) ?? []).length, 2);
+  const mh = await renderChain(chainData([latest], [], "2026-03", undefined, [multi], 0));
+  assert.equal((mh.match(/aria-label="View invoice INV-M"/g) ?? []).length, 2, "each line of a multi-line invoice has its own actions");
 });
 
-test("an invoice with no usable date is in no section — only counted and flagged; empty states are honest; All history keeps its own layout", async () => {
+test("an invoice with no usable date is not listed in a month — only counted and flagged; empty states are honest; All history is one list too", async () => {
   const latest = made("INV-9", "Raised", "2026-03-12", 1000);
-  const withUndated = await renderChain(chainData([latest], [], "2026-03", undefined, [], 2, { latestRaisedKey: "INV-9", latestRaisedInMonth: true, historyKeys: [] }));
+  const withUndated = await renderChain(chainData([latest], [], "2026-03", undefined, [], 2));
   assert.match(withUndated, /2 invoices of this project have no usable invoice date, so they are not placed in any month — see All history\./);
-  assert.match(withUndated, /No previous invoices for this project\./);
   assert.equal((withUndated.match(/data-invoice=/g) ?? []).length, 1, "the undated ones are never rendered with an invented month");
   const all = await renderChain(chainData([made("A", "Raised", "2026-01-01", 5, { createdMonth: "2026-01" })], [request()], "all"));
-  assert.equal(/data-section="(latest|previous|drafts-requests)"/.test(all), false, "All history is the full list, unchanged");
+  assert.equal(/data-section="(latest|previous|drafts-requests|current|requests)"/.test(all), false, "no separate sections");
+  assert.ok(all.includes('data-section="records"'));
   assert.match(all, /data-month-badge/);
-  assert.ok(all.includes('data-section="current"') && all.includes('data-section="requests"'));
 });
 
-test("history stays collapsed per invoice and the tables scroll sideways on narrow screens instead of breaking the page", async () => {
+test("each invoice's status history stays collapsed, and records are cards that wrap — no wide table to break a narrow screen", async () => {
   const latest = made("INV-9", "Raised", "2026-03-12", 1000);
   const feb = made("INV-1", "Raised", "2026-02-10", 60000);
-  const html = await renderChain(chainData([latest], [request()], "2026-03", undefined, [feb], 0, { latestRaisedKey: "INV-9", latestRaisedInMonth: true, historyKeys: ["INV-1"] }));
+  const html = await renderChain(chainData([latest], [request()], "2026-03", undefined, [feb], 0));
   const toggles = [...html.matchAll(/<details[^>]*data-history-toggle[^>]*>/g)].map((m) => m[0]);
-  assert.equal(toggles.length, 1, "the headline invoice's history (previous rows carry none)");
+  assert.equal(toggles.length, 2, "one collapsed history per invoice — the earlier invoice's history is as reachable as the latest one's");
   assert.ok(toggles.every((d) => !/\sopen[\s=>]/.test(d)));
   assert.match(html, /Status history \(1 event\)/);
-  assert.ok((html.match(/overflow-x-auto/g) ?? []).length >= 2, "the drafts/requests and previous tables scroll sideways");
-  assert.match(sectionOf(html, "previous"), /hidden sm:table-cell/, "a less important column drops out on narrow screens");
+  assert.equal(/<table/.test(html), false, "no table: nothing to scroll sideways");
+  assert.match(html, /<ul id="tracker-records-p1"[^>]*aria-label="Records, latest first"/);
 });
 
-test("project row headline: the latest raised invoice (amount first) or 'No invoice raised this month' — never a chip per historical status — plus a compact older-outstanding warning", async () => {
+test("project row: Latest Invoice Amount + Status of the project's ONE latest record — a dash while approval is pending, the entered amount once raised, Paid when paid", async () => {
   const { TrackerTable } = await load("/src/pages/InvoiceTracker/InvoiceTracker.tsx");
-  const none = { count: 0, amountINR: 0, knownAmountINR: 0, unknownCount: 0, undatedCount: 0 };
-  const l = (over = {}) => ({ invoiceNo: "INV-9", invoiceDate: "2026-03-12", amountINR: 450000, status: "Paid", paymentStatus: "Paid", inMonth: true, ...over });
+  const rec = (over = {}) => ({ kind: "invoice", id: "INV-9", reference: "INV-9", recordDate: "2026-03-12", amountINR: 450000, status: "Paid", requestRef: null, raisedLater: null, inMonth: true, ...over });
   const items = [
-    row(1, { latestRaised: l(), olderOutstanding: { count: 1, amountINR: 120000, knownAmountINR: 120000, unknownCount: 0, undatedCount: 0 }, records: records({ recordCount: 7, invoiceCount: 6, byStatus: { raised: 2, partiallyPaid: 1, paid: 1, draft: 1, cancelled: 1 }, draftInvoiceCount: 1, completedRequestCount: 1 }) }),
-    row(2, { hasOpenInvoiceRequest: true, records: records({ recordCount: 1, openRequestCount: 1 }) }),
-    row(3, { records: records({ recordCount: 1, invoiceCount: 1, byStatus: { ...zero, draft: 1 }, draftInvoiceCount: 1 }) }),
-    row(4, { latestRaised: l({ invoiceNo: "INV-4", amountINR: 500, status: "Paid", invoiceDate: "2026-02-05", inMonth: false }), olderOutstanding: { count: 2, amountINR: null, knownAmountINR: 100, unknownCount: 1, undatedCount: 1 }, records: records({ recordCount: 1, invoiceCount: 1, byStatus: { ...zero, draft: 1 } }) }),
+    row(1, { latestRecord: rec(), olderOutstanding: { count: 1, amountINR: 120000, knownAmountINR: 120000, unknownCount: 0, undatedCount: 0 } }),
+    row(2, { latestRecord: rec({ kind: "request", id: "r1", reference: "R1AB23CD", recordDate: "2026-03-03", amountINR: null, status: "PendingApproval" }), hasOpenInvoiceRequest: true }),
+    row(3),
+    row(4, { latestRecord: rec({ id: "INV-4", reference: "INV-4", amountINR: 500, recordDate: "2026-02-05", inMonth: false }), olderOutstanding: { count: 2, amountINR: null, knownAmountINR: 100, unknownCount: 1, undatedCount: 1 } }),
+    row(5, { latestRecord: rec({ kind: "request", id: "r5", reference: "R5AB23CD", recordDate: "2026-10-28", amountINR: null, status: "Raised", raisedLater: { invoiceNo: "INV-NOV", invoiceDate: "2026-11-04" } }) }),
+    row(6, { latestRecord: rec({ id: "INV-6", reference: "INV-6", amountINR: 7777, status: "Raised" }) }),
+    row(7, { latestRecord: rec({ id: "INV-7", reference: "INV-7", amountINR: 80000, status: "PartiallyPaid" }) }),
   ];
   const html = renderToStaticMarkup(h(MemoryRouter, null, h(TrackerTable, { data: page(items), month: "2026-03", expanded: new Set(), onToggle() {}, renderChain: () => "CHAIN" })));
-  for (const col of ["S. No.", "PR No.", "Client Name", "Project Title", "WO Value", "Latest raised invoice (this month)", "Records", "Actions"]) assert.ok(html.includes(col), col);
-  assert.equal(/data-status-chip/.test(html), false, "the row no longer shows a chip for every status");
+  for (const col of ["S. No.", "PR No.", "Client Name", "Project Title", "WO Value", "Latest Invoice Amount", "Status", "Actions"]) assert.ok(html.includes(col), col);
+  assert.equal(/Latest raised invoice|>Records</.test(html), false, "the old summary column and the record-count column are gone");
+  const heads = [...html.matchAll(/<th[^>]*>([^<]*(?:<span[^>]*>[^<]*<\/span>)?)<\/th>/g)].map((m) => flat(m[1])).filter(Boolean);
+  assert.deepEqual(heads.slice(-4), ["WO Value", "Latest Invoice Amount", "Status", "Actions"], "the columns after WO Value are exactly these three");
   const cell = (pr) => html.slice(html.indexOf(`data-project="${pr}"`), html.indexOf("</tr>", html.indexOf(`data-project="${pr}"`)));
-  assert.match(cell("PR-1"), /data-latest-amount[^>]*>₹[\s ]?4,50,000\.00</);
-  assert.match(flat(cell("PR-1")), /INV-9 Paid Invoice date 12 Mar 2026/);
-  assert.match(flat(cell("PR-1")), /1 older invoice outstanding — ₹[\s ]?1,20,000\.00/);
-  assert.match(flat(cell("PR-1")), /6 invoices · 1 draft · 1 request/);
-  assert.match(flat(cell("PR-2")), /No invoice raised this month/);
-  assert.match(flat(cell("PR-2")), /0 invoices · 1 request/);
-  assert.equal(/data-older-outstanding/.test(cell("PR-2")), false);
-  assert.match(flat(cell("PR-3")), /No invoice raised this month/);
-  assert.match(flat(cell("PR-3")), /1 invoice · 1 draft · 0 requests/, "a Draft is counted as a draft, never shown as the headline");
-  assert.equal(/data-latest-invoice=/.test(cell("PR-3")), false);
-  const r4 = flat(cell("PR-4"));
-  assert.match(r4, /No invoice raised this month/);
-  assert.match(r4, /Latest available: INV-4 · ₹[\s ]?500\.00 · Paid · 05 Feb 2026/, "an older invoice is only ever the latest AVAILABLE one, with its real date");
-  assert.equal(/data-latest-amount/.test(cell("PR-4")), false, "…and never the prominent amount");
-  assert.match(r4, /2 older invoices outstanding — total not recorded/);
-  assert.match(r4, /1 outstanding invoice with no usable date/);
-  assert.equal((html.match(/New invoice request has been sent for approval\./g) ?? []).length, 1, "the + indicator only where a request is open");
+  assert.match(cell("PR-1"), /data-latest-amount[^>]*>₹[\s ]?4,50,000\.00</);
+  assert.match(flat(cell("PR-1")), /INV-9 · Invoice date 12 Mar 2026/);
+  assert.match(cell("PR-1"), /data-latest-status="Paid"[^>]*>Paid</);
+  assert.match(flat(cell("PR-1")), /1 older invoice outstanding — ₹[\s ]?1,20,000\.00/);
+  // pending approval: a dash, never an amount
+  assert.match(cell("PR-2"), /data-latest-amount[^>]*><span aria-label="No invoice amount yet">—<\/span>/);
+  assert.equal(/₹/.test(cell("PR-2").slice(cell("PR-2").indexOf("data-latest-amount"), cell("PR-2").indexOf("data-latest-status"))), false);
+  assert.match(cell("PR-2"), /data-latest-status="PendingApproval"[^>]*>Pending Approval</);
+  assert.match(flat(cell("PR-2")), /Request R1AB23CD · 03 Mar 2026 · awaiting invoice/);
+  // no relevant record: an honest empty state
+  assert.match(flat(cell("PR-3")), /No invoice or request yet/);
+  assert.match(cell("PR-3"), /data-no-status/);
+  assert.equal(/data-latest-status=/.test(cell("PR-3")), false);
+  // an older record is shown with its real date and said to be from an earlier month
+  assert.match(flat(cell("PR-4")), /INV-4 · Invoice date 05 Feb 2026 · earlier month/);
+  assert.match(cell("PR-4"), /data-earlier-month/);
+  assert.match(flat(cell("PR-4")), /2 older invoices outstanding — total not recorded/);
+  assert.match(flat(cell("PR-4")), /1 outstanding invoice with no usable date/);
+  // an October request raised in November: no amount here, and it says where the invoice is
+  assert.match(cell("PR-5").slice(cell("PR-5").indexOf("data-latest-amount"), cell("PR-5").indexOf("data-latest-status")), /—/);
+  assert.equal(/₹/.test(cell("PR-5").slice(cell("PR-5").indexOf("data-latest-amount"), cell("PR-5").indexOf("data-latest-status"))), false);
+  assert.match(flat(cell("PR-5")), /invoice INV-NOV dated 04 Nov 2026/);
+  assert.match(cell("PR-5"), /data-latest-status="Raised"/);
+  // lifecycle statuses
+  assert.match(cell("PR-6"), /data-latest-amount[^>]*>₹[\s ]?7,777\.00</);
+  assert.match(cell("PR-6"), /data-latest-status="Raised"[^>]*>Raised</);
+  assert.match(cell("PR-7"), /data-latest-status="PartiallyPaid"[^>]*>Partially Paid</);
+  assert.match(cell("PR-7"), /₹[\s ]?80,000\.00/, "a status change alone never invents a payment amount: the invoice amount stays the invoice amount");
+  // one record per row: no sum of amounts, no second status
+  assert.equal((cell("PR-1").match(/data-latest-status=/g) ?? []).length, 1);
+  assert.equal((cell("PR-1").match(/data-latest-amount/g) ?? []).length, 1);
+  assert.equal((html.match(/New invoice request has been sent for approval\./g) ?? []).length, 0, "the + indicator is replaced by the Pending Approval status");
   assert.match(html, /href="\/projects\/edit\/p1\?tab=invoices"/);
   assert.match(html, /aria-label="Show records for PR-1"/);
-  // All history: the same headline, labelled without a month
-  const all = renderToStaticMarkup(h(MemoryRouter, null, h(TrackerTable, { data: page([row(5, { latestRaised: l({ inMonth: null }) }), row(6)], { month: "all" }), month: "all", expanded: new Set(), onToggle() {}, renderChain: () => "CHAIN" })));
-  assert.ok(all.includes("Latest raised invoice") && !all.includes("(this month)"));
-  assert.match(flat(all), /No raised invoice/);
+  assert.match(html, /View records/, "the View records action is kept");
+  // All history: the same columns, no month wording
+  const all = renderToStaticMarkup(h(MemoryRouter, null, h(TrackerTable, { data: page([row(5, { latestRecord: rec({ inMonth: null }) }), row(6)], { month: "all" }), month: "all", expanded: new Set(), onToggle() {}, renderChain: () => "CHAIN" })));
+  assert.ok(all.includes("Latest Invoice Amount") && !all.includes("(this month)"));
+  assert.equal(/data-earlier-month/.test(all), false, "no 'earlier month' without a month");
+  assert.match(flat(all), /No invoice or request yet/);
+});
+
+test("the row's wording helpers: statuses read as the lifecycle says; the caption says which record and when, and where a raised-later invoice is", async () => {
+  const { SUMMARY_STATUS_LABEL, latestRecordCaption } = await load("/src/pages/InvoiceTracker/trackerFormat.ts");
+  assert.deepEqual(SUMMARY_STATUS_LABEL, { PendingApproval: "Pending Approval", Raised: "Raised", PartiallyPaid: "Partially Paid", Paid: "Paid" });
+  assert.equal(latestRecordCaption({ kind: "invoice", reference: "INV-1", recordDate: "2026-10-05", status: "Raised", raisedLater: null }), "INV-1 · Invoice date 05 Oct 2026");
+  assert.equal(latestRecordCaption({ kind: "request", reference: "ABCD1234", recordDate: "2026-10-12", status: "PendingApproval", raisedLater: null }), "Request ABCD1234 · 12 Oct 2026 · awaiting invoice");
+  assert.equal(latestRecordCaption({ kind: "request", reference: "ABCD1234", recordDate: "2026-10-28", status: "Raised", raisedLater: { invoiceNo: "INV-N", invoiceDate: "2026-11-04" } }), "Request ABCD1234 · 28 Oct 2026 · invoice INV-N dated 04 Nov 2026");
+  assert.equal(latestRecordCaption({ kind: "request", reference: "ABCD1234", recordDate: "2026-10-28", status: "Raised", raisedLater: { invoiceNo: "INV-N", invoiceDate: null } }), "Request ABCD1234 · 28 Oct 2026 · invoice INV-N with no usable invoice date");
+});
+
+test("View records lists the latest record first even when it is a pending request: an older paid invoice stays in the list, unchanged; requests of earlier months are part of the history", async () => {
+  const older = made("INV-OLD", "Paid", "2026-09-10", 90000);
+  const pending = request({ id: "rq-new", ref: "RQNEW000", createdAt: "2026-10-14T06:00:00.000Z", createdMonth: "2026-10" });
+  const earlier = request({ id: "rq-old", ref: "RQOLD000", status: "Completed", label: "Completed", createdAt: "2026-08-01T06:00:00.000Z", createdMonth: "2026-08", fulfilledByInvoiceNo: "INV-OLD", fulfilledByInvoiceDate: "2026-09-10" });
+  const latestRecord = { kind: "request", id: "rq-new", reference: "RQNEW000", recordDate: "2026-10-14", amountINR: null, status: "PendingApproval", requestRef: null, raisedLater: null, inMonth: true };
+  const data = { ...chainData([], [pending], "2026-10", undefined, [older], 0, { latestRecord }), previousRequests: [earlier], recordOrder: [{ kind: "request", id: "rq-new" }, { kind: "invoice", id: "INV-OLD" }, { kind: "request", id: "rq-old" }] };
+  const html = await renderChain(data);
+  assert.deepEqual([...html.matchAll(/data-(?:invoice|request)="([^"]+)"/g)].map((m) => m[1]), ["rq-new", "INV-OLD", "rq-old"], "the latest record, then the older ones");
+  assert.match(recordBlock(html, "data-request", "rq-new"), /data-latest-pill/);
+  assert.match(recordBlock(html, "data-request", "rq-new"), /Pending Approval/);
+  const old = recordBlock(html, "data-invoice", "INV-OLD");
+  assert.match(moneyOf(old, "amount"), /90,000\.00/);
+  assert.match(old, />Paid</);
+  assert.match(moneyOf(old, "invoice-date"), /10 Sep 2026/);
+  assert.match(old, /Status history \(1 event\)/, "its recorded history is still there");
+  assert.match(flat(recordBlock(html, "data-request", "rq-old")), /Fulfilled by invoice INV-OLD dated 10 Sep 2026/);
+});
+
+test("an October request raised in November: October's list shows the request, pointing at the November invoice — and no November invoice or amount", async () => {
+  const req = request({ id: "rq-oct", ref: "RQOCT000", status: "Completed", label: "Completed", createdAt: "2026-10-28T06:00:00.000Z", createdMonth: "2026-10", fulfilledByInvoiceNo: "INV-NOV", fulfilledByInvoiceDate: "2026-11-04" });
+  const latestRecord = { kind: "request", id: "rq-oct", reference: "RQOCT000", recordDate: "2026-10-28", amountINR: null, status: "Raised", requestRef: null, raisedLater: { invoiceNo: "INV-NOV", invoiceDate: "2026-11-04" }, inMonth: true };
+  const html = await renderChain(chainData([], [req], "2026-10", undefined, [], 0, { latestRecord }));
+  assert.equal(/data-invoice=/.test(html), false, "the November invoice is not an October record");
+  assert.equal(/₹/.test(html), false, "…and no amount is shown in October");
+  assert.match(flat(recordBlock(html, "data-request", "rq-oct")), /Fulfilled by invoice INV-NOV dated 04 Nov 2026/);
+  assert.match(recordBlock(html, "data-request", "rq-oct"), /data-latest-pill/);
 });
 
 test("the older-outstanding wording: count only when reliable, total only when every balance is reliable", async () => {
@@ -901,12 +974,12 @@ test("the monthly report is described — and requested — by INVOICE DATE; not
   assert.match(text, /Month \(invoice date\)/);
   assert.match(text, /Invoices dated in \$\{formatMonthLabel\(month\)\}/);
   assert.match(text, /No invoice is dated in \$\{formatMonthLabel\(month\)\}/);
-  assert.match(text, /latest raised invoice, amount first/i, "the headline rule is stated");
-  assert.match(text, /projects with an invoice raised that month come first/i, "the ordering rule is stated");
+  assert.match(text, /latest invoice or approval request/i, "the row rule is stated");
+  assert.match(text, /all its records, latest first/i, "the records order is stated");
   assert.doesNotMatch(text, /Month \(records created\)|Records created in|records created in the selected month/, "the old creation-date wording is gone");
   assert.match(src("pages/InvoiceTracker/MonthSelect.tsx"), /aria-label="Invoice date month"/);
   const chain = src("pages/InvoiceTracker/InvoiceChain.tsx");
-  assert.match(chain, /No invoice is dated in/);
+  assert.match(chain, /No invoice is dated, and no invoice request was made/);
   assert.match(chain, /invoice requests under the month they were created/, "requests (no invoice date) keep their own rule, stated");
   // the month the page asks the server for is the single selected month — the server decides membership
   assert.match(text, /fetchTrackerMonth\(\{ month, page, pageSize, search, projectStatus, filter \}\)/);

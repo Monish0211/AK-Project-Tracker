@@ -411,6 +411,173 @@ export function olderOutstanding<G extends InvoiceGroup>(context: G[], latest: G
   return out;
 }
 
+// ── The latest record of a project (the summary row) ───────────────────────
+
+/**
+ * THE PROJECT'S LATEST RECORD — what the Invoice Tracker's project row shows (Latest Invoice Amount + Status). One record, never a sum.
+ *
+ * A project's lifecycle, as the existing workflow stores it:
+ *   - an Invoice Request (stored "Open") is "Pending Approval": nothing has been raised, so there is NO amount (a request's amount is free
+ *     text only). It is not a raised invoice and is never counted as one or as collected;
+ *   - when Accounts raises an invoice the system completes the project's open requests (invoice.service.ts → fulfillOpenInvoiceRequests…)
+ *     and links the first to the invoice line that fulfilled it. That request and invoice are ONE lifecycle record: the invoice takes
+ *     over ("Raised", with the amount Accounts entered), and the request is not a second record;
+ *   - a later status change on the invoice (Partially Paid, Paid) updates that same record. A status change never creates a record and
+ *     never changes which record is the latest: only dates and ids decide that.
+ *
+ * Candidates are therefore: raised-class invoices (Raised incl. legacy "Submitted", Partially Paid, Paid) with a usable invoice date, and
+ * Open requests. Drafts and Cancelled invoices are not "relevant" (not raised); a Completed request that is not linked to an invoice
+ * was completed by some other raise and is subsumed by it. The one exception is a Completed request whose invoice is dated AFTER the
+ * report's month (an October request raised in November): in October's report that request is the project's latest record, with NO
+ * amount (the amount belongs to the invoice's own month) and status Raised, plus a pointer to the invoice and its date.
+ *
+ * "Latest" is decided from stored data only, newest first by: (1) the record's DATE — an invoice's invoice date (date-only), a request's
+ * creation day in India — the same dates that place records in months; (2) the creation instant (an invoice's earliest line, a request);
+ * (3) the id, descending, as the last, stable tie-break. Never array order, never an update time, never the status.
+ * A month report only looks at records up to the end of that month (the future of the report is not its business); "all" looks at everything.
+ */
+export type SummaryStatus = "PendingApproval" | "Raised" | "PartiallyPaid" | "Paid";
+
+/** An Invoice Request as the summary needs it. */
+export interface SummaryRequest {
+  id: string;
+  /** Open | Completed — the stored values. */
+  status: string;
+  createdAt: Date;
+  /** The invoice line whose raise fulfilled it; null for an Open one and for a Completed one that was not the first fulfilled. */
+  fulfilledInvoiceLineId: string | null;
+}
+
+export interface LatestRecord {
+  kind: "invoice" | "request";
+  /** An invoice's normalized key (as in the chain's `invoices`) or a request's id. */
+  id: string;
+  /** The invoice number, or the request's short reference. */
+  reference: string;
+  /** "YYYY-MM-DD": an invoice's invoice date, or the India day the request was created. */
+  recordDate: string;
+  /** The invoice amount Accounts entered; null for a request (nothing raised yet → no amount). */
+  amountINR: number | null;
+  status: SummaryStatus;
+  /** A request that this invoice fulfilled (the same lifecycle) — its short reference. */
+  requestRef: string | null;
+  /** Only for a request whose invoice is dated after the report's month: that invoice, so the amount can be found in its own month. */
+  raisedLater: { invoiceNo: string; invoiceDate: string | null } | null;
+  /** The record date is inside the selected month; null for "all". */
+  inMonth: boolean | null;
+}
+
+const DAY_MS = 86_400_000;
+
+/** A request's short reference (Invoice Requests have no human number) — the first 8 characters of the id. */
+export const shortRequestRef = (id: string): string => id.slice(0, 8).toUpperCase();
+
+/** The India calendar DAY an instant falls on, as a UTC-midnight Date — directly comparable with a date-only invoice date. */
+export function istDayOf(instant: Date): Date {
+  return new Date(Math.floor((instant.getTime() + IST_OFFSET_MS) / DAY_MS) * DAY_MS);
+}
+
+export interface RecordSortKey {
+  /** Record date as a UTC-midnight timestamp; 0 for a record with no usable date (it sorts last). */
+  day: number;
+  createdAt: number;
+  /** Unique across kinds (`invoice:KEY`, `request:ID`). */
+  id: string;
+}
+
+/** Newest first: record date, then creation instant, then id (all descending) — total and stable, so two calls always agree. */
+export function compareRecordsNewestFirst(a: RecordSortKey, b: RecordSortKey): number {
+  return b.day - a.day || b.createdAt - a.createdAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+}
+
+const invoiceSortKey = (g: { key: string; invoiceDate: Date | null; createdAt: Date | null }): RecordSortKey => ({
+  day: isValidInvoiceDate(g.invoiceDate) ? g.invoiceDate.getTime() : 0,
+  createdAt: g.createdAt?.getTime() ?? 0,
+  id: `invoice:${g.key}`,
+});
+const requestSortKey = (r: { id: string; createdAt: Date }): RecordSortKey => ({ day: istDayOf(r.createdAt).getTime(), createdAt: r.createdAt.getTime(), id: `request:${r.id}` });
+
+const dayText = (d: Date): string => d.toISOString().slice(0, 10);
+
+/**
+ * Every record of the project the report can show, newest first. `latest` (the project's latest RECORD) is always placed first: a newer
+ * Draft, Cancelled invoice or unlinked completed request is not "relevant" (see the header) and must not push it down the list.
+ * Undated invoices have no place in time and come last.
+ */
+export function orderAllRecords(
+  invoices: { key: string; invoiceDate: Date | null; createdAt: Date | null }[],
+  requests: { id: string; createdAt: Date }[],
+  latest: { kind: "invoice" | "request"; id: string } | null = null
+): { kind: "invoice" | "request"; id: string }[] {
+  const all = [
+    ...invoices.map((g) => ({ kind: "invoice" as const, id: g.key, sort: invoiceSortKey(g) })),
+    ...requests.map((r) => ({ kind: "request" as const, id: r.id, sort: requestSortKey(r) })),
+  ];
+  const sorted = all.sort((a, b) => compareRecordsNewestFirst(a.sort, b.sort)).map(({ kind, id }) => ({ kind, id }));
+  if (!latest) return sorted;
+  const at = sorted.findIndex((o) => o.kind === latest.kind && o.id === latest.id);
+  return at <= 0 ? sorted : [sorted[at]!, ...sorted.slice(0, at), ...sorted.slice(at + 1)];
+}
+
+/**
+ * The project's latest record for a report (see the header). `groups` = ALL of the project's invoices (any date, any status),
+ * `requests` = ALL of its Invoice Requests; `window` null = "all history".
+ */
+export function selectLatestRecord(groups: InvoiceGroup[], requests: SummaryRequest[], window: MonthWindow | null): LatestRecord | null {
+  const groupOfLine = new Map<string, InvoiceGroup>();
+  for (const g of groups) for (const l of g.lines) groupOfLine.set(l.id, g);
+  const upToEnd = (invoiceDate: Date | null): boolean => isValidInvoiceDate(invoiceDate) && (window === null || invoiceDate.getTime() < window.dateEnd.getTime());
+  const requestInScope = (r: SummaryRequest): boolean => window === null || r.createdAt.getTime() < window.end.getTime();
+
+  // The request that a raised invoice fulfilled (its own lifecycle); the earliest one if several lines were each linked.
+  const linked = new Map<InvoiceGroup, SummaryRequest>();
+  for (const r of requests) {
+    const g = r.fulfilledInvoiceLineId ? groupOfLine.get(r.fulfilledInvoiceLineId) : undefined;
+    if (!g) continue;
+    const current = linked.get(g);
+    if (!current || r.createdAt < current.createdAt) linked.set(g, r);
+  }
+
+  const candidates: { sort: RecordSortKey; record: LatestRecord }[] = [];
+  const invoiceCandidates = new Set<InvoiceGroup>();
+  for (const g of groups) {
+    if (!isRaisedStatus(g.status) || !upToEnd(g.invoiceDate)) continue;
+    invoiceCandidates.add(g);
+    const req = linked.get(g);
+    candidates.push({
+      sort: invoiceSortKey(g),
+      record: {
+        kind: "invoice",
+        id: g.key,
+        reference: g.invoiceNo,
+        recordDate: dayText(g.invoiceDate!),
+        amountINR: g.amountINR,
+        status: normalizeStatus(g.status) as SummaryStatus,
+        requestRef: req ? shortRequestRef(req.id) : null,
+        raisedLater: null,
+        inMonth: window ? inInvoiceMonth(g.invoiceDate, window) : null,
+      },
+    });
+  }
+  for (const r of requests) {
+    if (!requestInScope(r)) continue;
+    const day = istDayOf(r.createdAt);
+    const base = { kind: "request" as const, id: r.id, reference: shortRequestRef(r.id), recordDate: dayText(day), amountINR: null, requestRef: null, inMonth: window ? istMonthOf(r.createdAt) === window.month : null };
+    if (r.status === "Open") {
+      candidates.push({ sort: requestSortKey(r), record: { ...base, status: "PendingApproval", raisedLater: null } });
+      continue;
+    }
+    // Completed: the invoice it was fulfilled by IS this lifecycle. It is only a record of its own when that (raised) invoice falls
+    // after the report's month, so the request is all this month can show of it.
+    const g = r.fulfilledInvoiceLineId ? groupOfLine.get(r.fulfilledInvoiceLineId) : undefined;
+    if (g && isRaisedStatus(g.status) && !invoiceCandidates.has(g)) {
+      candidates.push({ sort: requestSortKey(r), record: { ...base, status: "Raised", raisedLater: { invoiceNo: g.invoiceNo, invoiceDate: isValidInvoiceDate(g.invoiceDate) ? dayText(g.invoiceDate) : null } } });
+    }
+  }
+  candidates.sort((a, b) => compareRecordsNewestFirst(a.sort, b.sort));
+  return candidates[0]?.record ?? null;
+}
+
 export interface NotRecorded {
   /** Always null: the figure is not stored anywhere. */
   amountINR: null;
