@@ -28,6 +28,9 @@ class ToastStore {
 
   /** Newest reminder appears on top, per the stacking requirement. */
   push(toast: ReminderToastData): void {
+    // Same toast id = same reminder occurrence: never show it twice (the scheduler's ledger already prevents this; this is the
+    // last line of defence for any other caller).
+    if (this.toasts.some((t) => t.id === toast.id)) return;
     this.toasts = [toast, ...this.toasts];
     this.emit();
   }

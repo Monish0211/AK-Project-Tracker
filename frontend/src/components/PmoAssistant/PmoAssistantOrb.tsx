@@ -1,12 +1,13 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { useAuth } from "../../auth/authContext";
 import { hasModuleAccess } from "../../auth/permissions";
-import { reminderService } from "../../services/reminders/ReminderService";
-import { getProjects } from "../../services/projectService";
-import { getReminderTriggerStatus } from "../../utils/reminderDisplay";
+import { reminderScheduler, REMINDER_FIRED_EVENT } from "../../notifications/reminderScheduler";
+import type { FiredReminderDetail } from "../../notifications/reminderSchedulerCore";
+import { buildAlertBubble, createAlertDeduper } from "../../notifications/reminderAlertBubble";
+import { reminderSoundService } from "../../services/audio/ReminderSoundService";
 
 /**
  * Positioning model — FINAL, confirmed by real manual testing: the orb is a
@@ -63,14 +64,15 @@ const ORB_HEIGHT = 120;
 // this long, and wakes the moment any activity resumes or a reminder alert
 // fires.
 const SLEEP_AFTER_MS = 30_000;
-// Reminder alert: how long the colour-pulsing alert plays, how often it
-// repeats while a due/overdue reminder is still unresolved, and how often the
-// reminder list is re-evaluated (due-now -> overdue transitions are purely
-// time based, so a periodic re-check is needed in addition to the
-// "pmo:reminders-changed" event).
+// Reminder alert: how long the colour-pulsing alert plays. It plays ONCE per
+// reminder the Reminder Scheduler actually fires — it no longer polls the
+// pending list or repeats (that made old, already-fired, snoozed or simply
+// not-yet-completed reminders keep coming back every few minutes and on every
+// page load).
 const ALERT_DURATION_MS = 7_000;
-const ALERT_REPEAT_MS = 5 * 60_000;
-const ALERT_POLL_MS = 30_000;
+// Remembers which fired occurrences were already shown, at module level, so a
+// second mounted robot / a re-mount / a late replay can never alert twice.
+const alertedOccurrences = createAlertDeduper();
 // Waving: the robot waves when the greeting appears, when the cursor first
 // moves onto it (at most once per HOVER_WAVE_COOLDOWN_MS), when it wakes up,
 // and on its own every AUTO_WAVE_MIN..MAX_MS while awake and idle.
@@ -445,24 +447,21 @@ export const PmoAssistantOrb: React.FC<PmoAssistantOrbProps> = ({ onTogglePanel,
     return () => clearInterval(id);
   }, [startWave, startWalk]);
 
-  // Reminder alert — reuses the exact lifecycle/timing rules every other
-  // reminder surface already uses: only status "Pending" reminders count,
-  // and "due" means getReminderTriggerStatus() says due-now or overdue.
-  // Same module gate as the Assistant panel's own Active Reminders list
-  // (Projects access), so a user who can't see reminders is never alerted
-  // about them. Fires when the number of due/overdue reminders goes up
-  // (including the first time the mirror hydrates after login) and then
-  // again every ALERT_REPEAT_MS while any remain unresolved.
+  // Reminder alert — driven by what the Reminder Scheduler actually FIRES (the same single occurrence that produces the
+  // toast, the Bell entry and the chime), once. Same module gate as the Assistant panel's own Active Reminders list
+  // (Projects access), so a user who can't see reminders is never alerted about them. Clicking the robot acknowledges it.
   const canAccessProjects = hasModuleAccess(user, "Projects");
+  const soundState = useSyncExternalStore(
+    (listener) => reminderSoundService.subscribe(listener),
+    () => reminderSoundService.getState(),
+    () => reminderSoundService.getState()
+  );
   useEffect(() => {
     if (!user || !canAccessProjects) return;
 
-    let prevDueCount = 0;
-    let lastAlertAt = 0;
     let alertTimer: ReturnType<typeof setTimeout> | undefined;
 
     const fireAlert = (header: string, body: string) => {
-      lastAlertAt = Date.now();
       alertRef.current = true;
       alertStartRef.current = performance.now();
       lastTouchRef.current = Date.now();
@@ -479,40 +478,17 @@ export const PmoAssistantOrb: React.FC<PmoAssistantOrbProps> = ({ onTogglePanel,
       }, ALERT_DURATION_MS);
     };
 
-    const evaluate = () => {
-      const now = new Date();
-      const due = reminderService
-        .getPendingReminders()
-        .map((reminder) => ({ reminder, status: getReminderTriggerStatus(reminder, now) }))
-        .filter((x) => x.status === "due-now" || x.status === "overdue");
-
-      if (due.length === 0) {
-        prevDueCount = 0;
-        return;
-      }
-
-      const increased = due.length > prevDueCount;
-      const repeatDue = Date.now() - lastAlertAt >= ALERT_REPEAT_MS;
-      prevDueCount = due.length;
-      if (!increased && !repeatDue) return;
-
-      const first = due[0];
-      const project = getProjects().find((p) => p.id === first.reminder.projectId);
-      const prNo = project?.prNo || first.reminder.projectCode;
-      const label = prNo ? `PR ${prNo} — ${first.reminder.title}` : first.reminder.title;
-      const more = due.length > 1 ? ` (+${due.length - 1} more)` : "";
-      fireAlert(
-        due.some((x) => x.status === "due-now") ? "⚠ Reminder due now" : "⚠ Reminder overdue",
-        `${label}${more}`
-      );
+    const show = (batch: FiredReminderDetail[]) => {
+      const bubble = buildAlertBubble(alertedOccurrences.filter(batch));
+      if (bubble) fireAlert(bubble.header, bubble.body);
     };
 
-    evaluate();
-    const poll = setInterval(evaluate, ALERT_POLL_MS);
-    window.addEventListener("pmo:reminders-changed", evaluate);
+    // Reminders that fired a moment before this mounted (the robot's chunk loads lazily) — shown once, never twice.
+    show(reminderScheduler.getRecentFires());
+    const onFired = (event: Event) => show((event as CustomEvent<FiredReminderDetail[]>).detail ?? []);
+    window.addEventListener(REMINDER_FIRED_EVENT, onFired);
     return () => {
-      clearInterval(poll);
-      window.removeEventListener("pmo:reminders-changed", evaluate);
+      window.removeEventListener(REMINDER_FIRED_EVENT, onFired);
       if (alertTimer) clearTimeout(alertTimer);
       alertRef.current = false;
     };
@@ -1232,6 +1208,9 @@ export const PmoAssistantOrb: React.FC<PmoAssistantOrbProps> = ({ onTogglePanel,
           </div>
           <p className="text-[11px] font-medium text-slate-200 leading-snug">{alertBubble.body}</p>
           <p className="text-[10px] text-slate-400 mt-1">Click me to open Active Reminders.</p>
+          {soundState.enabled && (soundState.status === "blocked" || soundState.status === "needs-interaction") && (
+            <p className="text-[10px] text-amber-300 mt-1">🔇 The browser is blocking the reminder sound — click anywhere on the page to enable it.</p>
+          )}
 
           <div
             className={`absolute left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 border-r border-b border-amber-500/60 transform rotate-45 ${

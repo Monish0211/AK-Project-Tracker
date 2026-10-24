@@ -29,6 +29,7 @@ import type { SnoozeOption } from "../../services/reminders/ReminderService";
 import type { ProjectReminder } from "../../types/ProjectReminder";
 import { formatHumanDateString, formatHumanTime, getReminderDueDateTime, getReminderStatusDisplay, reminderStatusTone } from "../../utils/reminderDisplay";
 import { Badge } from "../ui/Badge";
+import { ReminderSoundControl } from "./ReminderSoundControl";
 import { usePmoToast } from "../ui/usePmoToast";
 // F2 perf fix (Sept 2026 audit) — lazy, not eager: this is the one LIVE
 // three.js import site in the app (PmoRobotMascot.tsx's own THREE import is
@@ -970,6 +971,8 @@ export const PmoAssistant: React.FC = () => {
                 <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                   Active Reminders
                 </h4>
+
+                {canAccessProjects && <ReminderSoundControl />}
 
                 {!canAccessProjects ? (
                   <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-200 text-xs font-semibold flex items-center gap-2.5">

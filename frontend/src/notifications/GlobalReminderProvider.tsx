@@ -2,6 +2,7 @@ import React, { useEffect } from "react";
 import { reminderScheduler } from "./reminderScheduler";
 import { ReminderToastContainer } from "./ReminderToastContainer";
 import { reminderService } from "../services/reminders/ReminderService";
+import { useAuth } from "../auth/authContext";
 
 interface Props {
   children: React.ReactNode;
@@ -21,7 +22,12 @@ interface Props {
  *                                                -> Application Pages
  */
 export const GlobalReminderProvider: React.FC<Props> = ({ children }) => {
+  // The scheduler's "already fired" ledger is kept per account, so one user's history never suppresses another's reminders.
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+
   useEffect(() => {
+    let cancelled = false;
     // Reminders are now backend-persisted and shared across accounts (see
     // ReminderService.ts) — this pulls every reminder the logged-in user may
     // see, across every project, exactly once per session so the scheduler
@@ -32,10 +38,17 @@ export const GlobalReminderProvider: React.FC<Props> = ({ children }) => {
     reminderService
       .refreshAllReminders()
       .catch((error) => console.error("Failed to refresh reminders from server:", error))
-      .finally(() => reminderScheduler.start());
+      .finally(() => {
+        // If this effect was already cleaned up (unmount, or the account changed) while the refresh was in flight, starting
+        // now would leave a scheduler running that nothing owns.
+        if (!cancelled) reminderScheduler.start(userId);
+      });
 
-    return () => reminderScheduler.stop();
-  }, []);
+    return () => {
+      cancelled = true;
+      reminderScheduler.stop();
+    };
+  }, [userId]);
 
   return (
     <>
