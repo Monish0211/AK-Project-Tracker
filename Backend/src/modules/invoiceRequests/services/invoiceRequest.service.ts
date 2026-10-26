@@ -383,6 +383,7 @@ async function notifyRequesterInvoiceRaised(request: InvoiceRequestRow): Promise
     const email = buildInvoiceRaisedSuccessfullyEmail({
       requesterName: request.requestedBy.fullName,
       prNo: request.project.prNo,
+      client: request.project.client,
       projectTitle: request.project.projectTitle,
       invoicesUrl: projectInvoicesUrl(request.projectId),
     });

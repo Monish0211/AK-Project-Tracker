@@ -163,6 +163,8 @@ export interface InvoiceRequestAssignedEmailData {
 export interface InvoiceRaisedSuccessfullyEmailData {
   requesterName: string;
   prNo: string;
+  /** The Project's own client (Project.client) — shown as "Client Name". Optional: a blank/missing value simply omits that row. */
+  client?: string | null;
   projectTitle: string;
   invoicesUrl: string;
 }
