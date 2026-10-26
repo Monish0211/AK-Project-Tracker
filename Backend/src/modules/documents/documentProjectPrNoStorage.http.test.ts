@@ -80,12 +80,14 @@ async function rmrf(p: string): Promise<void> {
 
 async function setup(label: string) {
   const { url, close } = await listen();
-  const [administratorRole, engineerRole, projectsModule, customerModule, approvalsModule] = await Promise.all([
+  const [administratorRole, engineerRole, projectsModule, customerModule, approvalsModule, addProjectModule, prRequestModule] = await Promise.all([
     prisma.portalRole.findUniqueOrThrow({ where: { name: "Administrator" } }),
     prisma.portalRole.findUniqueOrThrow({ where: { name: "Engineer" } }),
     prisma.module.findUniqueOrThrow({ where: { name: "Projects" } }),
     prisma.module.findUniqueOrThrow({ where: { name: "Customer Master" } }),
     prisma.module.findUniqueOrThrow({ where: { name: "Approvals" } }),
+    prisma.module.findUniqueOrThrow({ where: { name: "Add Project" } }),
+    prisma.module.findUniqueOrThrow({ where: { name: "PR Request" } }),
   ]);
   const passwordHash = await hashPassword("PrFolderTest@123");
   const owner = await prisma.portalUser.create({
@@ -96,7 +98,7 @@ async function setup(label: string) {
       department: "PMO",
       roleId: engineerRole.id,
       forcePasswordChange: false,
-      moduleAccess: { create: [{ moduleId: projectsModule.id }, { moduleId: customerModule.id }, { moduleId: approvalsModule.id }] },
+      moduleAccess: { create: [{ moduleId: projectsModule.id }, { moduleId: customerModule.id }, { moduleId: approvalsModule.id }, { moduleId: addProjectModule.id }, { moduleId: prRequestModule.id }] },
     },
   });
   const admin = await prisma.portalUser.create({
@@ -107,7 +109,7 @@ async function setup(label: string) {
       department: "PMO",
       roleId: administratorRole.id,
       forcePasswordChange: false,
-      moduleAccess: { create: [{ moduleId: projectsModule.id }, { moduleId: customerModule.id }, { moduleId: approvalsModule.id }] },
+      moduleAccess: { create: [{ moduleId: projectsModule.id }, { moduleId: customerModule.id }, { moduleId: approvalsModule.id }, { moduleId: addProjectModule.id }, { moduleId: prRequestModule.id }] },
     },
   });
   return {

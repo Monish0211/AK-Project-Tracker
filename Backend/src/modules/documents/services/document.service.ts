@@ -5,6 +5,7 @@ import { assertProjectAccessById, assertProjectAccess, assertProjectReadAccessBy
 import { findProjectByIdAny } from "../../projects/repository/project.repository.js";
 import { assertCanViewPRRequest } from "../../prRequests/services/prRequest.service.js";
 import { findPRRequestById } from "../../prRequests/repository/prRequest.repository.js";
+import { assertModuleAccess } from "../../../shared/utils/moduleAccess.js";
 import { findCustomerById } from "../../customers/repository/customer.repository.js";
 import {
   generateStorageKey,
@@ -75,12 +76,13 @@ function assertFileIsSafe(file: UploadedFile): void {
   }
 }
 
-async function assertPRRequestAccessById(prRequestId: string, user: AccessTokenPayload): Promise<void> {
+async function assertPRRequestAccessById(prRequestId: string, user: AccessTokenPayload) {
   const existing = await findPRRequestById(prRequestId);
   if (!existing) {
     throw new AppError("PR Request not found.", 404);
   }
   assertCanViewPRRequest(existing, user);
+  return existing;
 }
 
 /**
@@ -153,7 +155,15 @@ export async function uploadDocumentForProject(projectId: string, file: Uploaded
 }
 
 export async function uploadDocumentForPRRequest(prRequestId: string, file: UploadedFile, user: AccessTokenPayload) {
-  await assertPRRequestAccessById(prRequestId, user);
+  const request = await assertPRRequestAccessById(prRequestId, user);
+  // The route lets "PR Request" OR "Approvals" through; the module that matches THIS caller's relationship is enforced
+  // here: the requester attaching to their own request is a submission-side action ("PR Request"), anyone else who may
+  // view it (assigned approver / Administrator) is a review-side action ("Approvals"). Neither module substitutes for the other.
+  if (request.requestedByUserId === user.sub) {
+    await assertModuleAccess(user.sub, ["PR Request"], "You do not have permission to submit PR Requests.");
+  } else {
+    await assertModuleAccess(user.sub, ["Approvals"], "You do not have permission to review PR Requests.");
+  }
   assertFileIsSafe(file);
   return persistDocument({ prRequestId, file, user });
 }

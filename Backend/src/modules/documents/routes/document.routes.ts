@@ -51,11 +51,11 @@ router.post(
   "/pr-requests/:prRequestId/documents",
   authenticate,
   denyReadOnlyWrites,
-  requireModuleAccess("Approvals"),
+  requireModuleAccess("PR Request", "Approvals"),
   upload.single("file"),
   uploadPRRequestDocument
 );
-router.get("/pr-requests/:prRequestId/documents", authenticate, requireModuleAccess("Approvals"), listPRRequestDocuments);
+router.get("/pr-requests/:prRequestId/documents", authenticate, requireModuleAccess("PR Request", "Approvals"), listPRRequestDocuments);
 
 // Customer GST Registration Document (Sep 2026) — called ONLY after the
 // Customer row already exists (create or edit), never by the extraction
@@ -75,7 +75,12 @@ router.post(
 // route; document.service.ts still re-checks real Project/PR Request/
 // Customer authorization against the document's CURRENT parent before any
 // filesystem access (see getDocumentForDownload()'s own comment).
-router.get("/documents/:id/download", authenticate, requireModuleAccess("Projects", "Approvals", "Customer Master"), downloadDocument);
+router.get(
+  "/documents/:id/download",
+  authenticate,
+  requireModuleAccess("Projects", "Approvals", "PR Request", "Customer Master"),
+  downloadDocument
+);
 
 // Delete — Administrator ONLY, per the confirmed final rule. No uploader/
 // creator ownership check anywhere in this chain or in the service below.
@@ -83,7 +88,7 @@ router.delete(
   "/documents/:id",
   authenticate,
   denyReadOnlyWrites,
-  requireModuleAccess("Projects", "Approvals"),
+  requireModuleAccess("Projects", "Approvals", "PR Request"),
   authorize("Administrator"),
   deleteDocument
 );

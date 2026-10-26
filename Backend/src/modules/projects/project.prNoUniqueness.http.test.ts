@@ -61,9 +61,10 @@ test("POST /projects rejects a concurrent duplicate prNo (TOCTOU race closed by 
   const createdProjectIds: string[] = [];
 
   try {
-    const [adminRole, projectsModule] = await Promise.all([
+    const [adminRole, projectsModule, addProjectModule] = await Promise.all([
       prisma.portalRole.findUniqueOrThrow({ where: { name: "Administrator" } }),
       prisma.module.findUniqueOrThrow({ where: { name: "Projects" } }),
+      prisma.module.findUniqueOrThrow({ where: { name: "Add Project" } }),
     ]);
     const passwordHash = await hashPassword("PrNoRaceTest@123");
     const user = await prisma.portalUser.create({
@@ -74,7 +75,7 @@ test("POST /projects rejects a concurrent duplicate prNo (TOCTOU race closed by 
         department: "PMO",
         roleId: adminRole.id,
         forcePasswordChange: false,
-        moduleAccess: { create: { moduleId: projectsModule.id } },
+        moduleAccess: { create: [{ moduleId: projectsModule.id }, { moduleId: addProjectModule.id }] },
       },
     });
     createdUserIds.push(user.id);
@@ -129,9 +130,10 @@ test("Archiving a project frees its prNo for reuse by a new active project", asy
   const createdProjectIds: string[] = [];
 
   try {
-    const [adminRole, projectsModule] = await Promise.all([
+    const [adminRole, projectsModule, addProjectModule] = await Promise.all([
       prisma.portalRole.findUniqueOrThrow({ where: { name: "Administrator" } }),
       prisma.module.findUniqueOrThrow({ where: { name: "Projects" } }),
+      prisma.module.findUniqueOrThrow({ where: { name: "Add Project" } }),
     ]);
     const passwordHash = await hashPassword("PrNoReuseTest@123");
     const user = await prisma.portalUser.create({
@@ -142,7 +144,7 @@ test("Archiving a project frees its prNo for reuse by a new active project", asy
         department: "PMO",
         roleId: adminRole.id,
         forcePasswordChange: false,
-        moduleAccess: { create: { moduleId: projectsModule.id } },
+        moduleAccess: { create: [{ moduleId: projectsModule.id }, { moduleId: addProjectModule.id }] },
       },
     });
     createdUserIds.push(user.id);

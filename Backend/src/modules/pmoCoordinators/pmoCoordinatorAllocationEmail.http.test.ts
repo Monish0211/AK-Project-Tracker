@@ -81,9 +81,10 @@ test("PMO Coordinator allocation email — switch, change detection, recipient, 
     const roles = Object.fromEntries(
       await Promise.all(["Administrator", "Engineer"].map(async (n) => [n, await prisma.portalRole.findUniqueOrThrow({ where: { name: n } })]))
     );
-    const [settingsModule, projectsModule] = await Promise.all([
+    const [settingsModule, projectsModule, addProjectModule] = await Promise.all([
       prisma.module.findUniqueOrThrow({ where: { name: "Settings" } }),
       prisma.module.findUniqueOrThrow({ where: { name: "Projects" } }),
+      prisma.module.findUniqueOrThrow({ where: { name: "Add Project" } }),
     ]);
     const passwordHash = await hashPassword("PmoAllocTest@123");
     async function makeUser(key: string, roleName: string, modules: string[], extra: Record<string, unknown> = {}) {
@@ -99,7 +100,7 @@ test("PMO Coordinator allocation email — switch, change detection, recipient, 
       const token = signAccessToken({ sub: user.id, email: user.email, roleId: role.id, roleName: role.name });
       return { user, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } };
     }
-    const admin = await makeUser("admin", "Administrator", [settingsModule.id, projectsModule.id]);
+    const admin = await makeUser("admin", "Administrator", [settingsModule.id, projectsModule.id, addProjectModule.id]);
     const coordA = await makeUser("coord-a", "Engineer", [projectsModule.id]);
     const coordB = await makeUser("coord-b", "Engineer", [projectsModule.id]);
     await makeUser("locked", "Engineer", [projectsModule.id], { accountLocked: true });

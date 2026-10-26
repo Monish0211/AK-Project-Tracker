@@ -43,8 +43,12 @@ export interface UserModuleAccess {
   settings: boolean;
   notifications: boolean;
   reminders: boolean;
-  /** PR Request & Two-Level Approval Workflow — gates Request PR, My PR Requests, and the Approvals queue alike (one module for the whole feature area). */
+  /** PR Request & Two-Level Approval Workflow — REVIEW side: the Approvals queue and the Accounts / PMO approve + reject actions. Does not grant submitting (that is `prRequest`). */
   approvals: boolean;
+  /** Direct project creation (Add Project button, /projects/add, Excel import). Needed IN ADDITION to `projects`; never implies, and is never implied by, `prRequest`. */
+  addProject: boolean;
+  /** Submitting PR Requests (create / edit / delete one's own Draft, Send to Accounts). Never grants approval authority and is independent of `addProject`. */
+  prRequest: boolean;
 }
 
 /**

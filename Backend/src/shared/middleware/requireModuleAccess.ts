@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../utils/AppError.js";
-import { prisma } from "../utils/prismaClient.js";
+import { userHasAnyModule } from "../utils/moduleAccess.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 /**
@@ -17,14 +17,7 @@ export function requireModuleAccess(...moduleNames: string[]) {
       throw new AppError("Authentication required.", 401);
     }
 
-    const count = await prisma.userModuleAccess.count({
-      where: {
-        userId: req.user.sub,
-        module: { name: { in: moduleNames } },
-      },
-    });
-
-    if (count === 0) {
+    if (!(await userHasAnyModule(req.user.sub, moduleNames))) {
       throw new AppError("You do not have access to this module.", 403);
     }
 

@@ -27,6 +27,8 @@ const NO_MODULES: UserModuleAccess = {
   notifications: false,
   reminders: false,
   approvals: false,
+  addProject: false,
+  prRequest: false,
 };
 
 const ALL_MODULES: UserModuleAccess = {
@@ -42,6 +44,8 @@ const ALL_MODULES: UserModuleAccess = {
   notifications: true,
   reminders: true,
   approvals: true,
+  addProject: true,
+  prRequest: true,
 };
 
 function modules(...keys: (keyof UserModuleAccess)[]): UserModuleAccess {
@@ -108,33 +112,36 @@ function approvals(...keys: (keyof UserApprovalRights)[]): UserApprovalRights {
 
 export const ROLE_MODULE_DEFAULTS: Record<SystemRole, UserModuleAccess> = {
   Administrator: ALL_MODULES,
+  // "addProject" / "prRequest" (Oct 2026): pre-ticked for exactly the roles that could already create projects ("projects",
+  // not Read Only) or submit PR Requests ("approvals", not Read Only) before these two modules existed — the same rule the
+  // backend migration used to backfill existing users. Only a starting point for a NEW user; the Administrator can untick them.
   "PMO Manager": modules(
-    "dashboard", "projects", "customerMaster", "timesheets", "invoices",
-    "reports", "manpower", "documents", "notifications", "reminders", "approvals"
+    "dashboard", "projects", "addProject", "customerMaster", "timesheets", "invoices",
+    "reports", "manpower", "documents", "notifications", "reminders", "approvals", "prRequest"
   ),
   "Project Manager": modules(
-    "dashboard", "projects", "timesheets", "invoices", "reports",
+    "dashboard", "projects", "addProject", "timesheets", "invoices", "reports",
     "manpower", "documents", "notifications", "reminders"
   ),
-  "Project Coordinator": modules("dashboard", "projects", "timesheets", "documents", "notifications", "reminders"),
+  "Project Coordinator": modules("dashboard", "projects", "addProject", "timesheets", "documents", "notifications", "reminders"),
   "Department Head": modules(
-    "dashboard", "projects", "timesheets", "reports", "manpower",
+    "dashboard", "projects", "addProject", "timesheets", "reports", "manpower",
     "documents", "notifications", "reminders"
   ),
-  Engineer: modules("dashboard", "projects", "timesheets", "documents", "notifications"),
-  Finance: modules("dashboard", "projects", "invoices", "reports", "customerMaster", "documents", "notifications"),
+  Engineer: modules("dashboard", "projects", "addProject", "timesheets", "documents", "notifications"),
+  Finance: modules("dashboard", "projects", "addProject", "invoices", "reports", "customerMaster", "documents", "notifications"),
   // "approvals" defaulted on for Accounts too — this is the role the single
   // designated Accounts approver (see Settings > PR Requests) is normally
   // chosen from, though the actual routing decision is the separate
   // PRRequestApproverConfig row, not this role-based default.
-  Accounts: modules("dashboard", "invoices", "reports", "documents", "notifications", "approvals"),
+  Accounts: modules("dashboard", "invoices", "reports", "documents", "notifications", "approvals", "prRequest"),
   "Management Viewer": modules("dashboard", "projects", "reports", "notifications"),
   "Read Only": modules("dashboard", "projects", "notifications"),
   // PR Request User — a deliberately narrow role: no Projects/Dashboard/etc
   // access at all, only the ability to submit and track their own PR
   // Requests via the Approvals module (see prRequests.service.ts's
   // requireModuleAccess("Approvals") gate).
-  "PR Request User": modules("approvals"),
+  "PR Request User": modules("approvals", "prRequest"),
 };
 
 // Edit/Delete Invoice (Oct 2026) — pre-ticked for exactly the roles whose

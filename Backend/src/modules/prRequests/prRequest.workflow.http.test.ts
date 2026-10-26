@@ -79,16 +79,17 @@ test("PR Request & Two-Level Approval Workflow — submission, approval chain, e
   const createdProjectIds: string[] = [];
 
   try {
-    const [administratorRole, pmoManagerRole, accountsRole, prRequestUserRole, approvalsModule] = await Promise.all([
+    const [administratorRole, pmoManagerRole, accountsRole, prRequestUserRole, approvalsModule, prRequestModule] = await Promise.all([
       prisma.portalRole.findUniqueOrThrow({ where: { name: "Administrator" } }),
       prisma.portalRole.findUniqueOrThrow({ where: { name: "PMO Manager" } }),
       prisma.portalRole.findUniqueOrThrow({ where: { name: "Accounts" } }),
       prisma.portalRole.findUniqueOrThrow({ where: { name: "PR Request User" } }),
       prisma.module.findUniqueOrThrow({ where: { name: "Approvals" } }),
+      prisma.module.findUniqueOrThrow({ where: { name: "PR Request" } }),
     ]);
     const passwordHash = await hashPassword("PrRequestTest@123");
 
-    async function createUser(label: string, roleId: string, roleName: string, withApprovalsModule: boolean) {
+    async function createUser(label: string, roleId: string, roleName: string, withApprovalsModule: boolean, withPrRequestModule = false) {
       const user = await prisma.portalUser.create({
         data: {
           fullName: `PR Request Test ${label}`,
@@ -97,7 +98,13 @@ test("PR Request & Two-Level Approval Workflow — submission, approval chain, e
           department: "PMO",
           roleId,
           forcePasswordChange: false,
-          ...(withApprovalsModule ? { moduleAccess: { create: [{ moduleId: approvalsModule.id }] } } : {}),
+          // "PR Request" = submitting (Draft create/edit/delete, Send to Accounts); "Approvals" = reviewing. Independent grants.
+          moduleAccess: {
+            create: [
+              ...(withApprovalsModule ? [{ moduleId: approvalsModule.id }] : []),
+              ...(withPrRequestModule ? [{ moduleId: prRequestModule.id }] : []),
+            ],
+          },
         },
       });
       createdUserIds.push(user.id);
@@ -109,8 +116,8 @@ test("PR Request & Two-Level Approval Workflow — submission, approval chain, e
     // (see project.routes.ts's Archive/Permanent Delete comments) — must
     // hold the grant explicitly to exercise oversight (detail view) below.
     const admin = await createUser("Admin", administratorRole.id, administratorRole.name, true);
-    const requester = await createUser("Requester", prRequestUserRole.id, prRequestUserRole.name, true);
-    const otherRequester = await createUser("Other Requester", prRequestUserRole.id, prRequestUserRole.name, true);
+    const requester = await createUser("Requester", prRequestUserRole.id, prRequestUserRole.name, true, true);
+    const otherRequester = await createUser("Other Requester", prRequestUserRole.id, prRequestUserRole.name, true, true);
     const accountsApprover = await createUser("Accounts", accountsRole.id, accountsRole.name, true);
     const pmoManager = await createUser("PMO Manager", pmoManagerRole.id, pmoManagerRole.name, true);
     const otherPmoManager = await createUser("Other PMO Manager", pmoManagerRole.id, pmoManagerRole.name, true);
@@ -508,15 +515,16 @@ test("PR Request notifications — recipient isolation and no duplicates on retr
   const RTAG = `pr-notif-${Date.now()}`;
 
   try {
-    const [pmoManagerRole, accountsRole, prRequestUserRole, approvalsModule] = await Promise.all([
+    const [pmoManagerRole, accountsRole, prRequestUserRole, approvalsModule, prRequestModule] = await Promise.all([
       prisma.portalRole.findUniqueOrThrow({ where: { name: "PMO Manager" } }),
       prisma.portalRole.findUniqueOrThrow({ where: { name: "Accounts" } }),
       prisma.portalRole.findUniqueOrThrow({ where: { name: "PR Request User" } }),
       prisma.module.findUniqueOrThrow({ where: { name: "Approvals" } }),
+      prisma.module.findUniqueOrThrow({ where: { name: "PR Request" } }),
     ]);
     const passwordHash = await hashPassword("PrRequestNotifTest@123");
 
-    async function createUser(label: string, roleId: string, roleName: string) {
+    async function createUser(label: string, roleId: string, roleName: string, canSubmit = false) {
       const user = await prisma.portalUser.create({
         data: {
           fullName: `PR Notif Test ${label}`,
@@ -525,14 +533,14 @@ test("PR Request notifications — recipient isolation and no duplicates on retr
           department: "PMO",
           roleId,
           forcePasswordChange: false,
-          moduleAccess: { create: [{ moduleId: approvalsModule.id }] },
+          moduleAccess: { create: [{ moduleId: approvalsModule.id }, ...(canSubmit ? [{ moduleId: prRequestModule.id }] : [])] },
         },
       });
       createdUserIds.push(user.id);
       return { ...user, token: tokenFor({ ...user, roleName }) };
     }
 
-    const requester = await createUser("Requester", prRequestUserRole.id, prRequestUserRole.name);
+    const requester = await createUser("Requester", prRequestUserRole.id, prRequestUserRole.name, true);
     const accountsApprover = await createUser("Accounts", accountsRole.id, accountsRole.name);
     const otherAccountsApprover = await createUser("Other Accounts", accountsRole.id, accountsRole.name);
     const pmoManager = await createUser("PMO Manager", pmoManagerRole.id, pmoManagerRole.name);

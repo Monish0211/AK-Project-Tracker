@@ -34,6 +34,11 @@ export const MODULES = [
   "Notifications",
   "Reminders",
   "Approvals",
+  // Independent capability grants (Oct 2026), shown in the same Module Access list. "Add Project" gates DIRECT project
+  // creation (POST /projects, POST /projects/import) on top of "Projects"; "PR Request" gates submitting/drafting PR
+  // Requests. Neither implies the other, and neither replaces "Projects" / "Approvals".
+  "Add Project",
+  "PR Request",
 ] as const;
 
 export const REGIONS = [

@@ -48,11 +48,12 @@ test("Project RFQ No.: required on create/import, persisted, never blank on upda
   try {
     const role = await prisma.portalRole.findUniqueOrThrow({ where: { name: "PMO Manager" } });
     const projectsModule = await prisma.module.findUniqueOrThrow({ where: { name: "Projects" } });
+    const addProjectModule = await prisma.module.findUniqueOrThrow({ where: { name: "Add Project" } });
     const user = await prisma.portalUser.create({
       data: {
         fullName: `Rfq Tester`, email: `${TAG}-pm@example.com`, passwordHash: await hashPassword("RfqTest@123"),
         department: "PMO", roleId: role.id, forcePasswordChange: false,
-        moduleAccess: { create: [{ moduleId: projectsModule.id }] },
+        moduleAccess: { create: [{ moduleId: projectsModule.id }, { moduleId: addProjectModule.id }] },
       },
     });
     createdUserIds.push(user.id);

@@ -7,9 +7,13 @@ import {
 import { Link } from "react-router-dom";
 import SystemStatus from "../../../components/Dashboard/SystemStatus";
 import { useTheme } from "../../../context/ThemeContext";
+import { useAuth } from "../../../auth/authContext";
+import { canAddProject } from "../../../auth/permissions";
 
 const WelcomeCard = () => {
   const { theme } = useTheme();
+  const { user } = useAuth();
+  const canAdd = canAddProject(user);
   
   const [currentDate, setCurrentDate] = useState("");
   const [currentTime, setCurrentTime] = useState("");
@@ -107,25 +111,27 @@ const WelcomeCard = () => {
             className="flex justify-end animate-fade-in-up"
             style={{ animationDelay: "500ms" }}
           >
-            <Link
-              to="/projects/add"
-              className="
-                flex
-                items-center
-                gap-2
-                bg-blue-600
-                hover:bg-blue-700
-                px-6
-                py-3
-                rounded-xl
-                font-semibold
-                shadow-lg
-                transition
-              "
-            >
-              <Plus size={18} />
-              Add Project
-            </Link>
+            {canAdd && (
+              <Link
+                to="/projects/add"
+                className="
+                  flex
+                  items-center
+                  gap-2
+                  bg-blue-600
+                  hover:bg-blue-700
+                  px-6
+                  py-3
+                  rounded-xl
+                  font-semibold
+                  shadow-lg
+                  transition
+                "
+              >
+                <Plus size={18} />
+                Add Project
+              </Link>
+            )}
           </div>
         </div>
       </div>
@@ -306,14 +312,16 @@ const WelcomeCard = () => {
           <div className="w-full lg:w-80 flex flex-col justify-start items-end gap-6 shrink-0">
             
             {/* Add Project Button */}
-            <Link
-              to="/projects/add"
-              className="inline-flex items-center justify-center gap-2 rounded-[var(--nu-radius-md)] font-medium transition-colors duration-150 whitespace-nowrap text-[13px] px-3.5 py-2 bg-[var(--nu-accent)] text-white hover:bg-[var(--nu-accent-strong)] border border-transparent shadow-[var(--nu-shadow-lg)] animate-fade-in-up"
-              style={{ animationDelay: "500ms" }}
-            >
-              <Plus size={16} />
-              <span>Add Project</span>
-            </Link>
+            {canAdd && (
+              <Link
+                to="/projects/add"
+                className="inline-flex items-center justify-center gap-2 rounded-[var(--nu-radius-md)] font-medium transition-colors duration-150 whitespace-nowrap text-[13px] px-3.5 py-2 bg-[var(--nu-accent)] text-white hover:bg-[var(--nu-accent-strong)] border border-transparent shadow-[var(--nu-shadow-lg)] animate-fade-in-up"
+                style={{ animationDelay: "500ms" }}
+              >
+                <Plus size={16} />
+                <span>Add Project</span>
+              </Link>
+            )}
 
           </div>
 

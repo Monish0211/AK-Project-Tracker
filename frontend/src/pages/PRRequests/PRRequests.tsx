@@ -5,6 +5,8 @@ import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { usePmoToast } from "../../components/ui/usePmoToast";
 import { ApiError } from "../../services/apiClient";
+import { useAuth } from "../../auth/authContext";
+import { canReviewPRRequests, canSubmitPRRequest } from "../../auth/permissions";
 import { deleteDraftPRRequest, getApprovalsQueue, getMyPRRequests, getUsersByRole, sendToAccounts } from "../../services/prRequestService";
 import type { PRRequest, PRRequestStatus, UserByRole } from "../../types/PRRequest";
 
@@ -28,9 +30,14 @@ const PRRequests = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { showToast } = usePmoToast();
+  const { user } = useAuth();
+  // "PR Request" = submitting (New PR Request, own Draft actions); "Approvals" = reviewing (the Approvals Queue tab).
+  // A user can hold either or both; neither implies the other.
+  const canSubmit = canSubmitPRRequest(user);
+  const canReview = canReviewPRRequests(user);
 
   const tabParam = searchParams.get("tab");
-  const [tab, setTab] = useState<Tab>(tabParam === "queue" ? "queue" : "mine");
+  const [tab, setTab] = useState<Tab>(tabParam === "queue" && canReview ? "queue" : "mine");
   const [rows, setRows] = useState<PRRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [actioningId, setActioningId] = useState<string | null>(null);
@@ -56,6 +63,7 @@ const PRRequests = () => {
   }, [tab]);
 
   const handleTabChange = (next: Tab) => {
+    if (next === "queue" && !canReview) return;
     setTab(next);
     setSearchParams(next === "queue" ? { tab: "queue" } : {});
   };
@@ -118,9 +126,11 @@ const PRRequests = () => {
             <p className="text-[12px] text-[var(--nu-text-muted)]">Track your submissions and act on requests awaiting your approval.</p>
           </div>
         </div>
-        <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => navigate("/pr-requests/new")}>
-          New PR Request
-        </Button>
+        {canSubmit && (
+          <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => navigate("/pr-requests/new")}>
+            New PR Request
+          </Button>
+        )}
       </div>
 
       <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] p-1.5 shadow-[var(--nu-shadow-sm)] flex items-center gap-1.5 w-fit">
@@ -133,15 +143,17 @@ const PRRequests = () => {
         >
           <ClipboardList size={14} /> My Requests
         </button>
-        <button
-          type="button"
-          onClick={() => handleTabChange("queue")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-semibold transition-all cursor-pointer ${
-            tab === "queue" ? "bg-[var(--nu-accent)] text-white" : "text-[var(--nu-text-secondary)] hover:bg-[var(--nu-surface-alt)]"
-          }`}
-        >
-          <Inbox size={14} /> Approvals Queue
-        </button>
+        {canReview && (
+          <button
+            type="button"
+            onClick={() => handleTabChange("queue")}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-semibold transition-all cursor-pointer ${
+              tab === "queue" ? "bg-[var(--nu-accent)] text-white" : "text-[var(--nu-text-secondary)] hover:bg-[var(--nu-surface-alt)]"
+            }`}
+          >
+            <Inbox size={14} /> Approvals Queue
+          </button>
+        )}
       </div>
 
       <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] shadow-[var(--nu-shadow-sm)] overflow-hidden">
@@ -195,7 +207,7 @@ const PRRequests = () => {
                     <td className="px-4 py-2.5 text-[var(--nu-text-secondary)]">{formatDate(row.createdAt)}</td>
                     <td className="px-4 py-2.5">
                       <div className="flex justify-end gap-2">
-                        {tab === "mine" && isDraft && (
+                        {tab === "mine" && isDraft && canSubmit && (
                           <>
                             <Button variant="secondary" size="sm" icon={<Pencil size={13} />} onClick={() => navigate(`/pr-requests/${row.id}/edit`)}>
                               Edit

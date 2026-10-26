@@ -3,7 +3,6 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { formatBusinessINR } from "../../utils/formatCurrency";
 import {
   FolderKanban,
-  Plus,
   Search,
   ArrowUpDown,
   Download,
@@ -19,7 +18,7 @@ import {
 } from "lucide-react";
 import ExcelJS from "exceljs";
 
-import { Button } from "../../components/ui/Button";
+import RepositoryCreateActions from "./components/RepositoryCreateActions";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import type { Project } from "../../types/Project";
 import {
@@ -41,7 +40,7 @@ import { isActiveProjectStatus, PROJECT_STATUS_OPTIONS } from "../../constants/p
 // blank (legacy rows), exactly as ProjectForm's overview strip does.
 import { PR_CATEGORIES, inferPrCategory } from "../../utils/createEmptyProject";
 import { useAuth } from "../../auth/authContext";
-import { canEditProject, canMutateData, hasApprovalPermission } from "../../auth/permissions";
+import { canAddProject, canEditProject, canMutateData, canSubmitPRRequest, hasApprovalPermission } from "../../auth/permissions";
 import { usePmoToast } from "../../components/ui/usePmoToast";
 import { InvoiceRequestFlag } from "../../components/ui/InvoiceRequestFlag";
 import { RepositoryInvoiceStatusBadge } from "../../components/Projects/RepositoryInvoiceStatusBadge";
@@ -155,6 +154,10 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   // Delete Permanently requires the "Delete Project Permanently" approval
   // permission — the backend enforces this independently
   const canMutate = canMutateData(user);
+  // Two independent creation entry points (Oct 2026): "Add Project" (direct creation + Excel import) and "PR Request"
+  // (New PR Request, through the approval workflow). Neither implies the other; neither affects viewing/editing projects.
+  const canAdd = canAddProject(user);
+  const canRequestPR = canSubmitPRRequest(user);
   // (requireApprovalPermission on DELETE /projects/:id/permanent), this only
   // controls whether the action is even offered in the UI. Read Only cannot
   // mutate even if they somehow hold the approval grant.
@@ -814,16 +817,9 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                 <Download size={14} />
                 Export Archive
               </button>
-            ) : canMutate ? (
-              <Button
-                variant="hero"
-                onClick={() => navigate("/projects/add")}
-                className="btn-add transform hover:-translate-y-px"
-                icon={<Plus size={15} />}
-              >
-                Add Project
-              </Button>
-            ) : null}
+            ) : (
+              <RepositoryCreateActions canAdd={canAdd} canRequestPR={canRequestPR} />
+            )}
             <div className="flex items-center gap-1.5 text-xs text-slate-300/90 font-medium">
               <FolderKanban size={13} className="text-slate-400" />
               Total Projects &nbsp;
@@ -1035,23 +1031,27 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                   Export
                 </button>
 
-                {/* Import Button */}
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="tbtn flex items-center gap-1 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400"
-                >
-                  <Upload size={11} />
-                  Import
-                </button>
+                {/* Import Button — bulk-creates projects (POST /projects/import), so it follows the Add Project permission */}
+                {canAdd && (
+                  <>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="tbtn flex items-center gap-1 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg text-xs bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400"
+                    >
+                      <Upload size={11} />
+                      Import
+                    </button>
 
-                {/* Hidden Input for Import */}
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleImportFile}
-                  accept=".xlsx, .csv"
-                  className="hidden"
-                />
+                    {/* Hidden Input for Import */}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleImportFile}
+                      accept=".xlsx, .csv"
+                      className="hidden"
+                    />
+                  </>
+                )}
 
                 {/* Other Project Expenses — Excel Import (Sept 2026). Placed
                     at the Project Repository level, not inside a single
@@ -1070,7 +1070,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
           </div>
 
           {/* Download Template button */}
-          {mode !== "completed" && (
+          {mode !== "completed" && canAdd && (
             <button
               onClick={handleDownloadTemplate}
               className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"

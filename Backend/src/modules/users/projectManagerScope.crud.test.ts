@@ -232,6 +232,7 @@ test("Project Manager Scope — access enforcement across List/Detail/Dashboard,
     ]);
     const projectsModule = await prisma.module.findUniqueOrThrow({ where: { name: "Projects" } });
     const dashboardModule = await prisma.module.findFirstOrThrow({ where: { name: "Dashboard" } });
+    const addProjectModule = await prisma.module.findUniqueOrThrow({ where: { name: "Add Project" } });
     const passwordHash = await hashPassword("PmScopeTest@123");
 
     async function makeUser(fullName: string, roleId: string, grantModules: string[]) {
@@ -245,10 +246,10 @@ test("Project Manager Scope — access enforcement across List/Detail/Dashboard,
       return u;
     }
 
-    const admin = await makeUser("Enforce Admin", adminRole.id, [projectsModule.id, dashboardModule.id]);
-    const pmoManager = await makeUser("Enforce Pmo Manager", pmoManagerRole.id, [projectsModule.id, dashboardModule.id]);
-    const pm = await makeUser("Enforce Pm", pmRole.id, [projectsModule.id, dashboardModule.id]);
-    const grantee = await makeUser("Enforce Grantee", engineerRole.id, [projectsModule.id]);
+    const admin = await makeUser("Enforce Admin", adminRole.id, [projectsModule.id, addProjectModule.id, dashboardModule.id]);
+    const pmoManager = await makeUser("Enforce Pmo Manager", pmoManagerRole.id, [projectsModule.id, addProjectModule.id, dashboardModule.id]);
+    const pm = await makeUser("Enforce Pm", pmRole.id, [projectsModule.id, addProjectModule.id, dashboardModule.id]);
+    const grantee = await makeUser("Enforce Grantee", engineerRole.id, [projectsModule.id, addProjectModule.id]);
     const unrelated = await makeUser("Enforce Unrelated", engineerRole.id, [projectsModule.id]);
 
     const adminToken = tokenFor({ ...admin, roleName: adminRole.name });

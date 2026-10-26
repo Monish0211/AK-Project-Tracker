@@ -13,6 +13,7 @@ import type { UserModuleAccess, UserProjectRegionAccess, UserApprovalRights } fr
 export const MODULE_FIELDS: { key: keyof UserModuleAccess; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
   { key: "projects", label: "Projects" },
+  { key: "addProject", label: "Add Project" },
   { key: "customerMaster", label: "Customer Master" },
   { key: "timesheets", label: "Timesheets" },
   { key: "invoices", label: "Invoices" },
@@ -23,6 +24,7 @@ export const MODULE_FIELDS: { key: keyof UserModuleAccess; label: string }[] = [
   { key: "notifications", label: "Notifications" },
   { key: "reminders", label: "Reminders" },
   { key: "approvals", label: "Approvals" },
+  { key: "prRequest", label: "PR Request" },
 ];
 
 export const REGION_FIELDS: { key: keyof UserProjectRegionAccess; label: string }[] = [

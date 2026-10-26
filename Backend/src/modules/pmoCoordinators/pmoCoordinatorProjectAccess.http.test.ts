@@ -69,9 +69,10 @@ test("PMO Coordinator — project access, Read Only exception, eligibility, revo
         ])
       )
     );
-    const [settingsModule, projectsModule, invoicesModule, timesheetsModule] = await Promise.all([
+    const [settingsModule, projectsModule, addProjectModule, invoicesModule, timesheetsModule] = await Promise.all([
       prisma.module.findUniqueOrThrow({ where: { name: "Settings" } }),
       prisma.module.findUniqueOrThrow({ where: { name: "Projects" } }),
+      prisma.module.findUniqueOrThrow({ where: { name: "Add Project" } }),
       prisma.module.findUniqueOrThrow({ where: { name: "Invoices" } }),
       prisma.module.findUniqueOrThrow({ where: { name: "Timesheets" } }),
     ]);
@@ -105,8 +106,8 @@ test("PMO Coordinator — project access, Read Only exception, eligibility, revo
       return { user, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } };
     }
 
-    const admin = await makeUser("admin", "Administrator", { modules: [settingsModule.id, projectsModule.id] });
-    const owner = await makeUser("owner", "Engineer", { modules: [projectsModule.id] });
+    const admin = await makeUser("admin", "Administrator", { modules: [settingsModule.id, projectsModule.id, addProjectModule.id] });
+    const owner = await makeUser("owner", "Engineer", { modules: [projectsModule.id, addProjectModule.id] });
     const coordEng = await makeUser("coord-eng", "Engineer", { modules: [projectsModule.id] });
     const coordEng2 = await makeUser("coord-eng2", "Engineer", { modules: [projectsModule.id] });
     // Read Only coordinator who ALSO holds every sensitive approval right — to

@@ -13,6 +13,7 @@ import { createQuantityForProject } from "../../quantity/services/quantity.servi
 import { createMilestoneForProject } from "../../milestones/services/milestone.service.js";
 import { repointDocumentsToProject } from "../../documents/repository/document.repository.js";
 import { assertCoordinatorEntryAssignable } from "../../pmoCoordinators/index.js";
+import { assertModuleAccess } from "../../../shared/utils/moduleAccess.js";
 import { prRequestProjectDataSchema } from "../validators/prRequest.validators.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type { PRRequestApprovalHistoryDto, PRRequestDetailDto, PRRequestDto } from "../dto/prRequest.dto.js";
@@ -20,6 +21,9 @@ import * as repo from "../repository/prRequest.repository.js";
 import type { PRRequestProjectDataInput, SaveDraftPRRequestInput, SendToAccountsInput } from "../validators/prRequest.validators.js";
 
 type PRRequestRow = NonNullable<Awaited<ReturnType<typeof repo.findPRRequestById>>>;
+
+const SUBMIT_DENIED_MESSAGE = "You do not have permission to submit PR Requests.";
+const REVIEW_DENIED_MESSAGE = "You do not have permission to review PR Requests.";
 
 function toPRRequestDto(row: PRRequestRow): PRRequestDto {
   return {
@@ -112,21 +116,28 @@ export async function updatePRRequestProjectData(
     throw new AppError("PR Request not found.", 404);
   }
 
+  // The route lets either module through (this endpoint serves two different callers), so the module that matches THIS
+  // operation is enforced here, after the ownership / assigned-approver identity check: a requester editing their Draft
+  // needs "PR Request"; an assigned approver correcting a pending request needs "Approvals". Having one never substitutes
+  // for the other, and an approver without "PR Request" is never blocked.
   let isApproverEdit: boolean;
   if (existing.status === "Draft") {
     if (existing.requestedByUserId !== actor.sub) {
       throw new AppError("You do not have access to this PR Request.", 403);
     }
+    await assertModuleAccess(actor.sub, ["PR Request"], SUBMIT_DENIED_MESSAGE);
     isApproverEdit = false;
   } else if (existing.status === "Pending Accounts Approval") {
     if (!existing.assignedAccountsApproverId || existing.assignedAccountsApproverId !== actor.sub) {
       throw new AppError("You are not authorized to edit this request at its current stage.", 403);
     }
+    await assertModuleAccess(actor.sub, ["Approvals"], REVIEW_DENIED_MESSAGE);
     isApproverEdit = true;
   } else if (existing.status === "Pending PMO Manager Approval") {
     if (!existing.assignedPmoManagerId || existing.assignedPmoManagerId !== actor.sub) {
       throw new AppError("You are not authorized to edit this request at its current stage.", 403);
     }
+    await assertModuleAccess(actor.sub, ["Approvals"], REVIEW_DENIED_MESSAGE);
     isApproverEdit = true;
   } else {
     throw new AppError("This request has already been finalized and can no longer be edited.", 409);

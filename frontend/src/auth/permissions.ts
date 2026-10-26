@@ -14,6 +14,38 @@ export function hasModuleAccess(user: UserSession | null, moduleName: string): b
   return !!user && user.modules.includes(moduleName);
 }
 
+/**
+ * A route / action's Module Access requirement. `module` is the single-module form; `anyOf` is satisfied by holding ANY of the
+ * listed modules (e.g. a shared requester/approver page); `alsoRequires` must ALL be held in addition (e.g. "Projects" AND "Add Project").
+ * Pure and data-driven — no role-name bypass, same as hasModuleAccess.
+ */
+export interface ModuleRequirement {
+  module?: string;
+  anyOf?: readonly string[];
+  alsoRequires?: readonly string[];
+}
+
+export function meetsModuleRequirement(user: UserSession | null, requirement: ModuleRequirement): boolean {
+  if (!user) return false;
+  const { module, anyOf, alsoRequires } = requirement;
+  if (module !== undefined && !user.modules.includes(module)) return false;
+  if (anyOf !== undefined && !anyOf.some((name) => user.modules.includes(name))) return false;
+  if (alsoRequires !== undefined && !alsoRequires.every((name) => user.modules.includes(name))) return false;
+  return true;
+}
+
+/** Name shown on the Access Denied page: the first module the user is actually missing. */
+export function describeMissingModule(user: UserSession | null, requirement: ModuleRequirement): string | undefined {
+  const { module, anyOf, alsoRequires } = requirement;
+  if (module !== undefined && !user?.modules.includes(module)) return module;
+  if (alsoRequires) {
+    const missing = alsoRequires.find((name) => !user?.modules.includes(name));
+    if (missing) return missing;
+  }
+  if (anyOf !== undefined && !anyOf.some((name) => user?.modules.includes(name))) return anyOf.join(" or ");
+  return undefined;
+}
+
 export function hasRegionAccess(user: UserSession | null, regionName: string): boolean {
   return !!user && user.regions.includes(regionName);
 }
@@ -30,6 +62,28 @@ export function hasApprovalPermission(user: UserSession | null, approvalName: st
  */
 export function canMutateData(user: UserSession | null): boolean {
   return !!user && user.role !== "Read Only";
+}
+
+/**
+ * Direct project creation (Add Project button, /projects/add, Excel import). Needs "Projects" AND "Add Project", and — like every
+ * other write — is never offered to Read Only. The backend enforces the same three rules (project.routes.ts); this is the UI supplement.
+ * Independent of PR Request: holding one never implies the other.
+ */
+export function canAddProject(user: UserSession | null): boolean {
+  return canMutateData(user) && meetsModuleRequirement(user, { alsoRequires: ["Projects", "Add Project"] });
+}
+
+/**
+ * Submitting a PR Request (the Project Repository / PR Requests "New PR Request" action). Needs the "PR Request" module and a
+ * non-Read-Only role (the backend denies Read Only writes). Does NOT grant any approval authority — that stays on "Approvals".
+ */
+export function canSubmitPRRequest(user: UserSession | null): boolean {
+  return canMutateData(user) && hasModuleAccess(user, "PR Request");
+}
+
+/** Whether the Approvals Queue / approve / reject side of the PR workflow is available (the "Approvals" module). */
+export function canReviewPRRequests(user: UserSession | null): boolean {
+  return hasModuleAccess(user, "Approvals");
 }
 
 /**

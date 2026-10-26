@@ -11,6 +11,8 @@ import { ApiError } from "../../../services/apiClient";
 import { Badge } from "../../../components/ui/Badge";
 import { statusTone } from "../../../components/ui/statusTone";
 import { usePmoToast } from "../../../components/ui/usePmoToast";
+import { useAuth } from "../../../auth/authContext";
+import { canAddProject } from "../../../auth/permissions";
 
 interface Props {
   onRefresh: () => void;
@@ -29,6 +31,8 @@ interface SearchHit {
 const DashboardToolbar = ({ onRefresh }: Props) => {
   const navigate = useNavigate();
   const { showToast } = usePmoToast();
+  const { user } = useAuth();
+  const canAdd = canAddProject(user);
 
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
   const [query, setQuery] = useState("");
@@ -172,13 +176,15 @@ const DashboardToolbar = ({ onRefresh }: Props) => {
           )}
         </div>
 
-        <Link
-          to="/projects/add"
-          className="flex items-center gap-1.5 bg-[var(--nu-accent)] hover:bg-[var(--nu-accent-strong)] text-white text-[12px] font-semibold px-3 py-1.5 rounded-[var(--nu-radius-md)] transition-colors"
-        >
-          <Plus size={13} />
-          <span className="hidden sm:inline">Add Project</span>
-        </Link>
+        {canAdd && (
+          <Link
+            to="/projects/add"
+            className="flex items-center gap-1.5 bg-[var(--nu-accent)] hover:bg-[var(--nu-accent-strong)] text-white text-[12px] font-semibold px-3 py-1.5 rounded-[var(--nu-radius-md)] transition-colors"
+          >
+            <Plus size={13} />
+            <span className="hidden sm:inline">Add Project</span>
+          </Link>
+        )}
 
         <button
           onClick={handleRefreshClick}

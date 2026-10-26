@@ -55,7 +55,9 @@ test("Project dates: strict validation at the API boundary; dashboard survives a
 
   try {
     const mod = async (name: string) => (await prisma.module.findUniqueOrThrow({ where: { name } })).id;
-    const [projects, approvals, dashboard, timesheets] = await Promise.all([mod("Projects"), mod("Approvals"), mod("Dashboard"), mod("Timesheets")]);
+    const [projects, approvals, dashboard, timesheets, addProject, prRequest] = await Promise.all([
+      mod("Projects"), mod("Approvals"), mod("Dashboard"), mod("Timesheets"), mod("Add Project"), mod("PR Request"),
+    ]);
     const passwordHash = await hashPassword("DateFixTest@123");
     async function makeUser(key: string, roleName: string, modules: string[]) {
       const r = await prisma.portalRole.findUniqueOrThrow({ where: { name: roleName } });
@@ -69,8 +71,8 @@ test("Project dates: strict validation at the API boundary; dashboard survives a
       const token = signAccessToken({ sub: user.id, email: user.email, roleId: r.id, roleName: r.name });
       return { user, h: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } };
     }
-    const pm = await makeUser("pm", "PMO Manager", [projects, approvals]);
-    const requester = await makeUser("requester", "PR Request User", [approvals]);
+    const pm = await makeUser("pm", "PMO Manager", [projects, addProject, approvals]);
+    const requester = await makeUser("requester", "PR Request User", [approvals, prRequest]);
     const engineer = await makeUser("eng", "Engineer", [projects, dashboard, timesheets]);
 
     const api = async (method: string, path: string, h: Record<string, string>, body?: unknown) => {

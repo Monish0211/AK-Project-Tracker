@@ -151,7 +151,7 @@ const MainLayout = () => {
 
               <Route
                 path="/projects/add"
-                element={<ModuleRoute module="Projects"><AddProject /></ModuleRoute>}
+                element={<ModuleRoute module="Projects" alsoRequires={["Add Project"]}><AddProject /></ModuleRoute>}
               />
 
               <Route
@@ -227,26 +227,29 @@ const MainLayout = () => {
 
               {/* ===========================
                   PR REQUEST & TWO-LEVEL APPROVAL WORKFLOW
+                  "PR Request" = submitting (new Draft, own requests); "Approvals" = reviewing (queue + approve/reject).
+                  Shared pages accept either; the edit page then decides requester-vs-approver from the request itself,
+                  and the backend enforces the module that matches each operation.
               ============================ */}
 
               <Route
                 path="/pr-requests"
-                element={<ModuleRoute module="Approvals"><PRRequests /></ModuleRoute>}
+                element={<ModuleRoute anyOf={["PR Request", "Approvals"]}><PRRequests /></ModuleRoute>}
               />
 
               <Route
                 path="/pr-requests/new"
-                element={<ModuleRoute module="Approvals"><RequestPR /></ModuleRoute>}
+                element={<ModuleRoute module="PR Request"><RequestPR /></ModuleRoute>}
               />
 
               <Route
                 path="/pr-requests/:id/edit"
-                element={<ModuleRoute module="Approvals"><RequestPR /></ModuleRoute>}
+                element={<ModuleRoute anyOf={["PR Request", "Approvals"]}><RequestPR /></ModuleRoute>}
               />
 
               <Route
                 path="/pr-requests/:id"
-                element={<ModuleRoute module="Approvals"><PRRequestDetail /></ModuleRoute>}
+                element={<ModuleRoute anyOf={["PR Request", "Approvals"]}><PRRequestDetail /></ModuleRoute>}
               />
 
               {/* Wildcard Fallback */}

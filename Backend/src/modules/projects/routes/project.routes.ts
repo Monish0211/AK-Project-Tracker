@@ -34,16 +34,37 @@ router.get("/", authenticate, requireModuleAccess("Projects"), getProjects);
 router.get("/status-counts", authenticate, requireModuleAccess("Projects"), getProjectStatusCounts);
 // The General Information PMO Coordinator picker — registered names with
 // live account eligibility. Before "/:id" for the same reason as above.
-// "Approvals" too: the PR Request draft form renders the same General
-// Information card (a PR Request stays text-only — see project.validators.ts).
-router.get("/pmo-coordinators", authenticate, requireModuleAccess("Projects", "Approvals"), getPmoCoordinatorOptions);
+// "Approvals" and "PR Request" too: the PR Request draft form renders the same General
+// Information card (a PR Request stays text-only — see project.validators.ts), and a
+// requester holding only "PR Request" must still be able to fill it in.
+router.get("/pmo-coordinators", authenticate, requireModuleAccess("Projects", "Approvals", "PR Request"), getPmoCoordinatorOptions);
 router.get("/:id", authenticate, requireModuleAccess("Projects"), getProject);
-router.post("/", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), validate(createProjectRequestSchema), createProject);
+// Direct project creation needs the "Add Project" grant IN ADDITION to "Projects" (Oct 2026) — two chained
+// requireModuleAccess calls, i.e. both are required, not either. Viewing/editing/archiving existing projects keep their own
+// rules; a PR Request approval creates its Project through the service layer, not through this route, so approvers do not
+// need "Add Project".
+router.post(
+  "/",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Projects"),
+  requireModuleAccess("Add Project"),
+  validate(createProjectRequestSchema),
+  createProject
+);
 // Excel import — General Information for every row in one request; see
 // bulkImportProjects() in project.service.ts for the all-or-nothing
 // semantics (matches the pre-existing "if any row fails validation, the
 // entire import is rejected" behavior the Import UI already documents).
-router.post("/import", authenticate, denyReadOnlyWrites, requireModuleAccess("Projects"), validate(importProjectsSchema), importProjects);
+router.post(
+  "/import",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Projects"),
+  requireModuleAccess("Add Project"),
+  validate(importProjectsSchema),
+  importProjects
+);
 // Edit — a Read Only user may write here only while they are THIS
 // project's assigned PMO Coordinator (see
 // denyReadOnlyWritesExceptAssignedCoordinator, which lists every route with

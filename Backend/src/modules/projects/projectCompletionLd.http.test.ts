@@ -74,8 +74,9 @@ before(async () => {
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   closeServer = () => new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
 
-  const [projectsModule, engineerRole, readOnlyRole] = await Promise.all([
+  const [projectsModule, addProjectModule, engineerRole, readOnlyRole] = await Promise.all([
     prisma.module.findUniqueOrThrow({ where: { name: "Projects" } }),
+    prisma.module.findUniqueOrThrow({ where: { name: "Add Project" } }),
     prisma.portalRole.findUniqueOrThrow({ where: { name: "Engineer" } }),
     prisma.portalRole.findUniqueOrThrow({ where: { name: "Read Only" } }),
   ]);
@@ -89,7 +90,7 @@ before(async () => {
         department: "PMO",
         roleId,
         forcePasswordChange: false,
-        ...(withProjects ? { moduleAccess: { create: { moduleId: projectsModule.id } } } : {}),
+        ...(withProjects ? { moduleAccess: { create: [{ moduleId: projectsModule.id }, { moduleId: addProjectModule.id }] } } : {}),
       },
     });
     userIds.push(u.id);

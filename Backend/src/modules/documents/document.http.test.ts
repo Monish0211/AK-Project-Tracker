@@ -82,10 +82,11 @@ test("Documents — Project upload/list/download/delete, authorization, and deny
   const createdProjectIds: string[] = [];
 
   try {
-    const [administratorRole, engineerRole, projectsModule] = await Promise.all([
+    const [administratorRole, engineerRole, projectsModule, addProjectModule] = await Promise.all([
       prisma.portalRole.findUniqueOrThrow({ where: { name: "Administrator" } }),
       prisma.portalRole.findUniqueOrThrow({ where: { name: "Engineer" } }),
       prisma.module.findUniqueOrThrow({ where: { name: "Projects" } }),
+      prisma.module.findUniqueOrThrow({ where: { name: "Add Project" } }),
     ]);
     const passwordHash = await hashPassword("DocumentTest@123");
 
@@ -98,7 +99,7 @@ test("Documents — Project upload/list/download/delete, authorization, and deny
           department: "PMO",
           roleId,
           forcePasswordChange: false,
-          moduleAccess: { create: [{ moduleId: projectsModule.id }] },
+          moduleAccess: { create: [{ moduleId: projectsModule.id }, { moduleId: addProjectModule.id }] },
         },
       });
       createdUserIds.push(user.id);
@@ -215,12 +216,13 @@ test("Documents — PR Request lifecycle: survives approval (re-pointed, not dup
   const createdPRRequestIds: string[] = [];
 
   try {
-    const [pmoManagerRole, accountsRole, prRequestUserRole, approvalsModule, projectsModule] = await Promise.all([
+    const [pmoManagerRole, accountsRole, prRequestUserRole, approvalsModule, projectsModule, prRequestModule] = await Promise.all([
       prisma.portalRole.findUniqueOrThrow({ where: { name: "PMO Manager" } }),
       prisma.portalRole.findUniqueOrThrow({ where: { name: "Accounts" } }),
       prisma.portalRole.findUniqueOrThrow({ where: { name: "PR Request User" } }),
       prisma.module.findUniqueOrThrow({ where: { name: "Approvals" } }),
       prisma.module.findUniqueOrThrow({ where: { name: "Projects" } }),
+      prisma.module.findUniqueOrThrow({ where: { name: "PR Request" } }),
     ]);
     const passwordHash = await hashPassword("DocumentPrTest@123");
 
@@ -240,7 +242,7 @@ test("Documents — PR Request lifecycle: survives approval (re-pointed, not dup
       return { ...user, token: tokenFor({ ...user, roleName }) };
     }
 
-    const requester = await createUser("Requester", prRequestUserRole.id, prRequestUserRole.name, [approvalsModule.id]);
+    const requester = await createUser("Requester", prRequestUserRole.id, prRequestUserRole.name, [approvalsModule.id, prRequestModule.id]);
     const accountsApprover = await createUser("Accounts", accountsRole.id, accountsRole.name, [approvalsModule.id]);
     // A real PMO Manager holds Projects access too (they manage Projects,
     // not just PR Request approvals) — granted explicitly here since

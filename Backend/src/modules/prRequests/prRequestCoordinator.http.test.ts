@@ -61,6 +61,7 @@ test("PR Request → Project: the chosen PMO Coordinator account is linked on ap
     const mod = async (name: string) => (await prisma.module.findUniqueOrThrow({ where: { name } })).id;
     const approvals = await mod("Approvals");
     const projects = await mod("Projects");
+    const prRequest = await mod("PR Request");
     const passwordHash = await hashPassword("PrCoordTest@123");
     async function makeUser(key: string, roleName: string, modules: string[], extra: Record<string, unknown> = {}) {
       const r = await role(roleName);
@@ -74,8 +75,8 @@ test("PR Request → Project: the chosen PMO Coordinator account is linked on ap
       const token = signAccessToken({ sub: user.id, email: user.email, roleId: r.id, roleName: r.name });
       return { user, h: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, auth: { Authorization: `Bearer ${token}` } };
     }
-    const requester = await makeUser("requester", "PR Request User", [approvals]);
-    const outsider = await makeUser("outsider", "PR Request User", [approvals, projects]);
+    const requester = await makeUser("requester", "PR Request User", [approvals, prRequest]);
+    const outsider = await makeUser("outsider", "PR Request User", [approvals, projects, prRequest]);
     const accounts = await makeUser("accounts", "Accounts", [approvals]);
     const pmo = await makeUser("pmo", "PMO Manager", [approvals, projects]);
     const coord = await makeUser("coord", "Read Only", [projects]);

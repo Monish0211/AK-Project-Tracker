@@ -73,9 +73,10 @@ test("Region -> PR Category -> PR Number prefix rule is enforced server-side", a
   const createdProjectIds: string[] = [];
 
   try {
-    const [adminRole, projectsModule] = await Promise.all([
+    const [adminRole, projectsModule, addProjectModule] = await Promise.all([
       prisma.portalRole.findUniqueOrThrow({ where: { name: "Administrator" } }),
       prisma.module.findUniqueOrThrow({ where: { name: "Projects" } }),
+      prisma.module.findUniqueOrThrow({ where: { name: "Add Project" } }),
     ]);
     const passwordHash = await hashPassword("PrCategoryPrefixTest@123");
     const user = await prisma.portalUser.create({
@@ -86,7 +87,7 @@ test("Region -> PR Category -> PR Number prefix rule is enforced server-side", a
         department: "PMO",
         roleId: adminRole.id,
         forcePasswordChange: false,
-        moduleAccess: { create: { moduleId: projectsModule.id } },
+        moduleAccess: { create: [{ moduleId: projectsModule.id }, { moduleId: addProjectModule.id }] },
       },
     });
     createdUserIds.push(user.id);

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { X, User as UserIcon, Shield, CheckSquare, Settings2, KeyRound, MapPin, Pencil, Info } from "lucide-react";
-import type { User, UserModuleAccess, UserProjectRegionAccess, UserApprovalRights } from "../../../../types/UserModel";
+import type { User } from "../../../../types/UserModel";
+import { MODULE_FIELDS, REGION_FIELDS, APPROVAL_FIELDS } from "../../../../utils/accessFields";
 import { Badge } from "../../../../components/ui/Badge";
 import { Button } from "../../../../components/ui/Button";
 
@@ -11,38 +12,8 @@ interface UserViewDrawerProps {
   onEdit: (user: User) => void;
 }
 
-const MODULE_FIELDS: { key: keyof UserModuleAccess; label: string }[] = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "projects", label: "Projects" },
-  { key: "customerMaster", label: "Customer Master" },
-  { key: "timesheets", label: "Timesheets" },
-  { key: "invoices", label: "Invoices" },
-  { key: "reports", label: "Reports" },
-  { key: "manpower", label: "Manpower" },
-  { key: "documents", label: "Documents" },
-  { key: "settings", label: "Settings" },
-  { key: "notifications", label: "Notifications" },
-  { key: "reminders", label: "Reminders" },
-];
-
-const REGION_FIELDS: { key: keyof UserProjectRegionAccess; label: string }[] = [
-  { key: "india", label: "India" },
-  { key: "qatar", label: "Qatar" },
-  { key: "malaysia", label: "Malaysia" },
-  { key: "oman", label: "Oman" },
-  { key: "abuDhabi", label: "Abu Dhabi" },
-  { key: "fzi", label: "FZI" },
-  { key: "elixirQatar", label: "Elixir Qatar" },
-];
-
-const APPROVAL_FIELDS: { key: keyof UserApprovalRights; label: string }[] = [
-  { key: "archiveProjects", label: "Archive Projects" },
-  { key: "deleteProjectPermanently", label: "Delete Project Permanently" },
-  { key: "raiseInvoice", label: "Raise Invoice" },
-  { key: "editInvoice", label: "Edit Invoice" },
-  { key: "deleteInvoice", label: "Delete Invoice" },
-  { key: "viewAllProjects", label: "View All Projects" },
-];
+// Module / Region / Approval lists come from utils/accessFields.ts — the single list the edit drawer, the user listing and
+// this read-only view all share (this file used to keep its own copy, which had already drifted: it omitted "Approvals").
 
 const formatDateTime = (iso?: string | null): string => {
   if (!iso) return "Never";

@@ -51,6 +51,7 @@ test("PR Request RFQ No.: required on the draft, restored on reopen, carried to 
     const mod = async (name: string) => (await prisma.module.findUniqueOrThrow({ where: { name } })).id;
     const approvals = await mod("Approvals");
     const projects = await mod("Projects");
+    const prRequest = await mod("PR Request");
     const passwordHash = await hashPassword("PrRfqTest@123");
     async function makeUser(key: string, roleName: string, modules: string[]) {
       const r = await prisma.portalRole.findUniqueOrThrow({ where: { name: roleName } });
@@ -64,7 +65,7 @@ test("PR Request RFQ No.: required on the draft, restored on reopen, carried to 
       const token = signAccessToken({ sub: user.id, email: user.email, roleId: r.id, roleName: r.name });
       return { user, h: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } };
     }
-    const requester = await makeUser("requester", "PR Request User", [approvals]);
+    const requester = await makeUser("requester", "PR Request User", [approvals, prRequest]);
     const accounts = await makeUser("accounts", "Accounts", [approvals]);
     const pmo = await makeUser("pmo", "PMO Manager", [approvals, projects]);
 
