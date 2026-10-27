@@ -8,13 +8,18 @@ export const EMAIL_BRAND = {
 } as const;
 
 /**
- * Request Invoice → Invoice Raised → Invoice Paid workflow (Oct 2026) — the
- * one mandatory CC recipient every email in that lifecycle must carry,
- * server-controlled and never user-removable. Not a PortalUser (no directory
- * row backs it), so it is injected here rather than persisted as a CC
- * Member — see invoiceRequest.service.ts's buildInvoiceWorkflowCcList().
+ * Request Invoice → Invoice Raised → Invoice Paid workflow (Oct 2026) — each email in that lifecycle carries ONE mandatory CC recipient,
+ * server-controlled and never user-removable. Not a PortalUser (no directory row backs it), so it is injected here rather than
+ * persisted as a CC Member — see invoiceRequestEmail.rules.ts.
+ *
+ * The mandatory recipient differs by stage:
+ *  - "Invoice Request Assigned" and "Invoice Raised" -> MANDATORY_INVOICE_REQUEST_CC_EMAIL (below).
+ *  - "Invoice Paid" -> MANDATORY_INVOICE_WORKFLOW_CC_EMAIL (this constant, the original lifecycle-wide address, unchanged).
  */
 export const MANDATORY_INVOICE_WORKFLOW_CC_EMAIL = "info@ifluids.com";
+
+/** Mandatory CC of the "Invoice Request Assigned" and "Invoice Raised" emails (replaces info@ifluids.com for those two; Invoice Paid is unchanged). */
+export const MANDATORY_INVOICE_REQUEST_CC_EMAIL = "arun@ifluids.com";
 
 /**
  * One subject line per template, kept here rather than inline in each

@@ -228,7 +228,7 @@ test("modal: the CC addresses and Attachments sections sit after Special Note an
   for (const label of ["Client Name", "Project No.", "Project Name", "Client Contact Name", "Phone Number", "E-mail Id", "Send Invoice To", "CC Members", "Invoice Amount", "Number of Copies Required", "Reports/Drawings Available on the Server", "Report Printing Details", "Address", "Special Note (optional)"]) {
     assert.ok(modal.includes(label), `existing label "${label}" is still present`);
   }
-  assert.ok(modal.includes("info@ifluids.com is always included automatically and cannot be removed."));
+  assert.ok(modal.includes("arun@ifluids.com is automatically included for Invoice Request Assigned emails and cannot be removed."));
   assert.match(modal, /disabled=\{!assignedToUserId \|\| isSubmitting\}/, "submit stays disabled until a person is chosen and while sending (duplicate-submit guard)");
 });
 

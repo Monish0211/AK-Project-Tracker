@@ -10,7 +10,7 @@ import { sendEmail } from "../../../shared/email/email.service.js";
 import { buildInvoiceRaisedSuccessfullyEmail } from "../../../shared/email/templates/invoiceRaisedSuccessfully.template.js";
 import { buildInvoiceRequestAssignedEmail } from "../../../shared/email/templates/invoiceRequestAssigned.template.js";
 import { buildInvoicePaidEmail } from "../../../shared/email/templates/invoicePaid.template.js";
-import { buildInvoiceWorkflowCcList } from "../invoiceRequestEmail.rules.js";
+import { buildInvoiceRequestCcList, buildInvoiceWorkflowCcList } from "../invoiceRequestEmail.rules.js";
 import { deleteDocumentFile, generateStorageKey, readDocumentFilePath, writeDocumentFile } from "../../../shared/utils/documentStorage.js";
 import {
   INVOICE_REQUEST_EMAIL_STATUS,
@@ -287,7 +287,7 @@ async function sendAssignedEmail(request: InvoiceRequestRow, additionalCcEmails:
       invoicesUrl: projectInvoicesUrl(request.projectId),
     };
     const to = request.assignedTo.email;
-    const cc = buildInvoiceWorkflowCcList(
+    const cc = buildInvoiceRequestCcList(
       request.ccMembers.map((m) => m.portalUser.email),
       additionalCcEmails,
       [to] // the primary recipient is never also listed in CC
@@ -387,7 +387,7 @@ async function notifyRequesterInvoiceRaised(request: InvoiceRequestRow): Promise
       projectTitle: request.project.projectTitle,
       invoicesUrl: projectInvoicesUrl(request.projectId),
     });
-    const cc = buildInvoiceWorkflowCcList(request.ccMembers.map((m) => m.portalUser.email));
+    const cc = buildInvoiceRequestCcList(request.ccMembers.map((m) => m.portalUser.email));
     const result = await sendEmail({ to: request.requestedBy.email, cc, subject: email.subject, html: email.html });
     if (!result.success) {
       console.error(`[invoiceRequests] Fulfilled email failed for ${request.requestedBy.email}: ${result.error}`);

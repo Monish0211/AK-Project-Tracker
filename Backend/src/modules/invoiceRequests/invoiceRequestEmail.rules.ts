@@ -1,4 +1,4 @@
-import { MANDATORY_INVOICE_WORKFLOW_CC_EMAIL } from "../../shared/email/email.constants.js";
+import { MANDATORY_INVOICE_REQUEST_CC_EMAIL, MANDATORY_INVOICE_WORKFLOW_CC_EMAIL } from "../../shared/email/email.constants.js";
 
 /**
  * Pure trigger/composition rules for the Request Invoice -> Invoice Raised
@@ -8,19 +8,26 @@ import { MANDATORY_INVOICE_WORKFLOW_CC_EMAIL } from "../../shared/email/email.co
  */
 
 /**
- * The CC list every email in this lifecycle must carry: the mandatory
- * info@ifluids.com first, always present exactly once, followed by the
+ * The CC list an email in this lifecycle must carry: the stage's mandatory address first, always present exactly once, followed by the
  * persisted CC Members' current email addresses — deduped case-insensitively
  * (defensive; @@unique([invoiceRequestId, portalUserId]) already prevents a
  * duplicate PortalUser row at persistence time, but two different accounts
  * could in principle share an email, or a member's address could happen to
  * equal the mandatory one). Caller-supplied order among the members is
  * otherwise preserved.
+ *
+ * `mandatoryEmail` defaults to MANDATORY_INVOICE_WORKFLOW_CC_EMAIL (info@ifluids.com), which is what the Invoice Paid email uses; the
+ * Assigned and Raised emails go through buildInvoiceRequestCcList() below instead.
  */
-export function buildInvoiceWorkflowCcList(memberEmails: readonly string[], additionalEmails: readonly string[] = [], skipAdditional: readonly string[] = []): string[] {
-  const mandatoryKey = MANDATORY_INVOICE_WORKFLOW_CC_EMAIL.trim().toLowerCase();
+export function buildInvoiceWorkflowCcList(
+  memberEmails: readonly string[],
+  additionalEmails: readonly string[] = [],
+  skipAdditional: readonly string[] = [],
+  mandatoryEmail: string = MANDATORY_INVOICE_WORKFLOW_CC_EMAIL
+): string[] {
+  const mandatoryKey = mandatoryEmail.trim().toLowerCase();
   const seen = new Set<string>([mandatoryKey]);
-  const result = [MANDATORY_INVOICE_WORKFLOW_CC_EMAIL];
+  const result = [mandatoryEmail];
 
   for (const email of memberEmails) {
     const key = email.trim().toLowerCase();
@@ -40,6 +47,16 @@ export function buildInvoiceWorkflowCcList(memberEmails: readonly string[], addi
   }
 
   return result;
+}
+
+/**
+ * CC list of the "Invoice Request Assigned" and "Invoice Raised" emails: identical rules to buildInvoiceWorkflowCcList (mandatory address
+ * first and exactly once, then the CC Members, then manual addresses, case-insensitive de-duplication, the primary recipient never repeated),
+ * but the mandatory address is MANDATORY_INVOICE_REQUEST_CC_EMAIL (arun@ifluids.com). The Invoice Paid email keeps using
+ * buildInvoiceWorkflowCcList with its default (info@ifluids.com).
+ */
+export function buildInvoiceRequestCcList(memberEmails: readonly string[], additionalEmails: readonly string[] = [], skipAdditional: readonly string[] = []): string[] {
+  return buildInvoiceWorkflowCcList(memberEmails, additionalEmails, skipAdditional, MANDATORY_INVOICE_REQUEST_CC_EMAIL);
 }
 
 /** The most manually entered CC addresses one request may carry. */
