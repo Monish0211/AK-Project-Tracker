@@ -26,7 +26,7 @@ export function CommercialSummary({ project }: Props) {
   const tiles = [
     {
       key: "contract",
-      label: "Contract Value",
+      label: "Work Order Value",
       value: formatBusinessINR(summary.projectValueINR),
       rawValue: summary.projectValueINR,
       icon: <Banknote size={16} />,
@@ -41,12 +41,12 @@ export function CommercialSummary({ project }: Props) {
       tint: "info" as const,
     },
     {
-      key: "outstanding",
-      label: "Outstanding",
-      value: formatBusinessINR(summary.outstandingCollection),
-      rawValue: summary.outstandingCollection,
-      icon: <AlertCircle size={16} />,
-      tint: "warning" as const,
+      key: "balance",
+      label: "Balance to Invoice",
+      value: formatBusinessINR(summary.pendingDue),
+      rawValue: summary.pendingDue,
+      icon: <PieChart size={16} />,
+      tint: "danger" as const,
     },
     {
       key: "received",
@@ -57,12 +57,12 @@ export function CommercialSummary({ project }: Props) {
       tint: "success" as const,
     },
     {
-      key: "balance",
-      label: "Balance to Invoice",
-      value: formatBusinessINR(summary.pendingDue),
-      rawValue: summary.pendingDue,
-      icon: <PieChart size={16} />,
-      tint: "danger" as const,
+      key: "outstanding",
+      label: "Outstanding",
+      value: formatBusinessINR(summary.outstandingCollection),
+      rawValue: summary.outstandingCollection,
+      icon: <AlertCircle size={16} />,
+      tint: "warning" as const,
     },
     {
       key: "activities",
