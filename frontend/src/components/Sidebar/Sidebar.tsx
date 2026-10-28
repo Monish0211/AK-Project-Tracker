@@ -761,9 +761,6 @@ const Sidebar = () => {
           <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-slate-400">
             Quick Summary
           </h3>
-          <p className="mb-3 text-[10px] font-medium text-slate-500 leading-snug">
-            Project status counts from the Projects API (not Dashboard KPIs).
-          </p>
 
           <div className="space-y-2">
             {SUMMARY_ROWS.map(({ icon: Icon, color, label, statusKey }) => {

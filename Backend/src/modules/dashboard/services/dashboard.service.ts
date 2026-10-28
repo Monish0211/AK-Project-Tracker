@@ -286,7 +286,14 @@ function buildHoursOverrun(
   };
 }
 
-function buildTimelineAlerts(projects: DashboardProjectRow[]) {
+/**
+ * Dashboard "Project Timeline Alerts" widget. Eligibility MUST be the same centralized "active project" classification the Timeline Alert
+ * Repository page uses (frontend getProjectTimelineAlerts() -> isActiveProjectStatus()): any in-progress workflow stage, not only the literal
+ * "Active" status. A literal check silently dropped every project in a later stage (Ongoing, Draft Report Submitted, Updated Report Submitted, ...)
+ * after the Sept 2026 Project Status Workflow Expansion, so the widget showed 4 projects while the repository listed 65.
+ * `now` exists only so tests can pin the calendar day; production always uses the current time.
+ */
+export function buildTimelineAlerts(projects: DashboardProjectRow[], now: Date = new Date()) {
   const alerts: TimelineAlertProjectDto[] = [];
   let dueSoonCount = 0;
   let upcomingCount = 0;
@@ -295,9 +302,9 @@ function buildTimelineAlerts(projects: DashboardProjectRow[]) {
   let onTrackCount = 0;
 
   for (const p of projects) {
-    if (p.projectStatus !== "Active") continue;
+    if (!isActiveProjectStatus(p.projectStatus)) continue;
     if (!p.projectEndDate) continue;
-    const timeline = calculateTimelineAlert(toDateKey(p.projectEndDate));
+    const timeline = calculateTimelineAlert(toDateKey(p.projectEndDate), now);
     if (!timeline) continue;
 
     if (timeline.status === "Due Today") dueTodayCount += 1;
