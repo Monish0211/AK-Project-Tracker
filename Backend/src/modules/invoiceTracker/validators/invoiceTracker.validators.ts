@@ -3,12 +3,12 @@ import { AppError } from "../../../shared/utils/AppError.js";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../../weeklyNotifications/weeklyPaging.js";
 import { ALL_MONTHS, parseMonth } from "../invoiceTracker.rules.js";
 
-/** A real month ("YYYY-MM", the month a workflow record was CREATED in) or "all" for every month. */
+/** A real month ("YYYY-MM": invoices belong to the month of their INVOICE date, requests to the month they were submitted) or "all" for every month. */
 const month = z
   .string({ error: "month is required (YYYY-MM, or all)." })
   .refine((m) => m === ALL_MONTHS || parseMonth(m) !== null, 'month must be a real month in the form YYYY-MM, or "all".');
 
-/** Sorting is fixed server-side (PR number, then id), so no sort parameter is accepted — unknown keys are rejected. */
+/** Row order is fixed server-side (original approval submission, then the rules' fallbacks, then PR number and id), so no sort parameter is accepted — unknown keys are rejected. */
 export const trackerListQuerySchema = z
   .object({
     month,

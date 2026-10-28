@@ -224,16 +224,17 @@ export function TrackerTable({ data, month, expanded, onToggle, renderChain }: {
 }
 
 const HERO_TEXT: Record<TrackerView, string> = {
-  month: "Projects with an invoice dated in the selected month or an invoice request made in it. Each row shows the project's latest invoice or approval request: its amount (a dash while approval is pending) and its status. Expand a project for all its records, latest first, with their recorded history.",
+  month: "Projects with an invoice dated in the selected month or an invoice request made in it. Each row shows the project's latest invoice or approval request: its amount (a dash while approval is pending) and its status. Rows are ordered by when the approval was first submitted, latest first, so a row keeps its place while its status changes. Expand a project for all its records, latest first, with their recorded history.",
   outstanding: "Unpaid invoices from every month, oldest first, for follow-up. An invoice keeps its original month when it is paid; nothing is copied forward.",
   history: "Every workflow record from every month. Statuses and history are exactly what Edit Project → Invoices has saved; earlier invoices show “No recorded history”.",
 };
 
 /**
- * Invoice Tracker: a month-based workflow report (records are placed by their CREATION date), a separate Outstanding
- * view (unpaid invoices from all months) and an All history view. Status, amounts and history always come from the
- * backend's saved state — nothing is edited here; View / Edit / Delete open the existing invoice interfaces. Page
- * access is the Invoices module; project scope is the backend's.
+ * Invoice Tracker: a month-based workflow report (an invoice belongs to the month of its INVOICE date, a request to the month it
+ * was submitted), a separate Outstanding view (unpaid invoices from all months) and an All history view. The server decides the row
+ * order — the original approval submission, latest first — and this page never re-sorts it, so a row stays where it is while its
+ * status updates. Status, amounts and history always come from the backend's saved state — nothing is edited here; View / Edit /
+ * Delete open the existing invoice interfaces. Page access is the Invoices module; project scope is the backend's.
  */
 export default function InvoiceTracker() {
   const { user } = useAuth();

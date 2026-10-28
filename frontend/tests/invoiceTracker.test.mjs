@@ -1084,3 +1084,35 @@ test("responsive: the sidebar's width is switched by its breakpoint but never AN
   assert.doesNotMatch(aside, /transition-all/, "transition-all animated the width over 300ms after crossing 1440px");
   assert.match(aside, /transition-colors/, "the theme colours still transition");
 });
+
+test("row order is the server's: the table never re-sorts, so a row keeps its place while its status updates pending → raised → paid", async () => {
+  const { TrackerTable } = await load("/src/pages/InvoiceTracker/InvoiceTracker.tsx");
+  const rec = (over = {}) => ({ kind: "request", id: "r1", reference: "R1AB23CD", recordDate: "2026-10-05", amountINR: null, status: "PendingApproval", requestRef: null, raisedLater: null, inMonth: true, ...over });
+  const submitted = "2026-10-05T06:00:00.000Z";
+  // PR-9 has the LATEST approval submission (the server lists it first) although its PR number is higher and the other project's invoice is dated later.
+  const render = (first) =>
+    renderToStaticMarkup(
+      h(MemoryRouter, null, h(TrackerTable, {
+        data: page([row(9, { latestRecord: first, sortTier: 1, sortBasis: "approval_submitted", approvalSubmittedAt: submitted }), row(1, { latestRecord: rec({ id: "r2", reference: "R2AB23CD", recordDate: "2026-10-03" }), sortTier: 1, sortBasis: "approval_submitted", approvalSubmittedAt: "2026-10-03T06:00:00.000Z" })], { month: "2026-10" }),
+        month: "2026-10", expanded: new Set(), onToggle() {}, renderChain: () => "",
+      }))
+    );
+  const order = (html) => [...html.matchAll(/data-project="(PR-\d+)"/g)].map((m) => m[1]);
+  const status = (html, pr) => (html.slice(html.indexOf(`data-project="${pr}"`)).match(/data-latest-status="(\w+)"/) ?? [])[1];
+  const stages = [
+    ["PendingApproval", rec()],
+    ["Raised", rec({ kind: "invoice", id: "INV-9", reference: "INV-9", recordDate: "2026-10-01", amountINR: 5000, status: "Raised", requestRef: "R1AB23CD" })],
+    ["PartiallyPaid", rec({ kind: "invoice", id: "INV-9", reference: "INV-9", recordDate: "2026-10-01", amountINR: 5000, status: "PartiallyPaid", requestRef: "R1AB23CD" })],
+    ["Paid", rec({ kind: "invoice", id: "INV-9", reference: "INV-9", recordDate: "2026-10-01", amountINR: 5000, status: "Paid", requestRef: "R1AB23CD" })],
+  ];
+  for (const [expected, record] of stages) {
+    const html = render(record);
+    assert.deepEqual(order(html), ["PR-9", "PR-1"], `${expected}: the row keeps its place`);
+    assert.equal(status(html, "PR-9"), expected, `${expected}: the status updates in the same row`);
+    assert.equal(status(html, "PR-1"), "PendingApproval", "the other approval is untouched");
+    assert.match(flat(html.slice(html.indexOf('data-project="PR-9"'), html.indexOf("</tr>", html.indexOf('data-project="PR-9"')))), /> 1 PR-9 | 1 PR-9 /, "S. No. 1 stays with the first-submitted approval");
+  }
+  // no client-side sorting anywhere in the page or the table
+  const pageSource = src("pages/InvoiceTracker/InvoiceTracker.tsx");
+  assert.equal(/\.sort\(/.test(pageSource), false, "InvoiceTracker.tsx never re-sorts the server's rows");
+});

@@ -141,6 +141,15 @@ export interface TrackerProjectRow {
   workOrderValueINR: number;
   pendingDueINR: number;
   hasOpenInvoiceRequest: boolean;
+  /**
+   * Which rule placed this row (server-side; the page never re-sorts). Month view: 1 = ordered by an approval request submitted in the month
+   * (latest first), 2 = every other displayed record (its date, latest first), 3 = nothing displayed. All history: 1 = ordered by approval
+   * submission, 0 = no approval request (PR-number order).
+   */
+  sortTier: number;
+  sortBasis: "approval_submitted" | "record_date" | "month_records" | "pr_number";
+  /** The ORIGINAL submission instant of the approval request behind this row's record — never changed by fulfilment, raising or payment. null = none. */
+  approvalSubmittedAt: string | null;
   /** What the row shows. null = the project has no relevant record (for example only a Draft) — the row says so. */
   latestRecord: LatestRecord | null;
   /** The latest RAISED invoice the older-outstanding warning is measured from. The row no longer shows it. */

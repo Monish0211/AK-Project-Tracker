@@ -9,8 +9,9 @@ import { prisma } from "../../shared/utils/prismaClient.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
 
 /**
- * Invoice Tracker — the MONTHLY REPORT IS FILTERED BY INVOICE DATE (never the creation, raised, payment or updated date),
- * ordered raised-in-the-month first. GET /invoice-tracker (month / all history), /invoice-tracker/outstanding and
+ * Invoice Tracker — the MONTHLY REPORT IS FILTERED BY INVOICE DATE (never the creation, raised, payment or updated date); its project
+ * rows are ordered by the original approval submission, then by the displayed record (see invoiceTrackerApprovalOrder.http.test.ts
+ * for the full request → invoice → paid lifecycle). GET /invoice-tracker (month / all history), /invoice-tracker/outstanding and
  * /invoice-tracker/projects/:id/invoices through the real routes and the scratch database.
  *
  * Every record is inserted with explicit dates (invoiceDate, createdAt and the recorded raise events), so the boundaries are
@@ -275,15 +276,25 @@ test("9: month boundaries — first and last day are in, the days either side ar
   assert.deepEqual([edge("EDGEIN").raisedAt, edge("EDGEOUT").raisedAt], ["2026-10-31T18:29:59.000Z", "2026-10-31T18:30:00.000Z"]);
 });
 
-test("6-7: group 1 = dated AND raised in October first; everyone else after — projects (across pages) and records inside a project", async () => {
+test("6-7: project rows are ordered by the ORIGINAL approval submission first (LATEST first), then by the record each row displays (latest first); records inside a project keep their own order", async () => {
   const oct = (await list("admin")).data;
-  assert.deepEqual(oct.items.map((i: any) => [i.prNo.slice(TAG.length + 1), i.sortTier]), [["P7", 1], ["P6", 1], ["P1", 1], ["P4", 2], ["P2", 2], ["P3", 2]],
-    "group 1 projects by their newest recorded raise (P7 31 Oct, P6 20 Oct, P1 16 Oct); then group 2 by newest relevant date (P4 dated 9 Oct, P2 5 Oct, P3's request 3 Oct). P4 was raised in November, so it is group 2");
-  assert.deepEqual(oct.items.map((i: any) => i.records.raisedInPeriodCount), [1, 1, 2, 0, 0, 0]);
+  assert.deepEqual(oct.items.map((i: any) => [i.prNo.slice(TAG.length + 1), i.sortTier]), [["P3", 1], ["P6", 1], ["P1", 2], ["P7", 2], ["P4", 2], ["P2", 3]],
+    "group 1 = the displayed record belongs to an approval request submitted in October, LATEST submission first (P3 3 Oct, still Open, then P6 2 Oct — its request is already fulfilled by an invoice raised 20 Oct, and it stays below P3 because it was submitted earlier); " +
+    "every other row follows by the date of the record it DISPLAYS, LATEST first (P1 PART 31 Oct, P7 EDGEOUT 29 Oct, P4 9 Oct); P2 only has a Draft, so it displays nothing (group 3). " +
+    "A recorded raise does not rank a project: only the displayed record's date does");
+  assert.deepEqual(oct.items.map((i: any) => i.approvalSubmittedAt), ["2026-10-03T06:00:00.000Z", "2026-10-02T06:00:00.000Z", null, null, null, null], "P6's fulfilled request keeps its original submission instant");
+  assert.deepEqual(oct.items.map((i: any) => i.sortBasis), ["approval_submitted", "approval_submitted", "record_date", "record_date", "record_date", "month_records"]);
+  // the ranking record IS the displayed record: every row's latestRecord equals the first record of its own expanded list
+  for (const item of oct.items) {
+    const expanded = (await chain("admin", item.prNo.slice(TAG.length + 1))).data;
+    assert.deepEqual(expanded.latestRecord, item.latestRecord, `${item.prNo}: the expanded project shows the very record the row shows`);
+    if (item.latestRecord) assert.equal(expanded.recordOrder[0].id, item.latestRecord.id, `${item.prNo}: …and lists it first`);
+  }
+  assert.deepEqual(oct.items.map((i: any) => i.records.raisedInPeriodCount), [0, 1, 2, 1, 0, 0], "the month's financial counts are untouched by the ordering change");
   // the order is a property of the whole result: every page size yields the same sequence
   const singles: string[] = [];
   for (let page = 1; page <= 6; page++) singles.push(...prsOf((await list("admin", `month=2026-10&pageSize=1&page=${page}`)).data.items));
-  assert.deepEqual(singles, ["P7", "P6", "P1", "P4", "P2", "P3"]);
+  assert.deepEqual(singles, ["P3", "P6", "P1", "P7", "P4", "P2"]);
   const p1 = (await chain("admin", "P1")).data;
   assert.deepEqual(p1.order.map((o: any) => o.id.slice(TAG.length + 1)), ["RAISEDOCT", "PAIDOCT", "PART", "DRAFT", "MULTI", "SUBM", "CANC", "RAISEDSEP", "FIRSTDAY"],
     "6: RAISEDOCT (raised 16 Oct) and PAIDOCT (raised 3 Oct) lead, newest raise first; then the rest by invoice date, newest first — RAISEDSEP (raised in September) comes after the invoices raised in October; 7: the Draft is after them too");
@@ -703,8 +714,9 @@ test("12: All history spans every month — one row per project, every invoice o
   assert.deepEqual(prsOf(all.items).sort(), ["P1", "P2", "P3", "P4", "P5", "P6", "P7"], "F1-F3 have no record; P3 is there through its request");
   assert.deepEqual([all.summary.invoiceCount, all.summary.requestCount], [23, 2], "P1 15 + P2 1 + P4 1 + P5 3 + P6 1 + P7 2");
   assert.deepEqual(all.summary.byStatus, { raised: 17, partiallyPaid: 1, paid: 2, draft: 2, cancelled: 1 }, "JULY was paid by an earlier test");
-  assert.ok(all.items.every((i: any) => i.sortTier === 0 && i.records.raisedInPeriodCount === 0), "all-history keeps plain PR-number order");
-  assert.deepEqual(prsOf(all.items), ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]);
+  assert.ok(all.items.every((i: any) => i.records.raisedInPeriodCount === 0), "all history has no raised-in-the-period group");
+  assert.deepEqual(all.items.map((i: any) => [i.prNo.slice(TAG.length + 1), i.sortTier]), [["P3", 1], ["P6", 1], ["P1", 0], ["P2", 0], ["P4", 0], ["P5", 0], ["P7", 0]],
+    "all history: projects whose displayed record belongs to an approval request come first, latest submission first (P3 3 Oct, P6 2 Oct); projects with no approval request follow in PR-number order");
   const months = (await chain("admin", "P1", "all")).data.invoices.map((i: any) => i.invoiceDate.slice(0, 7));
   assert.deepEqual([...new Set(months)].sort(), ["2026-01", "2026-09", "2026-10", "2026-11"], "invoices of many different dates, all listed");
   const searched = (await api(`/invoice-tracker?month=all&search=${TAG}-P5`, "admin")).data;
@@ -727,7 +739,7 @@ test("13: pagination is stable with no gaps or duplicates and the same whole-mon
     if (summary) assert.deepEqual(r.summary, summary, "totals are never limited to the visible page");
     summary = r.summary;
   }
-  assert.deepEqual(seen, ["P7", "P6", "P1", "P4", "P2", "P3"], "the ranked order holds across pages");
+  assert.deepEqual(seen, ["P3", "P6", "P1", "P7", "P4", "P2"], "the ranked order holds across pages");
   assert.equal((await list("admin", "month=2026-10&pageSize=2&page=9")).data.items.length, 0);
   const o1 = (await outstanding("admin", "&pageSize=4&page=1")).data;
   const o5 = (await outstanding("admin", "&pageSize=4&page=5")).data;
@@ -737,7 +749,7 @@ test("13: pagination is stable with no gaps or duplicates and the same whole-mon
 
 test("14: project scope and permissions are the existing rules — nothing is visible that the user could not already see", async () => {
   const own = (await list("ownerA")).data;
-  assert.deepEqual(prsOf(own.items), ["P7", "P6", "P1", "P2", "P3"], "ownerA's own projects only — P4 belongs to ownerB");
+  assert.deepEqual(prsOf(own.items), ["P3", "P6", "P1", "P7", "P2"], "ownerA's own projects only — P4 belongs to ownerB");
   assert.equal(own.summary.invoiceCount, 13, "totals are scoped as well (P4's invoice is not counted)");
   assert.deepEqual(prsOf((await list("ownerB")).data.items), ["P4"]);
   assert.equal((await chain("ownerB", "P1")).status, 403, "another owner's project");

@@ -14,7 +14,9 @@ import {
   financialsOf,
   firstRaisedAt,
   groupInvoices,
-  bestRecord,
+  approvalSubmittedAtOf,
+  compareProjectRows,
+  rankProject,
   inWindow,
   invoiceTier,
   invoicesDatedIn,
@@ -40,10 +42,11 @@ import {
   orderAllRecords,
   selectLatestRecord,
   shortRequestRef,
+  type LatestRecord,
   type OrderableRecord,
+  type ProjectRank,
   type ProjectRecordState,
   type SummaryRequest,
-  type RecordTier,
 } from "../invoiceTracker.rules.js";
 import type { OutstandingQuery, TrackerListQuery } from "../validators/invoiceTracker.validators.js";
 
@@ -138,71 +141,88 @@ async function selectMonth(user: AccessTokenPayload, query: TrackerListQuery) {
 export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerListQuery) {
   const { window, base, lines, requests, invoices, byProject, tableIds, listed, summary } = await selectMonth(user, query);
 
-  // Page the qualifying projects in one stable order across ALL pages: group 1 (a record raised in the month) first, then the
-  // rest; inside a group the project whose best record has the newest relevant date first; then PR number, then id.
-  const perProject = new Map<string, OrderableRecord[]>();
-  const add = (projectId: string, rec: OrderableRecord) => {
-    const list = perProject.get(projectId);
-    if (list) list.push(rec);
-    else perProject.set(projectId, [rec]);
-  };
-  if (window) {
-    for (const g of invoices) {
-      if (!listed.has(g.projectId)) continue;
-      const tier = invoiceTier(g, window);
-      add(g.projectId, { kind: "invoice", id: g.key, tier, sortDate: (tier === 1 ? g.raisedAt : g.invoiceDate)! });
-    }
-    for (const r of requests) if (listed.has(r.projectId)) add(r.projectId, { kind: "request", id: r.id, tier: requestTier(), sortDate: r.createdAt });
+  // THE ROW ORDER needs, for EVERY listed project (not only the visible page), the one record its row displays and that record's original
+  // approval submission — so the full lifecycle of every listed project is read here, in two batched queries whatever the page holds:
+  // all requests of any date (an Open request from last month is still the latest record) and, in a month view, the lines of the
+  // request-only projects (the month's lines cover only projects with an invoice dated in it). All history already read every line.
+  const loadedProjects = new Set(lines.map((l) => l.projectId));
+  const [extraLines, requestRows] = await Promise.all([
+    window ? repo.findLinesForProjects(tableIds.filter((id) => !loadedProjects.has(id))) : Promise.resolve([]),
+    repo.findRequestsForProjects(tableIds),
+  ]);
+  const requestsByProject = new Map<string, SummaryRequest[]>();
+  for (const r of requestRows) {
+    const list = requestsByProject.get(r.projectId);
+    const lite = { id: r.id, status: r.status, createdAt: r.createdAt, fulfilledInvoiceLineId: r.fulfilledInvoiceLineId };
+    if (list) list.push(lite);
+    else requestsByProject.set(r.projectId, [lite]);
   }
-  const rank = new Map<string, { tier: RecordTier; sortDate: Date }>();
-  for (const [projectId, recs] of perProject) {
-    const best = bestRecord(recs);
-    if (best) rank.set(projectId, best);
+  const groupsByProject = new Map<string, InvoiceGroup[]>();
+  for (const g of groupInvoices([...lines.filter((l) => listed.has(l.projectId)), ...extraLines])) {
+    const list = groupsByProject.get(g.projectId);
+    if (list) list.push(g);
+    else groupsByProject.set(g.projectId, [g]);
   }
-  const tierOf = (id: string): number => rank.get(id)?.tier ?? 0;
-  const dateOf = (id: string): number => rank.get(id)?.sortDate.getTime() ?? 0;
+
+  // Inputs for a project that displays NOTHING: the month's newest-dated record and the LATEST request the report covers.
+  const newestMonthRecord = new Map<string, number>();
+  const latestCoveredRequest = new Map<string, Date>();
+  for (const g of invoices) {
+    if (!listed.has(g.projectId)) continue;
+    if (g.invoiceDate) newestMonthRecord.set(g.projectId, Math.max(newestMonthRecord.get(g.projectId) ?? 0, g.invoiceDate.getTime()));
+  }
+  for (const r of requests) {
+    if (!listed.has(r.projectId)) continue;
+    newestMonthRecord.set(r.projectId, Math.max(newestMonthRecord.get(r.projectId) ?? 0, r.createdAt.getTime()));
+    const current = latestCoveredRequest.get(r.projectId);
+    if (!current || r.createdAt > current) latestCoveredRequest.set(r.projectId, r.createdAt);
+  }
+
+  // ONE record per project decides both what the row displays and where it sits (see rankProject): the project's latest record, positioned
+  // by the original submission of the approval request behind it. Nothing here reads a status change time, a payment or an update time.
+  const latestOf = new Map<string, LatestRecord | null>();
+  const approvalOf = new Map<string, Date | null>();
+  const rankOf = new Map<string, ProjectRank>();
+  for (const id of tableIds) {
+    const groups = groupsByProject.get(id) ?? [];
+    const reqs = requestsByProject.get(id) ?? [];
+    const latestRecord = selectLatestRecord(groups, reqs, window);
+    const approval = approvalSubmittedAtOf(latestRecord, groups, reqs);
+    latestOf.set(id, latestRecord);
+    approvalOf.set(id, approval);
+    rankOf.set(
+      id,
+      rankProject(
+        {
+          latest: latestRecord,
+          approvalSubmittedAt: latestRecord ? approval : (latestCoveredRequest.get(id) ?? null),
+          fallbackAt: newestMonthRecord.has(id) ? new Date(newestMonthRecord.get(id)!) : null,
+        },
+        window
+      )
+    );
+  }
   const allRows = await repo.findProjectsByIds(base, tableIds);
-  allRows.sort((a, b) => tierOf(a.id) - tierOf(b.id) || dateOf(b.id) - dateOf(a.id) || prNoCollator.compare(a.prNo, b.prNo) || (a.id < b.id ? -1 : 1));
+  allRows.sort((a, b) => compareProjectRows({ rank: rankOf.get(a.id)!, prNo: a.prNo, id: a.id }, { rank: rankOf.get(b.id)!, prNo: b.prNo, id: b.id }, (x, y) => prNoCollator.compare(x, y)));
   const rows = allRows.slice((query.page - 1) * query.pageSize, query.page * query.pageSize);
   const total = allRows.length;
 
   // The same batched WO value / pending due / open-request source Project Repository uses.
   const commercial = await computeCommercialTotalsByProjectId(rows.map((p) => p.id));
 
-  // HEADLINE per listed project: its latest raised invoice and the older outstanding ones. These need ALL of the project's invoices
-  // (any date). In a month view the lines read above cover only projects with an invoice in the month, so the listed page's projects
-  // (a request-only project has none loaded) are read in ONE batched query — always one, whatever the page holds. All history
-  // already read every line. Nothing here feeds the cards — they were computed above from the month's invoices only.
-  const pageIds = new Set(rows.map((p) => p.id));
-  // The latest record of each listed project also needs its requests of every date (an open request from last month is still pending):
-  // read together with the lines, in one batched query for the whole page.
-  const [pageLines, pageRequestRows] = await Promise.all([
-    window ? repo.findLinesForProjects(rows.map((p) => p.id)) : Promise.resolve(lines.filter((l) => pageIds.has(l.projectId))),
-    repo.findRequestsForProjects(rows.map((p) => p.id)),
-  ]);
-  const pageRequests = new Map<string, SummaryRequest[]>();
-  for (const r of pageRequestRows) {
-    const list = pageRequests.get(r.projectId);
-    const lite = { id: r.id, status: r.status, createdAt: r.createdAt, fulfilledInvoiceLineId: r.fulfilledInvoiceLineId };
-    if (list) list.push(lite);
-    else pageRequests.set(r.projectId, [lite]);
-  }
-  const pageGroups = new Map<string, InvoiceGroup[]>();
-  for (const g of groupInvoices(pageLines)) {
-    const list = pageGroups.get(g.projectId);
-    if (list) list.push(g);
-    else pageGroups.set(g.projectId, [g]);
-  }
+  // HEADLINE per listed project: its latest raised invoice and the older outstanding ones — from the same all-dates lines as above.
+  // Nothing here feeds the cards — they were computed above from the month's invoices only.
   const headlineOf = (projectId: string) => {
-    const groups = pageGroups.get(projectId) ?? [];
+    const groups = groupsByProject.get(projectId) ?? [];
     const latest = latestRaisedGroup(invoicesUpTo(groups, window));
     const older = olderOutstanding(invoicesUpTo(groups, window), latest, groups);
     return {
       /**
        * The ONE record the project row shows (Latest Invoice Amount + Status): the project's latest invoice or approval request up to the end
-       * of the selected month — see selectLatestRecord() in the rules. null = the project has no relevant record yet.
+       * of the selected month — see selectLatestRecord() in the rules. null = the project has no relevant record yet. The row's position is
+       * decided by this same record (see sortTier / approvalSubmittedAt below).
        */
-      latestRecord: selectLatestRecord(groups, pageRequests.get(projectId) ?? [], window),
+      latestRecord: latestOf.get(projectId) ?? null,
       latestRaised: latest
         ? { invoiceNo: latest.invoiceNo, invoiceDate: dateOnly(latest.invoiceDate!), amountINR: latest.amountINR, status: latest.status, paymentStatus: paymentLabel(latest.status), inMonth: window ? inInvoiceMonth(latest.invoiceDate, window) : null }
         : null,
@@ -224,8 +244,19 @@ export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerLi
         workOrderValueINR: c?.workOrderValueINR ?? 0,
         pendingDueINR: c?.pendingDueINR ?? 0,
         hasOpenInvoiceRequest: c?.hasOpenInvoiceRequest ?? false,
-        /** 1 = has an invoice raised in the month, 2 = every other project (0 in all-history, which is PR-number order). */
-        sortTier: tierOf(p.id),
+        /**
+         * Which rule placed this row (the rules' ORDER OF PROJECTS). Month view: 1 = its displayed record belongs to an approval request
+         * submitted in the month (latest submission first), 2 = every other displayed record (its date, latest first), 3 = nothing
+         * displayed. All history: 1 = ordered by approval submission, 0 = no approval request (PR-number order).
+         */
+        sortTier: window ? rankOf.get(p.id)!.group : rankOf.get(p.id)!.group === 1 ? 1 : 0,
+        sortBasis: rankOf.get(p.id)!.basis,
+        /**
+         * The ORIGINAL submission instant of the approval request behind the displayed record (null = that record has none: raised outside the
+         * Request Invoice workflow). It is the request's createdAt — never changed by fulfilment, raising or payment. When the row is ordered by
+         * approval submission this is exactly the instant that placed it (for a project that displays nothing: its latest covered request).
+         */
+        approvalSubmittedAt: (rankOf.get(p.id)!.approvalAt !== null ? new Date(rankOf.get(p.id)!.approvalAt!) : approvalOf.get(p.id))?.toISOString() ?? null,
         ...headlineOf(p.id),
         records: byProject.get(p.id)!,
       };

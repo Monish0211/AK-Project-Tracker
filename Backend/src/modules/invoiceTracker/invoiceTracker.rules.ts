@@ -29,11 +29,22 @@
  *   because a zero invoice is unusual — nothing about it contradicts "Paid". PartiallyPaid → paid / outstanding NOT recorded (null, never a guess). Draft and Cancelled → not
  *   applicable. Paid + outstanding always equals the invoice amount when both are known. The weekly unpaid-invoice email uses
  *   the same Raised / Partially Paid definitions.
- * - ORDER (month view), two groups: GROUP 1 = invoices dated in the month whose RECORDED raise is also in the month (a Draft, a
- *   pending request or a Cancelled invoice is never "raised"; nothing is inferred for invoices with no recorded raise).
- *   GROUP 2 = every other qualifying record. Inside a group: newest relevant date first — the recorded raise time in group 1,
- *   the invoice date in group 2 (a request's creation date) — then a stable tie-break on id, so rows never move between pages.
- *   Projects are ranked the same way by their best record (group, then that record's date, then PR number, then id).
+ * - ORDER OF RECORDS INSIDE ONE PROJECT (`order`, month view), two groups: GROUP 1 = invoices dated in the month whose RECORDED raise
+ *   is also in the month (a Draft, a pending request or a Cancelled invoice is never "raised"; nothing is inferred for invoices with
+ *   no recorded raise). GROUP 2 = every other qualifying record. Inside a group: newest relevant date first — the recorded raise time
+ *   in group 1, the invoice date in group 2 (a request's creation date) — then a stable tie-break on id.
+ * - ORDER OF PROJECTS (the rows of the report) — see rankProject(): a project's position is decided by the ORIGINAL APPROVAL SUBMISSION
+ *   of the very record its row displays (its latest record), never by a status, a payment, a raise or an invoice date, so it does not
+ *   move when Accounts raises or settles the invoice. The Invoice Request's createdAt is that timestamp: it is written once, never
+ *   updated, and the request stays linked to the invoice that fulfilled it (InvoiceRequest.fulfilledInvoiceLineId), so the same
+ *   timestamp keeps ordering the row after the request becomes an invoice. LATEST submission first.
+ *   Month view: group 1 = the displayed record belongs to an approval request SUBMITTED IN THE MONTH (latest submission first); group 2 =
+ *   every other row, by the date of the record it displays (its invoice date, or a request's day), LATEST first; group 3 = nothing displayed
+ *   (only Drafts / Cancelled / an unlinked completed request; the month's newest-dated record first).
+ *   All history: group 1 = the displayed record belongs to an approval request, any date (latest submission first); everything else follows
+ *   in PR number order. Ties: PR number, then the displayed record's id, then the project id — a total order, so rows never move between pages.
+ *   WHICH record a row displays (selectLatestRecord): an invoice that fulfilled a request is as recent as that request's ORIGINAL SUBMISSION,
+ *   so editing its invoice date cannot change the displayed record, and a request submitted later always becomes the displayed record.
  * - THE LATEST RAISED INVOICE of a project (its headline): the invoice with the newest invoice date among those actually raised
  *   (Raised, Partially Paid, Paid — never Draft or Cancelled), looking at invoices dated up to the end of the selected month. It
  *   stays the latest whatever its payment status; a newer Draft never replaces it. Exact date ties: later creation time, then key.
@@ -432,7 +443,9 @@ export function olderOutstanding<G extends InvoiceGroup>(context: G[], latest: G
  * amount (the amount belongs to the invoice's own month) and status Raised, plus a pointer to the invoice and its date.
  *
  * "Latest" is decided from stored data only, newest first by: (1) the record's DATE — an invoice's invoice date (date-only), a request's
- * creation day in India — the same dates that place records in months; (2) the creation instant (an invoice's earliest line, a request);
+ * creation day in India — the same dates that place records in months. EXCEPTION: an invoice that fulfilled a request takes that request's
+ * submission day instead (it is the same lifecycle, and the row is ordered by that submission — editing the invoice date must not change
+ * which record the row shows); (2) the creation instant (an invoice's earliest line, a request);
  * (3) the id, descending, as the last, stable tie-break. Never array order, never an update time, never the status.
  * A month report only looks at records up to the end of that month (the future of the report is not its business); "all" looks at everything.
  */
@@ -520,6 +533,24 @@ export function orderAllRecords(
 }
 
 /**
+ * The request that each invoice fulfilled (its own lifecycle), through the one reliable link there is — InvoiceRequest.fulfilledInvoiceLineId
+ * → one line of the invoice. The earliest one if several lines were each linked. A request that has no link (an Open one, or one completed
+ * by a raise that another request claimed) belongs to no invoice.
+ */
+export function linkRequestsToInvoices<G extends InvoiceGroup>(groups: G[], requests: SummaryRequest[]): Map<G, SummaryRequest> {
+  const groupOfLine = new Map<string, G>();
+  for (const g of groups) for (const l of g.lines) groupOfLine.set(l.id, g);
+  const linked = new Map<G, SummaryRequest>();
+  for (const r of requests) {
+    const g = r.fulfilledInvoiceLineId ? groupOfLine.get(r.fulfilledInvoiceLineId) : undefined;
+    if (!g) continue;
+    const current = linked.get(g);
+    if (!current || r.createdAt < current.createdAt) linked.set(g, r);
+  }
+  return linked;
+}
+
+/**
  * The project's latest record for a report (see the header). `groups` = ALL of the project's invoices (any date, any status),
  * `requests` = ALL of its Invoice Requests; `window` null = "all history".
  */
@@ -530,13 +561,7 @@ export function selectLatestRecord(groups: InvoiceGroup[], requests: SummaryRequ
   const requestInScope = (r: SummaryRequest): boolean => window === null || r.createdAt.getTime() < window.end.getTime();
 
   // The request that a raised invoice fulfilled (its own lifecycle); the earliest one if several lines were each linked.
-  const linked = new Map<InvoiceGroup, SummaryRequest>();
-  for (const r of requests) {
-    const g = r.fulfilledInvoiceLineId ? groupOfLine.get(r.fulfilledInvoiceLineId) : undefined;
-    if (!g) continue;
-    const current = linked.get(g);
-    if (!current || r.createdAt < current.createdAt) linked.set(g, r);
-  }
+  const linked = linkRequestsToInvoices(groups, requests);
 
   const candidates: { sort: RecordSortKey; record: LatestRecord }[] = [];
   const invoiceCandidates = new Set<InvoiceGroup>();
@@ -545,7 +570,10 @@ export function selectLatestRecord(groups: InvoiceGroup[], requests: SummaryRequ
     invoiceCandidates.add(g);
     const req = linked.get(g);
     candidates.push({
-      sort: invoiceSortKey(g),
+      // An invoice that fulfilled an approval request is that request's lifecycle, so it is as recent as the request's ORIGINAL SUBMISSION —
+      // not its invoice date. Editing the invoice date can therefore never make an older lifecycle the project's latest record (and so move
+      // the row), and a request submitted AFTER it always becomes the latest record. An invoice nothing linked to keeps its own date.
+      sort: req ? { day: istDayOf(req.createdAt).getTime(), createdAt: req.createdAt.getTime(), id: `invoice:${g.key}` } : invoiceSortKey(g),
       record: {
         kind: "invoice",
         id: g.key,
@@ -576,6 +604,87 @@ export function selectLatestRecord(groups: InvoiceGroup[], requests: SummaryRequ
   }
   candidates.sort((a, b) => compareRecordsNewestFirst(a.sort, b.sort));
   return candidates[0]?.record ?? null;
+}
+
+// ── Where a project's row sits (the report's row order) ─────────────────────
+
+/**
+ * When the approval request behind a project's DISPLAYED record was originally submitted — the instant that orders the row.
+ *  - an Open request (or a Completed one shown because its invoice is dated after the month): the request's own createdAt;
+ *  - a raised invoice: the createdAt of the request that invoice fulfilled (InvoiceRequest.fulfilledInvoiceLineId) — the SAME instant as
+ *    before the request was fulfilled, so raising / paying the invoice never moves the row;
+ *  - an invoice nothing linked to (raised outside the Request Invoice workflow, or a link lost when its line was deleted): null — it has no
+ *    approval submission and nothing is invented for it.
+ * `latest` must be selectLatestRecord() of the same `groups` / `requests`; the row's amount, status and position all describe that one record.
+ */
+export function approvalSubmittedAtOf(latest: LatestRecord | null, groups: InvoiceGroup[], requests: SummaryRequest[]): Date | null {
+  if (!latest) return null;
+  if (latest.kind === "request") return requests.find((r) => r.id === latest.id)?.createdAt ?? null;
+  const group = groups.find((g) => g.key === latest.id);
+  return group ? (linkRequestsToInvoices(groups, requests).get(group)?.createdAt ?? null) : null;
+}
+
+/** Which rule placed a project row (see the header's ORDER OF PROJECTS). */
+export type ProjectRankBasis = "approval_submitted" | "record_date" | "month_records" | "pr_number";
+
+export interface ProjectRank {
+  /**
+   * 1 = ordered by the original approval submission (latest first) · 2 = every other row (month: its displayed record's date, latest first;
+   * all history: PR-number order) · 3 = month view, nothing displayed (the month's newest-dated record first).
+   */
+  group: 1 | 2 | 3;
+  /** Ascending within a group, so one comparison orders every group. */
+  key: number;
+  basis: ProjectRankBasis;
+  /** The displayed record's id (an invoice's key or a request's id) — the tie-break after the PR number; "" when nothing is displayed. */
+  recordId: string;
+  /** The approval-submission instant (ms) that placed this row — set only when `basis` is "approval_submitted". `key` is a negated sort key, never a timestamp. */
+  approvalAt: number | null;
+}
+
+export interface ProjectRankInput {
+  /** The record the row displays (selectLatestRecord). */
+  latest: LatestRecord | null;
+  /**
+   * The ORIGINAL submission instant of the displayed record's approval request (approvalSubmittedAtOf). When NOTHING is displayed, the latest
+   * request the report covers (a Completed request that no invoice carries is in the project's history but not on its row).
+   */
+  approvalSubmittedAt: Date | null;
+  /** Newest qualifying record of the month — used only when nothing is displayed. */
+  fallbackAt: Date | null;
+}
+
+/**
+ * The position of a project row. A project whose displayed record belongs to an approval request is ordered by that request's ORIGINAL
+ * submission time, LATEST first; a status change, payment, raise, fulfilment or invoice-date edit cannot change it, because none of them
+ * touches InvoiceRequest.createdAt or the request → invoice link. A NEW request becomes the displayed record when it is submitted after the
+ * old lifecycle (see selectLatestRecord), and from then on it — not the project's first-ever request — orders the row.
+ * In a month report only a request submitted in that month orders by submission; every other row follows, by the date of the record it
+ * displays, latest first. The ranking record and the displayed record are always the same one.
+ */
+export function rankProject(input: ProjectRankInput, window: MonthWindow | null): ProjectRank {
+  const latest = input.latest;
+  const recordId = latest?.id ?? "";
+  const approval = input.approvalSubmittedAt;
+  // Keys are compared ascending, so a LATEST-first rule is stored negated.
+  if (approval && (window === null || inWindow(approval, window))) return { group: 1, key: -approval.getTime(), basis: "approval_submitted", recordId, approvalAt: approval.getTime() };
+  if (window === null) return { group: 2, key: 0, basis: "pr_number", recordId, approvalAt: null };
+  if (!latest) return { group: 3, key: -(input.fallbackAt?.getTime() ?? 0), basis: "month_records", recordId, approvalAt: null };
+  return { group: 2, key: -Date.parse(latest.recordDate), basis: "record_date", recordId, approvalAt: null };
+}
+
+/** Group, then key — the caller adds the PR number, then `recordId`, then the project id (a total order). */
+export function compareProjectRank(a: ProjectRank, b: ProjectRank): number {
+  return a.group - b.group || a.key - b.key;
+}
+
+/** The full, deterministic order of two project rows: rank, then PR number, then the displayed record's id, then the project id. */
+export function compareProjectRows(
+  a: { rank: ProjectRank; prNo: string; id: string },
+  b: { rank: ProjectRank; prNo: string; id: string },
+  comparePrNo: (x: string, y: string) => number
+): number {
+  return compareProjectRank(a.rank, b.rank) || comparePrNo(a.prNo, b.prNo) || (a.rank.recordId < b.rank.recordId ? -1 : a.rank.recordId > b.rank.recordId ? 1 : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
 export interface NotRecorded {
