@@ -299,7 +299,7 @@ export function RequestInvoiceModal({ project, onClose, onSubmitted }: Props) {
                 </div>
               )}
               <p className="text-[11px] text-[var(--nu-text-muted)] mt-1.5">
-                arun@ifluids.com is automatically included for Invoice Request Assigned emails and cannot be removed.
+                arun@ifluids.com and accounts@ifluids.com are automatically included on the Invoice Request, Invoice Raised and Invoice Paid emails and cannot be removed.
               </p>
             </div>
 

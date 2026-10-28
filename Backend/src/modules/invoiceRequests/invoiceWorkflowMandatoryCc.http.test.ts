@@ -14,8 +14,9 @@ import { prisma } from "../../shared/utils/prismaClient.js";
  * Mandatory CC per stage of the Request Invoice lifecycle, end to end (Oct 2026): a real Request Invoice is created over HTTP, the invoice is
  * raised and then paid over HTTP, and the three emails the server composes are captured by a FAKE mail transport (no SMTP connection is ever
  * opened). Proves:
- *   - "Invoice Request Assigned" and "Invoice Raised" are CC'd to arun@ifluids.com (and not to info@ifluids.com),
- *   - "Invoice Paid" keeps info@ifluids.com (and not arun@ifluids.com),
+ *   - "Invoice Request Assigned" (the Request Invoice email) and "Invoice Raised" are CC'd to arun@ifluids.com AND accounts@ifluids.com
+ *     (and not to info@ifluids.com), on every path (with and without CC members / manual addresses),
+ *   - "Invoice Paid" is CC'd to arun@ifluids.com AND accounts@ifluids.com (and no longer to info@ifluids.com),
  *   - the saved CC member and the manually entered addresses are preserved, in order, without duplicates, on the emails that carry them.
  *
  * Run with SMTP_* blanked (the test aborts if SMTP is configured).
@@ -116,7 +117,7 @@ async function call(method: string, path: string, token: string, body?: unknown)
   return { status: res.status, json };
 }
 
-test("Assigned and Raised CC arun@ifluids.com; Paid keeps info@ifluids.com; members and manual addresses are preserved without duplicates", async () => {
+test("Assigned, Raised and Paid all CC arun@ + accounts@ (Paid no longer info@); members and manual addresses are preserved without duplicates", async () => {
   const project = await prisma.project.create({
     data: {
       poMonth: "2026-10",
@@ -144,12 +145,12 @@ test("Assigned and Raised CC arun@ifluids.com; Paid keeps info@ifluids.com; memb
   });
 
   // ---- 1. Invoice Request Assigned ----
-  // Manual addresses: a real extra, the new mandatory address typed again in another letter case (must not repeat), the saved member again
+  // Manual addresses: a real extra, both mandatory addresses typed again in another letter case (must not repeat), the saved member again
   // (must not repeat), the assignee (never repeated in CC) and info@ifluids.com — now just an ordinary address for this email, kept once.
   const create = await call("POST", `/projects/${project.id}/invoice-requests`, fx.requester.token, {
     assignedToUserId: fx.raiser.id,
     ccMemberUserIds: [fx.member.id],
-    additionalCcEmails: ["Extra@Customer.com", "ARUN@ifluids.com", fx.member.email.toUpperCase(), fx.raiser.email, "info@ifluids.com"],
+    additionalCcEmails: ["Extra@Customer.com", "ARUN@ifluids.com", "Accounts@IFluids.com", fx.member.email.toUpperCase(), fx.raiser.email, "info@ifluids.com"],
   });
   assert.equal(create.status, 201, create.json.message);
 
@@ -157,8 +158,8 @@ test("Assigned and Raised CC arun@ifluids.com; Paid keeps info@ifluids.com; memb
   assert.equal(assigned.to, fx.raiser.email);
   assert.deepEqual(
     assigned.cc,
-    ["arun@ifluids.com", fx.member.email, "extra@customer.com", "info@ifluids.com"],
-    "arun@ first, then the saved member, then the manual addresses; no duplicates; the assignee is not in CC"
+    ["arun@ifluids.com", "accounts@ifluids.com", fx.member.email, "extra@customer.com", "info@ifluids.com"],
+    "arun@ and accounts@ first, then the saved member, then the manual addresses; no duplicates; the assignee is not in CC"
   );
 
   // ---- 2. Invoice Raised ----
@@ -175,18 +176,74 @@ test("Assigned and Raised CC arun@ifluids.com; Paid keeps info@ifluids.com; memb
 
   const raised = await waitForMail(EMAIL_SUBJECTS.INVOICE_RAISED_SUCCESSFULLY);
   assert.equal(raised.to, fx.requester.email);
-  assert.deepEqual(raised.cc, ["arun@ifluids.com", fx.member.email], "Raised: arun@ first, then the saved member (manual addresses were never persisted)");
+  assert.deepEqual(raised.cc, ["arun@ifluids.com", "accounts@ifluids.com", fx.member.email], "Raised: arun@ and accounts@ first, then the saved member (manual addresses were never persisted)");
 
   // ---- 3. Invoice Paid ----
   assert.equal((await call("PATCH", `/invoice-lines/${lineId}`, fx.raiser.token, { status: "Paid" })).status, 200);
   const paid = await waitForMail(EMAIL_SUBJECTS.INVOICE_PAID(project.projectTitle, project.prNo));
   assert.equal(paid.to, fx.requester.email);
-  assert.deepEqual(paid.cc, ["info@ifluids.com", fx.member.email], "Paid is unchanged: info@ifluids.com first, then the saved member");
-  assert.ok(!(paid.cc as string[]).includes("arun@ifluids.com"), "Paid does not carry the Assigned/Raised address");
+  assert.deepEqual(paid.cc, ["arun@ifluids.com", "accounts@ifluids.com", fx.member.email], "Paid: arun@ and accounts@ first (arun@ replaced info@), then the saved member");
+  assert.ok(!(paid.cc as string[]).includes("info@ifluids.com"), "Paid no longer carries info@ifluids.com");
 
-  // Cross-check of the whole lifecycle: arun@ appears on exactly two of the three emails, info@ on the Paid one (and as an ordinary manual address on Assigned).
+  // Cross-check of the whole lifecycle: arun@ AND accounts@ are on all three emails, each exactly once, and info@ only as an ordinary manual address on Assigned.
   const ccOf = (m: SentMail) => (m.cc as string[]).map((e) => e.toLowerCase());
-  assert.ok(ccOf(assigned).includes("arun@ifluids.com") && ccOf(raised).includes("arun@ifluids.com") && !ccOf(paid).includes("arun@ifluids.com"));
-  assert.ok(!ccOf(raised).includes("info@ifluids.com") && ccOf(paid).includes("info@ifluids.com"));
-  assert.equal(ccOf(assigned).filter((e) => e === "arun@ifluids.com").length, 1);
+  for (const m of [assigned, raised, paid]) {
+    for (const mandatory of ["arun@ifluids.com", "accounts@ifluids.com"]) assert.equal(ccOf(m).filter((e) => e === mandatory).length, 1, mandatory);
+  }
+  assert.ok(!ccOf(raised).includes("info@ifluids.com") && !ccOf(paid).includes("info@ifluids.com"));
+});
+
+test("with NO CC members and NO manual addresses: Assigned, Raised and Paid are each CC'd to exactly arun@ + accounts@", async () => {
+  sent = [];
+  const tag2 = `${TAG}-bare`;
+  const project = await prisma.project.create({
+    data: {
+      poMonth: "2026-10",
+      prCategory: "India",
+      prNo: `PR-${tag2}`,
+      client: "Mandatory CC Client 2",
+      department: "Process",
+      domesticForeign: "Domestic",
+      projectTitle: "Mandatory CC bare regression",
+      workOrderStatus: "Received",
+      projectStartDate: new Date("2026-01-01"),
+      projectEndDate: new Date("2026-12-31"),
+      projectStatus: "Active",
+      workOrderNumber: `${tag2}-WO`,
+      workOrderDate: new Date("2026-01-01"),
+      eicName: "EIC",
+      contractType: "LUMP SUM",
+      pmoCoordinator: "PMO",
+      createdByUserId: null,
+    },
+  });
+  fx.projectIds.push(project.id);
+  const quantityItem = await prisma.quantityItem.create({
+    data: { projectId: project.id, description: "Item", woQty: 10, uom: "DAY", unitRate: 1000, exchangeRate: 1, unitRateINR: 1000, woValue: 10_000 },
+  });
+
+  const create = await call("POST", `/projects/${project.id}/invoice-requests`, fx.requester.token, { assignedToUserId: fx.raiser.id });
+  assert.equal(create.status, 201, create.json.message);
+  const assigned = await waitForMail(EMAIL_SUBJECTS.INVOICE_REQUEST_ASSIGNED);
+  assert.equal(assigned.to, fx.raiser.email);
+  assert.deepEqual(assigned.cc, ["arun@ifluids.com", "accounts@ifluids.com"]);
+
+  const draft = await call("POST", `/quantity/${quantityItem.id}/invoice-lines`, fx.raiser.token, {
+    invoiceNo: `${tag2}-INV`,
+    invoiceDate: new Date("2026-02-01").toISOString(),
+    quantityBilled: 1,
+    invoiceAmountINR: 1000,
+    status: "Draft",
+  });
+  assert.equal(draft.status, 201);
+  const lineId = draft.json.data!.id;
+  assert.equal((await call("PATCH", `/invoice-lines/${lineId}`, fx.raiser.token, { status: "Raised" })).status, 200);
+  const raised = await waitForMail(EMAIL_SUBJECTS.INVOICE_RAISED_SUCCESSFULLY);
+  assert.equal(raised.to, fx.requester.email);
+  assert.deepEqual(raised.cc, ["arun@ifluids.com", "accounts@ifluids.com"]);
+
+  assert.equal((await call("PATCH", `/invoice-lines/${lineId}`, fx.raiser.token, { status: "Paid" })).status, 200);
+  const paid = await waitForMail(EMAIL_SUBJECTS.INVOICE_PAID(project.projectTitle, project.prNo));
+  assert.equal(paid.to, fx.requester.email);
+  assert.deepEqual(paid.cc, ["arun@ifluids.com", "accounts@ifluids.com"]);
 });

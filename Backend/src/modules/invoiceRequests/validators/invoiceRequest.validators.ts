@@ -19,14 +19,14 @@ export const createInvoiceRequestSchema = z.object({
   // CC Members (Oct 2026) — optional, any number of PortalUser ids. Never
   // trusted as-is: invoiceRequest.service.ts's createInvoiceRequest()
   // re-validates every id is a real, active PortalUser before persisting,
-  // and dedupes. The mandatory info@ifluids.com recipient is never accepted
-  // here — it is server-injected wherever this workflow's emails are
+  // and dedupes. The mandatory recipients (arun@ifluids.com, and accounts@ifluids.com
+  // on Assigned / Raised) are never accepted here — they are server-injected wherever this workflow's emails are
   // composed (see invoiceRequestEmail.rules.ts), so the frontend has no way
-  // to omit or duplicate it.
+  // to omit or duplicate them.
   ccMemberUserIds: z.array(z.string().trim().min(1)).optional(),
   // Additional CC Email Addresses (Oct 2026) — free-typed addresses, for people outside the PMO user list. Validated HERE, on the server,
   // whatever the browser did: each must be one plain valid address; the result is trimmed, lower-cased and de-duplicated. They are added to
-  // the notification email's CC and can never replace the mandatory info@ifluids.com or the CC Members (see buildInvoiceWorkflowCcList).
+  // the notification email's CC and can never replace the mandatory recipients or the CC Members (see buildInvoiceWorkflowCcList).
   additionalCcEmails: z
     .array(z.string().max(320, "An email address is too long."))
     .max(MAX_ADDITIONAL_CC_EMAILS, `You can add at most ${MAX_ADDITIONAL_CC_EMAILS} additional CC email addresses.`)

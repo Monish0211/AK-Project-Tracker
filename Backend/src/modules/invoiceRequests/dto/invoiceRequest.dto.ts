@@ -22,7 +22,7 @@ export interface InvoiceRequestDto {
   assignedToUserId: string;
   assignedToName: string;
 
-  /** CC Members (Oct 2026) — the PortalUsers persisted as CC recipients at submission time; follows this request through Raised and Paid. Never includes the mandatory info@ifluids.com (that is server-injected, not a PortalUser row). */
+  /** CC Members (Oct 2026) — the PortalUsers persisted as CC recipients at submission time; follows this request through Raised and Paid. Never includes the mandatory addresses (those are server-injected, not PortalUser rows). */
   ccMembers: { id: string; fullName: string; email: string }[];
 
   /** Free-text fields matching the team's existing manual "raise the invoice" email — all optional. */

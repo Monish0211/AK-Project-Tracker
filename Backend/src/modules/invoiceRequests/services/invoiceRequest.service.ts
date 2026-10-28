@@ -169,7 +169,7 @@ export async function createInvoiceRequest(
   }
 
   // The manually entered CC addresses are for THIS notification email only: they are not stored with the request (no schema change), so the later
-  // Raised / Paid emails keep using exactly the saved CC Members + info@ifluids.com, as before.
+  // Raised / Paid emails keep using exactly the saved CC Members plus the mandatory arun@ifluids.com + accounts@ifluids.com (all three emails).
   void notifyAssignedResponsiblePerson(created, input.additionalCcEmails ?? []).catch((error) => {
     console.error("[invoiceRequests] notifyAssignedResponsiblePerson failed:", error instanceof Error ? error.message : error);
     // The in-app notification (which runs first) failed, so the email stage never ran — say so rather than leave "pending" forever.
@@ -254,7 +254,7 @@ async function allFilesReadable(paths: readonly string[]): Promise<boolean> {
 }
 
 /**
- * Sends the "please raise this invoice" email and reports exactly how it ended. Recipients, CC (info@ifluids.com first, deduped),
+ * Sends the "please raise this invoice" email and reports exactly how it ended. Recipients, CC (arun@ifluids.com and accounts@ifluids.com first, deduped),
  * subject and project details are the same with or without files.
  *
  * With files: attached when the encoded message fits the configured ceiling; if it does not fit — or the server answers

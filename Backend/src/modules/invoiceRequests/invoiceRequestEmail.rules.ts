@@ -1,4 +1,4 @@
-import { MANDATORY_INVOICE_REQUEST_CC_EMAIL, MANDATORY_INVOICE_WORKFLOW_CC_EMAIL } from "../../shared/email/email.constants.js";
+import { MANDATORY_INVOICE_WORKFLOW_CC_EMAILS } from "../../shared/email/email.constants.js";
 
 /**
  * Pure trigger/composition rules for the Request Invoice -> Invoice Raised
@@ -8,7 +8,7 @@ import { MANDATORY_INVOICE_REQUEST_CC_EMAIL, MANDATORY_INVOICE_WORKFLOW_CC_EMAIL
  */
 
 /**
- * The CC list an email in this lifecycle must carry: the stage's mandatory address first, always present exactly once, followed by the
+ * The CC list an email in this lifecycle must carry: the stage's mandatory address(es) first, each always present exactly once, followed by the
  * persisted CC Members' current email addresses — deduped case-insensitively
  * (defensive; @@unique([invoiceRequestId, portalUserId]) already prevents a
  * duplicate PortalUser row at persistence time, but two different accounts
@@ -16,18 +16,24 @@ import { MANDATORY_INVOICE_REQUEST_CC_EMAIL, MANDATORY_INVOICE_WORKFLOW_CC_EMAIL
  * equal the mandatory one). Caller-supplied order among the members is
  * otherwise preserved.
  *
- * `mandatoryEmail` defaults to MANDATORY_INVOICE_WORKFLOW_CC_EMAIL (info@ifluids.com), which is what the Invoice Paid email uses; the
- * Assigned and Raised emails go through buildInvoiceRequestCcList() below instead.
+ * `mandatoryEmail` (one address or several) defaults to MANDATORY_INVOICE_WORKFLOW_CC_EMAILS (arun@ifluids.com and accounts@ifluids.com), which is
+ * what all three lifecycle emails (Assigned, Raised, Paid) use. Mandatory addresses are listed in the order given, each once (a repeated one, in
+ * any letter case, is dropped).
  */
 export function buildInvoiceWorkflowCcList(
   memberEmails: readonly string[],
   additionalEmails: readonly string[] = [],
   skipAdditional: readonly string[] = [],
-  mandatoryEmail: string = MANDATORY_INVOICE_WORKFLOW_CC_EMAIL
+  mandatoryEmail: string | readonly string[] = MANDATORY_INVOICE_WORKFLOW_CC_EMAILS
 ): string[] {
-  const mandatoryKey = mandatoryEmail.trim().toLowerCase();
-  const seen = new Set<string>([mandatoryKey]);
-  const result = [mandatoryEmail];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const mandatory of typeof mandatoryEmail === "string" ? [mandatoryEmail] : mandatoryEmail) {
+    const key = mandatory.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(mandatory);
+  }
 
   for (const email of memberEmails) {
     const key = email.trim().toLowerCase();
@@ -50,13 +56,13 @@ export function buildInvoiceWorkflowCcList(
 }
 
 /**
- * CC list of the "Invoice Request Assigned" and "Invoice Raised" emails: identical rules to buildInvoiceWorkflowCcList (mandatory address
- * first and exactly once, then the CC Members, then manual addresses, case-insensitive de-duplication, the primary recipient never repeated),
- * but the mandatory address is MANDATORY_INVOICE_REQUEST_CC_EMAIL (arun@ifluids.com). The Invoice Paid email keeps using
- * buildInvoiceWorkflowCcList with its default (info@ifluids.com).
+ * CC list of the "Invoice Request Assigned" (Request Invoice) and "Invoice Raised" emails. Since Oct 2026 the Invoice Paid email carries the same
+ * mandatory pair, so this is the same rule set as buildInvoiceWorkflowCcList (arun@ifluids.com and accounts@ifluids.com first and exactly once each,
+ * then the CC Members, then manual addresses, case-insensitive de-duplication, the primary recipient never repeated); the name is kept for the
+ * Assigned / Raised call sites.
  */
 export function buildInvoiceRequestCcList(memberEmails: readonly string[], additionalEmails: readonly string[] = [], skipAdditional: readonly string[] = []): string[] {
-  return buildInvoiceWorkflowCcList(memberEmails, additionalEmails, skipAdditional, MANDATORY_INVOICE_REQUEST_CC_EMAIL);
+  return buildInvoiceWorkflowCcList(memberEmails, additionalEmails, skipAdditional, MANDATORY_INVOICE_WORKFLOW_CC_EMAILS);
 }
 
 /** The most manually entered CC addresses one request may carry. */
