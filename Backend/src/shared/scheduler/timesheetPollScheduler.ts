@@ -14,7 +14,7 @@ import type { PollResult } from "../../modules/mailIngestion/mailIngestion.types
  * Runs in-process because this app has no PM2/systemd/Docker supervisor
  * anywhere in the repo (confirmed by inspection — see server.ts, which
  * itself is just `tsx src/server.ts` with no process manager). That means:
- * if this Node process is down at 22:00 IST, nothing fires that day, and
+ * if this Node process is down at 22:30 IST, nothing fires that day, and
  * nothing here can change that — it's a deployment-level gap, not
  * something an in-process scheduler can fix.
  */
@@ -36,7 +36,7 @@ function logPollResult(result: PollResult): void {
 /**
  * Never throws — a Graph outage, a network failure, or an unexpected
  * exception here must never crash the backend and must never prevent
- * tomorrow's 22:00 run (node-cron simply calls this again on its own
+ * tomorrow's 22:30 run (node-cron simply calls this again on its own
  * schedule regardless of what happened this time).
  */
 async function runDailyPoll(): Promise<void> {
@@ -92,13 +92,15 @@ export function startTimesheetPollScheduler(): void {
   }
   started = true;
 
+  // 22:30, not 22:00: KEKA generates the daily "Employee Time Entry Details" email at about 22:00:15 IST, so a 22:00:00 poll always ran just
+  // before it arrived and the report waited a full extra day. The 7-day lookback means the previous day's report is still picked up as well.
   cron.schedule(
-    "0 22 * * *",
+    "30 22 * * *",
     () => {
       void runDailyPoll();
     },
     { timezone: "Asia/Kolkata" }
   );
 
-  console.log("[TimesheetPollScheduler] Scheduled — daily KEKA poll will run at 22:00 Asia/Kolkata (cron expression: '0 22 * * *').");
+  console.log("[TimesheetPollScheduler] Scheduled — daily KEKA poll will run at 22:30 Asia/Kolkata (cron expression: '30 22 * * *').");
 }
