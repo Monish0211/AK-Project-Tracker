@@ -7,11 +7,11 @@
 export const MAX_ADDITIONAL_CC_EMAILS = 10;
 
 /**
- * The mandatory CC the server always adds to the "Invoice Request Assigned" email (Backend MANDATORY_INVOICE_REQUEST_CC_EMAIL); typing it again is
- * harmless and is simply not repeated. Only this form uses this helper. The "Invoice Paid" email has its own server-side mandatory address
- * (info@ifluids.com) and is not configured here; info@ifluids.com is an ordinary, selectable address in this form.
+ * The mandatory CCs the server always adds to every email of the Request Invoice lifecycle — "Invoice Request Assigned", "Invoice Raised" and
+ * "Invoice Paid" (Backend MANDATORY_INVOICE_WORKFLOW_CC_EMAILS). Typing either again is harmless and is simply not repeated. Only this form uses this
+ * helper. info@ifluids.com is an ordinary, selectable address in this form.
  */
-export const MANDATORY_CC_EMAIL = "arun@ifluids.com";
+export const MANDATORY_CC_EMAILS = ["arun@ifluids.com", "accounts@ifluids.com"] as const;
 
 const EMAIL_ADDRESS = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 
@@ -40,14 +40,14 @@ const shown = (value: string): string =>
 
 /**
  * Adds what the user typed or pasted to the current list. Valid new addresses are added (lower-cased); duplicates — including of an address
- * already in the list or of the mandatory arun@ifluids.com — are quietly skipped; invalid ones are reported by name and not added; past the maximum nothing
+ * already in the list or of either mandatory address (arun@ / accounts@ifluids.com) — are quietly skipped; invalid ones are reported by name and not added; past the maximum nothing
  * more is added. Never throws, never mutates its input.
  */
 export function addCcEmails(current: readonly string[], rawInput: string): { emails: string[]; errors: string[] } {
   const emails = [...current];
   const errors: string[] = [];
   const seen = new Set(emails.map((e) => e.toLowerCase()));
-  seen.add(MANDATORY_CC_EMAIL.trim().toLowerCase());
+  for (const mandatory of MANDATORY_CC_EMAILS) seen.add(mandatory.trim().toLowerCase());
   for (const entry of splitEmailInput(rawInput)) {
     const email = normalizeCcEmail(entry);
     if (!email) {

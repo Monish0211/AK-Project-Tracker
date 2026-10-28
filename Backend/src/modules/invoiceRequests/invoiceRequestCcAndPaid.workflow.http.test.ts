@@ -24,7 +24,7 @@ import { invoiceEditDeleteGrants } from "../invoices/invoiceApprovalGrants.testu
  *   workflow entirely) produces no Invoice Paid notification at all — there
  *   is no "original requester" to notify, by design.
  *
- * Email recipient/CC composition itself (mandatory info@ifluids.com,
+ * Email recipient/CC composition itself (mandatory recipients,
  * dedup, multiple members) is covered exhaustively and fast by the pure
  * unit tests in invoiceRequestEmail.rules.test.ts — this file proves the
  * wiring (DB persistence + the real HTTP/transition triggers), not the

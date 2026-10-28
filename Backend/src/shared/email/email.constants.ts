@@ -8,18 +8,18 @@ export const EMAIL_BRAND = {
 } as const;
 
 /**
- * Request Invoice → Invoice Raised → Invoice Paid workflow (Oct 2026) — each email in that lifecycle carries ONE mandatory CC recipient,
- * server-controlled and never user-removable. Not a PortalUser (no directory row backs it), so it is injected here rather than
- * persisted as a CC Member — see invoiceRequestEmail.rules.ts.
- *
- * The mandatory recipient differs by stage:
- *  - "Invoice Request Assigned" and "Invoice Raised" -> MANDATORY_INVOICE_REQUEST_CC_EMAIL (below).
- *  - "Invoice Paid" -> MANDATORY_INVOICE_WORKFLOW_CC_EMAIL (this constant, the original lifecycle-wide address, unchanged).
+ * Request Invoice → Invoice Raised → Invoice Paid workflow (Oct 2026) — EVERY email in that lifecycle ("Invoice Request Assigned", "Invoice Raised"
+ * and "Invoice Paid") carries the same two mandatory CC recipients, server-controlled and never user-removable. They are not PortalUsers (no
+ * directory row backs them), so they are injected here rather than persisted as CC Members — see invoiceRequestEmail.rules.ts.
+ * (The Paid email's mandatory address was info@ifluids.com until Oct 2026; info@ifluids.com is still used by the unrelated weekly emails.)
  */
-export const MANDATORY_INVOICE_WORKFLOW_CC_EMAIL = "info@ifluids.com";
-
-/** Mandatory CC of the "Invoice Request Assigned" and "Invoice Raised" emails (replaces info@ifluids.com for those two; Invoice Paid is unchanged). */
 export const MANDATORY_INVOICE_REQUEST_CC_EMAIL = "arun@ifluids.com";
+
+/** The Accounts mailbox — the second mandatory CC of every email in the Request Invoice lifecycle. */
+export const MANDATORY_INVOICE_ACCOUNTS_CC_EMAIL = "accounts@ifluids.com";
+
+/** Every mandatory CC of the three lifecycle emails, in the order they are listed (each exactly once). */
+export const MANDATORY_INVOICE_WORKFLOW_CC_EMAILS = [MANDATORY_INVOICE_REQUEST_CC_EMAIL, MANDATORY_INVOICE_ACCOUNTS_CC_EMAIL] as const;
 
 /**
  * One subject line per template, kept here rather than inline in each

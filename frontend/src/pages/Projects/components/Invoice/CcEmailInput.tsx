@@ -2,7 +2,7 @@ import { useId, type ClipboardEvent, type KeyboardEvent } from "react";
 import { X } from "lucide-react";
 import { FormLabel } from "../../../../components/ui/FormLabel";
 import { Input } from "../../../../components/ui/Input";
-import { MANDATORY_CC_EMAIL, MAX_ADDITIONAL_CC_EMAILS } from "../../../../utils/invoiceRequestCcEmails";
+import { MANDATORY_CC_EMAILS, MAX_ADDITIONAL_CC_EMAILS } from "../../../../utils/invoiceRequestCcEmails";
 
 /**
  * "Additional CC Email Addresses": free-typed addresses (for people who are not PMO users), shown as removable chips. An address is added when
@@ -100,7 +100,7 @@ export function CcEmailInput({
         </ul>
       )}
       <p id={helpId} className="text-[11px] text-[var(--nu-text-muted)] mt-1.5">
-        For people outside the PMO user list. Anyone added here receives this email, including its attachments. {MANDATORY_CC_EMAIL} is always included automatically.
+        For people outside the PMO user list. Anyone added here receives this email, including its attachments. {MANDATORY_CC_EMAILS.join(" and ")} are always included automatically.
         {emails.length > 0 ? ` ${emails.length} of ${MAX_ADDITIONAL_CC_EMAILS} added.` : ""}
       </p>
     </div>

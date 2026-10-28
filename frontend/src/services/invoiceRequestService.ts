@@ -5,7 +5,7 @@ import type { EligibleInvoiceRaiser, InvoiceRequest } from "../types/InvoiceRequ
 
 export interface CreateInvoiceRequestPayload {
   assignedToUserId: string;
-  /** CC Members — selected PortalUser ids, re-validated server-side. The mandatory info@ifluids.com is never sent here — it's server-injected. */
+  /** CC Members — selected PortalUser ids, re-validated server-side. The mandatory arun@ifluids.com and accounts@ifluids.com are never sent here — they're server-injected. */
   ccMemberUserIds?: string[];
   /** Additional CC Email Addresses — free-typed addresses (people outside the PMO user list). Re-validated server-side; for the notification email only. Omit when none. */
   additionalCcEmails?: string[];

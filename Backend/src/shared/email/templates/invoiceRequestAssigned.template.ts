@@ -1,5 +1,6 @@
 import { EMAIL_SUBJECTS } from "../email.constants.js";
 import type { EmailContent, InvoiceRequestAssignedEmailData } from "../email.types.js";
+import { INVOICE_REQUEST_HEADING_PREFIX, renderInvoiceEmailHeading } from "./invoiceEmailHeading.js";
 import { renderButton, renderEmailLayout } from "./layout.template.js";
 import { escapeHtml } from "./missingOtherExpenses.template.js";
 
@@ -55,6 +56,7 @@ function attachmentsBlock(attachments: InvoiceRequestAssignedEmailData["attachme
 
 export function buildInvoiceRequestAssignedEmail(data: InvoiceRequestAssignedEmailData): EmailContent {
   const bodyHtml = `
+    ${renderInvoiceEmailHeading(INVOICE_REQUEST_HEADING_PREFIX, data)}
     <p style="margin:0 0 16px;">Hello ${escapeHtml(data.assignedToName)},</p>
     <p style="margin:0 0 16px;">
       ${escapeHtml(data.requesterName)} has requested that you raise the invoice for the project below.

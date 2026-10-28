@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MANDATORY_INVOICE_WORKFLOW_CC_EMAIL } from "../../shared/email/email.constants.js";
+import { MANDATORY_INVOICE_ACCOUNTS_CC_EMAIL, MANDATORY_INVOICE_REQUEST_CC_EMAIL } from "../../shared/email/email.constants.js";
 import { MAX_ADDITIONAL_CC_EMAILS, buildInvoiceWorkflowCcList, normalizeAdditionalCcEmails, normalizeEmailAddress } from "./invoiceRequestEmail.rules.js";
 import { createInvoiceRequestSchema } from "./validators/invoiceRequest.validators.js";
 
@@ -9,7 +9,8 @@ import { createInvoiceRequestSchema } from "./validators/invoiceRequest.validato
  * counts: it runs on the server for every request, whatever the client sent. No database, no network, no mail.
  */
 
-const MANDATORY = MANDATORY_INVOICE_WORKFLOW_CC_EMAIL; // info@ifluids.com
+const MANDATORY = MANDATORY_INVOICE_REQUEST_CC_EMAIL; // arun@ifluids.com
+const ACCOUNTS = MANDATORY_INVOICE_ACCOUNTS_CC_EMAIL; // accounts@ifluids.com — the second mandatory address, on every list
 const parse = (body: Record<string, unknown>) => createInvoiceRequestSchema.safeParse({ assignedToUserId: "u1", ...body });
 
 test("a plain address is valid and comes back trimmed and lower-cased", () => {
@@ -43,9 +44,9 @@ test("a list is trimmed, lower-cased and de-duplicated case-insensitively (first
   assert.deepEqual(normalizeAdditionalCcEmails([]), { emails: [], invalid: [] });
 });
 
-test("the CC list always starts with info@ifluids.com exactly once, then the saved CC Members, then the manual addresses — with every duplicate removed, in any letter case", () => {
-  const cc = buildInvoiceWorkflowCcList(["Member.One@example.com", "member.two@example.com"], ["extra@example.com", "EXTRA@example.com", "member.one@EXAMPLE.com", "INFO@ifluids.com", "another@example.com"]);
-  assert.deepEqual(cc, [MANDATORY, "Member.One@example.com", "member.two@example.com", "extra@example.com", "another@example.com"]);
+test("the CC list always starts with arun@ifluids.com and accounts@ifluids.com, each exactly once, then the saved CC Members, then the manual addresses — with every duplicate removed, in any letter case", () => {
+  const cc = buildInvoiceWorkflowCcList(["Member.One@example.com", "member.two@example.com"], ["extra@example.com", "EXTRA@example.com", "member.one@EXAMPLE.com", "ARUN@ifluids.com", "another@example.com"]);
+  assert.deepEqual(cc, [MANDATORY, ACCOUNTS, "Member.One@example.com", "member.two@example.com", "extra@example.com", "another@example.com"]);
   assert.equal(cc.filter((e) => e.toLowerCase() === MANDATORY).length, 1, "the mandatory address is present once and only once");
   assert.equal(cc[0], MANDATORY, "…and first");
 });
@@ -53,16 +54,16 @@ test("the CC list always starts with info@ifluids.com exactly once, then the sav
 test("manual addresses can only ADD: they cannot remove, replace or reorder the mandatory address or the members, and the primary recipient is never repeated in CC", () => {
   const members = ["m1@example.com", "m2@example.com"];
   const withManual = buildInvoiceWorkflowCcList(members, ["a@example.com", "b@example.com"]);
-  assert.deepEqual(withManual.slice(0, 3), [MANDATORY, "m1@example.com", "m2@example.com"], "the existing recipients are untouched and first");
-  assert.deepEqual(buildInvoiceWorkflowCcList(members, ["only@example.com"], ["Primary@Example.com"]), [MANDATORY, ...members, "only@example.com"]);
-  assert.deepEqual(buildInvoiceWorkflowCcList(members, ["primary@example.com", "kept@example.com"], ["Primary@Example.com"]), [MANDATORY, ...members, "kept@example.com"], "an address equal to the primary recipient is dropped, whatever its case");
+  assert.deepEqual(withManual.slice(0, 4), [MANDATORY, ACCOUNTS, "m1@example.com", "m2@example.com"], "the existing recipients are untouched and first");
+  assert.deepEqual(buildInvoiceWorkflowCcList(members, ["only@example.com"], ["Primary@Example.com"]), [MANDATORY, ACCOUNTS, ...members, "only@example.com"]);
+  assert.deepEqual(buildInvoiceWorkflowCcList(members, ["primary@example.com", "kept@example.com"], ["Primary@Example.com"]), [MANDATORY, ACCOUNTS, ...members, "kept@example.com"], "an address equal to the primary recipient is dropped, whatever its case");
 });
 
 test("with no manual addresses the CC list is exactly what it always was (the Raised / Paid emails use this call unchanged)", () => {
-  assert.deepEqual(buildInvoiceWorkflowCcList([]), [MANDATORY]);
-  assert.deepEqual(buildInvoiceWorkflowCcList(["m@example.com", "M@example.com", MANDATORY.toUpperCase()]), [MANDATORY, "m@example.com"]);
+  assert.deepEqual(buildInvoiceWorkflowCcList([]), [MANDATORY, ACCOUNTS]);
+  assert.deepEqual(buildInvoiceWorkflowCcList(["m@example.com", "M@example.com", MANDATORY.toUpperCase()]), [MANDATORY, ACCOUNTS, "m@example.com"]);
   assert.deepEqual(buildInvoiceWorkflowCcList(["m@example.com"], []), buildInvoiceWorkflowCcList(["m@example.com"]));
-  assert.deepEqual(buildInvoiceWorkflowCcList(["m@example.com"], undefined, undefined), [MANDATORY, "m@example.com"]);
+  assert.deepEqual(buildInvoiceWorkflowCcList(["m@example.com"], undefined, undefined), [MANDATORY, ACCOUNTS, "m@example.com"]);
 });
 
 test("the schema: no field, an empty list and a list of valid addresses all work; the stored form is lower-cased and de-duplicated", () => {

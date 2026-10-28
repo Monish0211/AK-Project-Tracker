@@ -290,28 +290,31 @@ test("addCcEmails: one or several valid addresses are added lower-cased, in orde
   assert.deepEqual(addCcEmails([], " ,; "), { emails: [], errors: [] });
 });
 
-test("addCcEmails: duplicates (any letter case, or already in the list, or the mandatory arun@ifluids.com) are quietly skipped", async () => {
+test("addCcEmails: duplicates (any letter case, or already in the list, or a mandatory address) are quietly skipped", async () => {
   const { addCcEmails } = await load("/src/utils/invoiceRequestCcEmails.ts");
   assert.deepEqual(addCcEmails(["a@x.com"], "A@X.COM, b@x.com, B@x.com"), { emails: ["a@x.com", "b@x.com"], errors: [] });
-  assert.deepEqual(addCcEmails([], "ARUN@ifluids.com, extra@x.com"), { emails: ["extra@x.com"], errors: [] });
+  assert.deepEqual(addCcEmails([], "ARUN@ifluids.com, ACCOUNTS@ifluids.com, extra@x.com"), { emails: ["extra@x.com"], errors: [] });
 });
 
-test("addCcEmails: the mandatory arun@ifluids.com is never added, in any casing, with surrounding whitespace, inside a list, or when already present", async () => {
-  const { addCcEmails, MANDATORY_CC_EMAIL } = await load("/src/utils/invoiceRequestCcEmails.ts");
-  assert.equal(MANDATORY_CC_EMAIL, "arun@ifluids.com");
-  for (const typed of ["arun@ifluids.com", "ARUN@IFLUIDS.COM", "Arun@Ifluids.com", "   arun@ifluids.com  ", "\tArun@iFluids.com\n", "a@x.com, ARUN@ifluids.com ; b@x.com"]) {
-    const { emails, errors } = addCcEmails([], typed);
-    assert.ok(!emails.includes("arun@ifluids.com"), JSON.stringify(typed));
-    assert.deepEqual(errors, [], JSON.stringify(typed));
+test("addCcEmails: the mandatory arun@ and accounts@ifluids.com are never added, in any casing, with surrounding whitespace, inside a list, or when already present", async () => {
+  const { addCcEmails, MANDATORY_CC_EMAILS } = await load("/src/utils/invoiceRequestCcEmails.ts");
+  assert.deepEqual([...MANDATORY_CC_EMAILS], ["arun@ifluids.com", "accounts@ifluids.com"]);
+  for (const mandatory of MANDATORY_CC_EMAILS) {
+    for (const typed of [mandatory, mandatory.toUpperCase(), mandatory.replace(/^./, (c) => c.toUpperCase()), `   ${mandatory}  `, `\t${mandatory.toUpperCase()}\n`, `a@x.com, ${mandatory.toUpperCase()} ; b@x.com`]) {
+      const { emails, errors } = addCcEmails([], typed);
+      assert.ok(!emails.includes(mandatory), JSON.stringify(typed));
+      assert.deepEqual(errors, [], JSON.stringify(typed));
+    }
+    assert.deepEqual(addCcEmails([], `a@x.com, ${mandatory.toUpperCase()} ; b@x.com`).emails, ["a@x.com", "b@x.com"], "the other addresses in the same input are still added, in order");
+    assert.deepEqual(addCcEmails([mandatory], "z@x.com"), { emails: [mandatory, "z@x.com"], errors: [] }, "a list that already holds it is left as it was");
   }
-  assert.deepEqual(addCcEmails([], "a@x.com, ARUN@ifluids.com ; b@x.com").emails, ["a@x.com", "b@x.com"], "the other addresses in the same input are still added, in order");
 });
 
 test("addCcEmails: info@ifluids.com is no longer reserved here — it stays a valid optional CC (added once, any casing, and still de-duplicated)", async () => {
   const { addCcEmails } = await load("/src/utils/invoiceRequestCcEmails.ts");
   assert.deepEqual(addCcEmails([], "info@ifluids.com"), { emails: ["info@ifluids.com"], errors: [] });
   assert.deepEqual(addCcEmails([], " INFO@ifluids.com , Info@Ifluids.com "), { emails: ["info@ifluids.com"], errors: [] });
-  assert.deepEqual(addCcEmails(["info@ifluids.com"], "INFO@ifluids.com, arun@ifluids.com, z@x.com"), { emails: ["info@ifluids.com", "z@x.com"], errors: [] });
+  assert.deepEqual(addCcEmails(["info@ifluids.com"], "INFO@ifluids.com, arun@ifluids.com, accounts@ifluids.com, z@x.com"), { emails: ["info@ifluids.com", "z@x.com"], errors: [] });
 });
 
 test("addCcEmails: invalid entries are reported by name and not added, the valid ones in the same input still are", async () => {
@@ -352,13 +355,13 @@ const renderCc = async (over = {}) => {
   return renderToStaticMarkup(React.createElement(CcEmailInput, { emails: [], draft: "", errors: [], disabled: false, onDraftChange: noop, onCommit: noop, onRemove: noop, ...over }));
 };
 
-test("CC input: empty state has a labelled field, the placeholder and the note that arun@ifluids.com is always included", async () => {
+test("CC input: empty state has a labelled field, the placeholder and the note that arun@ifluids.com and accounts@ifluids.com are always included", async () => {
   const html = await renderCc();
   assert.match(html, /<label[^>]*for="([^"]+)"[^>]*>Additional CC Email Addresses<\/label>/);
   const id = /<label[^>]*for="([^"]+)"/.exec(html)[1];
   assert.match(html, new RegExp(`<input[^>]*id="${id.replace(/[:]/g, "\\$&")}"`));
   assert.match(html, /name@company\.com/);
-  assert.match(html, /arun@ifluids\.com is always included automatically/);
+  assert.match(html, /arun@ifluids\.com and accounts@ifluids\.com are always included automatically/);
   assert.ok(!/info@ifluids\.com/.test(html), "the old mandatory address is no longer advertised");
   assert.match(html, /receives this email, including its attachments/);
   assert.ok(!/aria-label="Additional CC addresses added"/.test(html));
@@ -426,7 +429,7 @@ test("service: additionalCcEmails is part of the typed payload and travels in th
 
 test("the two CC mechanisms stay separate: the PMO-user picker (ccMemberUserIds) and its always-included note are unchanged", () => {
   const modal = src("pages/Projects/components/Invoice/RequestInvoiceModal.tsx");
-  assert.ok(modal.includes("arun@ifluids.com is automatically included for Invoice Request Assigned emails and cannot be removed."));
+  assert.ok(modal.includes("arun@ifluids.com and accounts@ifluids.com are automatically included on the Invoice Request, Invoice Raised and Invoice Paid emails and cannot be removed."));
   assert.ok(!modal.includes("info@ifluids.com"), "the modal no longer names info@ifluids.com");
   assert.match(modal, /ccMemberUserIds,\n/);
   assert.match(modal, /handleAddCcMember/);

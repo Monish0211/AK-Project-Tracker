@@ -1,5 +1,6 @@
 import { EMAIL_SUBJECTS } from "../email.constants.js";
 import type { EmailContent, InvoiceRaisedSuccessfullyEmailData } from "../email.types.js";
+import { INVOICE_RAISED_HEADING_PREFIX, renderInvoiceEmailHeading } from "./invoiceEmailHeading.js";
 import { renderButton, renderEmailLayout } from "./layout.template.js";
 import { escapeHtml } from "./missingOtherExpenses.template.js";
 
@@ -32,6 +33,7 @@ export function buildInvoiceRaisedSuccessfullyEmail(data: InvoiceRaisedSuccessfu
   const projectTitle = escapeHtml(data.projectTitle);
 
   const bodyHtml = `
+    ${renderInvoiceEmailHeading(INVOICE_RAISED_HEADING_PREFIX, data)}
     <p style="margin:0 0 16px;">Hello ${requesterName},</p>
     <p style="margin:0 0 16px;">
       Your requested invoice has been successfully raised.

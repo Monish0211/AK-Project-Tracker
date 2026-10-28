@@ -240,7 +240,7 @@ test("JSON-only request (no files) works exactly as before: 201, one email, no a
   assert.equal(attempts.length, 1);
   const mail = attempts[0]!;
   assert.equal(mail.to, fx.B.email);
-  assert.deepEqual(mail.cc, ["arun@ifluids.com", fx.C.email], "arun@ifluids.com first, then the CC member, no duplicates");
+  assert.deepEqual(mail.cc, ["arun@ifluids.com", "accounts@ifluids.com", fx.C.email], "arun@ and accounts@ first, then the CC member, no duplicates");
   assert.equal(mail.subject, "Invoice Request — please raise this invoice");
   assert.equal(mail.attachments, undefined, "no attachments key at all for a request without files");
   assert.ok(!/Attachments/.test(mail.html));
@@ -273,7 +273,7 @@ test("one valid file: stored, recorded against the request only, and emailed as 
   assert.equal(attempts.length, 1);
   const mail = attempts[0]!;
   assert.equal(mail.to, fx.B.email);
-  assert.deepEqual(mail.cc, ["arun@ifluids.com", fx.C.email]);
+  assert.deepEqual(mail.cc, ["arun@ifluids.com", "accounts@ifluids.com", fx.C.email]);
   assert.equal(mail.attachments?.length, 1);
   assert.equal(mail.attachments![0]!.filename, "Invoice details.pdf");
   assert.equal(mail.attachments![0]!.contentType, "application/pdf");
@@ -457,7 +457,7 @@ test("too large for the safe email size: the request and files are saved, the em
   assert.match(mail.html, /could NOT be attached to this email/);
   assert.ok(!/Attachments \(\d\)/.test(mail.html));
   assert.equal(mail.to, fx.B.email);
-  assert.equal((mail.cc as string[])[0], "arun@ifluids.com");
+  assert.deepEqual((mail.cc as string[]).slice(0, 2), ["arun@ifluids.com", "accounts@ifluids.com"]);
   assert.equal(await prisma.document.count({ where: { invoiceRequestId: res.json.data!.id } }), 2, "the files are retained");
   for (const d of await prisma.document.findMany({ where: { invoiceRequestId: res.json.data!.id } })) await fsp.access(path.join(storageDir, d.storageKey));
 });
@@ -762,7 +762,7 @@ test("a UI double-click (two identical submissions at once) creates ONE request,
 
 // ── Additional CC Email Addresses ──
 
-test("additional CC addresses appear in the REAL outgoing message's Cc header — after arun@ifluids.com and the saved members, lower-cased, de-duplicated — and the To is untouched", async () => {
+test("additional CC addresses appear in the REAL outgoing message's Cc header — after arun@ifluids.com, accounts@ifluids.com and the saved members, lower-cased, de-duplicated — and the To is untouched", async () => {
   await resetProject();
   const res = await post(fx.A.token, {
     ...basePayload(),
@@ -773,7 +773,7 @@ test("additional CC addresses appear in the REAL outgoing message's Cc header �
   assert.equal((await waitForOutcome(res.json.data!.id)).emailStatus, "sent");
   assert.equal(attempts.length, 1);
   const mail = attempts[0]!;
-  const expected = ["arun@ifluids.com", fx.C.email, "client.contact@customer.com", "second@customer.com"];
+  const expected = ["arun@ifluids.com", "accounts@ifluids.com", fx.C.email, "client.contact@customer.com", "second@customer.com"];
   assert.deepEqual(mail.cc, expected, "mandatory first, members next, manual last; every duplicate gone");
   assert.equal(mail.to, fx.B.email);
   const headers = topHeaders(await composed(mail));
@@ -787,13 +787,13 @@ test("a single additional address, and the same request with a file (multipart),
   const json = await post(fx.A.token, { ...basePayload(), additionalCcEmails: ["one@customer.com"] });
   assert.equal(json.status, 201);
   await waitForOutcome(json.json.data!.id);
-  assert.deepEqual(addressList(topHeaders(await composed(attempts[0]!)).get("cc")), ["arun@ifluids.com", "one@customer.com"]);
+  assert.deepEqual(addressList(topHeaders(await composed(attempts[0]!)).get("cc")), ["arun@ifluids.com", "accounts@ifluids.com", "one@customer.com"]);
 
   await resetProject();
   const form = await post(fx.A.token, multipart({ ...basePayload(), additionalCcEmails: ["one@customer.com", "two@customer.com"] }, [{ name: "Thread.eml", data: eml() }]));
   assert.equal(form.status, 201);
   assert.equal((await waitForOutcome(form.json.data!.id)).emailStatus, "sent_with_attachments");
-  assert.deepEqual(addressList(topHeaders(await composed(attempts[0]!)).get("cc")), ["arun@ifluids.com", "one@customer.com", "two@customer.com"]);
+  assert.deepEqual(addressList(topHeaders(await composed(attempts[0]!)).get("cc")), ["arun@ifluids.com", "accounts@ifluids.com", "one@customer.com", "two@customer.com"]);
   assert.equal(attachmentParts(await composed(attempts[0]!)).length, 1, "the file and the CC travel on the same email");
 });
 
@@ -802,7 +802,7 @@ test("the extra CC addresses also reach the follow-up email when the files canno
   const tooLarge = await post(fx.A.token, multipart({ ...basePayload(), additionalCcEmails: ["extra@customer.com"] }, [{ name: "a.pdf", data: pdf(8 * MB) }, { name: "b.pdf", data: pdf(8 * MB) }]));
   assert.equal(tooLarge.status, 201);
   assert.equal((await waitForOutcome(tooLarge.json.data!.id)).emailStatus, "sent_without_attachments");
-  assert.deepEqual(attempts[0]!.cc, ["arun@ifluids.com", "extra@customer.com"]);
+  assert.deepEqual(attempts[0]!.cc, ["arun@ifluids.com", "accounts@ifluids.com", "extra@customer.com"]);
 
   await resetProject();
   behavior = (mail) => {
@@ -811,37 +811,37 @@ test("the extra CC addresses also reach the follow-up email when the files canno
   const refused = await post(fx.A.token, multipart({ ...basePayload(), additionalCcEmails: ["extra@customer.com"] }, [{ name: "Thread.eml", data: eml() }]));
   assert.equal((await waitForOutcome(refused.json.data!.id)).emailStatus, "sent_without_attachments");
   assert.equal(attempts.length, 2);
-  assert.deepEqual(attempts[0]!.cc, ["arun@ifluids.com", "extra@customer.com"]);
+  assert.deepEqual(attempts[0]!.cc, ["arun@ifluids.com", "accounts@ifluids.com", "extra@customer.com"]);
   assert.deepEqual(attempts[1]!.cc, attempts[0]!.cc, "the follow-up email has the same recipients");
 });
 
-test("manual addresses can never remove or replace the mandatory recipients: arun@ifluids.com stays once and first, the saved members stay, the assignee is not repeated in CC", async () => {
+test("manual addresses can never remove or replace the mandatory recipients: arun@ifluids.com and accounts@ifluids.com stay once and first, the saved members stay, the assignee is not repeated in CC", async () => {
   await resetProject();
   const res = await post(fx.A.token, { ...basePayload(), ccMemberUserIds: [fx.C.id], additionalCcEmails: ["Arun@Ifluids.com", fx.B.email.toUpperCase(), "fresh@customer.com"] });
   assert.equal(res.status, 201, res.json.message);
   await waitForOutcome(res.json.data!.id);
   const headers = topHeaders(await composed(attempts[0]!));
-  assert.deepEqual(addressList(headers.get("cc")), ["arun@ifluids.com", fx.C.email, "fresh@customer.com"]);
+  assert.deepEqual(addressList(headers.get("cc")), ["arun@ifluids.com", "accounts@ifluids.com", fx.C.email, "fresh@customer.com"]);
   assert.deepEqual(addressList(headers.get("to")), [fx.B.email]);
   assert.deepEqual(res.json.data!.ccMembers.map((m) => m.id), [fx.C.id], "the saved CC members are unchanged");
 });
 
-test("an empty list, no field at all and no CC members are all backward compatible: the Cc is exactly arun@ifluids.com plus the members, as before", async () => {
+test("an empty list, no field at all and no CC members are all backward compatible: the Cc is exactly arun@ifluids.com + accounts@ifluids.com plus the members, as before", async () => {
   await resetProject();
   const empty = await post(fx.A.token, { ...basePayload(), additionalCcEmails: [] });
   assert.equal(empty.status, 201);
   await waitForOutcome(empty.json.data!.id);
-  assert.deepEqual(attempts[0]!.cc, ["arun@ifluids.com"]);
+  assert.deepEqual(attempts[0]!.cc, ["arun@ifluids.com", "accounts@ifluids.com"]);
   await resetProject();
   const absent = await post(fx.A.token, { ...basePayload(), ccMemberUserIds: [fx.C.id] });
   assert.equal(absent.status, 201);
   await waitForOutcome(absent.json.data!.id);
-  assert.deepEqual(attempts[0]!.cc, ["arun@ifluids.com", fx.C.email]);
+  assert.deepEqual(attempts[0]!.cc, ["arun@ifluids.com", "accounts@ifluids.com", fx.C.email]);
   await resetProject();
   const blanks = await post(fx.A.token, multipart({ ...basePayload(), additionalCcEmails: ["", "  "] }, [{ name: "a.pdf", data: pdf() }]));
   assert.equal(blanks.status, 201, "blank entries are simply ignored");
   await waitForOutcome(blanks.json.data!.id);
-  assert.deepEqual(attempts[0]!.cc, ["arun@ifluids.com"]);
+  assert.deepEqual(attempts[0]!.cc, ["arun@ifluids.com", "accounts@ifluids.com"]);
 });
 
 test("invalid addresses are rejected by the SERVER whatever the browser did — nothing created, stored or emailed, even with files attached — with a message naming the address", async () => {
