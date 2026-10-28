@@ -7,10 +7,15 @@ import App from "./App";
 
 import { ThemeProvider } from "./context/ThemeContext";
 import { registerServiceWorker } from "./notifications/pushSubscriptionService";
+import { AppErrorFallback } from "./components/AppErrorFallback";
+import { installLazyChunkRecovery } from "./utils/lazyChunkRecovery";
+
+// Before anything renders: a tab opened before a deployment asks for chunk files that no longer exist; reload once (guarded) to pick up the new ones.
+installLazyChunkRecovery();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <Sentry.ErrorBoundary fallback={<p>Something went wrong.</p>}>
+    <Sentry.ErrorBoundary fallback={({ error }) => <AppErrorFallback error={error} />}>
       <ThemeProvider>
         <App />
       </ThemeProvider>
