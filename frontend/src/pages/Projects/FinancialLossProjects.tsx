@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import ExcelJS from "exceljs";
 import {
   FolderKanban,
   Search,
@@ -135,6 +134,7 @@ export default function FinancialLossProjects() {
     }
 
     try {
+      const { default: ExcelJS } = await import("exceljs"); // on demand — see the import note in projectWorkbookService.ts
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet("Financial Loss Projects");
 

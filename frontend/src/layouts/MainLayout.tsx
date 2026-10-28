@@ -12,27 +12,6 @@ import Dashboard from "../pages/Dashboard/Dashboard";
 
 /* Projects */
 import Projects from "../pages/Projects/Projects";
-import CompletedProjects from "../pages/Projects/CompletedProjects";
-import ArchivedProjects from "../pages/Projects/ArchivedProjects";
-import FinancialLossProjects from "../pages/Projects/FinancialLossProjects";
-import TimelineAlertProjects from "../pages/Projects/TimelineAlertProjects";
-import TimesheetPendingProjects from "../pages/Projects/TimesheetPendingProjects";
-import TeamLeadsWorkloadProjects from "../pages/Projects/TeamLeadsWorkloadProjects";
-import AddProject from "../pages/Projects/AddProject";
-import ViewProject from "../pages/Projects/ViewProject";
-import EditProject from "../pages/Projects/EditProject";
-
-/* Notes — dedicated, read-only Notes register (Sept 2026) */
-import Notes from "../pages/Notes/Notes";
-
-/* Customer Master */
-import CustomerMaster from "../pages/CustomerMaster/CustomerMaster";
-
-/* Other Modules */
-import Manpower from "../pages/Manpower/Manpower";
-import Timesheets from "../pages/Timesheets/Timesheets";
-import ReportsPage from "../pages/ReportsPage";
-import Settings from "../pages/Settings/Settings";
 
 /* Settings → Weekly Emails sub-pages (Oct 2026) — lazy: only admins open them, and only on demand. */
 const WeeklyEmailPreviewPage = lazy(() => import("../pages/Settings/WeeklyEmails/WeeklyEmailPreviewPage"));
@@ -40,10 +19,26 @@ const WeeklyEmailRunsPage = lazy(() => import("../pages/Settings/WeeklyEmails/We
 const InvoiceTracker = lazy(() => import("../pages/InvoiceTracker/InvoiceTracker"));
 const pageFallback = <div className="py-16 text-center text-[12px] text-[var(--nu-text-muted)]">Loading…</div>;
 
-/* PR Request & Two-Level Approval Workflow */
-import RequestPR from "../pages/PRRequests/RequestPR";
-import PRRequests from "../pages/PRRequests/PRRequests";
-import PRRequestDetail from "../pages/PRRequests/PRRequestDetail";
+/* Startup payload (Oct 2026): only the two landing pages (Dashboard, Projects) are bundled with the app shell. Every other page is a separate chunk
+   fetched the first time its route is opened — the same lazy() + Suspense pattern the Invoice Tracker and Weekly Emails pages already used. */
+const CompletedProjects = lazy(() => import("../pages/Projects/CompletedProjects"));
+const ArchivedProjects = lazy(() => import("../pages/Projects/ArchivedProjects"));
+const FinancialLossProjects = lazy(() => import("../pages/Projects/FinancialLossProjects"));
+const TimelineAlertProjects = lazy(() => import("../pages/Projects/TimelineAlertProjects"));
+const TimesheetPendingProjects = lazy(() => import("../pages/Projects/TimesheetPendingProjects"));
+const TeamLeadsWorkloadProjects = lazy(() => import("../pages/Projects/TeamLeadsWorkloadProjects"));
+const AddProject = lazy(() => import("../pages/Projects/AddProject"));
+const ViewProject = lazy(() => import("../pages/Projects/ViewProject"));
+const EditProject = lazy(() => import("../pages/Projects/EditProject"));
+const Notes = lazy(() => import("../pages/Notes/Notes"));
+const CustomerMaster = lazy(() => import("../pages/CustomerMaster/CustomerMaster"));
+const Manpower = lazy(() => import("../pages/Manpower/Manpower"));
+const Timesheets = lazy(() => import("../pages/Timesheets/Timesheets"));
+const ReportsPage = lazy(() => import("../pages/ReportsPage"));
+const Settings = lazy(() => import("../pages/Settings/Settings"));
+const RequestPR = lazy(() => import("../pages/PRRequests/RequestPR"));
+const PRRequests = lazy(() => import("../pages/PRRequests/PRRequests"));
+const PRRequestDetail = lazy(() => import("../pages/PRRequests/PRRequestDetail"));
 
 const MainLayout = () => {
   // Central Employee Master hydration — MainLayout mounts exactly once per
@@ -94,6 +89,7 @@ const MainLayout = () => {
               space on 2K/4K while still avoiding unreadably wide rows on a
               1366px laptop. */}
           <div className="w-full max-w-[1800px] 2xl:max-w-[2200px] mx-auto px-[clamp(1rem,2vw,2.5rem)] py-[clamp(1rem,1.5vh,2rem)]">
+            <Suspense fallback={pageFallback}>
             <Routes>
 
               {/* Dashboard */}
@@ -258,6 +254,7 @@ const MainLayout = () => {
                 element={<ModuleRoute module="Dashboard"><Dashboard /></ModuleRoute>}
               />
             </Routes>
+            </Suspense>
           </div>
         </main>
 

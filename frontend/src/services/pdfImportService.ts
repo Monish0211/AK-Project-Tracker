@@ -1,5 +1,4 @@
 import type { PdfImportResponse } from "../types/PdfImport";
-import { extractPdfImportResponse } from "./pdfExtraction";
 import { apiClient } from "./apiClient";
 import { mergeWithAiCandidate, type PdfImportAiCandidate } from "../utils/pdfImportMerge";
 import { mergeDocumentSet, type DocumentSetMember } from "../utils/pdfImportDocumentSetMerge";
@@ -169,6 +168,9 @@ export async function extractPdfDocumentSet(
   }
 
   try {
+    // pdfjs-dist, tesseract.js and the PDF worker (~1 MB of source) load here, the first time a PDF is actually imported — not with the
+    // app. A failed chunk load is caught by this same try/catch, exactly like any other extraction failure.
+    const { extractPdfImportResponse } = await import("./pdfExtraction");
     const members: DocumentSetMember[] = [];
     for (let index = 0; index < validFiles.length; index++) {
       const file = validFiles[index];

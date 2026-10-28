@@ -1,4 +1,5 @@
-import ExcelJS from "exceljs";
+// exceljs (~0.9 MB source) is loaded on demand, only when the user actually exports/imports a workbook — never at app start.
+import type ExcelJS from "exceljs";
 import type { Project } from "../types/Project";
 import type { QuantityItem } from "../types/QuantityItem";
 import { createEmptyProject, inferPrCategory, inferDomesticForeign } from "../utils/createEmptyProject";
@@ -494,7 +495,8 @@ function buildSampleProject(): Project {
 // ─────────────────────────────────────────────────────────────────────────
 
 async function buildWorkbook(projects: Project[], blankRowCount: number): Promise<ExcelJS.Workbook> {
-  const workbook = new ExcelJS.Workbook();
+  const { default: ExcelJSRuntime } = await import("exceljs");
+  const workbook = new ExcelJSRuntime.Workbook();
   workbook.views = [{ x: 0, y: 0, width: 10000, height: 20000, firstSheet: 0, activeTab: 0, visibility: "visible" }];
 
   // PMO Coordinator dropdown = the registry's names (best effort: a failed

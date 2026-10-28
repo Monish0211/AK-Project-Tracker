@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import ExcelJS from "exceljs";
 import { Search, Clock3 } from "lucide-react";
 import { fetchTimesheetPendingProjects, type TimesheetPendingProjectRow } from "../../services/timesheetPendingService";
 import { formatDisplayDate } from "../../services/timesheetService";
@@ -87,6 +86,7 @@ export default function TimesheetPendingProjects() {
       return;
     }
 
+    const { default: ExcelJS } = await import("exceljs"); // on demand — see the import note in projectWorkbookService.ts
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Timesheet Pending");
     sheet.columns = [

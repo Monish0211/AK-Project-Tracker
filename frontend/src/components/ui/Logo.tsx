@@ -1,6 +1,6 @@
 import ifeLogo from "../../assets/brand/ife-logo-256.png";
 import logoLight from "../../assets/logo-light.jpg";
-import logoDark from "../../assets/logo-dark.png";
+import logoDark from "../../assets/logo-dark.jpg";
 import { useTheme } from "../../context/ThemeContext";
 
 interface LogoProps {
@@ -26,7 +26,8 @@ interface LogoProps {
  * height-driven by the caller's `imageClassName`), never stretched or cropped. The master image is
  * src/assets/brand/ife-logo-master.png (unchanged, not imported); ife-logo-256.png is its optimised rendition.
  *
- * variant "wordmark": the original behaviour, unchanged — the official light-theme asset in Light Mode (on a white card) and the
+ * variant "wordmark": the original behaviour, unchanged (Oct 2026: the two wordmark files were re-sized from 1800x874 PNG / 2775x1005 JPEG to 900x437 / 800x290 JPEG —
+ * about 4-5x their largest on-screen size — cutting the dark one from 1 MB to ~50 KB; neither has transparency, both are opaque tiles) — the official light-theme asset in Light Mode (on a white card) and the
  * official dark-theme asset in Dark Mode (a self-contained tile that already bakes in its own frame, so no card there, and
  * `darkImageClassName` lets a usage render it taller to offset that framing). The artwork is never recolored or filtered.
  *

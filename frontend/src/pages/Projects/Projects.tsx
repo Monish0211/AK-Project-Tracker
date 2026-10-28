@@ -16,7 +16,6 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import ExcelJS from "exceljs";
 
 import RepositoryCreateActions from "./components/RepositoryCreateActions";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -582,6 +581,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
 
     try {
       const arrayBuffer = await file.arrayBuffer();
+      const { default: ExcelJS } = await import("exceljs"); // on demand — see the import note in projectWorkbookService.ts
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(arrayBuffer);
 
