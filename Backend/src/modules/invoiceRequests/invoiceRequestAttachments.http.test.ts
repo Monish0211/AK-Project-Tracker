@@ -241,7 +241,7 @@ test("JSON-only request (no files) works exactly as before: 201, one email, no a
   const mail = attempts[0]!;
   assert.equal(mail.to, fx.B.email);
   assert.deepEqual(mail.cc, ["arun@ifluids.com", "accounts@ifluids.com", fx.C.email], "arun@ and accounts@ first, then the CC member, no duplicates");
-  assert.equal(mail.subject, "Invoice Request — please raise this invoice");
+  assert.equal(mail.subject, `Invoice request - Attachment Client - Invoice Request attachments - ${fx.projectPrNo}`);
   assert.equal(mail.attachments, undefined, "no attachments key at all for a request without files");
   assert.ok(!/Attachments/.test(mail.html));
   assert.equal(await prisma.document.count({ where: { invoiceRequest: { projectId: fx.projectId } } }), 0);

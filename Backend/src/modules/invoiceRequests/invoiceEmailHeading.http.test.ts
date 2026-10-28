@@ -3,7 +3,6 @@ import { createServer } from "node:http";
 import { after, before, test } from "node:test";
 import type { AddressInfo } from "node:net";
 import app from "../../app.js";
-import { EMAIL_SUBJECTS } from "../../shared/email/email.constants.js";
 import { isEmailConfigured, setEmailTransportForTests } from "../../shared/email/transporter.js";
 import { env } from "../../shared/utils/env.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
@@ -11,7 +10,7 @@ import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
 
 /**
- * Heading of the Invoice Request and Invoice Raised emails, end to end (Oct 2026): a real Request Invoice is created over HTTP for a project with a
+ * Subject AND heading of the Invoice Request and Invoice Raised emails, end to end (Oct 2026): a real Request Invoice is created over HTTP for a project with a
  * LONG client name and project title, the invoice is raised over HTTP, and both emails the server composes are captured by a FAKE mail transport
  * (no SMTP connection is ever opened). Proves the headings are built from the actual project row, are cut to the first three words, end with the
  * complete PR number, and that everything else — subject, recipients, the full names in the details table and in the database — is unchanged.
@@ -94,13 +93,13 @@ after(async () => {
   }
 });
 
-async function waitForMail(subject: string): Promise<SentMail> {
+async function waitForMail(subjectStart: string): Promise<SentMail> {
   for (let i = 0; i < 80; i++) {
-    const mail = sent.find((m) => m.subject === subject);
+    const mail = sent.find((m) => m.subject.startsWith(subjectStart));
     if (mail) return mail;
     await new Promise((r) => setTimeout(r, 100));
   }
-  throw new Error(`the email "${subject}" was never sent`);
+  throw new Error(`the email "${subjectStart}" was never sent`);
 }
 
 async function call(method: string, path: string, token: string, body?: unknown) {
@@ -113,11 +112,11 @@ async function call(method: string, path: string, token: string, body?: unknown)
   return { status: res.status, json };
 }
 
-/** The heading (<h2>) of a captured email, as a mail client displays it (HTML entities decoded). */
+/** The heading (<h2>) of a captured email, as a mail client displays it (tags dropped, HTML entities decoded; a non-breaking space looks like a space). */
 function headingOf(html: string): string {
   const all = [...html.matchAll(/<h2 style="[^"]*">([\s\S]*?)<\/h2>/g)];
   assert.equal(all.length, 1, "exactly one heading in the email");
-  return all[0]![1]!.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+  return all[0]![1]!.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
 }
 
 async function makeProject(prNo: string, client: string, projectTitle: string) {
@@ -155,9 +154,9 @@ test("both emails carry the heading built from the real project: first 3 words o
   // ---- Invoice Request (Assigned) ----
   const create = await call("POST", `/projects/${project.id}/invoice-requests`, fx.requester.token, { assignedToUserId: fx.raiser.id });
   assert.equal(create.status, 201, create.json.message);
-  const assigned = await waitForMail(EMAIL_SUBJECTS.INVOICE_REQUEST_ASSIGNED);
+  const assigned = await waitForMail("Invoice request - ");
   assert.equal(headingOf(assigned.html), `Invoice request - Benchmark Customer Long - Heading regression with - ${project.prNo}`);
-  assert.equal(assigned.subject, "Invoice Request — please raise this invoice", "the subject line is unchanged");
+  assert.equal(assigned.subject, `Invoice request - Benchmark Customer Long - Heading regression with - ${project.prNo}`, "the subject is the same line as the heading");
   assert.equal(assigned.to, fx.raiser.email, "recipient unchanged");
   assert.ok(assigned.html.includes(`>${CLIENT}</td>`) && assigned.html.includes(`>${TITLE}</td>`) && assigned.html.includes(`>${project.prNo}</td>`), "the details table still shows the FULL values");
   assert.match(assigned.html, /Hello Email Heading raiser,/);
@@ -174,9 +173,9 @@ test("both emails carry the heading built from the real project: first 3 words o
   });
   assert.equal(draft.status, 201);
   assert.equal((await call("PATCH", `/invoice-lines/${draft.json.data!.id}`, fx.raiser.token, { status: "Raised" })).status, 200);
-  const raised = await waitForMail(EMAIL_SUBJECTS.INVOICE_RAISED_SUCCESSFULLY);
+  const raised = await waitForMail("Invoice has been raised - ");
   assert.equal(headingOf(raised.html), `Invoice has been raised - Benchmark Customer Long - Heading regression with - ${project.prNo}`);
-  assert.equal(raised.subject, "Your requested invoice has been raised", "the subject line is unchanged");
+  assert.equal(raised.subject, `Invoice has been raised - Benchmark Customer Long - Heading regression with - ${project.prNo}`, "the subject is the same line as the heading");
   assert.equal(raised.to, fx.requester.email, "recipient unchanged");
   assert.ok(raised.html.includes(`>${CLIENT}</td>`) && raised.html.includes(`>${TITLE}</td>`), "the details table still shows the FULL values");
   assert.match(raised.html, /Hello Email Heading requester,/);
@@ -192,9 +191,10 @@ test("a short client and title (three words or fewer) are shown whole, with surr
   const { project, quantityItem } = await makeProject(`PR-${TAG}-b`, "  TEST   CLIENT ", " Q&A  Study ");
   const create = await call("POST", `/projects/${project.id}/invoice-requests`, fx.requester.token, { assignedToUserId: fx.raiser.id });
   assert.equal(create.status, 201, create.json.message);
-  const assigned = await waitForMail(EMAIL_SUBJECTS.INVOICE_REQUEST_ASSIGNED);
+  const assigned = await waitForMail("Invoice request - ");
   assert.equal(headingOf(assigned.html), `Invoice request - TEST CLIENT - Q&A Study - ${project.prNo}`);
-  assert.ok(assigned.html.includes("Q&amp;A Study"), "the ampersand is HTML-escaped in the markup");
+  assert.equal(assigned.subject, `Invoice request - TEST CLIENT - Q&A Study - ${project.prNo}`, "the subject is plain text: the ampersand is NOT escaped there");
+  assert.ok(assigned.html.includes("Q&amp;A&nbsp;Study"), "the ampersand is HTML-escaped in the markup");
 
   const draft = await call("POST", `/quantity/${quantityItem.id}/invoice-lines`, fx.raiser.token, {
     invoiceNo: `${TAG}-INV-b`,
@@ -205,6 +205,7 @@ test("a short client and title (three words or fewer) are shown whole, with surr
   });
   assert.equal(draft.status, 201);
   assert.equal((await call("PATCH", `/invoice-lines/${draft.json.data!.id}`, fx.raiser.token, { status: "Raised" })).status, 200);
-  const raised = await waitForMail(EMAIL_SUBJECTS.INVOICE_RAISED_SUCCESSFULLY);
+  const raised = await waitForMail("Invoice has been raised - ");
   assert.equal(headingOf(raised.html), `Invoice has been raised - TEST CLIENT - Q&A Study - ${project.prNo}`);
+  assert.equal(raised.subject, `Invoice has been raised - TEST CLIENT - Q&A Study - ${project.prNo}`);
 });

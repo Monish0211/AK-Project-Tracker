@@ -1,6 +1,5 @@
-import { EMAIL_SUBJECTS } from "../email.constants.js";
 import type { EmailContent, InvoiceRequestAssignedEmailData } from "../email.types.js";
-import { INVOICE_REQUEST_HEADING_PREFIX, renderInvoiceEmailHeading } from "./invoiceEmailHeading.js";
+import { INVOICE_REQUEST_HEADING_PREFIX, buildInvoiceRequestSubject, renderInvoiceEmailHeading } from "./invoiceEmailHeading.js";
 import { renderButton, renderEmailLayout } from "./layout.template.js";
 import { escapeHtml } from "./missingOtherExpenses.template.js";
 
@@ -83,7 +82,8 @@ export function buildInvoiceRequestAssignedEmail(data: InvoiceRequestAssignedEma
   `;
 
   return {
-    subject: EMAIL_SUBJECTS.INVOICE_REQUEST_ASSIGNED,
+    // Same text as the body heading above: "Invoice request - {client, 3 words} - {title, 3 words} - {PR no.}" (see invoiceEmailHeading.ts).
+    subject: buildInvoiceRequestSubject(data),
     html: renderEmailLayout({ bodyHtml, previewText: escapeHtml(`${data.requesterName} requested that you raise the invoice for ${data.projectTitle}.`) }),
   };
 }

@@ -98,13 +98,14 @@ after(async () => {
   }
 });
 
-async function waitForMail(subject: string): Promise<SentMail> {
+/** The first captured email whose subject starts with `subjectStart` (the Request / Raised subjects are project-specific: "Invoice request - …", "Invoice has been raised - …"). */
+async function waitForMail(subjectStart: string): Promise<SentMail> {
   for (let i = 0; i < 80; i++) {
-    const mail = sent.find((m) => m.subject === subject);
+    const mail = sent.find((m) => m.subject.startsWith(subjectStart));
     if (mail) return mail;
     await new Promise((r) => setTimeout(r, 100));
   }
-  throw new Error(`the email "${subject}" was never sent`);
+  throw new Error(`the email "${subjectStart}" was never sent`);
 }
 
 async function call(method: string, path: string, token: string, body?: unknown) {
@@ -154,7 +155,8 @@ test("Assigned, Raised and Paid all CC arun@ + accounts@ (Paid no longer info@);
   });
   assert.equal(create.status, 201, create.json.message);
 
-  const assigned = await waitForMail(EMAIL_SUBJECTS.INVOICE_REQUEST_ASSIGNED);
+  const assigned = await waitForMail("Invoice request - ");
+  assert.equal(assigned.subject, `Invoice request - Mandatory CC Client - Mandatory CC regression - PR-${TAG}`);
   assert.equal(assigned.to, fx.raiser.email);
   assert.deepEqual(
     assigned.cc,
@@ -174,7 +176,8 @@ test("Assigned, Raised and Paid all CC arun@ + accounts@ (Paid no longer info@);
   const lineId = draft.json.data!.id;
   assert.equal((await call("PATCH", `/invoice-lines/${lineId}`, fx.raiser.token, { status: "Raised" })).status, 200);
 
-  const raised = await waitForMail(EMAIL_SUBJECTS.INVOICE_RAISED_SUCCESSFULLY);
+  const raised = await waitForMail("Invoice has been raised - ");
+  assert.equal(raised.subject, `Invoice has been raised - Mandatory CC Client - Mandatory CC regression - PR-${TAG}`);
   assert.equal(raised.to, fx.requester.email);
   assert.deepEqual(raised.cc, ["arun@ifluids.com", "accounts@ifluids.com", fx.member.email], "Raised: arun@ and accounts@ first, then the saved member (manual addresses were never persisted)");
 
@@ -224,7 +227,8 @@ test("with NO CC members and NO manual addresses: Assigned, Raised and Paid are 
 
   const create = await call("POST", `/projects/${project.id}/invoice-requests`, fx.requester.token, { assignedToUserId: fx.raiser.id });
   assert.equal(create.status, 201, create.json.message);
-  const assigned = await waitForMail(EMAIL_SUBJECTS.INVOICE_REQUEST_ASSIGNED);
+  const assigned = await waitForMail("Invoice request - ");
+  assert.equal(assigned.subject, `Invoice request - Mandatory CC Client - Mandatory CC bare - PR-${tag2}`);
   assert.equal(assigned.to, fx.raiser.email);
   assert.deepEqual(assigned.cc, ["arun@ifluids.com", "accounts@ifluids.com"]);
 
@@ -238,7 +242,8 @@ test("with NO CC members and NO manual addresses: Assigned, Raised and Paid are 
   assert.equal(draft.status, 201);
   const lineId = draft.json.data!.id;
   assert.equal((await call("PATCH", `/invoice-lines/${lineId}`, fx.raiser.token, { status: "Raised" })).status, 200);
-  const raised = await waitForMail(EMAIL_SUBJECTS.INVOICE_RAISED_SUCCESSFULLY);
+  const raised = await waitForMail("Invoice has been raised - ");
+  assert.equal(raised.subject, `Invoice has been raised - Mandatory CC Client - Mandatory CC bare - PR-${tag2}`);
   assert.equal(raised.to, fx.requester.email);
   assert.deepEqual(raised.cc, ["arun@ifluids.com", "accounts@ifluids.com"]);
 

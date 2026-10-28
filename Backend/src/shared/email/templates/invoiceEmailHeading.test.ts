@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { EMAIL_SUBJECTS } from "../email.constants.js";
 import type { InvoiceRaisedSuccessfullyEmailData, InvoiceRequestAssignedEmailData } from "../email.types.js";
 import {
   buildInvoiceEmailHeading,
+  buildInvoiceRaisedSubject,
+  buildInvoiceRequestSubject,
   firstWords,
   HEADING_MAX_WORDS,
   INVOICE_RAISED_HEADING_PREFIX,
@@ -14,10 +15,10 @@ import { buildInvoiceRaisedSuccessfullyEmail } from "./invoiceRaisedSuccessfully
 import { buildInvoiceRequestAssignedEmail } from "./invoiceRequestAssigned.template.js";
 
 /**
- * Heading of the Invoice Request and Invoice Raised emails (Oct 2026):
+ * Subject AND heading of the Invoice Request and Invoice Raised emails (Oct 2026), one and the same text:
  *   "Invoice request - {first 3 words of client} - {first 3 words of project title} - {full PR number}"
  *   "Invoice has been raised - {first 3 words of client} - {first 3 words of project title} - {full PR number}"
- * Pure tests: no database, no network, no mail. Only the heading is new — subject, body, button and details table must be exactly as before.
+ * Pure tests: no database, no network, no mail. Only the subject and the heading are new — greeting, message, button and details table must be exactly as before.
  */
 
 const raisedData = (over: Partial<InvoiceRaisedSuccessfullyEmailData> = {}): InvoiceRaisedSuccessfullyEmailData => ({
@@ -48,8 +49,8 @@ const requestData = (over: Partial<InvoiceRequestAssignedEmailData> = {}): Invoi
   ...over,
 });
 
-/** The heading element, as a client displays it (entities decoded). Fails if there is not exactly one. */
-const decode = (s: string): string => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+/** The heading element, as a client displays it (tags dropped, entities decoded; a non-breaking space looks like a space). Fails if there is not exactly one. */
+const decode = (s: string): string => s.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
 function headingOf(html: string): string {
   const all = [...html.matchAll(/<h2 style="[^"]*">([\s\S]*?)<\/h2>/g)];
   assert.equal(all.length, 1, "exactly one heading in the email");
@@ -156,12 +157,11 @@ test("the heading is present however the Invoice Request email is built: no file
   }
 });
 
-test("only the heading changed: subjects, greeting, message, button, preview and the details tables (with the FULL client / title / PR number) are as before", () => {
+test("only the subject and the heading changed: greeting, message, button, preview and the details tables (with the FULL client / title / PR number) are as before", () => {
   const longClient = "Hindustan Petroleum Corporation Limited India";
   const longTitle = "Quantitative Risk Assessment (QRA) for the Visakh refinery expansion";
   const raised = buildInvoiceRaisedSuccessfullyEmail(raisedData({ client: longClient, projectTitle: longTitle }));
-  assert.equal(raised.subject, EMAIL_SUBJECTS.INVOICE_RAISED_SUCCESSFULLY);
-  assert.equal(raised.subject, "Your requested invoice has been raised");
+  assert.equal(raised.subject, "Invoice has been raised - Hindustan Petroleum Corporation - Quantitative Risk Assessment - PR-12073");
   assert.match(raised.html, /Hello Asha Rao,/);
   assert.match(raised.html, /Your requested invoice has been successfully raised\./);
   assert.match(raised.html, /Open Project Invoices/);
@@ -169,7 +169,7 @@ test("only the heading changed: subjects, greeting, message, button, preview and
   assert.ok(raised.html.includes(`Your requested invoice for ${longTitle} has been raised.`), "preview text unchanged (full title)");
 
   const request = buildInvoiceRequestAssignedEmail(requestData({ client: longClient, projectTitle: longTitle }));
-  assert.equal(request.subject, EMAIL_SUBJECTS.INVOICE_REQUEST_ASSIGNED);
+  assert.equal(request.subject, "Invoice request - Hindustan Petroleum Corporation - Quantitative Risk Assessment - PR-12073");
   assert.match(request.html, /Hello Ravi Kumar,/);
   assert.match(request.html, /Asha Rao has requested that you raise the invoice for the project below\./);
   assert.match(request.html, /Open Project Invoices/);
@@ -193,11 +193,131 @@ test("values are HTML-escaped exactly once in the heading, and a hostile value a
   }
   // normal text with an ampersand / quotes: encoded once, displayed correctly
   const html = buildInvoiceRaisedSuccessfullyEmail(raisedData({ client: `Tata & Sons "Ltd" India`, projectTitle: `O'Brien's <unit> A` })).html;
-  assert.ok(html.includes("Invoice has been raised - Tata &amp; Sons - O&#39;Brien&#39;s &lt;unit&gt; A - PR-12073"), "encoded once");
+  assert.ok(html.includes(`<span style="white-space:nowrap;">Invoice&nbsp;has&nbsp;been&nbsp;raised&nbsp;-</span> <span style="white-space:nowrap;">Tata&nbsp;&amp;&nbsp;Sons&nbsp;-</span> <span style="white-space:nowrap;">O&#39;Brien&#39;s&nbsp;&lt;unit&gt;&nbsp;A&nbsp;-</span> <span style="white-space:nowrap;">PR-12073</span>`), "encoded once");
   assert.ok(!/&amp;(amp|lt|gt|quot|#39);/.test(html), "never double-encoded");
+  assert.equal(headingOf(html), "Invoice has been raised - Tata & Sons - O'Brien's <unit> A - PR-12073", "and it displays exactly as typed");
 });
 
 test("renderInvoiceEmailHeading is one styled <h2> and nothing else", () => {
   const markup = renderInvoiceEmailHeading(INVOICE_REQUEST_HEADING_PREFIX, { client: "A", projectTitle: "B", prNo: "C" });
-  assert.match(markup, /^<h2 style="[^"]+">Invoice request - A - B - C<\/h2>$/);
+  assert.equal(markup, `<h2 style="margin:0 0 20px; font-size:16px; line-height:1.4; font-weight:700; color:#0F172A; overflow-wrap:anywhere;"><span style="white-space:nowrap;">Invoice&nbsp;request&nbsp;-</span> <span style="white-space:nowrap;">A&nbsp;-</span> <span style="white-space:nowrap;">B&nbsp;-</span> <span style="white-space:nowrap;">C</span></h2>`);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------
+// SUBJECT (Oct 2026): the email subject is the same text as the heading
+// ---------------------------------------------------------------------------------------------------------------------------------------------
+
+test("subjects: the two examples from the requirement, exactly — through the real templates", () => {
+  assert.equal(buildInvoiceRequestAssignedEmail(requestData()).subject, "Invoice request - TEST CLIENT - Test Project Title - PR-12073");
+  assert.equal(buildInvoiceRaisedSuccessfullyEmail(raisedData()).subject, "Invoice has been raised - HTH Technology Co - 3D F&G Mapping - PR-12073");
+  assert.equal(buildInvoiceRequestSubject({ client: "TEST CLIENT", projectTitle: "Test Project Title", prNo: "PR-12073" }), "Invoice request - TEST CLIENT - Test Project Title - PR-12073");
+  assert.equal(buildInvoiceRaisedSubject({ client: "HTH Technology Co", projectTitle: "3D F&G Mapping", prNo: "PR-12073" }), "Invoice has been raised - HTH Technology Co - 3D F&G Mapping - PR-12073");
+});
+
+test("subjects: the old fixed subjects are gone", () => {
+  for (const subject of [buildInvoiceRequestAssignedEmail(requestData()).subject, buildInvoiceRaisedSuccessfullyEmail(raisedData()).subject]) {
+    assert.ok(!/please raise this invoice|Your requested invoice has been raised/.test(subject), subject);
+  }
+});
+
+test("subject and body heading are always the SAME text — short, long, hyphenated, punctuated, spaced and missing values", () => {
+  const cases: Partial<InvoiceRequestAssignedEmailData>[] = [
+    {},
+    { client: "Hindustan Petroleum Corporation Limited India", projectTitle: "Quantitative Risk Assessment (QRA) for the Visakh refinery expansion" },
+    { client: "A", projectTitle: "B", prNo: "C" },
+    { client: "Al-Rashid Oil-Gas Co Ltd", projectTitle: "Pre-FEED Study of Sour-Gas Lines", prNo: "PR-12073-REV2" },
+    { client: `Tata & Sons "Ltd" India`, projectTitle: `O'Brien's <unit> A`, prNo: "PR-1" },
+    { client: "  TEST    CLIENT\nONE TWO ", projectTitle: "\n Test   Project\tTitle X ", prNo: " PR-12073\n" },
+    { client: "", projectTitle: "Only Title Here", prNo: "PR-9" },
+    { client: "Only Client Here", projectTitle: "", prNo: "" },
+    { client: "", projectTitle: "", prNo: "" },
+    { client: "x".repeat(80), projectTitle: "y".repeat(80) + " z", prNo: "PR-7" },
+  ];
+  for (const c of cases) {
+    const request = buildInvoiceRequestAssignedEmail(requestData(c));
+    assert.equal(headingOf(request.html), request.subject, `request ${JSON.stringify(c)}`);
+    const raised = buildInvoiceRaisedSuccessfullyEmail(raisedData({ client: c.client ?? "HTH Technology Co", projectTitle: c.projectTitle ?? "3D F&G Mapping", prNo: c.prNo ?? "PR-12073" }));
+    assert.equal(headingOf(raised.html), raised.subject, `raised ${JSON.stringify(c)}`);
+  }
+});
+
+test("subjects: first 3 words of client and title, full PR number, hyphenated terms as one word, whitespace normalised", () => {
+  assert.equal(buildInvoiceRequestSubject({ client: "Hindustan Petroleum Corporation Limited India", projectTitle: "Re-HAZOP and LOPA Study for LIWA Plastics (EPC-1)", prNo: "PR-12073-A Rev 2 final copy" }),
+    "Invoice request - Hindustan Petroleum Corporation - Re-HAZOP and LOPA - PR-12073-A Rev 2 final copy");
+  assert.equal(buildInvoiceRaisedSubject({ client: "Al-Rashid Oil-Gas Co Ltd", projectTitle: "Pre-FEED Study of Lines", prNo: "PR-5" }), "Invoice has been raised - Al-Rashid Oil-Gas Co - Pre-FEED Study of - PR-5");
+  assert.equal(buildInvoiceRaisedSubject({ client: "  Acme   Ltd \n", projectTitle: "\tPhase  2 \r\n Study  extra", prNo: "  PR-1  " }), "Invoice has been raised - Acme Ltd - Phase 2 Study - PR-1");
+});
+
+test("subjects: missing values give no dangling hyphen, 'undefined' or 'null'", () => {
+  assert.equal(buildInvoiceRequestSubject({ client: null, projectTitle: "Test Project Title", prNo: "PR-1" }), "Invoice request - Test Project Title - PR-1");
+  assert.equal(buildInvoiceRequestSubject({ client: "TEST CLIENT", projectTitle: undefined, prNo: "" }), "Invoice request - TEST CLIENT");
+  assert.equal(buildInvoiceRaisedSubject({}), "Invoice has been raised");
+  assert.equal(buildInvoiceRaisedSubject({ client: "   ", projectTitle: "\n", prNo: " " }), "Invoice has been raised");
+  for (const s of [buildInvoiceRequestSubject({ client: null }), buildInvoiceRaisedSubject({ projectTitle: undefined, prNo: null })]) assert.ok(!/undefined|null| - $|- -/.test(s), s);
+});
+
+test("subjects are PLAIN TEXT: '&', quotes and angle brackets stay as typed (only the HTML heading is escaped), and there is no non-breaking space", () => {
+  const values = { client: `Tata & Sons "Ltd" India`, projectTitle: `O'Brien's <unit> A`, prNo: "PR-1" };
+  const subject = buildInvoiceRaisedSubject(values);
+  assert.equal(subject, `Invoice has been raised - Tata & Sons - O'Brien's <unit> A - PR-1`);
+  assert.ok(!/&amp;|&lt;|&#39;|&nbsp;|\u00A0/.test(subject), "no entities / no-break spaces in a subject");
+  assert.equal(buildInvoiceRaisedSuccessfullyEmail(raisedData(values)).subject, subject, "the template uses exactly this");
+});
+
+test("subjects are one line: line breaks, tabs and control characters (header-injection attempts) collapse to a single space", () => {
+  const evil = "Acme\r\nBcc: attacker@example.com\u0000 Co\u0085Ltd\u2028x";
+  const subject = buildInvoiceRequestSubject({ client: evil, projectTitle: "T\r\n\tU", prNo: "PR-1\r\nX-Header: y" });
+  assert.ok(!/[\u0000-\u001F\u007F-\u009F\u2028\u2029]/.test(subject), JSON.stringify(subject));
+  assert.equal(subject, "Invoice request - Acme Bcc: attacker@example.com - T U - PR-1 X-Header: y");
+  assert.equal(subject.split("\n").length, 1);
+});
+
+test("subjects follow the data: different projects give different subjects, never a fixed text", () => {
+  const a = buildInvoiceRequestAssignedEmail(requestData({ client: "Acme Industries", projectTitle: "Pipeline Integrity Review", prNo: "PR-100" })).subject;
+  const b = buildInvoiceRequestAssignedEmail(requestData({ client: "Zenith Gas Works Pvt Ltd", projectTitle: "Flare Study Phase Two", prNo: "PR-200" })).subject;
+  assert.deepEqual([a, b], ["Invoice request - Acme Industries - Pipeline Integrity Review - PR-100", "Invoice request - Zenith Gas Works - Flare Study Phase - PR-200"]);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------
+// WRAPPING (Oct 2026): a heading longer than one line breaks only between its " - " parts, never inside a name, never with a line starting "-"
+// ---------------------------------------------------------------------------------------------------------------------------------------------
+
+const inner = (markup: string): string => markup.replace(/^<h2[^>]*>/, "").replace(/<\/h2>$/, "");
+
+/** One kept-together part of the heading, as the markup builds it. */
+const kept = (text: string): string => `<span style="white-space:nowrap;">${text}</span>`;
+
+test("wrapping: the user's two headings are bound so the only break opportunities are after each ' -'", () => {
+  const raised = renderInvoiceEmailHeading(INVOICE_RAISED_HEADING_PREFIX, { client: "HTH Technology Co", projectTitle: "3D F&G Mapping", prNo: "PR-12073" });
+  const request = renderInvoiceEmailHeading(INVOICE_REQUEST_HEADING_PREFIX, { client: "TEST CLIENT", projectTitle: "Test Project Title", prNo: "PR-12073" });
+  assert.equal(inner(raised), [kept("Invoice&nbsp;has&nbsp;been&nbsp;raised&nbsp;-"), kept("HTH&nbsp;Technology&nbsp;Co&nbsp;-"), kept("3D&nbsp;F&amp;G&nbsp;Mapping&nbsp;-"), kept("PR-12073")].join(" "));
+  assert.equal(inner(request), [kept("Invoice&nbsp;request&nbsp;-"), kept("TEST&nbsp;CLIENT&nbsp;-"), kept("Test&nbsp;Project&nbsp;Title&nbsp;-"), kept("PR-12073")].join(" "));
+  for (const markup of [raised, request]) {
+    const text = inner(markup).split('<span style="white-space:nowrap;">').join("«").split("</span>").join("»");
+    // every ordinary (breakable) space sits directly after a part's separator hyphen: no break can fall inside a name, before a hyphen, or inside the PR number
+    for (const m of text.matchAll(/ /g)) assert.equal(text.slice(m.index! - 8, m.index!), "&nbsp;-»", "breakable space only between kept-together parts");
+    assert.ok(!/ - /.test(text), "no ' - ' with breakable spaces on both sides");
+  }
+});
+
+test("wrapping: names up to 36 characters are kept whole (a 31-character client name is not split); a hyphenated PR number is never broken at its hyphens", () => {
+  const markup = inner(renderInvoiceEmailHeading(INVOICE_RAISED_HEADING_PREFIX, { client: "Hindustan Petroleum Corporation Limited India", projectTitle: "Quantitative Risk Assessment (QRA)", prNo: "PR-12073-REV2" }));
+  assert.ok(markup.includes(kept("Hindustan&nbsp;Petroleum&nbsp;Corporation&nbsp;-")), markup);
+  assert.ok(markup.includes(kept("Quantitative&nbsp;Risk&nbsp;Assessment&nbsp;-")), markup);
+  assert.ok(markup.endsWith(kept("PR-12073-REV2")), "PR number in one nowrap part");
+});
+
+test("wrapping: a part longer than 36 characters keeps ordinary spaces so it can still wrap (it must never be clipped by the email card)", () => {
+  const longClient = "Alphaxxxxxxxx Betaxxxxxxxx Gammaxxxxxxxx Delta"; // first 3 words = 40 characters -> over the limit, not kept together
+  const markup = inner(renderInvoiceEmailHeading(INVOICE_REQUEST_HEADING_PREFIX, { client: longClient, projectTitle: "Very Long Corporate Name Holdings", prNo: "PR-" + "1".repeat(45) }));
+  assert.ok(markup.includes("Alphaxxxxxxxx Betaxxxxxxxx Gammaxxxxxxxx&nbsp;-"), "long client part keeps ordinary spaces: " + markup);
+  assert.ok(!markup.includes(kept("Alphaxxxxxxxx")), "and has no nowrap span");
+  assert.ok(markup.includes(kept("Very&nbsp;Long&nbsp;Corporate&nbsp;-")), "a short 3-word part is kept together");
+  assert.ok(!markup.includes('nowrap;">PR-'), "an over-long PR number is not forced onto one line either");
+  assert.equal(decode(markup), "Invoice request - Alphaxxxxxxxx Betaxxxxxxxx Gammaxxxxxxxx - Very Long Corporate - PR-" + "1".repeat(45));
+});
+
+test("wrapping: the heading is 16px and allows breaking an over-long single word", () => {
+  const markup = renderInvoiceEmailHeading(INVOICE_REQUEST_HEADING_PREFIX, { client: "A", projectTitle: "B", prNo: "C" });
+  assert.ok(/font-size:16px/.test(markup) && /font-weight:700/.test(markup) && /color:#0F172A/.test(markup) && /margin:0 0 20px/.test(markup) && /overflow-wrap:anywhere/.test(markup));
 });

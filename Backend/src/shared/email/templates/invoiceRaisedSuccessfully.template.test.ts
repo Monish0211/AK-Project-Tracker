@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { EMAIL_SUBJECTS } from "../email.constants.js";
 import type { InvoiceRaisedSuccessfullyEmailData } from "../email.types.js";
 import { buildInvoiceRaisedSuccessfullyEmail } from "./invoiceRaisedSuccessfully.template.js";
 
@@ -41,10 +40,9 @@ test("shows PR Number, Client Name and Project Title — in that order, label th
   ]);
 });
 
-test("everything that was already in the email is unchanged: subject, greeting, message, button, preview, PR and Title rows", () => {
+test("everything that was already in the email is unchanged: greeting, message, button, preview, PR and Title rows (the subject is the project-specific line)", () => {
   const email = buildInvoiceRaisedSuccessfullyEmail(base);
-  assert.equal(email.subject, EMAIL_SUBJECTS.INVOICE_RAISED_SUCCESSFULLY);
-  assert.equal(email.subject, "Your requested invoice has been raised");
+  assert.equal(email.subject, "Invoice has been raised - Hindustan Petroleum Corporation - Quantitative Risk Assessment - PR-11058");
   assert.match(email.html, /Hello Asha Rao,/);
   assert.match(email.html, /Your requested invoice has been successfully raised\./);
   assert.match(email.html, /Your requested invoice for Quantitative Risk Assessment \(QRA\) for the Visakh refinery expansion has been raised\./, "preview text");
@@ -96,7 +94,7 @@ test("a missing, null or blank client leaves the row out cleanly — no empty ce
   }
   // `client` is optional in the data type, so a caller that does not pass it at all still compiles and renders.
   const { client: _omit, ...withoutClient } = base;
-  assert.equal(buildInvoiceRaisedSuccessfullyEmail(withoutClient).subject, "Your requested invoice has been raised");
+  assert.equal(buildInvoiceRaisedSuccessfullyEmail(withoutClient).subject, "Invoice has been raised - Quantitative Risk Assessment - PR-11058");
 });
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -186,7 +184,7 @@ test("with every user-controlled field hostile at once: order, styling, subject 
   const email = buildInvoiceRaisedSuccessfullyEmail({ ...base, requesterName: HOSTILE, prNo: HOSTILE, client: HOSTILE, projectTitle: HOSTILE });
   assert.deepEqual(cells(email.html), ["PR Number", hostileEscaped, "Client Name", hostileEscaped, "Project Title", hostileEscaped]);
   assert.deepEqual(tagCounts(email.html), tagCounts(html()), "an injected value adds no tag of any kind");
-  assert.equal(email.subject, EMAIL_SUBJECTS.INVOICE_RAISED_SUCCESSFULLY);
+  assert.ok(email.subject.startsWith("Invoice has been raised - ") && !/[\r\n]/.test(email.subject), "the subject is still one plain-text line");
   assert.ok(email.html.includes('href="https://pmodashboard.ifluids.in/projects/view/p-1?tab=invoices"'), "button link unchanged");
   assert.match(email.html, /Open Project Invoices/);
   assert.match(email.html, /Your requested invoice has been successfully raised\./);

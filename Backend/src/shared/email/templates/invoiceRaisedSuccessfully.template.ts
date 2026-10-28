@@ -1,6 +1,5 @@
-import { EMAIL_SUBJECTS } from "../email.constants.js";
 import type { EmailContent, InvoiceRaisedSuccessfullyEmailData } from "../email.types.js";
-import { INVOICE_RAISED_HEADING_PREFIX, renderInvoiceEmailHeading } from "./invoiceEmailHeading.js";
+import { INVOICE_RAISED_HEADING_PREFIX, buildInvoiceRaisedSubject, renderInvoiceEmailHeading } from "./invoiceEmailHeading.js";
 import { renderButton, renderEmailLayout } from "./layout.template.js";
 import { escapeHtml } from "./missingOtherExpenses.template.js";
 
@@ -53,7 +52,8 @@ export function buildInvoiceRaisedSuccessfullyEmail(data: InvoiceRaisedSuccessfu
   `;
 
   return {
-    subject: EMAIL_SUBJECTS.INVOICE_RAISED_SUCCESSFULLY,
+    // Same text as the body heading above: "Invoice has been raised - {client, 3 words} - {title, 3 words} - {PR no.}" (see invoiceEmailHeading.ts).
+    subject: buildInvoiceRaisedSubject(data),
     html: renderEmailLayout({ bodyHtml, previewText: escapeHtml(`Your requested invoice for ${data.projectTitle} has been raised.`) }),
   };
 }

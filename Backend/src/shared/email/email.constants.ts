@@ -36,8 +36,8 @@ export const EMAIL_SUBJECTS = {
   PR_REQUEST_ACCOUNTS_APPROVED: `PR Request awaiting your approval`,
   PR_REQUEST_APPROVED: `Your PR Request has been approved — Project created`,
   PR_REQUEST_REJECTED: `Your PR Request has been rejected`,
-  INVOICE_REQUEST_ASSIGNED: `Invoice Request — please raise this invoice`,
-  INVOICE_RAISED_SUCCESSFULLY: `Your requested invoice has been raised`,
+  // The "Invoice Request Assigned" and "Invoice Raised" subjects are built per project (first three words of client and title + the PR number), exactly like
+  // their body heading — see templates/invoiceEmailHeading.ts (buildInvoiceRequestSubject / buildInvoiceRaisedSubject).
   INVOICE_SHARED: `An invoice has been shared with you`,
   // PMO Coordinator Management (Oct 2026) — the allocation email.
   PMO_COORDINATOR_ALLOCATED: (prNo: string) => `PMO Project Assigned to You — ${prNo}`,

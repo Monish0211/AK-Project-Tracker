@@ -3,7 +3,6 @@ import { createServer } from "node:http";
 import { after, before, test } from "node:test";
 import type { AddressInfo } from "node:net";
 import app from "../../app.js";
-import { EMAIL_SUBJECTS } from "../../shared/email/email.constants.js";
 import { isEmailConfigured, setEmailTransportForTests } from "../../shared/email/transporter.js";
 import { env } from "../../shared/utils/env.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
@@ -148,7 +147,7 @@ async function requestAndRaise(projectId: string, quantityItemId: string, invoic
   await raised.text();
 
   for (let i = 0; i < 60; i++) {
-    const mail = sent.find((m) => m.subject === EMAIL_SUBJECTS.INVOICE_RAISED_SUCCESSFULLY);
+    const mail = sent.find((m) => m.subject.startsWith("Invoice has been raised - "));
     if (mail) return mail;
     await new Promise((r) => setTimeout(r, 100));
   }
@@ -170,7 +169,7 @@ test("the Invoice Raised email shows the Project's own client, between PR Number
 
   assert.deepEqual(detailsCells(mail.html), ["PR Number", project.prNo, "Client Name", client, "Project Title", title]);
   assert.equal(mail.to, fx.requester.email, "still addressed to the original requester");
-  assert.equal(mail.subject, "Your requested invoice has been raised");
+  assert.equal(mail.subject, `Invoice has been raised - Hindustan Petroleum Corporation - Quantitative Risk Assessment - ${project.prNo}`);
   assert.match(mail.html, /Hello Raised Client requester,/);
   assert.match(mail.html, /Your requested invoice has been successfully raised\./);
   assert.match(mail.html, /Open Project Invoices/);

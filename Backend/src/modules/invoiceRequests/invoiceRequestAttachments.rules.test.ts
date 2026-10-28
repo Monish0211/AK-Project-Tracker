@@ -223,7 +223,7 @@ const baseEmail = {
 
 test("email: without attachments there is no Attachments section at all (the email is as it was)", () => {
   const { html, subject } = buildInvoiceRequestAssignedEmail(baseEmail);
-  assert.equal(subject, "Invoice Request — please raise this invoice");
+  assert.equal(subject, "Invoice request - Client Ltd - Plant A - PR-1");
   assert.ok(!/Attachments/i.test(html));
   assert.ok(!/could NOT be attached/.test(html));
 });
