@@ -1,10 +1,12 @@
 import { escapeHtml } from "./missingOtherExpenses.template.js";
 
 /**
- * The project line of the two Request Invoice emails (Oct 2026). It is BOTH the email's subject and the heading at the top of its body, built here from
+ * The project line of the Request Invoice emails (Oct 2026). It is BOTH the email's subject and the heading at the top of its body, built here from
  * the same values so the two can never drift apart:
  *   Invoice request            - {Client Name} - {Project Title} - {PR Number}      (the "Invoice Request Assigned" email)
  *   Invoice has been raised    - {Client Name} - {Project Title} - {PR Number}      (the "Invoice Raised" email)
+ *   Invoice Paid               - {Client Name} - {Project Title} - {PR Number}      (the "Invoice Paid" email)
+ * (The two PR Request outcome emails use the same mechanism with the FULL client and title and no PR number — see the end of this file.)
  * Client name and project title are cut to their FIRST THREE WORDS here, for the subject/heading only — the full values still appear in the details table
  * below the heading and are stored unchanged on the Project. The PR number is always shown complete, last, without a label.
  */
@@ -66,18 +68,73 @@ export function buildInvoiceRaisedSubject(values: InvoiceEmailHeadingValues): st
   return buildInvoiceEmailHeading(INVOICE_RAISED_HEADING_PREFIX, values);
 }
 
+export const INVOICE_PAID_HEADING_PREFIX = "Invoice Paid";
+
+/**
+ * Subject of the "Invoice Paid" email — the same text as its body heading, in the same format as the Request / Raised emails:
+ * "Invoice Paid - {client, first 3 words} - {project title, first 3 words} - {full PR number}".
+ */
+export function buildInvoicePaidSubject(values: InvoiceEmailHeadingValues): string {
+  return buildInvoiceEmailHeading(INVOICE_PAID_HEADING_PREFIX, values);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------
+// PR Request approved / rejected (Oct 2026): the subject and the body heading carry the FULL client name and the FULL project title (no three-word cut) and
+// deliberately NO PR number:
+//   Your PR Request has been approved — Project created - {Client Name} - {Project Title}
+//   Your PR Request has been rejected - {Client Name} - {Project Title}
+// ---------------------------------------------------------------------------------------------------------------------------------------------
+
+export const PR_REQUEST_APPROVED_HEADING_PREFIX = "Your PR Request has been approved — Project created";
+export const PR_REQUEST_REJECTED_HEADING_PREFIX = "Your PR Request has been rejected";
+
+export interface ProjectLineValues {
+  client?: string | null;
+  projectTitle?: string | null;
+}
+
+/** Prefix, then the whole client name and the whole project title — each only whitespace-normalised (runs of spaces, line breaks, control characters -> one space). A blank part is left out. */
+function projectLineSegments(prefix: string, { client, projectTitle }: ProjectLineValues): string[] {
+  const parts = [wordsOf(client).join(" "), wordsOf(projectTitle).join(" ")].filter((part) => part !== "");
+  return [prefix, ...parts];
+}
+
+/** Subject of the "PR Request approved" email — the same text as its body heading. */
+export function buildPRRequestApprovedSubject(values: ProjectLineValues): string {
+  return projectLineSegments(PR_REQUEST_APPROVED_HEADING_PREFIX, values).join(" - ");
+}
+
+/** Subject of the "PR Request rejected" email — the same text as its body heading. */
+export function buildPRRequestRejectedSubject(values: ProjectLineValues): string {
+  return projectLineSegments(PR_REQUEST_REJECTED_HEADING_PREFIX, values).join(" - ");
+}
+
+/** Body heading of the "PR Request approved" email (same wrapping rules as the invoice emails). */
+export function renderPRRequestApprovedHeading(values: ProjectLineValues): string {
+  return renderHeadingSegments(projectLineSegments(PR_REQUEST_APPROVED_HEADING_PREFIX, values));
+}
+
+/** Body heading of the "PR Request rejected" email (same wrapping rules as the invoice emails). */
+export function renderPRRequestRejectedHeading(values: ProjectLineValues): string {
+  return renderHeadingSegments(projectLineSegments(PR_REQUEST_REJECTED_HEADING_PREFIX, values));
+}
+
 /**
  * The heading as email markup: the SAME text as the subject (tags aside), with every segment HTML-escaped exactly once (these are user-entered values). The
  * separator hyphen is glued to the segment before it and short segments are kept whole (see KEEP_TOGETHER_MAX_CHARS), so when the heading is longer than one
  * line (it usually is) it wraps only after a " -", never inside a name or PR number and never with a line starting with "-". Inline styles, like the rest of
  * the email; 16px so a typical heading takes two lines at most in the 520px card.
  */
-export function renderInvoiceEmailHeading(prefix: string, values: InvoiceEmailHeadingValues): string {
-  const segments = headingSegments(prefix, values);
+function renderHeadingSegments(segments: string[]): string {
   const units = segments.map((segment, index) => {
     const escaped = escapeHtml(segment);
     const separator = index < segments.length - 1 ? "&nbsp;-" : "";
     return segment.length <= KEEP_TOGETHER_MAX_CHARS ? `<span style="white-space:nowrap;">${escaped.replace(/ /g, "&nbsp;")}${separator}</span>` : `${escaped}${separator}`;
   });
   return `<h2 style="margin:0 0 20px; font-size:16px; line-height:1.4; font-weight:700; color:#0F172A; overflow-wrap:anywhere;">${units.join(" ")}</h2>`;
+}
+
+/** The heading of the Invoice Request / Raised / Paid emails (first three words of client and title, full PR number) as markup. */
+export function renderInvoiceEmailHeading(prefix: string, values: InvoiceEmailHeadingValues): string {
+  return renderHeadingSegments(headingSegments(prefix, values));
 }

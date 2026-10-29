@@ -108,6 +108,8 @@ export interface PRRequestApprovedEmailData {
   requesterName: string;
   prNo: string;
   projectTitle: string;
+  /** The request's client — shown (whole) in the subject and heading together with the project title; the PR number is not part of them. */
+  client: string;
   projectUrl: string;
 }
 
@@ -115,6 +117,8 @@ export interface PRRequestRejectedEmailData {
   requesterName: string;
   prNo: string;
   projectTitle: string;
+  /** The request's client — shown (whole) in the subject and heading together with the project title; the PR number is not part of them. */
+  client: string;
   rejectedByName: string;
   reason: string;
 }

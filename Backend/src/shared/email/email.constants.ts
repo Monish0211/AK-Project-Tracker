@@ -34,12 +34,13 @@ export const EMAIL_SUBJECTS = {
   ADMIN_PASSWORD_RESET: `Your ${EMAIL_BRAND.PORTAL_NAME} password has been reset by an Administrator`,
   PR_REQUEST_SUBMITTED: `New PR Request awaiting Accounts approval`,
   PR_REQUEST_ACCOUNTS_APPROVED: `PR Request awaiting your approval`,
-  PR_REQUEST_APPROVED: `Your PR Request has been approved — Project created`,
-  PR_REQUEST_REJECTED: `Your PR Request has been rejected`,
+  // The "PR Request approved" / "PR Request rejected" subjects are built per request (full client name + full project title, no PR number), exactly like
+  // their body heading — see templates/invoiceEmailHeading.ts (buildPRRequestApprovedSubject / buildPRRequestRejectedSubject).
   // The "Invoice Request Assigned" and "Invoice Raised" subjects are built per project (first three words of client and title + the PR number), exactly like
   // their body heading — see templates/invoiceEmailHeading.ts (buildInvoiceRequestSubject / buildInvoiceRaisedSubject).
   INVOICE_SHARED: `An invoice has been shared with you`,
   // PMO Coordinator Management (Oct 2026) — the allocation email.
   PMO_COORDINATOR_ALLOCATED: (prNo: string) => `PMO Project Assigned to You — ${prNo}`,
-  INVOICE_PAID: (projectTitle: string, prNo: string) => `Invoice Paid - ${projectTitle} / ${prNo}`,
+  // The "Invoice Paid" subject is built per project (first three words of client and title + the PR number), exactly like its body heading and like the
+  // Invoice Request / Invoice Raised subjects — see templates/invoiceEmailHeading.ts (buildInvoicePaidSubject).
 } as const;

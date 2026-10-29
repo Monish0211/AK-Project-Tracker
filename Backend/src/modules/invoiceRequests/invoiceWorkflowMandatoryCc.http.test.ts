@@ -3,7 +3,6 @@ import { createServer } from "node:http";
 import { after, before, test } from "node:test";
 import type { AddressInfo } from "node:net";
 import app from "../../app.js";
-import { EMAIL_SUBJECTS } from "../../shared/email/email.constants.js";
 import { isEmailConfigured, setEmailTransportForTests } from "../../shared/email/transporter.js";
 import { env } from "../../shared/utils/env.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
@@ -183,7 +182,8 @@ test("Assigned, Raised and Paid all CC arun@ + accounts@ (Paid no longer info@);
 
   // ---- 3. Invoice Paid ----
   assert.equal((await call("PATCH", `/invoice-lines/${lineId}`, fx.raiser.token, { status: "Paid" })).status, 200);
-  const paid = await waitForMail(EMAIL_SUBJECTS.INVOICE_PAID(project.projectTitle, project.prNo));
+  const paid = await waitForMail("Invoice Paid - ");
+  assert.equal(paid.subject, `Invoice Paid - Mandatory CC Client - Mandatory CC regression - PR-${TAG}`);
   assert.equal(paid.to, fx.requester.email);
   assert.deepEqual(paid.cc, ["arun@ifluids.com", "accounts@ifluids.com", fx.member.email], "Paid: arun@ and accounts@ first (arun@ replaced info@), then the saved member");
   assert.ok(!(paid.cc as string[]).includes("info@ifluids.com"), "Paid no longer carries info@ifluids.com");
@@ -248,7 +248,8 @@ test("with NO CC members and NO manual addresses: Assigned, Raised and Paid are 
   assert.deepEqual(raised.cc, ["arun@ifluids.com", "accounts@ifluids.com"]);
 
   assert.equal((await call("PATCH", `/invoice-lines/${lineId}`, fx.raiser.token, { status: "Paid" })).status, 200);
-  const paid = await waitForMail(EMAIL_SUBJECTS.INVOICE_PAID(project.projectTitle, project.prNo));
+  const paid = await waitForMail("Invoice Paid - ");
+  assert.equal(paid.subject, `Invoice Paid - Mandatory CC Client - Mandatory CC bare - PR-${tag2}`);
   assert.equal(paid.to, fx.requester.email);
   assert.deepEqual(paid.cc, ["arun@ifluids.com", "accounts@ifluids.com"]);
 });

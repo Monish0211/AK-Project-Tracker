@@ -689,6 +689,7 @@ async function notifyRequesterApproved(request: PRRequestRow, createdProjectId: 
       requesterName: request.requestedBy.fullName,
       prNo: projectData.prNo,
       projectTitle: projectData.projectTitle,
+      client: projectData.client,
       projectUrl: `${env.FRONTEND_URL}/projects/edit/${createdProjectId}`,
     });
     const result = await sendEmail({ to: request.requestedBy.email, subject: email.subject, html: email.html });
@@ -718,6 +719,7 @@ async function notifyRequesterRejected(request: PRRequestRow, rejectedBy: Access
       requesterName: request.requestedBy.fullName,
       prNo: projectData.prNo,
       projectTitle: projectData.projectTitle,
+      client: projectData.client,
       rejectedByName,
       reason: request.rejectionReason ?? "",
     });
