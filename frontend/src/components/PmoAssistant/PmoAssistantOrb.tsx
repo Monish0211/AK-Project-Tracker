@@ -8,6 +8,14 @@ import { reminderScheduler, REMINDER_FIRED_EVENT } from "../../notifications/rem
 import type { FiredReminderDetail } from "../../notifications/reminderSchedulerCore";
 import { buildAlertBubble, createAlertDeduper } from "../../notifications/reminderAlertBubble";
 import { reminderSoundService } from "../../services/audio/ReminderSoundService";
+import {
+  LATE_RESTORE_WATCH_MS,
+  QUICK_RETRY_DELAY_MS,
+  createContextLossWatchdog,
+  createRetryState,
+  createWebglReporter,
+  startWebglRetry,
+} from "./webglRecovery";
 
 /**
  * Positioning model — FINAL, confirmed by real manual testing: the orb is a
@@ -124,6 +132,9 @@ const canUseWebGL = (): boolean => {
   }
 };
 
+// One shared reporter: logs a state change once (WebGL unavailable, context lost, recovery failed...), never per frame or per retry.
+const webglReporter = createWebglReporter();
+
 const isInCorner = (p: { x: number; y: number }): boolean => {
   const edge = 16 + CORNER_ZONE_PX;
   const nearLeft = p.x <= edge;
@@ -184,7 +195,41 @@ export const PmoAssistantOrb: React.FC<PmoAssistantOrbProps> = ({ onTogglePanel,
   const { user } = useAuth();
   // Set when WebGL is unavailable (or the renderer could not be created): the
   // robot is then drawn as a plain CSS avatar so the assistant stays usable.
-  const [canvasFailed, setCanvasFailed] = useState(() => !canUseWebGL());
+  const [canvasFailed, setCanvasFailed] = useState(() => {
+    const available = canUseWebGL();
+    if (!available) webglReporter.report("unavailable");
+    return !available;
+  });
+  // Bumped to tear the 3D scene down and build it again (after a restored WebGL context, whose render targets - the
+  // environment map - are blank and must be regenerated, not reused).
+  const [sceneEpoch, setSceneEpoch] = useState(0);
+  // True from "webglcontextlost" until the rebuilt scene is drawing: the fallback avatar is shown over the empty canvas.
+  const [contextLostUi, setContextLostUi] = useState(false);
+  // Minimum-gap bookkeeping that must survive the fallback being left and re-entered.
+  const retryStateRef = useRef(createRetryState());
+  // Set when a context was lost for good, so the next retry loop makes a quick first attempt instead of waiting a full interval.
+  const quickRetryRef = useRef(false);
+
+  // While the plain-CSS fallback is showing, keep trying to bring the 3D robot back: when the tab becomes visible, when the
+  // window regains focus, and periodically. Nothing runs while the 3D robot is up (this effect is a no-op then), so a healthy
+  // renderer is never rebuilt by a retry.
+  useEffect(() => {
+    if (!canvasFailed) return;
+    const firstAttemptDelayMs = quickRetryRef.current ? QUICK_RETRY_DELAY_MS : undefined;
+    quickRetryRef.current = false;
+    return startWebglRetry({
+      state: retryStateRef.current,
+      firstAttemptDelayMs,
+      attempt: () => {
+        if (!canUseWebGL()) {
+          webglReporter.report("retry-failed");
+          return false;
+        }
+        setCanvasFailed(false); // the scene effect below builds the renderer; if that fails it sets this back to true
+        return true;
+      },
+    });
+  }, [canvasFailed]);
 
   // The robot's on-screen offset from its saved position is a single CSS
   // transform, built from two independent parts: the live drag offset and the
@@ -521,6 +566,7 @@ export const PmoAssistantOrb: React.FC<PmoAssistantOrbProps> = ({ onTogglePanel,
       // WebGL passed the probe but the renderer still could not start (blocklisted
       // driver, out of contexts…). Switch to the fallback avatar — deferred, so
       // this is not a state update inside the effect body.
+      webglReporter.report("init-failed");
       window.setTimeout(() => setCanvasFailed(true), 0);
       return;
     }
@@ -528,17 +574,43 @@ export const PmoAssistantOrb: React.FC<PmoAssistantOrbProps> = ({ onTogglePanel,
     renderer.setPixelRatio(Math.max(2, Math.min(window.devicePixelRatio, 2)));
     container.appendChild(renderer.domElement);
 
-    // A GPU reset or a browser reclaiming contexts fires "webglcontextlost".
-    // Pausing the draw until "webglcontextrestored" (three.js rebuilds its GPU
-    // resources itself) avoids drawing into a dead context.
+    // A GPU reset or a browser reclaiming contexts fires "webglcontextlost". The loop below stops drawing into the dead
+    // context at once, and the fallback avatar is shown over the emptied canvas. A restore is NOT guaranteed (a browser that
+    // evicted the context to stay under its limit may never restore it), so a short grace period follows: on a restore the
+    // whole scene is rebuilt, on a timeout the robot drops to the fallback and the retry loop rebuilds it - never blank or frozen.
     let contextLost = false;
+    const watchdog = createContextLossWatchdog({
+      onTimeout: () => {
+        webglReporter.report("restore-timeout");
+        quickRetryRef.current = true;
+        setContextLostUi(false);
+        setCanvasFailed(true);
+      },
+    });
+    const handleContextLost = () => {
+      if (contextLost) return;
+      contextLost = true;
+      webglReporter.report("context-lost");
+      setContextLostUi(true);
+      watchdog.lost();
+    };
     const onContextLost = (e: Event) => {
       e.preventDefault(); // required, otherwise the context is never restored
-      contextLost = true;
+      handleContextLost();
     };
     const onContextRestored = () => {
-      contextLost = false;
+      if (watchdog.restored() !== "in-time") return;
+      // A restored context comes back with EMPTY render targets - the environment map (shell and screen reflections) is
+      // one - and three.js does not regenerate their contents, so the scene is rebuilt instead of reused.
+      webglReporter.report("context-restored");
+      setSceneEpoch((n) => n + 1);
     };
+    const glContext = renderer.getContext();
+    // The robot is up (again): remove the fallback overlay shown during a context loss and note a recovery.
+    const readyTimer = window.setTimeout(() => {
+      setContextLostUi(false);
+      webglReporter.report("recovered");
+    }, 0);
     renderer.domElement.addEventListener("webglcontextlost", onContextLost);
     renderer.domElement.addEventListener("webglcontextrestored", onContextRestored);
 
@@ -846,7 +918,9 @@ export const PmoAssistantOrb: React.FC<PmoAssistantOrbProps> = ({ onTogglePanel,
             ? FRAME_MS_WALK
             : FRAME_MS_AWAKE;
       if (nowMs - prevMs < frameBudget - 2) return; // skip this frame entirely (no update, no draw)
-      if (contextLost) return; // GPU context gone — wait for "webglcontextrestored"
+      // A missed "contextlost" event must not leave a dead canvas either, so the context itself is checked too.
+      if (!contextLost && glContext.isContextLost()) handleContextLost();
+      if (contextLost) return; // GPU context gone - the watchdog rebuilds the scene or falls back
       const t = (nowMs - startMs) / 1000;
       const dt = Math.min((nowMs - prevMs) / 1000, 0.25);
       prevMs = nowMs;
@@ -1014,6 +1088,8 @@ export const PmoAssistantOrb: React.FC<PmoAssistantOrbProps> = ({ onTogglePanel,
     animate();
 
     return () => {
+      watchdog.dispose();
+      window.clearTimeout(readyTimer);
       cancelAnimationFrame(animationFrameId);
       clearTimeout(blinkTimer);
       clearTimeout(blinkEndTimer);
@@ -1025,12 +1101,29 @@ export const PmoAssistantOrb: React.FC<PmoAssistantOrbProps> = ({ onTogglePanel,
       renderer.dispose();
       // dispose() frees the GPU resources but not the context itself; browsers cap
       // live contexts (~16), so release it explicitly (matters across logout/login).
-      renderer.forceContextLoss();
+      // Judge the context by its real state, not by the loop's own flag (which stays set after a restore until the rebuild).
+      // Nothing to force when it is already lost - three.js would only warn that the extension is unavailable.
+      const alreadyLost = glContext.isContextLost();
+      if (!alreadyLost) renderer.forceContextLoss();
+      // A context the browser evicted can still be restored later - onto a canvas nobody uses any more, where it would stay live
+      // (counting against the browser's context limit) until garbage collection. Release it again if that happens, but only watch
+      // for a bounded time so no listener is left behind for good.
+      if (alreadyLost) {
+        const deadCanvas = renderer.domElement;
+        let watchTimer = 0;
+        const releaseLateRestore = () => {
+          window.clearTimeout(watchTimer);
+          deadCanvas.removeEventListener("webglcontextrestored", releaseLateRestore);
+          glContext.getExtension("WEBGL_lose_context")?.loseContext();
+        };
+        deadCanvas.addEventListener("webglcontextrestored", releaseLateRestore);
+        watchTimer = window.setTimeout(() => deadCanvas.removeEventListener("webglcontextrestored", releaseLateRestore), LATE_RESTORE_WATCH_MS);
+      }
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [canvasFailed, applyOrbTransform]);
+  }, [canvasFailed, sceneEpoch, applyOrbTransform]);
 
   // 4. Pointer Drag vs Click Logic
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -1173,6 +1266,18 @@ export const PmoAssistantOrb: React.FC<PmoAssistantOrbProps> = ({ onTogglePanel,
   // single mounted instance (React portals don't create a second React
   // tree or a second component instance, only a different DOM insertion
   // point) — only WHERE in the DOM this JSX is inserted differs.
+  // The plain-CSS head shown when WebGL is unavailable or the context was lost (same markup the fallback has always used).
+  const fallbackAvatar = (
+    <div className="relative w-[72px] h-[60px] rounded-[22px] bg-gradient-to-b from-slate-100 to-slate-300 border border-slate-300 shadow-lg flex items-center justify-center">
+      <div className="w-[56px] h-[38px] rounded-[16px] bg-slate-950 flex items-center justify-center gap-2.5">
+        <span className="w-2.5 h-4 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)]" />
+        <span className="w-2.5 h-4 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)]" />
+      </div>
+      <span className="absolute -top-2 left-4 w-1.5 h-3 rounded-full bg-blue-600" />
+      <span className="absolute -top-2 right-4 w-1.5 h-3 rounded-full bg-blue-600" />
+    </div>
+  );
+
   return createPortal(
     <>
       {/* Personalized Login Greeting Speech Bubble attached to Draggable Orb. */}
@@ -1251,17 +1356,18 @@ export const PmoAssistantOrb: React.FC<PmoAssistantOrbProps> = ({ onTogglePanel,
           // head (white shell, black screen, two cyan bar eyes) so the assistant
           // can still be seen, dragged and clicked.
           <div className="w-full h-full flex items-center justify-center" aria-hidden="true">
-            <div className="relative w-[72px] h-[60px] rounded-[22px] bg-gradient-to-b from-slate-100 to-slate-300 border border-slate-300 shadow-lg flex items-center justify-center">
-              <div className="w-[56px] h-[38px] rounded-[16px] bg-slate-950 flex items-center justify-center gap-2.5">
-                <span className="w-2.5 h-4 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)]" />
-                <span className="w-2.5 h-4 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)]" />
-              </div>
-              <span className="absolute -top-2 left-4 w-1.5 h-3 rounded-full bg-blue-600" />
-              <span className="absolute -top-2 right-4 w-1.5 h-3 rounded-full bg-blue-600" />
-            </div>
+            {fallbackAvatar}
           </div>
         ) : (
-          <div ref={mountRef} className="w-full h-full flex items-center justify-center" />
+          <>
+            <div ref={mountRef} className={`w-full h-full flex items-center justify-center ${contextLostUi ? "invisible" : ""}`} />
+            {/* WebGL context lost: the canvas is empty, so show the fallback avatar over it until the rebuilt robot is drawing. */}
+            {contextLostUi && (
+              <div className="absolute inset-0 flex items-center justify-center" aria-hidden="true">
+                {fallbackAvatar}
+              </div>
+            )}
+          </>
         )}
 
         {/* Sleep indicator — floating "Zzz" while the robot is dozing. */}
