@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 
 import type { NonManhourExpense } from "../../../../types/NonManhourExpense";
 import { EXPENSE_CATEGORIES, isKnownExpenseCategory } from "../../../../types/expenseCategories";
+import Portal from "../../../../components/ui/Portal";
 
 interface Props {
   expense?: NonManhourExpense | null;
@@ -72,7 +73,12 @@ const NonManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
     });
   };
 
+  // Rendered through a Portal into document.body, like the app's other overlays. Inline, the "fixed" overlay is NOT viewport-anchored:
+  // MainLayout's wrapper (.animate-pmo-fade-up) keeps `filter: blur(0)` after its animation, and any non-`none` filter on an ancestor
+  // makes that ancestor the containing block for position: fixed descendants. The overlay then spans the whole page height, the modal
+  // is centred in the document instead of the screen (footer below the fold), and the body scroll lock below stops the user reaching it.
   return (
+    <Portal>
     <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex justify-center items-center z-50 p-4">
 
       <div className="bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
@@ -104,7 +110,7 @@ const NonManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
 
         {/* Body */}
 
-        <div className="p-5 sm:p-6 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+        <div className="p-5 sm:p-6 flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar">
 
           <div className="grid grid-cols-2 gap-5">
 
@@ -281,6 +287,7 @@ const NonManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
       </div>
 
     </div>
+    </Portal>
   );
 };
 
