@@ -13,7 +13,7 @@ const src = (rel) => readFileSync(new URL(`../src/${rel}`, import.meta.url), "ut
 const MODAL = "pages/Projects/components/ExpenseInformation/NonManhourExpenseModal.tsx";
 
 test("the modal is rendered through the app's Portal, with the fixed overlay as its only child", () => {
-  const text = src(MODAL);
+  const text = src(MODAL).replace(/\r\n/g, "\n"); // CRLF checkouts (core.autocrlf) must not change what is asserted
   assert.ok(text.includes('import Portal from "../../../../components/ui/Portal";'));
   const ret = text.slice(text.indexOf("  return (\n    <Portal>"));
   assert.ok(ret.startsWith("  return (\n    <Portal>\n    <div className=\"fixed inset-0 "), "the Portal must wrap the fixed overlay directly");

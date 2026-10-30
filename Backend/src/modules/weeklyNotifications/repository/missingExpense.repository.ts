@@ -10,8 +10,9 @@ import type { CandidateProject } from "../missingExpense.rules.js";
  *
  * isActive = false rows are imported rows superseded by a later import; the
  * Other Project Expenses screen never shows them, so they do not count as
- * "has expenses". Expense Budget (Project's own budget fields), man-hour
- * resources, timesheets and invoices are not consulted at all.
+ * "has expenses". The Non Man-Hour Budget Amount is read as-is (null = not
+ * entered, 0 = entered as zero) and judged by the central rules function, not
+ * filtered here. Man-hour resources, timesheets and invoices are not consulted.
  */
 export async function findCandidateProjects(): Promise<CandidateProject[]> {
   const rows = await prisma.project.findMany({
@@ -26,6 +27,7 @@ export async function findCandidateProjects(): Promise<CandidateProject[]> {
       projectTitle: true,
       primaryProjectManager: true,
       projectStatus: true,
+      nonManhourBudgetAmount: true,
       _count: { select: { projectExpenses: { where: { isActive: true } } } },
     },
   });
@@ -36,6 +38,7 @@ export async function findCandidateProjects(): Promise<CandidateProject[]> {
     projectTitle: r.projectTitle,
     projectManager: r.primaryProjectManager,
     projectStatus: r.projectStatus,
+    nonManhourBudgetAmount: r.nonManhourBudgetAmount,
     otherExpenseCount: r._count.projectExpenses,
   }));
 }

@@ -33,8 +33,18 @@ export interface CandidateProject {
   projectTitle: string;
   projectManager: string | null;
   projectStatus: string;
+  /**
+   * Non Man-Hour Budget Amount from the project's Expense Budget. null = never entered; 0 = explicitly entered as zero;
+   * any positive amount = entered. Only an explicit null means "not entered" - never test this with a truthy check, because 0 is a valid entry.
+   */
+  nonManhourBudgetAmount: number | null;
   /** Persisted, active Other Project Expenses rows (any amount, including 0). */
   otherExpenseCount: number;
+}
+
+/** True once a Non Man-Hour Budget Amount has been entered, including an explicit 0. Only null (or an absent value) is "not entered". */
+export function hasNonManhourBudgetEntered(amount: number | null | undefined): boolean {
+  return amount !== null && amount !== undefined;
 }
 
 export interface MissingExpenseReport {
@@ -44,8 +54,9 @@ export interface MissingExpenseReport {
 
 /**
  * Eligible = not Not Started / On Hold / Completed / Cancelled (archived projects are already
- * excluded by the query). Missing = eligible AND zero Other Project Expenses
- * records — the record count, never the amount, decides.
+ * excluded by the query) AND a Non Man-Hour Budget Amount has been entered (an explicit 0 counts).
+ * Missing = eligible AND zero Other Project Expenses records — the record count, never the amount, decides.
+ * eligibleCount is therefore the population actually evaluated: planned-budget projects that pass the status rules.
  */
 /**
  * PR-number order ("PR-9" before "PR-10"). One shared collator: identical to
@@ -55,7 +66,7 @@ export interface MissingExpenseReport {
 export const prNoCollator = new Intl.Collator("en", { numeric: true });
 
 export function buildMissingExpenseReport(projects: CandidateProject[]): MissingExpenseReport {
-  const eligible = projects.filter((p) => isEligibleStatus(p.projectStatus));
+  const eligible = projects.filter((p) => isEligibleStatus(p.projectStatus) && hasNonManhourBudgetEntered(p.nonManhourBudgetAmount));
   const missing = eligible
     .filter((p) => p.otherExpenseCount === 0)
     .sort((a, b) => prNoCollator.compare(a.prNo, b.prNo));

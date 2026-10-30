@@ -104,7 +104,7 @@ export function draftPayloadToProject(base: Project, data: PRRequestProjectData)
     manhourBudgetAmount: data.manhourBudgetAmount ?? undefined,
     manhourBudgetHours: data.manhourBudgetHours ?? undefined,
     manhourBudgetRemarks: data.manhourBudgetRemarks ?? undefined,
-    nonManhourBudgetAmount: data.nonManhourBudgetAmount ?? undefined,
+    nonManhourBudgetAmount: data.nonManhourBudgetAmount ?? null,
     nonManhourBudgetRemarks: data.nonManhourBudgetRemarks ?? undefined,
     remarks: data.remarks ?? "",
     quantityItems:

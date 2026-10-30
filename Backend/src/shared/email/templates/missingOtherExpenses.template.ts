@@ -28,8 +28,15 @@ export interface MissingExpenseEmailData {
   projects: MissingExpenseEmailProject[];
 }
 
+/** Why a project is listed, and what to do about it. Shown above the project list (only when there are projects). */
+const REMINDER_LEAD =
+  "These projects have a planned Non Man-Hour Budget but no Other Project Expenses recorded. Please enter the applicable actual expenses in Other Project Expenses.";
+
+/** What the check covers. A Non Man-Hour Budget Amount of ₹0 that was entered counts as entered; an amount that was never entered is not checked. */
 const SCOPE_NOTE =
-  "This check covers Other Project Expenses only (records in the Other Project Expenses section). It does not assess man-hour expenses, Expense Budget, timesheets or invoices.";
+  "This reminder covers projects that have a Non Man-Hour Budget Amount entered in Expense Budget (an amount of ₹0 counts as entered) but no records in Other Project Expenses. It does not assess man-hour expenses, timesheets or invoices.";
+
+const EMPTY_STATE = "Every project with a Non Man-Hour Budget Amount entered has at least one Other Project Expenses record. No action is needed.";
 
 const cell = "padding:8px 10px; font-size:12.5px; border-top:1px solid #E2E8F0; vertical-align:top;";
 const head = "padding:8px 10px; font-size:11.5px; color:#475569; text-align:left; background-color:#F1F5F9; font-weight:700;";
@@ -53,7 +60,7 @@ export function buildMissingOtherExpensesEmail(data: MissingExpenseEmailData): {
   const tableHtml =
     count === 0
       ? `<p style="margin:16px 0; padding:12px 14px; background-color:#F0FDF4; border:1px solid #BBF7D0; border-radius:8px; color:#166534;">
-           Every eligible project has at least one Other Project Expenses record. No action is needed.
+           ${EMPTY_STATE}
          </p>`
       : `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border:1px solid #E2E8F0; border-radius:8px; border-collapse:separate;">
            <tr>
@@ -82,6 +89,7 @@ export function buildMissingOtherExpensesEmail(data: MissingExpenseEmailData): {
   const bodyHtml = `
     <p style="margin:0 0 12px; font-size:16px; font-weight:700; color:#0F172A;">Projects Missing Other Project Expenses</p>
     ${summaryHtml}
+    ${count === 0 ? "" : `<p style="margin:0 0 12px; font-size:13px; color:#334155;">${REMINDER_LEAD}</p>`}
     ${tableHtml}
     <p style="margin:16px 0 0; font-size:12px; color:#64748B;">${SCOPE_NOTE}</p>
     <p style="margin:8px 0 0; font-size:12px; color:#64748B;">Excluded statuses: Not Started, On Hold, Completed, Cancelled. Archived projects are not included.</p>
@@ -95,10 +103,10 @@ export function buildMissingOtherExpensesEmail(data: MissingExpenseEmailData): {
     `Projects missing Non-Man-Hour Expenses: ${count}`,
     "",
     ...(count === 0
-      ? ["Every eligible project has at least one Other Project Expenses record. No action is needed."]
-      : data.projects.map(
+      ? [EMPTY_STATE]
+      : [REMINDER_LEAD, ""].concat(data.projects.map(
           (p) => `- ${p.prNo} | ${p.client} | ${p.projectTitle} | PM: ${p.projectManager || "—"} | ${p.projectStatus || "—"} | ${p.projectUrl}`
-        )),
+        ))),
     "",
     SCOPE_NOTE,
     "Excluded statuses: Not Started, On Hold, Completed, Cancelled. Archived projects are not included.",

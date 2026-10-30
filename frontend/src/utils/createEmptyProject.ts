@@ -252,7 +252,8 @@ export function createEmptyProject(): Project {
     manhourBudgetAmount: 0,
     manhourBudgetHours: 0,
     manhourBudgetRemarks: "",
-    nonManhourBudgetAmount: 0,
+    // null = not entered. Never default this to 0: an untouched field must save as NULL, and only a value the user types (including 0) is stored.
+    nonManhourBudgetAmount: null,
     nonManhourBudgetRemarks: "",
 
     clientReferenceNo: "",

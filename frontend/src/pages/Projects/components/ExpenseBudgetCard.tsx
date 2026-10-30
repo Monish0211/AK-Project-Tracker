@@ -6,6 +6,7 @@ import { StatTile } from "../../../components/ui/StatTile";
 import { Input } from "../../../components/ui/Input";
 import { Textarea } from "../../../components/ui/Textarea";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { budgetInputValue, parseBudgetInput } from "../../../utils/budgetAmount";
 
 interface Props {
   project: Project;
@@ -236,11 +237,12 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                 </span>
                 <Input
                   type="number"
-                  value={nonManhourBudgetAmount || ""}
+                  value={budgetInputValue(project.nonManhourBudgetAmount)}
                   onChange={(e) =>
                     setProject((prev) => ({
                       ...prev,
-                      nonManhourBudgetAmount: parseFloat(e.target.value) || 0,
+                      // Blank -> null (not entered); "0" -> 0 (explicit zero). Never `|| 0`.
+                      nonManhourBudgetAmount: parseBudgetInput(e.target.value),
                     }))
                   }
                   placeholder="Enter Non Man-Hour Budget Amount"

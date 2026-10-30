@@ -24,8 +24,9 @@ export type { JobOutcome, RunOptions } from "./weeklyJob.runner.js";
  * Weekly "Projects Missing Other Project Expenses" email (Oct 2026).
  *
  * One consolidated email per weekly run to the configured To + CC recipients,
- * only when at least one eligible project has zero Other Project Expenses
- * records. Delivery is gated by MISSING_EXPENSE_EMAIL_ENABLED (default false).
+ * only when at least one eligible project (status rules passed AND a Non Man-Hour
+ * Budget Amount entered, 0 included) has zero Other Project Expenses records.
+ * Delivery is gated by MISSING_EXPENSE_EMAIL_ENABLED (default false).
  * The run lifecycle (lock, retry, delivery-unknown) lives in weeklyJob.runner.ts
  * and recipients in weeklyRecipients.service.ts, shared with the other weekly
  * emails.

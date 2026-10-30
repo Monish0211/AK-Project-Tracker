@@ -6,6 +6,7 @@ import {
   DEFAULT_CC_EMAILS,
   DEFAULT_TO_EMAIL,
   formatReportTimestamp,
+  hasNonManhourBudgetEntered,
   isEligibleStatus,
   UNRESOLVED_DEFAULT_CC,
   validateRecipients,
@@ -50,8 +51,8 @@ test("every other dropdown status stays eligible — especially KoM Completed �
   assert.equal(isEligibleStatus(""), true, "a blank status is not one of the excluded statuses");
 });
 
-function p(id: string, status: string, otherExpenseCount: number): CandidateProject {
-  return { id, prNo: `PR-${id}`, client: "C", projectTitle: "T", projectManager: null, projectStatus: status, otherExpenseCount };
+function p(id: string, status: string, otherExpenseCount: number, nonManhourBudgetAmount: number | null = 0): CandidateProject {
+  return { id, prNo: `PR-${id}`, client: "C", projectTitle: "T", projectManager: null, projectStatus: status, nonManhourBudgetAmount, otherExpenseCount };
 }
 
 test("report: only eligible projects are counted; missing = zero Other Project Expenses records (count, never amount)", () => {
@@ -143,7 +144,7 @@ test("email: user data is HTML-escaped, links are used as given, plain text and 
   assert.ok(email.html.includes("Tank&#39;s &quot;farm&quot;"));
   assert.ok(email.html.includes('href="https://pmodashboard.ifluids.in/projects/view/abc"'));
   assert.ok(email.html.includes(">12<") && email.html.includes(">1<"), "both counts shown");
-  assert.match(email.html, /Other Project Expenses only/);
+  assert.match(email.html, /Non Man-Hour Budget Amount entered in Expense Budget/);
   assert.match(email.html, /does not assess man-hour expenses/);
   assert.match(email.text, /PR-<1> \| <script>alert\("x"\)<\/script> & Co/);
   assert.match(email.text, /Eligible projects checked: 12/);
@@ -153,8 +154,9 @@ test("email: user data is HTML-escaped, links are used as given, plain text and 
 
 test("email: empty state when nothing is missing", () => {
   const email = buildMissingOtherExpensesEmail({ subject: "S", generatedAt: "now", eligibleCount: 3, projects: [] });
-  assert.match(email.html, /Every eligible project has at least one Other Project Expenses record/);
+  assert.match(email.html, /Every project with a Non Man-Hour Budget Amount entered has at least one Other Project Expenses record/);
   assert.ok(!email.html.includes("<th"), "no table");
+  assert.ok(!email.html.includes("Please enter the applicable actual expenses"), "no request when there is nothing to enter");
 });
 
 test("audit: manual runs share one key per 10-minute window (UTC), so near-simultaneous runs collide on the same lock", async () => {
@@ -193,4 +195,83 @@ test("audit: the weekly scheduler registers exactly one cron task per process, i
   } finally {
     for (const [, task] of added) await task.destroy();
   }
+});
+
+// ── Phase 2 (Oct 2026): a Non Man-Hour Budget Amount must have been entered ─────────────────────────────────────────────────────────────────
+
+const ids = (projects: CandidateProject[]) => buildMissingExpenseReport(projects).missing.map((m) => m.id);
+
+test("budget rule: the full eligibility table (status eligible)", () => {
+  const cases: Array<[string, number | null, number, boolean]> = [
+    ["NULL + no expenses", null, 0, false],
+    ["0 + no expenses", 0, 0, true],
+    ["62,500 + no expenses", 62500, 0, true],
+    ["0.01 + no expenses", 0.01, 0, true],
+    ["NULL + expenses", null, 2, false],
+    ["0 + expenses", 0, 2, false],
+    ["62,500 + expenses", 62500, 2, false],
+  ];
+  for (const [label, budget, expenses, included] of cases) {
+    assert.equal(ids([p("x", "Active", expenses, budget)]).length === 1, included, label);
+  }
+});
+
+test("budget rule: an explicit 0 is an ENTERED budget - the check is a null check, never a truthy check", () => {
+  assert.equal(hasNonManhourBudgetEntered(0), true);
+  assert.equal(hasNonManhourBudgetEntered(62500), true);
+  assert.equal(hasNonManhourBudgetEntered(null), false);
+  assert.equal(hasNonManhourBudgetEntered(undefined), false);
+  assert.deepEqual(ids([p("zero", "Active", 0, 0), p("none", "Active", 0, null)]), ["zero"]);
+});
+
+test("budget rule: every existing excluded status stays excluded, whatever the budget", () => {
+  for (const status of EXCLUDED) {
+    for (const budget of [0, 62500, null]) {
+      const report = buildMissingExpenseReport([p("s", status, 0, budget)]);
+      assert.equal(report.missing.length, 0, `${status} / ${budget}`);
+      assert.equal(report.eligibleCount, 0, `${status} / ${budget} is not evaluated either`);
+    }
+  }
+  assert.deepEqual(ids([p("k", "KoM Completed", 0, 0)]), ["k"], "KoM Completed stays eligible");
+});
+
+test("budget rule: eligibleCount is only the projects with an entered budget that pass the status rules", () => {
+  const report = buildMissingExpenseReport([
+    p("1", "Active", 0, 0), // evaluated, missing
+    p("2", "Active", 5, 62500), // evaluated, has expenses
+    p("3", "Active", 0, null), // no budget entered: not evaluated
+    p("4", "Active", 4, null), // no budget entered: not evaluated
+    p("5", "Completed", 0, 100), // excluded status
+    p("6", "On-going", 0, 1000), // evaluated, missing
+  ]);
+  assert.equal(report.eligibleCount, 3);
+  assert.deepEqual(report.missing.map((m) => m.id), ["1", "6"]);
+});
+
+test("budget rule: nothing qualifying gives an empty list (so the job sends no email)", () => {
+  const report = buildMissingExpenseReport([p("1", "Active", 0, null), p("2", "Active", 3, 0), p("3", "Completed", 0, 0)]);
+  assert.equal(report.missing.length, 0);
+  assert.equal(report.eligibleCount, 1);
+});
+
+test("email wording (Phase 2): says Non Man-Hour Budget, asks for actual expenses, and no longer claims Expense Budget is ignored", () => {
+  const full = buildMissingOtherExpensesEmail({
+    subject: "S",
+    generatedAt: "now",
+    eligibleCount: 4,
+    projects: [{ prNo: "PR-1", client: "C", projectTitle: "T", projectManager: null, projectStatus: "Active", projectUrl: "https://example.test/p" }],
+  });
+  for (const body of [full.html, full.text]) {
+    assert.match(body, /Non Man-Hour Budget/);
+    assert.match(body, /planned Non Man-Hour Budget but no Other Project Expenses recorded/);
+    assert.match(body, /Please enter the applicable actual expenses/);
+    assert.match(body, /₹0 counts as entered/);
+    assert.doesNotMatch(body, /does not assess[^.]*Expense Budget/i, "must not claim Expense Budget is not assessed");
+    assert.doesNotMatch(body, /man-hour expenses, Expense Budget/i);
+    assert.match(body, /does not assess man-hour expenses, timesheets or invoices/, "man-hour, timesheets and invoices are still out of scope");
+  }
+  assert.match(full.text, /Eligible projects checked: 4/, "existing summary line unchanged");
+  assert.match(full.html, /Excluded statuses: Not Started, On Hold, Completed, Cancelled/, "existing status note unchanged");
+  const empty = buildMissingOtherExpensesEmail({ subject: "S", generatedAt: "now", eligibleCount: 2, projects: [] });
+  assert.doesNotMatch(empty.html + empty.text, /Expense Budget, timesheets/);
 });

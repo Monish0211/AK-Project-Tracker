@@ -301,7 +301,7 @@ test("job: a failed send is recorded and retried safely (no third send)", async 
 test("independent of the Other Project Expenses email: same week, separate run records, both send", async () => {
   sent.length = 0;
   setUnpaidInvoiceLinesForTests(async () => [cand("ind", 40)]);
-  setMissingExpenseCandidatesForTests(async () => [{ id: "x", prNo: "PR-X", client: "C", projectTitle: "T", projectManager: null, projectStatus: "Active", otherExpenseCount: 0 }]);
+  setMissingExpenseCandidatesForTests(async () => [{ id: "x", prNo: "PR-X", client: "C", projectTitle: "T", projectManager: null, projectStatus: "Active", nonManhourBudgetAmount: 0, otherExpenseCount: 0 }]);
   const a = await runUnpaidInvoiceJob({ trigger: "scheduled", periodKey: `${TAG}-both` });
   const b = await runMissingExpenseJob({ trigger: "scheduled", periodKey: `${TAG}-both` });
   assert.deepEqual([a.outcome, b.outcome], ["sent", "sent"]);

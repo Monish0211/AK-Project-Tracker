@@ -8,6 +8,7 @@ import { notificationService } from "../notifications/notificationService";
 import { apiClient, ApiError } from "./apiClient";
 import { getEmployees } from "./employeeService";
 import { dispatchPmoDataChanged } from "../utils/pmoDataChanged";
+import { budgetAmountForPayload } from "../utils/budgetAmount";
 
 const STORAGE_KEY = "projects";
 
@@ -528,7 +529,7 @@ function toGeneralInfoPayload(project: Project): ProjectGeneralInfoPayload {
     manhourBudgetAmount: typeof project.manhourBudgetAmount === "number" ? project.manhourBudgetAmount : null,
     manhourBudgetHours: typeof project.manhourBudgetHours === "number" ? project.manhourBudgetHours : null,
     manhourBudgetRemarks: orNull(project.manhourBudgetRemarks),
-    nonManhourBudgetAmount: typeof project.nonManhourBudgetAmount === "number" ? project.nonManhourBudgetAmount : null,
+    nonManhourBudgetAmount: budgetAmountForPayload(project.nonManhourBudgetAmount),
     nonManhourBudgetRemarks: orNull(project.nonManhourBudgetRemarks),
     primaryProjectManager: orNull(project.primaryProjectManager),
     secondaryProjectManager: orNull(project.secondaryProjectManager),
@@ -632,7 +633,8 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     manhourBudgetAmount: dto.manhourBudgetAmount ?? undefined,
     manhourBudgetHours: dto.manhourBudgetHours ?? undefined,
     manhourBudgetRemarks: dto.manhourBudgetRemarks || undefined,
-    nonManhourBudgetAmount: dto.nonManhourBudgetAmount ?? undefined,
+    // Keep NULL as an explicit null: undefined is dropped by the JSON cache and normalizeProject() would then restore a default 0.
+    nonManhourBudgetAmount: dto.nonManhourBudgetAmount ?? null,
     nonManhourBudgetRemarks: dto.nonManhourBudgetRemarks || undefined,
     primaryProjectManager: dto.primaryProjectManager || "",
     secondaryProjectManager: dto.secondaryProjectManager || "",

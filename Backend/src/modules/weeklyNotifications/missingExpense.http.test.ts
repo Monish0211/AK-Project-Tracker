@@ -49,7 +49,8 @@ async function api(method: string, path: string, who: string | null, body?: unkn
 }
 
 function candidate(id: string, status: string, otherExpenseCount: number, extra: Partial<CandidateProject> = {}): CandidateProject {
-  return { id, prNo: `PR-${TAG}-${id}`, client: "Client", projectTitle: "Title", projectManager: "PM", projectStatus: status, otherExpenseCount, ...extra };
+  // Budget entered (as 0) by default, so a fixture is evaluated unless a test says otherwise (nonManhourBudgetAmount: null).
+  return { id, prNo: `PR-${TAG}-${id}`, client: "Client", projectTitle: "Title", projectManager: "PM", projectStatus: status, nonManhourBudgetAmount: 0, otherExpenseCount, ...extra };
 }
 
 before(async () => {
@@ -107,7 +108,9 @@ before(async () => {
       data: {
         poMonth: "2026-10", prCategory: "India", prNo, rfqNo: "RFQ-MX", client: key === "xss" ? `<b>Evil</b> & "Co"` : "MX Client", department: "Process",
         domesticForeign: "Domestic", projectTitle: `MX ${key}`, workOrderStatus: "Received", projectStartDate: new Date("2026-01-01"), projectStatus,
-        workOrderNumber: `${prNo}-WO`, workOrderDate: new Date("2026-01-01"), eicName: "EIC", contractType: "LUMP SUM", pmoCoordinator: "PMO", ...extra,
+        workOrderNumber: `${prNo}-WO`, workOrderDate: new Date("2026-01-01"), eicName: "EIC", contractType: "LUMP SUM", pmoCoordinator: "PMO",
+        nonManhourBudgetAmount: 0, // an entered (zero) Non Man-Hour Budget by default; fixtures that test the NULL case say so explicitly
+        ...extra,
       },
     });
     projectIds[key] = row.id;
@@ -120,6 +123,10 @@ before(async () => {
   await mkProject("manhourOnly", "Ongoing");
   await prisma.projectResource.create({ data: { projectId: projectIds.manhourOnly!, employeeNo: `${TAG}-E1`, hourlyRateSnapshot: 500, workingDays: 1, totalHours: 8, manhourCost: 4000 } });
   await mkProject("budgetOnly", "On-going", { manhourBudgetAmount: 100000, nonManhourBudgetAmount: 50000 });
+  await mkProject("budget62500", "Active", { nonManhourBudgetAmount: 62500 });
+  await mkProject("nullBudget", "Active", { nonManhourBudgetAmount: null });
+  await mkProject("nullBudgetWithExpense", "Active", { nonManhourBudgetAmount: null });
+  await prisma.projectExpense.create({ data: { projectId: projectIds.nullBudgetWithExpense!, category: "Travel", description: "has a record", quantity: 1, unitCost: 5, totalCost: 5 } });
   await mkProject("supersededOnly", "Active");
   await prisma.projectExpense.create({ data: { projectId: projectIds.supersededOnly!, category: "Travel", description: "old import", quantity: 1, unitCost: 10, totalCost: 10, isActive: false } });
   await mkProject("onHold", " on hold ");
@@ -165,9 +172,16 @@ test("eligibility (real DB): no-expense eligible projects are missing; a zero-va
 
   const report = buildMissingExpenseReport(mine);
   const missingKeys = Object.entries(projectIds).filter(([, id]) => report.missing.some((m) => m.id === id)).map(([k]) => k).sort();
-  assert.deepEqual(missingKeys, ["budgetOnly", "kom", "manhourOnly", "noExpense", "supersededOnly", "xss"]);
-  // Eligible = all non-archived tagged projects minus Not Started / On Hold / Completed / Cancelled.
-  assert.equal(report.eligibleCount, 7);
+  assert.deepEqual(missingKeys, ["budget62500", "budgetOnly", "kom", "manhourOnly", "noExpense", "supersededOnly", "xss"]);
+  // Eligible = non-archived tagged projects with a Non Man-Hour Budget entered (0 counts), minus Not Started / On Hold / Completed / Cancelled.
+  // The two NULL-budget projects are fetched but not evaluated.
+  assert.equal(report.eligibleCount, 8);
+  assert.equal(byKey("nullBudget")?.nonManhourBudgetAmount, null, "a never-entered budget is read as NULL");
+  assert.equal(byKey("noExpense")?.nonManhourBudgetAmount, 0, "an entered zero is read as 0, not NULL");
+  assert.equal(byKey("budget62500")?.nonManhourBudgetAmount, 62500);
+  assert.equal(missingKeys.includes("nullBudget"), false, "NULL budget + no expenses is excluded");
+  assert.equal(missingKeys.includes("nullBudgetWithExpense"), false, "NULL budget + expenses is excluded");
+  assert.equal(missingKeys.includes("zeroValue"), false, "0 budget + a record is excluded");
   assert.ok(byKey("notStarted") && byKey("notStartedVariant"), "Not Started projects are fetched, then excluded by the rules");
   assert.equal(report.missing.some((m) => m.id === projectIds.notStarted || m.id === projectIds.notStartedVariant), false);
 });
@@ -404,4 +418,158 @@ test("audit: Settings shows a stale SENDING run as delivery unknown (read-only �
   const shown = history.data.items.find((r: { periodKey: string }) => r.periodKey === `${TAG}-view-sending`);
   assert.equal(shown?.status, "DELIVERY_UNKNOWN", "the status filter matches what the row displays");
   assert.equal((await prisma.scheduledJobRun.findUniqueOrThrow({ where: { id: row.id } })).status, "SENDING", "view never writes");
+});
+
+// ── Phase 2 (Oct 2026): the Non Man-Hour Budget Amount must have been entered ────────────────────────────────────────────────────────────────
+
+test("job: only projects with NO budget entered are missing expenses → nothing qualifies, no email, recorded as NO_MISSING", async () => {
+  sent.length = 0;
+  setMissingExpenseCandidatesForTests(async () => [
+    candidate("nb1", "Active", 0, { nonManhourBudgetAmount: null }),
+    candidate("nb2", "KoM Completed", 0, { nonManhourBudgetAmount: null }),
+    candidate("hb", "Active", 3, { nonManhourBudgetAmount: 62500 }), // budget entered but already has expenses
+  ]);
+  const r = await runMissingExpenseJob({ trigger: "scheduled", periodKey: `${TAG}-nobudget` });
+  assert.equal(r.outcome, "no_missing");
+  assert.equal(sent.length, 0);
+  const row = await prisma.scheduledJobRun.findUniqueOrThrow({ where: { jobName_periodKey: { jobName: MISSING_EXPENSE_JOB_NAME, periodKey: `${TAG}-nobudget` } } });
+  assert.deepEqual([row.status, row.eligibleCount, row.missingCount], ["NO_MISSING", 1, 0], "only the one project with a budget was evaluated");
+});
+
+test("job: the email lists exactly the entered-budget projects without expenses; counts follow the new definition", async () => {
+  sent.length = 0;
+  setMissingExpenseCandidatesForTests(async () => [
+    candidate("z", "Active", 0, { nonManhourBudgetAmount: 0 }),
+    candidate("p", "Active", 0, { nonManhourBudgetAmount: 62500 }),
+    candidate("n", "Active", 0, { nonManhourBudgetAmount: null }),
+    candidate("ez", "Active", 1, { nonManhourBudgetAmount: 0 }),
+    candidate("en", "Active", 1, { nonManhourBudgetAmount: null }),
+    candidate("os", "Completed", 0, { nonManhourBudgetAmount: 500 }),
+  ]);
+  const r = await runMissingExpenseJob({ trigger: "scheduled", periodKey: `${TAG}-newrule` });
+  assert.equal(r.outcome, "sent");
+  assert.equal(sent.length, 1);
+  const text = sent[0]!.text ?? "";
+  assert.ok(text.includes(`PR-${TAG}-z |`) && text.includes(`PR-${TAG}-p |`), "zero and 62,500 budgets are listed");
+  for (const absent of ["n", "ez", "en", "os"]) assert.ok(!text.includes(`PR-${TAG}-${absent} |`), `${absent} is not listed`);
+  assert.ok(text.includes("Eligible projects checked: 3"), "z, p and ez are the entered-budget projects with an eligible status");
+  assert.ok(text.includes("Projects missing Non-Man-Hour Expenses: 2"));
+  assert.ok((sent[0]!.html ?? "").includes("Please enter the applicable actual expenses"));
+  const row = await prisma.scheduledJobRun.findUniqueOrThrow({ where: { jobName_periodKey: { jobName: MISSING_EXPENSE_JOB_NAME, periodKey: `${TAG}-newrule` } } });
+  assert.deepEqual([row.status, row.eligibleCount, row.missingCount], ["SENT", 3, 2]);
+});
+
+test("consistency: the Settings preview, the paged preview and the scheduled job all use the same report", async () => {
+  sent.length = 0;
+  setMissingExpenseCandidatesForTests(async () => [
+    candidate("c1", "Active", 0, { nonManhourBudgetAmount: 0 }),
+    candidate("c2", "Ongoing", 0, { nonManhourBudgetAmount: 12000 }),
+    candidate("c3", "Active", 0, { nonManhourBudgetAmount: null }),
+    candidate("c4", "Active", 2, { nonManhourBudgetAmount: 300 }),
+    candidate("c5", "On Hold", 0, { nonManhourBudgetAmount: 300 }),
+  ]);
+  const preview = await api("POST", "/notification-settings/missing-expenses/preview", "admin", {});
+  assert.equal(preview.status, 200);
+  const paged = await api("GET", "/notification-settings/missing-expenses/preview?page=1&pageSize=50", "admin");
+  assert.equal(paged.status, 200, paged.message);
+  assert.equal(sent.length, 0, "previews never send");
+  const expectedIds = ["c1", "c2"];
+  assert.deepEqual(preview.data.projects.map((x: { id: string }) => x.id), expectedIds);
+  assert.deepEqual(paged.data.items.map((x: { id: string }) => x.id), expectedIds);
+  assert.deepEqual([preview.data.eligibleCount, preview.data.missingCount], [3, 2]);
+  assert.deepEqual([paged.data.eligibleCount, paged.data.matchCount], [3, 2]);
+  const run = await runMissingExpenseJob({ trigger: "scheduled", periodKey: `${TAG}-consistent` });
+  assert.deepEqual([run.eligibleCount, run.missingCount], [3, 2], "the scheduled run reports the same counts the previews showed");
+  assert.ok(sent[0]!.text?.includes(`PR-${TAG}-c1 |`) && sent[0]!.text?.includes(`PR-${TAG}-c2 |`) && !sent[0]!.text?.includes(`PR-${TAG}-c3 |`));
+  assert.ok(preview.data.html.includes("Non Man-Hour Budget Amount entered in Expense Budget"), "the preview shows the updated wording");
+  // Run history and the Settings card show the counts the run actually recorded - the same two numbers the previews showed.
+  const history = await api("GET", "/notification-settings/missing-expenses/runs?pageSize=100", "admin");
+  assert.equal(history.status, 200, history.message);
+  const shown = history.data.items.find((r: { periodKey: string }) => r.periodKey === `${TAG}-consistent`);
+  assert.deepEqual([shown?.eligibleCount, shown?.missingCount], [3, 2], "run history agrees with the previews and the email");
+  // The Settings card's "last run" must show the same counts as that run's own history row (whichever run is newest - other fixtures may be).
+  const settings = await api("GET", "/notification-settings/missing-expenses", "admin");
+  const cardRun = settings.data.lastRun as { periodKey: string; eligibleCount: number | null; missingCount: number | null } | null;
+  assert.ok(cardRun, "the card has a last run");
+  const cardHistoryRow = (await api("GET", `/notification-settings/missing-expenses/runs?pageSize=100`, "admin")).data.items.find((r: { periodKey: string }) => r.periodKey === cardRun!.periodKey);
+  assert.deepEqual([cardRun!.eligibleCount, cardRun!.missingCount], [cardHistoryRow?.eligibleCount, cardHistoryRow?.missingCount], "the Settings card and run history agree");
+});
+
+test("preview: nothing qualifying shows the corrected zero-result wording and would not send", async () => {
+  setMissingExpenseCandidatesForTests(async () => [candidate("q1", "Active", 0, { nonManhourBudgetAmount: null })]);
+  const preview = await api("POST", "/notification-settings/missing-expenses/preview", "admin", {});
+  assert.equal(preview.status, 200);
+  assert.equal(preview.data.missingCount, 0);
+  assert.equal(preview.data.wouldSend, false);
+  assert.ok(preview.data.html.includes("Every project with a Non Man-Hour Budget Amount entered has at least one Other Project Expenses record"));
+  assert.ok(!preview.data.html.includes("Every eligible project has at least one"), "old wording gone");
+});
+
+test("history: existing run records are not rewritten by a new run under the new definition", async () => {
+  const old = await prisma.scheduledJobRun.create({
+    data: { jobName: MISSING_EXPENSE_JOB_NAME, periodKey: `${TAG}-hist-old`, trigger: "scheduled", status: "SENT", claimToken: "old", eligibleCount: 70, missingCount: 36, recipientCount: 3, finishedAt: new Date() },
+  });
+  setMissingExpenseCandidatesForTests(async () => [candidate("hx", "Active", 0, { nonManhourBudgetAmount: 0 })]);
+  sent.length = 0;
+  const r = await runMissingExpenseJob({ trigger: "scheduled", periodKey: `${TAG}-hist-new` });
+  assert.equal(r.outcome, "sent");
+  const after = await prisma.scheduledJobRun.findUniqueOrThrow({ where: { id: old.id } });
+  assert.deepEqual([after.status, after.eligibleCount, after.missingCount, after.recipientCount], ["SENT", 70, 36, 3], "the old record is untouched");
+  const fresh = await prisma.scheduledJobRun.findUniqueOrThrow({ where: { jobName_periodKey: { jobName: MISSING_EXPENSE_JOB_NAME, periodKey: `${TAG}-hist-new` } } });
+  assert.deepEqual([fresh.eligibleCount, fresh.missingCount], [1, 1], "the new record follows the new definition");
+});
+
+test("duplicate-week protection still holds under the new rule (one email per week, even when the list changes in between)", async () => {
+  sent.length = 0;
+  setMissingExpenseCandidatesForTests(async () => [candidate("w1", "Active", 0, { nonManhourBudgetAmount: 0 }), candidate("w2", "Active", 0, { nonManhourBudgetAmount: null })]);
+  const first = await runMissingExpenseJob({ trigger: "scheduled", periodKey: `${TAG}-week` });
+  setMissingExpenseCandidatesForTests(async () => [candidate("w3", "Active", 0, { nonManhourBudgetAmount: 500 })]);
+  const second = await runMissingExpenseJob({ trigger: "scheduled", periodKey: `${TAG}-week` });
+  assert.equal(first.outcome, "sent");
+  assert.deepEqual([second.outcome, second.outcome === "skipped" ? second.reason : null], ["skipped", "already_completed"]);
+  assert.equal(sent.length, 1);
+  assert.ok(sent[0]!.text?.includes(`PR-${TAG}-w1 |`) && !sent[0]!.text?.includes(`PR-${TAG}-w2 |`));
+});
+
+test("Phase 1 + Phase 2 together: the budget the form saves (null / 0 / amount / omitted) over the real API decides email eligibility", async () => {
+  const prNo = `PR-${TAG}-p1p2`;
+  const row = await prisma.project.create({
+    data: {
+      poMonth: "2026-10", prCategory: "India", prNo, rfqNo: "RFQ-MX", client: "MX Client", department: "Process", domesticForeign: "Domestic", projectTitle: "MX p1p2",
+      workOrderStatus: "Received", projectStartDate: new Date("2026-01-01"), projectStatus: "Active", workOrderNumber: `${prNo}-WO`, workOrderDate: new Date("2026-01-01"),
+      eicName: "EIC", contractType: "LUMP SUM", pmoCoordinator: "PMO", nonManhourBudgetAmount: 62500,
+    },
+  });
+  projectIds.p1p2 = row.id;
+  const stored = async () => (await prisma.project.findUniqueOrThrow({ where: { id: row.id }, select: { nonManhourBudgetAmount: true } })).nonManhourBudgetAmount;
+  const listed = async () => {
+    const report = buildMissingExpenseReport((await findCandidateProjects()).filter((c) => c.id === row.id));
+    return { missing: report.missing.length === 1, evaluated: report.eligibleCount === 1 };
+  };
+
+  assert.deepEqual([await stored(), await listed()], [62500, { missing: true, evaluated: true }], "62,500 + no expenses -> included");
+
+  // The Phase 1 form clears a previously entered amount by sending an explicit null.
+  let res = await api("PATCH", `/projects/${row.id}`, "admin", { nonManhourBudgetAmount: null });
+  assert.equal(res.status, 200, res.message);
+  assert.deepEqual([await stored(), await listed()], [null, { missing: false, evaluated: false }], "cleared -> NULL -> not evaluated, not listed");
+
+  // An unrelated edit that does not send the field leaves it alone (NULL stays NULL).
+  res = await api("PATCH", `/projects/${row.id}`, "admin", { projectTitle: "MX p1p2 renamed" });
+  assert.equal(res.status, 200, res.message);
+  assert.equal(await stored(), null);
+
+  // An explicitly typed 0 is an entered budget.
+  res = await api("PATCH", `/projects/${row.id}`, "admin", { nonManhourBudgetAmount: 0 });
+  assert.equal(res.status, 200, res.message);
+  assert.deepEqual([await stored(), await listed()], [0, { missing: true, evaluated: true }], "0 stays 0 and is listed");
+
+  // Another unrelated edit keeps the 0.
+  res = await api("PATCH", `/projects/${row.id}`, "admin", { remarks: "unrelated edit" });
+  assert.equal(res.status, 200, res.message);
+  assert.equal(await stored(), 0);
+
+  // An expense record removes it from the list whatever the budget is.
+  await prisma.projectExpense.create({ data: { projectId: row.id, category: "Travel", description: "now recorded", quantity: 1, unitCost: 10, totalCost: 10 } });
+  assert.deepEqual(await listed(), { missing: false, evaluated: true }, "0 budget + a record -> evaluated but not missing");
 });

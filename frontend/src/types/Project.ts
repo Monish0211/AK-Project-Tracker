@@ -209,7 +209,8 @@ export interface Project {
   manhourBudgetAmount?: number;
   manhourBudgetHours?: number;
   manhourBudgetRemarks?: string;
-  nonManhourBudgetAmount?: number;
+  // null = Non Man-Hour Budget not entered; 0 = explicitly entered as zero (the weekly missing-expenses email depends on the difference).
+  nonManhourBudgetAmount?: number | null;
   nonManhourBudgetRemarks?: string;
 
   clientReferenceNo: string;

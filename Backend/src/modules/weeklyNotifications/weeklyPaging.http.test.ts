@@ -59,6 +59,7 @@ const candidates: CandidateProject[] = Array.from({ length: 2600 }, (_, i) => ({
   projectTitle: `Project ${i}`,
   projectManager: i % 5 === 0 ? null : `PM ${i % 9}`,
   projectStatus: PROJECT_STATUSES[i % PROJECT_STATUSES.length]!,
+  nonManhourBudgetAmount: 0, // budget entered (as 0) for every synthetic project, so this fixture exercises paging and status rules, not the budget rule
   otherExpenseCount: i % 10 === 0 ? 3 : 0,
 }));
 
