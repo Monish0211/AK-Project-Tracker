@@ -51,6 +51,9 @@ import {
   updateLine as updateLineInRepository,
 } from "../repository/invoice.repository.js";
 import type { InvoiceAuditContext } from "../repository/invoiceStatusEvent.repository.js";
+import { hasActivePayments } from "../../invoicePayments/repository/invoicePayment.repository.js";
+import { loadPaymentFigures } from "../../invoicePayments/services/paymentFigures.service.js";
+import type { PaymentLineFigures } from "../../invoicePayments/paymentCash.rules.js";
 import { buildInvoiceAudit } from "../invoiceAudit.js";
 import type {
   CreateInvoiceLineInput,
@@ -106,7 +109,7 @@ async function insertInvoiceNumberOrReject(invoiceNo: string, projectId: string,
  * Recipient resolution follows the same approved rule as Project events —
  * the project's real creator if known, otherwise Invoices module holders.
  */
-async function notifyInvoiceStatusEvent(projectId: string, invoiceNo: string, message: string): Promise<void> {
+export async function notifyInvoiceStatusEvent(projectId: string, invoiceNo: string, message: string): Promise<void> {
   const createdByUserId = await getProjectCreatorUserId(projectId);
   const recipients = await resolveProjectEventRecipients(createdByUserId, "Invoices");
   await notify(recipients, {
@@ -141,7 +144,7 @@ function lineMatchesPayload(existing: InvoiceLineRow, incoming: IngestLineRow): 
   );
 }
 
-function toInvoiceLineDto(row: InvoiceLineRow): InvoiceLineDto {
+function toInvoiceLineDto(row: InvoiceLineRow, figures?: PaymentLineFigures): InvoiceLineDto {
   return {
     id: row.id,
     quantityItemId: row.quantityItemId,
@@ -163,6 +166,7 @@ function toInvoiceLineDto(row: InvoiceLineRow): InvoiceLineDto {
     remarks: row.remarks,
     status: row.status,
     createdBy: row.createdBy,
+    ...(figures && { recordedCashINR: figures.recordedCashINR, settledINR: figures.settledINR }),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -685,6 +689,26 @@ export async function updateInvoiceLine(
     throw new AppError("You do not have permission to edit invoices.", 403);
   }
 
+
+  // Invoice Payment workflow (Nov 2026) - Paid is reached ONLY by recording a payment (POST /invoice-payments), where the
+  // backend checks the settlement. A status PATCH can no longer jump an invoice to Paid; it would bypass that check.
+  // (Ingest/import keeps its own path and is unaffected.) Re-sending a line that is ALREADY Paid is not a transition.
+  if (input.status === "Paid" && existing.status !== "Paid") {
+    throw new AppError("An invoice becomes Paid only when its payment is recorded in Invoice Payment Details.", 409);
+  }
+  // Once a payment is recorded the invoice's settlement is anchored to it: the value, number and currency can no longer
+  // change, and the invoice cannot leave Paid or be cancelled / sent back to Draft, until the payment is reversed.
+  if (await hasActivePayments(parentQuantityItem.projectId, existing.invoiceNo)) {
+    const statusChanging = input.status !== undefined && input.status !== existing.status;
+    if (statusChanging && (existing.status === "Paid" || existing.status === "PartiallyPaid" || input.status === "Cancelled" || input.status === "Draft")) {
+      throw new AppError("This invoice has a recorded payment. Reverse the payment before changing the status this way.", 409);
+    }
+    const settlementFields = ["invoiceNo", "quantityBilled", "invoiceAmountINR", "invoiceAmountOriginal", "milestoneId", "currency", "exchangeRateToINR"];
+    if (changedContent.some((field) => settlementFields.includes(field))) {
+      throw new AppError("This invoice has a recorded payment, so its amount, number and currency cannot be changed. Reverse the payment first.", 409);
+    }
+  }
+
   // Invoice Currency feature (Oct 2026) — the amount fields this PATCH
   // should actually write (empty when amounts aren't changing). For an INR
   // line this is exactly input.invoiceAmountINR (plus invoiceAmountOriginal
@@ -927,6 +951,10 @@ export async function deleteInvoiceLine(id: string, user: AccessTokenPayload): P
   }
   const parentQuantityItem = await getQuantityItemById(existing.quantityItemId);
   await assertProjectAccessById(parentQuantityItem.projectId, user);
+  // Invoice Payment workflow (Nov 2026) - an invoice with a recorded payment cannot lose its lines.
+  if (await hasActivePayments(parentQuantityItem.projectId, existing.invoiceNo)) {
+    throw new AppError("This invoice has a recorded payment. Reverse the payment before deleting the invoice.", 409);
+  }
   const audit = await buildInvoiceAudit(user, "invoice_delete");
 
   // Invoice Currency feature (Oct 2026) — confirmed rule: a DELETE
@@ -1105,6 +1133,8 @@ export async function listInvoiceItemsForProject(
   const quantityItems = quantityResult.items;
 
   const lines = await getLinesByQuantityItemIds(quantityItems.map((q) => q.id));
+  // Invoice Payment workflow (Nov 2026) — recorded cash / settled amounts for lines whose invoice has a recorded payment.
+  const paymentFigures = await loadPaymentFigures(lines.map((row) => ({ id: row.id, projectId, invoiceNo: row.invoiceNo, status: row.status, invoiceAmountINR: row.invoiceAmountINR, invoiceAmountOriginal: row.invoiceAmountOriginal, currency: row.currency, exchangeRateToINR: row.exchangeRateToINR })));
   const linesByQuantityItemId = new Map<string, InvoiceLineRow[]>();
   for (const line of lines) {
     const bucket = linesByQuantityItemId.get(line.quantityItemId);
@@ -1122,7 +1152,7 @@ export async function listInvoiceItemsForProject(
     uom: quantityItem.uom || "DAY",
     unitPrice: quantityItem.unitRateINR,
     totalPrice: quantityItem.woValue,
-    invoices: (linesByQuantityItemId.get(quantityItem.id) ?? []).map((row) => toInvoiceLineDto(row)),
+    invoices: (linesByQuantityItemId.get(quantityItem.id) ?? []).map((row) => toInvoiceLineDto(row, paymentFigures.get(row.id))),
   }));
 
   return { items };
@@ -1285,7 +1315,7 @@ export async function ingestInvoiceLinesForProject(
   return { items };
 }
 
-function toReportInvoiceLineDto(row: DashboardInvoiceLineRow): ReportInvoiceLineListDto["items"][number] {
+function toReportInvoiceLineDto(row: DashboardInvoiceLineRow, figures?: PaymentLineFigures): ReportInvoiceLineListDto["items"][number] {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -1298,6 +1328,7 @@ function toReportInvoiceLineDto(row: DashboardInvoiceLineRow): ReportInvoiceLine
     currency: row.currency,
     exchangeRateToINR: row.exchangeRateToINR,
     invoiceAmountOriginal: row.invoiceAmountOriginal,
+    ...(figures && { recordedCashINR: figures.recordedCashINR, settledINR: figures.settledINR }),
   };
 }
 
@@ -1329,5 +1360,6 @@ export async function listAllInvoiceLinesForCaller(user: AccessTokenPayload): Pr
   const callerUserId = await resolveProjectReadScope(user);
   const projects = await findAuthorizedProjects(callerUserId);
   const lines = await findInvoiceLinesForProjects(projects.map((p) => p.id));
-  return { items: lines.map(toReportInvoiceLineDto) };
+  const paymentFigures = await loadPaymentFigures(lines);
+  return { items: lines.map((row) => toReportInvoiceLineDto(row, paymentFigures.get(row.id))) };
 }

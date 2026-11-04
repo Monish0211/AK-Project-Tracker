@@ -20,7 +20,11 @@
  *   Requested", waiting for Accounts to raise it) and Completed (fulfilled by a raised invoice). "Sent for Approval"
  *   and "Rejected" do not exist for invoices, so none is invented.
  * - An invoice is the lines of one project sharing an invoice number (trimmed, case-insensitive).
- * - NO payment amounts or payment transactions are stored anywhere (InvoiceLine has only a status; there is no paid / received /
+ * - KNOWN LIMITATION (Invoice Payment workflow, Nov 2026): payments are now recorded (InvoicePayment, see invoicePayments/), but this
+ *   report has NOT been moved onto them yet — it still derives every settlement figure from the saved status exactly as described
+ *   below, so a Paid invoice settled with a TDS still shows Amount Paid = the full invoice amount (basis "inferred_from_status"),
+ *   and a part-payment on a Raised invoice is not shown here. The Dashboard, Reports and Commercial Summary DO use recorded cash.
+ * - (Original note, still true for invoices without a recorded payment:) NO payment amounts or payment transactions are stored anywhere (InvoiceLine has only a status; there is no paid / received /
  *   balance column and no payment table). So the settlement figures are derived from the saved status, and labelled as such:
  *   Raised → nothing paid yet (paid 0, outstanding = invoice amount); Paid → fully settled, so Amount Paid = the invoice amount,
  *   INFERRED FROM THE PAID STATUS (basis "inferred_from_status", never a recorded payment) and outstanding 0 — but only when

@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import app from "../../app.js";
 import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
+import { settleInvoiceViaPayment } from "../invoicePayments/settleInvoice.testutil.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
 
 /**
@@ -35,7 +36,25 @@ const people: Record<string, { id: string; headers: Record<string, string> }> = 
 const P: Record<string, { id: string; items: string[] }> = {};
 const L: Record<string, string> = {};
 
+/**
+ * Paid is reached only by recording the payment (Invoice Payment workflow, Nov 2026), so a PATCH to Paid is performed the way the
+ * portal now does it: the other fields first (status unchanged), then the payment that settles the invoice. Anything else is a plain call.
+ */
 async function api(path: string, who: string | null, method = "GET", body?: unknown) {
+  const toPaid = method === "PATCH" && who !== null && path.startsWith("/invoice-lines/") && path.split("/").length === 3 && (body as { status?: string } | undefined)?.status === "Paid";
+  if (toPaid) {
+    const line = await prisma.invoiceLine.findUniqueOrThrow({ where: { id: path.split("/")[2]! }, include: { quantityItem: { select: { projectId: true } } } });
+    if (line.status !== "Paid") {
+      const first = await rawApi(path, who, "PATCH", { ...(body as object), status: line.status });
+      if (first.status !== 200) return first;
+      const paid = await settleInvoiceViaPayment({ url, authorization: people[who!]!.headers.Authorization!, userId: people[who!]!.id, projectId: line.quantityItem.projectId, invoiceNo: line.invoiceNo });
+      return { status: paid.status === 201 ? 200 : paid.status, data: paid.body?.data, message: paid.body?.message as string | undefined };
+    }
+  }
+  return rawApi(path, who, method, body);
+}
+
+async function rawApi(path: string, who: string | null, method = "GET", body?: unknown) {
   const res = await fetch(`${url}${path}`, {
     method,
     headers: who ? people[who]!.headers : { "Content-Type": "application/json" },

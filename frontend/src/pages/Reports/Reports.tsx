@@ -43,6 +43,7 @@ import { getAllTimesheetImports } from "../../services/timesheetService";
 import { getProcessedEmployeeTotalHours, getProcessedLifetimeActualHours } from "../../services/timesheetProcessingService";
 import { EmptyStateRow } from "../../components/ui/EmptyStateRow";
 import { normalizeProjectCode } from "../../utils/projectMatching";
+import { lineCashINR, lineSettledINR } from "../../utils/invoiceCash";
 
 const Reports = () => {
   // Live State
@@ -77,8 +78,8 @@ const Reports = () => {
             prNo: project.prNo,
             client: project.client,
             invoiceAmount: line.invoiceAmountINR,
-            receivedAmount: line.status === "Paid" ? line.invoiceAmountINR : 0,
-            outstandingAmount: line.status === "Paid" ? 0 : line.invoiceAmountINR,
+            receivedAmount: lineCashINR(line),
+            outstandingAmount: Math.max(0, line.invoiceAmountINR - lineSettledINR(line)),
             status: line.status,
           });
         });

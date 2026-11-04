@@ -33,6 +33,7 @@ import {
 } from "../dashboard.formulas.js";
 import type { DashboardProjectRow, InvoiceLineRow } from "../repository/dashboard.repository.js";
 import * as dashboardRepo from "../repository/dashboard.repository.js";
+import { withPaymentFigures } from "../../invoicePayments/services/paymentFigures.service.js";
 
 function linesByProject(lines: InvoiceLineRow[]): Map<string, InvoiceLineRow[]> {
   const map = new Map<string, InvoiceLineRow[]>();
@@ -67,7 +68,7 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
   const [
     quantityTotals,
     quantityItems,
-    invoiceLines,
+    rawInvoiceLines,
     expenseTotals,
     manhourTotals,
     timesheetHours,
@@ -89,6 +90,8 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
   ]);
 
   const qtyByProject = new Map(quantityTotals.map((row) => [row.projectId, row]));
+  // Invoice Payment workflow (Nov 2026) — attach recorded cash / settled amounts to lines whose invoice has a recorded payment.
+  const invoiceLines = await withPaymentFigures(rawInvoiceLines);
   const invoiceByProject = linesByProject(invoiceLines);
 
   // Derived invoiceQty/pendingQty — see Priority #3 fix: QuantityItem no
@@ -141,6 +144,7 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
   let totalWOValue = 0;
   let totalInvoiceRaised = 0;
   let totalPaymentReceived = 0;
+  let totalSettled = 0;
   let totalExpenses = 0;
   let totalActualProjectCost = 0;
 
@@ -188,6 +192,7 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
     totalWOValue += woValue;
     totalInvoiceRaised += commercial.totalInvoiceRaised;
     totalPaymentReceived += commercial.totalPaymentReceived;
+    totalSettled += commercial.totalSettled;
     totalExpenses += expenses;
     totalActualProjectCost += actualProjectCost(manhourCost, expenses);
   }
@@ -199,7 +204,8 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
     totalWOValue,
     totalInvoiceRaised,
     totalPaymentReceived,
-    totalOutstanding: Math.max(0, totalWOValue - totalPaymentReceived),
+    // Outstanding = work order value not yet SETTLED (cash plus counted deductions such as TDS) — never "not yet cash".
+    totalOutstanding: Math.max(0, totalWOValue - totalSettled),
     totalExpenses,
     totalActualProjectCost,
     totalProfit,

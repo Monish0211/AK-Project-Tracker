@@ -29,7 +29,10 @@ export type InvoiceEventSource =
   | "invoice_delete"
   | "invoice_ingest"
   | "quantity_activity_delete"
-  | "project_permanent_delete";
+  | "project_permanent_delete"
+  // Invoice Payment workflow (Nov 2026) — the status change a recorded payment (-> Paid) or a payment reversal (Paid -> previous) causes.
+  | "invoice_payment"
+  | "invoice_payment_reversal";
 
 /** The authenticated actor and the operation — always built server-side from the verified token. */
 export interface InvoiceAuditContext {

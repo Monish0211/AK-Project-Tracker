@@ -1,6 +1,7 @@
 import type { InvoiceItem } from "../types/InvoiceItem";
 import type { Project } from "../types/Project";
 import { getNextPayment } from "../utils/paymentUtils";
+import { lineCashINR, lineSettledINR } from "../utils/invoiceCash";
 
 export type InvoiceStatus = "Pending" | "Partially Invoiced" | "Completed";
 
@@ -74,13 +75,28 @@ export function isReceivedInvoiceLineStatus(status: string): boolean {
   return status === "Paid";
 }
 
-/** Sum of a line's billed amount across every line that counts as received under the rule above — ONLY Paid invoices. Excludes Draft, Cancelled, Raised, and PartiallyPaid. */
+/**
+ * Cash received across an activity's lines. Since the Invoice Payment workflow (Nov 2026) a line whose invoice has a RECORDED
+ * payment counts its actual recorded cash (even a part-payment, never a deduction); every other line keeps the rule above —
+ * ONLY Paid invoices, at their full amount. See utils/invoiceCash.ts.
+ */
 export function getPaymentReceivedAmount(item: InvoiceItem): number {
   const invoices = Array.isArray(item.invoices) ? item.invoices : [];
 
-  return invoices
-    .filter((invoice) => isReceivedInvoiceLineStatus(invoice.status))
-    .reduce((sum, invoice) => sum + invoice.invoiceAmountINR, 0);
+  return invoices.reduce((sum, invoice) => sum + lineCashINR(invoice), 0);
+}
+
+/** Settled across an activity's lines: cash plus the deductions that count (TDS). What reduces Outstanding. */
+export function getSettledAmount(item: InvoiceItem): number {
+  const invoices = Array.isArray(item.invoices) ? item.invoices : [];
+
+  return invoices.reduce((sum, invoice) => sum + lineSettledINR(invoice), 0);
+}
+
+export function getTotalSettled(items: InvoiceItem[]): number {
+  const safeItems = Array.isArray(items) ? items : [];
+
+  return safeItems.reduce((sum, item) => sum + getSettledAmount(item), 0);
 }
 
 export function getTotalPaymentReceived(items: InvoiceItem[]): number {
@@ -238,7 +254,9 @@ export function getProjectCommercialSummary(
   // function's own doc comment for why this is Invoice Raised minus
   // Payment Received, never Work Order Value minus Payment Received, and
   // never the same as Balance to Invoice (pendingDue above).
-  const outstandingCollection = Math.max(totalInvoiceRaised - totalPaymentReceived, 0);
+  // Settled (not cash) reduces what is outstanding: a TDS deducted at source is settled, never left "unpaid".
+  const totalSettled = Math.min(getTotalSettled(invoiceItems), totalInvoiceRaised);
+  const outstandingCollection = Math.max(totalInvoiceRaised - totalSettled, 0);
   const invoiceCompletionPercent = Math.min(
     Math.max(
       getInvoiceCompletionPercentage(projectValueINR, totalInvoiceRaised),

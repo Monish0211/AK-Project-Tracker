@@ -8,6 +8,7 @@ import { env } from "../../shared/utils/env.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
 import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
+import { settleInvoiceViaPayment } from "../invoicePayments/settleInvoice.testutil.js";
 
 /**
  * Mandatory CC per stage of the Request Invoice lifecycle, end to end (Oct 2026): a real Request Invoice is created over HTTP, the invoice is
@@ -181,7 +182,8 @@ test("Assigned, Raised and Paid all CC arun@ + accounts@ (Paid no longer info@);
   assert.deepEqual(raised.cc, ["arun@ifluids.com", "accounts@ifluids.com", fx.member.email], "Raised: arun@ and accounts@ first, then the saved member (manual addresses were never persisted)");
 
   // ---- 3. Invoice Paid ----
-  assert.equal((await call("PATCH", `/invoice-lines/${lineId}`, fx.raiser.token, { status: "Paid" })).status, 200);
+  // Paid is reached only by recording the payment (Invoice Payment workflow, Nov 2026) — the Paid email must still follow.
+  assert.equal((await settleInvoiceViaPayment({ url: fx.url, authorization: `Bearer ${fx.raiser.token}`, userId: fx.raiser.id, projectId: project.id, invoiceNo: `${TAG}-INV` })).status, 201);
   const paid = await waitForMail("Invoice Paid - ");
   assert.equal(paid.subject, `Invoice Paid - Mandatory CC Client - Mandatory CC regression - PR-${TAG}`);
   assert.equal(paid.to, fx.requester.email);
@@ -247,7 +249,7 @@ test("with NO CC members and NO manual addresses: Assigned, Raised and Paid are 
   assert.equal(raised.to, fx.requester.email);
   assert.deepEqual(raised.cc, ["arun@ifluids.com", "accounts@ifluids.com"]);
 
-  assert.equal((await call("PATCH", `/invoice-lines/${lineId}`, fx.raiser.token, { status: "Paid" })).status, 200);
+  assert.equal((await settleInvoiceViaPayment({ url: fx.url, authorization: `Bearer ${fx.raiser.token}`, userId: fx.raiser.id, projectId: project.id, invoiceNo: `${tag2}-INV` })).status, 201);
   const paid = await waitForMail("Invoice Paid - ");
   assert.equal(paid.subject, `Invoice Paid - Mandatory CC Client - Mandatory CC bare - PR-${tag2}`);
   assert.equal(paid.to, fx.requester.email);

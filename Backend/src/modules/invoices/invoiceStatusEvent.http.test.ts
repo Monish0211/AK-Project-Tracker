@@ -132,19 +132,19 @@ test("create records one CREATED event: authenticated actor, snapshots, database
 test("status changes chain correctly with the right actor each time; unchanged status and content-only edits record nothing", async () => {
   const line = await create("raiser", "L2", "Raised");
   assert.equal((await api("PATCH", `/invoice-lines/${line.id}`, "second", resend(line, { status: "PartiallyPaid", createdBy: "Mallory" }))).status, 200);
-  assert.equal((await api("PATCH", `/invoice-lines/${line.id}`, "raiser", resend({ ...line, status: "PartiallyPaid" }, { status: "Paid" }))).status, 200);
+  assert.equal((await api("PATCH", `/invoice-lines/${line.id}`, "raiser", resend({ ...line, status: "PartiallyPaid" }, { status: "Cancelled" }))).status, 200);
   const ev = await events(line.id);
   assert.deepEqual(ev.map((e) => [e.eventType, e.fromStatus, e.toStatus, e.actorName]), [
     ["CREATED", null, "Raised", "Ise raiser"],
     ["STATUS_CHANGED", "Raised", "PartiallyPaid", "Ise second"],
-    ["STATUS_CHANGED", "PartiallyPaid", "Paid", "Ise raiser"],
+    ["STATUS_CHANGED", "PartiallyPaid", "Cancelled", "Ise raiser"],
   ]);
   assert.ok(ev.every((e, i) => i === 0 || (e.occurredAt >= ev[i - 1]!.occurredAt && e.seq > ev[i - 1]!.seq)), "chronological and strictly ordered");
   assert.ok(!ev.some((e) => e.actorName === "Mallory"), "the actor is never taken from the request body");
 
   const before = (await events(line.id)).length;
-  assert.equal((await api("PATCH", `/invoice-lines/${line.id}`, "raiser", resend({ ...line, status: "Paid" }))).status, 200, "unchanged re-send");
-  assert.equal((await api("PATCH", `/invoice-lines/${line.id}`, "raiser", resend({ ...line, status: "Paid" }, { remarks: "only a remark" }))).status, 200, "content-only edit");
+  assert.equal((await api("PATCH", `/invoice-lines/${line.id}`, "raiser", resend({ ...line, status: "Cancelled" }))).status, 200, "unchanged re-send");
+  assert.equal((await api("PATCH", `/invoice-lines/${line.id}`, "raiser", resend({ ...line, status: "Cancelled" }, { remarks: "only a remark" }))).status, 200, "content-only edit");
   assert.equal((await events(line.id)).length, before, "no event when the status did not change");
 });
 
@@ -174,7 +174,7 @@ test("duplicate and concurrent status submissions leave one consistent event cha
   assert.equal((await events(dup.id)).filter((e) => e.eventType === "STATUS_CHANGED").length, 1, "three identical submissions record one transition");
 
   const race = await create("raiser", "L5", "Raised");
-  const targets = ["Paid", "Cancelled", "PartiallyPaid", "Paid"];
+  const targets = ["Cancelled", "PartiallyPaid", "Raised", "Cancelled"];
   await Promise.all(targets.map((status, i) => api("PATCH", `/invoice-lines/${race.id}`, i % 2 ? "second" : "raiser", resend(race, { status }))));
   const ev = await events(race.id);
   const final = (await prisma.invoiceLine.findUniqueOrThrow({ where: { id: race.id } })).status;
@@ -184,14 +184,14 @@ test("duplicate and concurrent status submissions leave one consistent event cha
 
 test("delete records DELETED and the history survives the line; deleting a missing line still 404s", async () => {
   const line = await create("raiser", "L6", "Raised");
-  await api("PATCH", `/invoice-lines/${line.id}`, "raiser", resend(line, { status: "Paid" }));
+  await api("PATCH", `/invoice-lines/${line.id}`, "raiser", resend(line, { status: "PartiallyPaid" }));
   assert.equal((await api("DELETE", `/invoice-lines/${line.id}`, "second")).status, 200);
   assert.equal(await prisma.invoiceLine.findUnique({ where: { id: line.id } }), null);
   const ev = await events(line.id);
   assert.deepEqual(ev.map((e) => [e.eventType, e.fromStatus, e.toStatus, e.actorName, e.source]), [
     ["CREATED", null, "Raised", "Ise raiser", "invoice_create"],
-    ["STATUS_CHANGED", "Raised", "Paid", "Ise raiser", "invoice_update"],
-    ["DELETED", "Paid", null, "Ise second", "invoice_delete"],
+    ["STATUS_CHANGED", "Raised", "PartiallyPaid", "Ise raiser", "invoice_update"],
+    ["DELETED", "PartiallyPaid", null, "Ise second", "invoice_delete"],
   ]);
   assert.equal((await api("DELETE", `/invoice-lines/${line.id}`, "second")).status, 404);
   assert.equal((await events(line.id)).length, 3, "no event for a failed delete");

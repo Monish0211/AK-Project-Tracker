@@ -6,6 +6,7 @@ import { useAuth } from "../../../../auth/authContext";
 import { hasApprovalPermission } from "../../../../auth/permissions";
 import { usePmoToast } from "../../../../components/ui/usePmoToast";
 import { logInvoiceCycleStatusChangedAudit, logInvoiceDeletedAudit } from "../../../../services/projectAuditService";
+import { fetchInvoiceItemsFromApi } from "../../../../services/invoiceService";
 import {
   persistInvoiceProjectChange,
   realPersistDeps,
@@ -77,6 +78,24 @@ export function useInvoiceLineActions({ project, setProject, readOnly = false, o
     logInvoiceCycleStatusChangedAudit(project.id, invoiceNo, oldStatus, newStatus);
   };
 
+  /**
+   * Invoice Payment workflow (Nov 2026) — after a payment is saved or reversed the invoice's status may have changed ON THE SERVER
+   * (it became Paid, or stopped being Paid). Reload the invoice lines so every screen shows the real status.
+   */
+  const reloadInvoicesFromServer = async () => {
+    try {
+      if (setProject) {
+        const items = await fetchInvoiceItemsFromApi(project.id);
+        setProject((current) => ({ ...current, invoiceItems: items }));
+      }
+    } catch {
+      // The popup already reported the payment; the screen refreshes on its next load.
+    } finally {
+      onSynced?.();
+      onSettled?.();
+    }
+  };
+
   const saveFromDrawer = (updatedProject: Project) => {
     if (!persistProjectChange(updatedProject)) return;
     setDrawerState(null);
@@ -93,6 +112,7 @@ export function useInvoiceLineActions({ project, setProject, readOnly = false, o
     openEdit,
     deleteInvoiceLine,
     updateInvoiceCycleStatus,
+    reloadInvoicesFromServer,
     saveFromDrawer,
     persistProjectChange,
   };

@@ -79,6 +79,11 @@ export interface InvoiceLineDto {
   status: string;
   createdBy: string;
 
+  /** Invoice Payment workflow (Nov 2026) — present only when this line's invoice has a recorded payment. Actual bank cash (excl. GST, never a deduction) allocated to this line, in INR. */
+  recordedCashINR?: number;
+  /** Cash plus the deductions the business counts (TDS) allocated to this line, in INR — what reduces Outstanding. */
+  settledINR?: number;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -129,6 +134,9 @@ export interface ReportInvoiceLineDto {
   currency: string;
   exchangeRateToINR: number;
   invoiceAmountOriginal: number | null;
+  /** Invoice Payment workflow (Nov 2026) — see InvoiceLineDto. Absent for a line whose invoice has no recorded payment. */
+  recordedCashINR?: number;
+  settledINR?: number;
 }
 
 /** GET /invoice-items response. */

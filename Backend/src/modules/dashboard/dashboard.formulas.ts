@@ -46,11 +46,47 @@ export function allActiveInvoiceLinesPaid(lines: { status: string }[]): boolean 
   return active.length > 0 && active.every((line) => line.status === "Paid");
 }
 
-/** Payment Received / Cash Realized: Paid lines only. */
-export function paymentReceivedFromLines(lines: { status: string; invoiceAmountINR: number }[]): number {
-  return lines
-    .filter((line) => isReceivedInvoiceLineStatus(line.status))
-    .reduce((sum, line) => sum + line.invoiceAmountINR, 0);
+/**
+ * An invoice line's figures. `recordedCashINR` / `settledINR` exist only for a line whose invoice has a recorded payment
+ * (Invoice Payment workflow, Nov 2026 — see invoicePayments/paymentCash.rules.ts); every other line has none and keeps the
+ * long-standing status-based figure below.
+ */
+export interface LineAmounts {
+  status: string;
+  invoiceAmountINR: number;
+  recordedCashINR?: number | null | undefined;
+  settledINR?: number | null | undefined;
+}
+
+/**
+ * Payment Received / Cash Realized — ACTUAL recorded bank cash (excluding GST, never a deduction) for a line whose invoice has a
+ * recorded payment, even when that payment only part-settles the invoice; otherwise (no payment record — legacy, or imported)
+ * the long-standing rule: a Paid line counts its full invoice amount, anything else counts nothing.
+ */
+export function lineCashINR(line: LineAmounts): number {
+  if (line.status === "Cancelled") return 0;
+  if (line.recordedCashINR !== undefined && line.recordedCashINR !== null) return line.recordedCashINR;
+  return isReceivedInvoiceLineStatus(line.status) ? line.invoiceAmountINR : 0;
+}
+
+/**
+ * What is SETTLED on a line (cash plus the deductions the business counts, e.g. TDS) — what reduces Outstanding. A TDS
+ * deducted at source is settled but is not cash, so Outstanding is built from this and never from cash. Same legacy fallback.
+ */
+export function lineSettledINR(line: LineAmounts): number {
+  if (line.status === "Cancelled") return 0;
+  if (line.settledINR !== undefined && line.settledINR !== null) return line.settledINR;
+  return isReceivedInvoiceLineStatus(line.status) ? line.invoiceAmountINR : 0;
+}
+
+/** Payment Received / Cash Realized — see lineCashINR(). */
+export function paymentReceivedFromLines(lines: LineAmounts[]): number {
+  return lines.reduce((sum, line) => sum + lineCashINR(line), 0);
+}
+
+/** Settled amount (cash + counted deductions) across lines — see lineSettledINR(). */
+export function settledFromLines(lines: LineAmounts[]): number {
+  return lines.reduce((sum, line) => sum + lineSettledINR(line), 0);
 }
 
 /**
@@ -59,12 +95,13 @@ export function paymentReceivedFromLines(lines: { status: string; invoiceAmountI
  */
 export function projectCommercialTotals(
   woValueINR: number,
-  lines: { status: string; invoiceAmountINR: number }[]
-): { totalInvoiceRaised: number; totalPaymentReceived: number } {
+  lines: LineAmounts[]
+): { totalInvoiceRaised: number; totalPaymentReceived: number; totalSettled: number } {
   const projectValueINR = woValueINR;
   const totalInvoiceRaised = Math.min(invoiceRaisedFromLines(lines), projectValueINR);
   const totalPaymentReceived = Math.min(paymentReceivedFromLines(lines), totalInvoiceRaised);
-  return { totalInvoiceRaised, totalPaymentReceived };
+  const totalSettled = Math.min(settledFromLines(lines), totalInvoiceRaised);
+  return { totalInvoiceRaised, totalPaymentReceived, totalSettled };
 }
 
 export function dashboardOutstanding(totalWOValue: number, totalPaymentReceived: number): number {

@@ -8,6 +8,7 @@ import { quantityBulkRoutes, quantityRoutes } from "./modules/quantity/index.js"
 import { milestoneRoutes } from "./modules/milestones/index.js";
 import { reminderRoutes } from "./modules/reminders/index.js";
 import { invoiceRoutes } from "./modules/invoices/index.js";
+import { invoicePaymentRoutes } from "./modules/invoicePayments/index.js";
 import { expenseBulkRoutes, expenseRoutes, expenseImportRoutes } from "./modules/expenses/index.js";
 import { employeeRoutes } from "./modules/employees/index.js";
 import { customerRoutes } from "./modules/customers/index.js";
@@ -91,6 +92,8 @@ app.use(reminderRoutes);
 // /quantity/:quantityItemId/invoice-lines, /invoice-lines/:id), mounted at
 // root alongside the routers above.
 app.use(invoiceRoutes);
+// Invoice Payment workflow (Nov 2026) — GET/POST /invoice-payments, POST /invoice-payments/preview, POST /invoice-payments/:id/reverse.
+app.use(invoicePaymentRoutes);
 // expense.routes.ts follows the exact same shape — its own full paths
 // (/projects/:projectId/expenses, /expenses/:id), mounted at root alongside
 // the routers above. This is the Other Project Expenses child-collection

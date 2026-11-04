@@ -43,6 +43,8 @@ import {
   type LumpSumMilestoneRow,
 } from "./InvoiceCalculations";
 import { InvoiceLineTable, type InvoiceLineRow } from "./InvoiceLineTable";
+import { InvoicePaymentDetailsModal } from "./InvoicePaymentDetailsModal";
+import { buildInvoicePaymentContext, invoiceHasRecordedPayment } from "./invoicePaymentDetails";
 import { amountsFromInr, getLineCurrency, getLineOriginalAmount, isForeignCurrency, roundToMinorUnit } from "./invoiceCurrency";
 import { formatIndianCurrency } from "../../../../utils/formatCurrency";
 import { LumpSumMilestoneTable } from "./LumpSumMilestoneTable";
@@ -66,6 +68,8 @@ interface Props {
   projectInvoiceCycle?: string;
   onClose: () => void;
   onSave: (updatedProject: Project) => void;
+  /** Invoice Payment workflow — reload the invoice after a payment is saved or reversed (its status may have changed on the server). */
+  onPaymentChanged?: () => void;
 }
 
 interface DraftLine {
@@ -98,6 +102,7 @@ export function RaiseInvoiceDrawer({
   projectInvoiceCycle,
   onClose,
   onSave,
+  onPaymentChanged,
 }: Props) {
   const [show, setShow] = useState(false);
 
@@ -121,6 +126,16 @@ export function RaiseInvoiceDrawer({
   const [clientReference, setClientReference] = useState(existingLine?.clientReference ?? "");
   const [remarks, setRemarks] = useState(existingLine?.remarks ?? "");
   const [status, setStatus] = useState<InvoiceLineStatus>(existingLine?.status ?? "Raised");
+  // The invoice may change status on the SERVER while this drawer is open (a payment recorded in the popup makes it Paid): follow it,
+  // so saving the drawer never re-sends a stale status.
+  const savedStatus = existingLine?.status;
+  const [seenSavedStatus, setSeenSavedStatus] = useState(savedStatus);
+  if (savedStatus !== seenSavedStatus) {
+    setSeenSavedStatus(savedStatus);
+    if (savedStatus) setStatus(savedStatus);
+  }
+  // Choosing "Paid" never changes `status` here - it opens the Invoice Payment Details popup instead (Phase 1, UI only).
+  const [isPaymentDetailsOpen, setIsPaymentDetailsOpen] = useState(false);
 
   // Edit/View mode states
   const [editQtyInput, setEditQtyInput] = useState(
@@ -943,7 +958,25 @@ export function RaiseInvoiceDrawer({
                       value={status}
                       disabled={isViewMode}
                       className={disabledFieldClass}
-                      onChange={(e) => setStatus(e.target.value as InvoiceLineStatus)}
+                      onChange={(e) => {
+                        const nextStatus = e.target.value as InvoiceLineStatus;
+                        // The select is controlled, so leaving `status` untouched keeps it showing the current value.
+                        // A line that is already saved as Paid may be put back to Paid (undoing an unsaved change) without the popup.
+                        if ((nextStatus === "Paid" || nextStatus === "PartiallyPaid") && existingLine && existingLine.status !== nextStatus) {
+                          setIsPaymentDetailsOpen(true);
+                          return;
+                        }
+                        // A recorded payment must be reversed (in the payment popup) before the invoice can leave Paid, be cancelled or go back to Draft.
+                        if (
+                          existingLine &&
+                          invoiceHasRecordedPayment(project, existingLine.invoiceNo) &&
+                          (existingLine.status === "Paid" || existingLine.status === "PartiallyPaid" || nextStatus === "Cancelled" || nextStatus === "Draft")
+                        ) {
+                          setIsPaymentDetailsOpen(true);
+                          return;
+                        }
+                        setStatus(nextStatus);
+                      }}
                     >
                       {EDIT_INVOICE_STATUS_OPTIONS.map((option) => (
                         <option key={option} value={option}>
@@ -1173,6 +1206,17 @@ export function RaiseInvoiceDrawer({
           </div>
         </div>
       </Portal>
+    )}
+
+    {/* Invoice Payment Details popup - a sibling of the drawer, like the dialog above, so its clicks and keys never reach the drawer. */}
+    {isPaymentDetailsOpen && existingLine && (
+      <InvoicePaymentDetailsModal
+        projectId={project.id}
+        context={buildInvoicePaymentContext(project, existingLine.invoiceNo)}
+        {...(onPaymentChanged && { onPaymentChanged })}
+        scopeNote="Status is set per invoice line. The figures above cover every line of this invoice; this edit applies only to the line you opened."
+        onClose={() => setIsPaymentDetailsOpen(false)}
+      />
     )}
     </>
   );

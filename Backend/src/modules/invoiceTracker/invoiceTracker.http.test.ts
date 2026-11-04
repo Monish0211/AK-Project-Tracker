@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import app from "../../app.js";
 import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
+import { settleInvoiceViaPayment } from "../invoicePayments/settleInvoice.testutil.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
 
 /**
@@ -41,6 +42,10 @@ const projectIds: string[] = [];
 const people: Record<string, { id: string; name: string; headers: Record<string, string> }> = {};
 const P: Record<string, { id: string; items: string[] }> = {};
 const L: Record<string, string> = {}; // invoice line ids by label
+
+/** Paid is reached only by recording the payment (Invoice Payment workflow, Nov 2026). */
+const payViaWorkflow = (who: string, projectId: string, invoiceNo: string) =>
+  settleInvoiceViaPayment({ url, authorization: people[who]!.headers.Authorization!, userId: people[who]!.id, projectId, invoiceNo });
 
 async function api(path: string, who: string | null, method = "GET", body?: unknown) {
   const res = await fetch(`${url}${path}`, {
@@ -798,7 +803,7 @@ test("14 (workflow): invoices created and changed through the EXISTING API show 
     });
   assert.equal((await patch("PartiallyPaid")).status, 200);
   assert.deepEqual(await projectStatuses(), { raised: 1, partiallyPaid: 1, paid: 0, draft: 0, cancelled: 0 }, "the Edit Project -> Invoices change shows in the Tracker");
-  assert.equal((await patch("Paid")).status, 200);
+  assert.equal((await payViaWorkflow("ownerA", P.P6!.id, `${TAG}-API1`)).status, 201);
   assert.deepEqual(await projectStatuses(), { raised: 1, partiallyPaid: 0, paid: 1, draft: 0, cancelled: 0 });
   inv = await read();
   assert.equal(inv.length, 1, "status changes never create a second record");
@@ -806,16 +811,20 @@ test("14 (workflow): invoices created and changed through the EXISTING API show 
   assert.deepEqual(inv[0].timeline.map((e: any) => [e.eventType, e.fromStatus, e.toStatus, e.actorName, e.source]), [
     ["CREATED", null, "Raised", "Itk ownerA", "invoice_create"],
     ["STATUS_CHANGED", "Raised", "PartiallyPaid", "Itk ownerA", "invoice_update"],
-    ["STATUS_CHANGED", "PartiallyPaid", "Paid", "Itk ownerA", "invoice_update"],
+    ["STATUS_CHANGED", "PartiallyPaid", "Paid", "Itk ownerA", "invoice_payment"],
   ]);
   assert.ok(inv[0].raisedAt && Date.parse(inv[0].raisedAt) <= Date.parse(inv[0].timeline[1].occurredAt));
   assert.equal(typeof inv[0].raisedInPeriod, "boolean");
   // existing write gates are unchanged: no Delete Invoice right -> refused
   assert.equal((await api(`/invoice-lines/${L.API1}`, "ownerB", "DELETE")).status, 403);
+  // A recorded payment blocks deleting the invoice until it is reversed (Invoice Payment workflow, Nov 2026).
+  assert.equal((await api(`/invoice-lines/${L.API1}`, "ownerA", "DELETE")).status, 409);
+  const paymentId = (await prisma.invoicePayment.findFirstOrThrow({ where: { invoiceNo: `${TAG}-API1` } })).id;
+  assert.equal((await api(`/invoice-payments/${paymentId}/reverse`, "ownerA", "POST", { reason: "test: reversing before deleting" })).status, 200);
   assert.equal((await api(`/invoice-lines/${L.API1}`, "ownerA", "DELETE")).status, 200);
   assert.equal((await read()).length, 0, "deleting removes it from the report");
   const events = await prisma.invoiceStatusEvent.findMany({ where: { invoiceLineId: L.API1! }, orderBy: [{ occurredAt: "asc" }, { seq: "asc" }] });
-  assert.deepEqual(events.map((e) => [e.eventType, e.toStatus]), [["CREATED", "Raised"], ["STATUS_CHANGED", "PartiallyPaid"], ["STATUS_CHANGED", "Paid"], ["DELETED", null]], "history outlives the invoice");
+  assert.deepEqual(events.map((e) => [e.eventType, e.toStatus]), [["CREATED", "Raised"], ["STATUS_CHANGED", "PartiallyPaid"], ["STATUS_CHANGED", "Paid"], ["STATUS_CHANGED", "PartiallyPaid"], ["DELETED", null]], "history outlives the invoice");
 });
 
 test("an invoice that predates history and is only PAID through the API has no raise date — the payment time is never shown as the raise", async () => {
@@ -823,11 +832,8 @@ test("an invoice that predates history and is only PAID through the API has no r
     data: { quantityItemId: P.P5!.items[0]!, invoiceNo: `${TAG}-OLDPAID`, invoiceDate: new Date("2026-08-25T00:00:00.000Z"), quantityBilled: 0, invoiceAmountINR: 800, status: "Raised", createdBy: "Direct Entry", createdAt: new Date("2026-08-25T06:00:00.000Z") },
   });
   L.OLDPAID = row.id;
-  const patched = await api(`/invoice-lines/${row.id}`, "ownerA", "PATCH", {
-    invoiceNo: `${TAG}-OLDPAID`, invoiceDate: "2026-08-25", milestoneId: null, milestoneName: null, setIndex: null, description: null, quantityBilled: 0, invoiceAmountINR: 800,
-    clientReference: null, remarks: null, status: "Paid",
-  });
-  assert.equal(patched.status, 200, patched.message);
+  const patched = await payViaWorkflow("ownerA", P.P5!.id, `${TAG}-OLDPAID`);
+  assert.equal(patched.status, 201, JSON.stringify(patched.body));
   const inv = (await chain("ownerA", "P5", "2026-08")).data.invoices.find((i: any) => i.invoiceNo === `${TAG}-OLDPAID`);
   assert.deepEqual([inv.status, inv.invoiceDate, inv.createdMonth], ["Paid", "2026-08-25", "2026-08"], "an August invoice");
   assert.deepEqual(inv.timeline.map((e: any) => [e.fromStatus, e.toStatus]), [["Raised", "Paid"]], "only the payment was ever recorded");

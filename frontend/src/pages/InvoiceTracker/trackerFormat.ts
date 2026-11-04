@@ -94,6 +94,8 @@ const SOURCE_LABELS: Record<string, string> = {
   invoice_update: "Invoice edited",
   invoice_delete: "Invoice deleted",
   invoice_ingest: "Imported",
+  invoice_payment: "Payment recorded",
+  invoice_payment_reversal: "Payment reversed",
   quantity_activity_delete: "Activity deleted",
   project_permanent_delete: "Project permanently deleted",
 };

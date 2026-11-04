@@ -331,6 +331,7 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
             onEdit={isReadOnly || !canEditInvoice ? undefined : handleEditInvoiceLine}
             onDelete={isReadOnly || !canDeleteInvoice ? undefined : handleDeleteInvoiceLine}
             onUpdateInvoiceStatus={isReadOnly ? undefined : handleUpdateInvoiceCycleStatus}
+            onPaymentChanged={actions.reloadInvoicesFromServer}
             onPrintInvoice={handlePrintInvoice}
             onSendInvoiceTo={isReadOnly ? undefined : (item, line) => setSendInvoiceToTarget({ item, line })}
             initialActivityFilter={initialActivityId}

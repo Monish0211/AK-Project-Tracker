@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import app from "../../app.js";
 import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
+import { settleInvoiceViaPayment } from "../invoicePayments/settleInvoice.testutil.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
 
 /**
@@ -162,6 +163,15 @@ test("Invoice Request fulfillment — Draft -> PartiallyPaid/Paid edge cases, id
     }
 
     async function patchStatus(lineId: string, status: string) {
+      // Paid is reached only by recording the payment (Invoice Payment workflow, Nov 2026). A line that is ALREADY Paid is re-sent as a plain PATCH (Paid -> Paid).
+      if (status === "Paid") {
+        const row = await prisma.invoiceLine.findUniqueOrThrow({ where: { id: lineId }, include: { quantityItem: { select: { projectId: true } } } });
+        if (row.status !== "Paid") {
+          const settled = await settleInvoiceViaPayment({ url, authorization: `Bearer ${tokenB}`, userId: userB.id, projectId: row.quantityItem.projectId, invoiceNo: row.invoiceNo });
+          assert.equal(settled.status, 201, JSON.stringify(settled.body));
+          return;
+        }
+      }
       const res = await fetch(`${url}/invoice-lines/${lineId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenB}` },
@@ -200,11 +210,13 @@ test("Invoice Request fulfillment — Draft -> PartiallyPaid/Paid edge cases, id
     const { project: project2, quantityItem: qi2 } = await makeProjectWithQuantityItem("2");
     const req2 = await createOpenRequest(project2.id);
     const line2 = await createDraftLine(qi2.id, `${TAG}-INV-2`);
-    await patchStatus(line2, "Paid");
+    await patchStatus(line2, "Raised");
 
     const fulfilled2 = await waitForCompleted(req2);
-    assert.ok(fulfilled2, "Draft -> Paid directly must fulfill the Open InvoiceRequest");
+    assert.ok(fulfilled2, "Draft -> Raised must fulfill the Open InvoiceRequest");
     assert.equal(fulfilled2!.fulfilledInvoiceLineId, line2);
+    // A Draft can no longer jump straight to Paid (Invoice Payment workflow, Nov 2026): it is paid by recording the payment, after raising.
+    await patchStatus(line2, "Paid");
 
     // Regression test — this is the exact race a live Playwright QA run
     // caught: fulfillment (the write) and the Invoice Paid notification
@@ -261,6 +273,7 @@ test("Invoice Request fulfillment — Draft -> PartiallyPaid/Paid edge cases, id
     // ===================================================================
     const { quantityItem: qi4 } = await makeProjectWithQuantityItem("4");
     const line4 = await createDraftLine(qi4.id, `${TAG}-INV-4`);
+    await patchStatus(line4, "Raised");
     await patchStatus(line4, "Paid");
     await new Promise((resolve) => setTimeout(resolve, 300));
     const requestCountForProject4 = await prisma.invoiceRequest.count({
@@ -285,7 +298,7 @@ test("Invoice Request fulfillment — Draft -> PartiallyPaid/Paid edge cases, id
     });
 
     const line5 = await createDraftLine(qi5.id, `${TAG}-INV-5`);
-    await patchStatus(line5, "Paid");
+    await patchStatus(line5, "Raised");
 
     const olderResult = await waitForCompleted(reqOlder.id);
     const newerResult = await waitForCompleted(reqNewer.id);

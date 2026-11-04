@@ -79,6 +79,11 @@ export interface InvoiceLine {
   /** Actual invoice amount entered by Accounts after commercial adjustment */
   invoiceAmountINR: number;
 
+  /** Invoice Payment workflow (Nov 2026) — read-only, from the server; present only when this line's invoice has a recorded payment. Actual bank cash (excl. GST, never a deduction) allocated to this line, in INR. */
+  recordedCashINR?: number;
+  /** Cash plus the deductions the business counts (TDS) allocated to this line, in INR — what reduces Outstanding. */
+  settledINR?: number;
+
   /** Commercial adjustment = invoiceAmountINR - calculatedAmountINR (e.g. -189 or +500) */
   commercialAdjustmentINR?: number;
 

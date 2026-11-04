@@ -141,7 +141,8 @@ test("Manual invoice numbering — validation, portal-wide uniqueness, no merge,
     assert.equal((await create(a.items[0]!.id, `${TAG}-NOPE`, { invoiceIntent: "existing" })).status, 409);
 
     // 5. Every status keeps the number reserved — a Cancelled invoice's number is never reused automatically.
-    for (const status of ["Raised", "PartiallyPaid", "Paid", "Cancelled"]) {
+    // (Paid is reached only by recording a payment since Nov 2026 — covered in the invoicePayments tests.)
+    for (const status of ["Raised", "PartiallyPaid", "Cancelled"]) {
       assert.equal((await patch(firstLine.id, { status })).status, 200, `status ${status}`);
     }
     assert.equal((await create(b.items[0]!.id, NO, { invoiceIntent: "new" })).status, 409, "cancelled number still reserved (other project)");

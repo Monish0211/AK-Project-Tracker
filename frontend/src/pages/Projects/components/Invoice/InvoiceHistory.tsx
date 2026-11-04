@@ -22,6 +22,8 @@ import {
   round,
 } from "./InvoiceCalculations";
 import { formatIndianCurrency } from "../../../../utils/formatCurrency";
+import { InvoicePaymentDetailsModal } from "./InvoicePaymentDetailsModal";
+import { buildInvoicePaymentContext, invoiceHasRecordedPayment } from "./invoicePaymentDetails";
 import { formatInvoiceMoney, getLineCurrency, getLineOriginalAmount, isForeignCurrency } from "./invoiceCurrency";
 
 interface Props {
@@ -41,6 +43,8 @@ interface Props {
   initialActivityFilter?: string | null;
   /** Scrolls to and highlights this invoice line's row on mount — e.g. when opened via a notification's deep link to a specific invoice. */
   highlightLineId?: string | null;
+  /** Invoice Payment workflow — reload the invoice after a payment is saved or reversed (its status may have changed on the server). */
+  onPaymentChanged?: () => void;
 }
 
 interface HistoryRow {
@@ -96,11 +100,14 @@ export function InvoiceHistory({
   onSendInvoiceTo,
   initialActivityFilter,
   highlightLineId,
+  onPaymentChanged,
 }: Props) {
   const [activityFilter, setActivityFilter] = useState(initialActivityFilter ?? "all");
   const [statusFilter, setStatusFilter] = useState<InvoiceLineStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<{ item: InvoiceItem; line: InvoiceLine } | null>(null);
+  // Choosing "Paid" or "Partially Paid" never applies the status here - it opens the Record Payment popup, where recording the payment is the only way to reach either.
+  const [paymentDetailsInvoiceNo, setPaymentDetailsInvoiceNo] = useState<string | null>(null);
 
   // Lump Sum and MLMP both bill against milestone percentages, not activity
   // quantities — the Qty Invoiced/Unit Rate/System Amount/Commercial
@@ -309,7 +316,24 @@ export function InvoiceHistory({
                             <div className="relative inline-flex items-center">
                               <select
                                 value={group.status}
-                                onChange={(e) => onUpdateInvoiceStatus(group.invoiceNo, e.target.value as InvoiceLineStatus)}
+                                onChange={(e) => {
+                                  const nextStatus = e.target.value as InvoiceLineStatus;
+                                  // The select is controlled, so not calling onUpdateInvoiceStatus leaves it showing the current status.
+                                  if (nextStatus === "Paid" || nextStatus === "PartiallyPaid") {
+                                    setPaymentDetailsInvoiceNo(group.invoiceNo);
+                                    return;
+                                  }
+                                  // An invoice with a recorded payment cannot leave Paid (or be cancelled / sent back to Draft) until the payment is
+                                  // reversed — and reversing lives in the payment popup. Open it, instead of sending a change the server would refuse.
+                                  if (
+                                    invoiceHasRecordedPayment(project, group.invoiceNo) &&
+                                    (group.status === "Paid" || group.status === "PartiallyPaid" || nextStatus === "Cancelled" || nextStatus === "Draft")
+                                  ) {
+                                    setPaymentDetailsInvoiceNo(group.invoiceNo);
+                                    return;
+                                  }
+                                  onUpdateInvoiceStatus(group.invoiceNo, nextStatus);
+                                }}
                                 className={`appearance-none pl-6 pr-6 py-1 rounded-md text-[11px] font-bold border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-[var(--nu-accent)] ${STATUS_DROPDOWN_STYLES[group.status]}`}
                                 title={`Change master status for ${group.label} (${group.invoiceNo})`}
                               >
@@ -328,6 +352,16 @@ export function InvoiceHistory({
                             <Badge tone={STATUS_BADGE[group.status]} dot className="text-[10px]">
                               {INVOICE_LINE_STATUS_LABEL[group.status]}
                             </Badge>
+                          )}
+                          {group.status !== "Draft" && group.status !== "Cancelled" && (
+                            <button
+                              type="button"
+                              onClick={() => setPaymentDetailsInvoiceNo(group.invoiceNo)}
+                              className="cursor-pointer rounded-md border border-[var(--nu-border)] bg-[var(--nu-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--nu-accent)] transition hover:bg-[var(--nu-accent-soft)]"
+                              title={`View, record or reverse the payments of ${group.invoiceNo}`}
+                            >
+                              Payments
+                            </button>
                           )}
                         </div>
                       </td>
@@ -459,6 +493,15 @@ export function InvoiceHistory({
           </div>
         )}
       </Card>
+
+      {paymentDetailsInvoiceNo !== null && (
+        <InvoicePaymentDetailsModal
+          projectId={project.id}
+          context={buildInvoicePaymentContext(project, paymentDetailsInvoiceNo)}
+          {...(onPaymentChanged && { onPaymentChanged })}
+          onClose={() => setPaymentDetailsInvoiceNo(null)}
+        />
+      )}
 
       <ConfirmDialog
         open={deleteTarget !== null}

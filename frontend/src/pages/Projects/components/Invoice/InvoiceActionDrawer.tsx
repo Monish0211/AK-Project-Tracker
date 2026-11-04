@@ -22,6 +22,7 @@ export function InvoiceActionDrawer({ project, actions, projectInvoiceCycle }: {
       {...(projectInvoiceCycle !== undefined && { projectInvoiceCycle })}
       onClose={actions.closeDrawer}
       onSave={actions.saveFromDrawer}
+      onPaymentChanged={actions.reloadInvoicesFromServer}
     />
   );
 }

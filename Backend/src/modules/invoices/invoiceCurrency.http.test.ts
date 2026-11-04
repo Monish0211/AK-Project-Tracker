@@ -7,6 +7,7 @@ import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
 import { invoiceEditDeleteGrants } from "./invoiceApprovalGrants.testutil.js";
+import { settleInvoiceViaPayment } from "../invoicePayments/settleInvoice.testutil.js";
 
 /**
  * Invoice Currency feature (Oct 2026) — USD invoices, the project currency
@@ -162,9 +163,12 @@ test("Invoice Currency — all seven currencies, project currency lock, and INR 
     });
     assert.equal(mixedRateRes.status, 409, "one invoice can never mix exchange rates");
 
+    // Since the Invoice Payment workflow (Nov 2026) Paid is reached only by recording a payment, so a Draft can no longer jump to Paid.
     const paidRes = await patchLine(usdDraft.id, { status: "Paid" });
-    assert.equal(paidRes.status, 200, "Draft -> Paid directly is allowed");
-    assert.equal(await projectLock(a.project.id), "USD", "a direct Draft -> Paid transition establishes the lock");
+    assert.equal(paidRes.status, 409, "Draft -> Paid directly is no longer possible");
+    assert.equal(await projectLock(a.project.id), null, "the refused PATCH established no lock");
+    assert.equal((await patchLine(usdDraft.id, { status: "Raised" })).status, 200);
+    assert.equal(await projectLock(a.project.id), "USD", "the first genuine (Raised) invoice establishes the lock");
 
     const raiseInrRes = await patchLine(inrDraft.id, { status: "Raised" });
     assert.equal(raiseInrRes.status, 409, "raising a Draft in a locked-out currency is rejected");
@@ -379,7 +383,7 @@ test("Invoice Currency — all seven currencies, project currency lock, and INR 
       assert.equal((await patchLine(created.id, { status: "Raised" })).status, 200, `${currency}: raise`);
       assert.equal(await projectLock(f.project.id), currency, `${currency}: first raise locks the project to it`);
       assert.equal((await patchLine(created.id, { status: "PartiallyPaid" })).status, 200);
-      assert.equal((await patchLine(created.id, { status: "Paid" })).status, 200);
+      assert.equal((await settleInvoiceViaPayment({ url, authorization: `Bearer ${token}`, userId: raiser.id, projectId: f.project.id, invoiceNo: `${TAG}-F-${currency}` })).status, 201, `${currency}: Paid by recording the payment`);
 
       const other = currency === "EUR" ? "USD" : "EUR";
       const otherRes = await createLine(itemF.id, {
@@ -435,7 +439,7 @@ test("Invoice Currency — all seven currencies, project currency lock, and INR 
     const g3a = await dataOf(await createLine(g3.items[0]!.id, usd(`${TAG}-G3-1`, "Raised")));
     const g3b = await createLine(g3.items[0]!.id, usd(`${TAG}-G3-2`, "Raised", 84));
     assert.equal(g3b.status, 201);
-    assert.equal((await patchLine((await dataOf(g3b)).id, { status: "Paid" })).status, 200);
+    assert.equal((await settleInvoiceViaPayment({ url, authorization: `Bearer ${token}`, userId: raiser.id, projectId: g3.project.id, invoiceNo: `${TAG}-G3-2` })).status, 201);
     assert.equal((await deleteLine(g3a.id)).status, 200);
     assert.equal(await projectLock(g3.project.id), "USD", "G3: another genuine invoice remains -> lock kept");
     assert.equal(

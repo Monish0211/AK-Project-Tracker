@@ -26,6 +26,7 @@
  *  - finalProfit        = profitBeforeLd − (ldDeduction ?? 0) — may be negative
  *  - finalProfitPercent = finalProfit / WO × 100; null when WO is 0
  */
+import { lineCashINR, lineSettledINR } from "./invoiceCash";
 import { getTotalNonManhourCost } from "../services/expenseService";
 import type { NonManhourExpense } from "../types/NonManhourExpense";
 
@@ -34,6 +35,9 @@ export const INVOICE_STATUS_ORDER = ["Draft", "Raised", "PartiallyPaid", "Paid",
 export interface FinancialInvoiceLine {
   status: string;
   invoiceAmountINR: number;
+  /** Invoice Payment workflow (Nov 2026) — see utils/invoiceCash.ts. */
+  recordedCashINR?: number | null | undefined;
+  settledINR?: number | null | undefined;
 }
 
 export interface FinancialNonManhourRow {
@@ -117,6 +121,7 @@ function amount(value: unknown): number {
 export function computeInvoiceFinancials(lines: FinancialInvoiceLine[], workOrderValue: number): ProjectInvoiceFinancials {
   let raised = 0;
   let paidRaw = 0;
+  let settledRaw = 0;
   const totals = new Map<string, InvoiceStatusTotal>();
 
   for (const line of lines) {
@@ -129,7 +134,8 @@ export function computeInvoiceFinancials(lines: FinancialInvoiceLine[], workOrde
 
     if (status === "Cancelled") continue;
     raised += amt;
-    if (status === "Paid") paidRaw += amt;
+    paidRaw += lineCashINR(line);
+    settledRaw += lineSettledINR(line);
   }
 
   const received = Math.min(paidRaw, raised);
@@ -142,7 +148,8 @@ export function computeInvoiceFinancials(lines: FinancialInvoiceLine[], workOrde
   return {
     raised,
     received,
-    outstanding: Math.max(0, workOrderValue - received),
+    // Outstanding is measured against what is SETTLED (cash plus counted deductions such as TDS), never against cash alone.
+    outstanding: Math.max(0, workOrderValue - Math.min(settledRaw, raised)),
     draftCount: totals.get("Draft")?.count ?? 0,
     draftAmount: totals.get("Draft")?.amount ?? 0,
     cancelledCount: totals.get("Cancelled")?.count ?? 0,

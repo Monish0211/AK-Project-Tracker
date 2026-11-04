@@ -315,7 +315,7 @@ test("Amount collected: one defined rule, each invoice once — Paid at full amo
   assert.equal(summary.collected.amountINR + 0 <= summary.raisedAmountINR, true, "never more than the raised amount");
 });
 
-test("guard: the schema stores NO payment amount or transaction for invoices — if this fails, the Amount Paid rule must be revisited", async () => {
+test("guard: the INVOICE tables store no payment amount or transaction; payments live only in the four InvoicePayment* tables (Nov 2026) - the Tracker's status-based Amount Paid is a documented limitation until it is moved onto them", async () => {
   const { readFileSync } = await import("node:fs");
   const schema = readFileSync(new URL("../../../prisma/schema.prisma", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   const block = (name: string) => new RegExp(`\\nmodel ${name} \\{([\\s\\S]*?)\\n\\}`).exec(schema)![1]!;
@@ -326,7 +326,9 @@ test("guard: the schema stores NO payment amount or transaction for invoices —
   }
   assert.deepEqual(columns("PaymentMilestone"), ["id", "projectId", "project", "milestoneName", "paymentPercentage", "dueDate", "createdAt", "updatedAt"], "PaymentMilestone is the billing PLAN (name, percentage, due date), not a receipt");
   const models = [...schema.matchAll(/\nmodel (\w+) \{/g)].map((m) => m[1]!);
-  assert.deepEqual(models.filter((m) => /receipt|collect|transaction|ledger|settle|refund/i.test(m)), [], "no payment / receipt / transaction table exists");
+  // Invoice Payment workflow (Nov 2026): payments are recorded in these four tables ONLY - nothing else may become one.
+  const PAYMENT_MODELS = ["InvoicePayment", "InvoicePaymentAdjustment", "InvoicePaymentEvent", "InvoicePaymentReceipt"];
+  assert.deepEqual(models.filter((m) => /payment|receipt|collect|transaction|ledger|settle|refund/i.test(m) && m !== "PaymentMilestone").sort(), PAYMENT_MODELS, "payment tables are exactly the four InvoicePayment* models");
   assert.ok(columns("InvoiceLine").includes("status") && columns("InvoiceLine").includes("invoiceAmountINR"), "the invoice has a status and an amount — that is all it records about settlement");
 });
 

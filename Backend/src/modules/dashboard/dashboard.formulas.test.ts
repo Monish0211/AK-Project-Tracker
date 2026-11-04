@@ -303,5 +303,5 @@ test("the invoiced-amount formulas are unchanged by the Paid guard", () => {
   ];
   assert.equal(invoiceRaisedFromLines(lines), 165000);
   assert.equal(paymentReceivedFromLines(lines), 132000);
-  assert.deepEqual(projectCommercialTotals(165000, lines), { totalInvoiceRaised: 165000, totalPaymentReceived: 132000 });
+  assert.deepEqual(projectCommercialTotals(165000, lines), { totalInvoiceRaised: 165000, totalPaymentReceived: 132000, totalSettled: 132000 });
 });

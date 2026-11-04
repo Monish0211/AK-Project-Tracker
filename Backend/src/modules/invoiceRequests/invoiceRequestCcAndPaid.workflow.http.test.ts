@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import app from "../../app.js";
 import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
+import { settleInvoiceViaPayment } from "../invoicePayments/settleInvoice.testutil.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
 import { invoiceEditDeleteGrants } from "../invoices/invoiceApprovalGrants.testutil.js";
 
@@ -170,6 +171,15 @@ test("Request Invoice -> Raised -> Paid — CC Members persistence and Paid-tran
     }
 
     async function patchStatus(lineId: string, status: string) {
+      // Paid is reached only by recording the payment (Invoice Payment workflow, Nov 2026). A line that is ALREADY Paid is re-sent as a plain PATCH (Paid -> Paid).
+      if (status === "Paid") {
+        const row = await prisma.invoiceLine.findUniqueOrThrow({ where: { id: lineId }, include: { quantityItem: { select: { projectId: true } } } });
+        if (row.status !== "Paid") {
+          const settled = await settleInvoiceViaPayment({ url, authorization: `Bearer ${tokenB}`, userId: userB.id, projectId: row.quantityItem.projectId, invoiceNo: row.invoiceNo });
+          assert.equal(settled.status, 201, JSON.stringify(settled.body));
+          return;
+        }
+      }
       const res = await fetch(`${url}/invoice-lines/${lineId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenB}` },

@@ -42,6 +42,9 @@ interface BackendInvoiceLineDto {
   currency?: string;
   exchangeRateToINR?: number;
   invoiceAmountOriginal?: number | null;
+  // Invoice Payment workflow (Nov 2026) — present only for a line whose invoice has a recorded payment.
+  recordedCashINR?: number;
+  settledINR?: number;
   clientReference: string | null;
   remarks: string | null;
   status: string;
@@ -159,6 +162,7 @@ function toInvoiceLine(dto: BackendInvoiceLineDto): InvoiceLine {
     remarks: dto.remarks ?? undefined,
     status: dto.status as InvoiceLineStatus,
     createdBy: dto.createdBy,
+    ...(typeof dto.recordedCashINR === "number" && typeof dto.settledINR === "number" && { recordedCashINR: dto.recordedCashINR, settledINR: dto.settledINR }),
   };
 }
 
@@ -215,6 +219,9 @@ export interface ReportInvoiceLine {
   currency?: string;
   exchangeRateToINR?: number;
   invoiceAmountOriginal?: number | null;
+  /** Invoice Payment workflow (Nov 2026) — present only for a line whose invoice has a recorded payment (see utils/invoiceCash.ts). */
+  recordedCashINR?: number;
+  settledINR?: number;
 }
 
 interface ReportInvoiceLineListDto {

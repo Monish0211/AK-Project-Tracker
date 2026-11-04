@@ -6,6 +6,7 @@ import { getTotalNonManhourCost } from "../../services/expenseService";
 import type { ReportInvoiceLine } from "../../services/invoiceService";
 import { fetchLiveReportData } from "../../services/reportsLiveDataService";
 import { pmoDataChangedMatches } from "../../utils/pmoDataChanged";
+import { lineCashINR, lineSettledINR } from "../../utils/invoiceCash";
 
 export interface ReportFilterState {
   dateRange: { start: string; end: string };
@@ -227,6 +228,7 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
     let totalWOValue = 0;
     let totalInvoiceRaised = 0;
     let totalPaymentReceived = 0;
+    let totalSettledAmount = 0;
     let totalExpenses = 0;
     let totalBudget = 0;
     let totalOrderedQty = 0;
@@ -331,18 +333,21 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
       const projectLines = linesByProjectId.get(p.id) ?? [];
       let projectInvoiceRaised = 0;
       let projectPaidRaw = 0;
+      let projectSettledRaw = 0;
 
       projectLines.forEach((line) => {
         const statusStr = String(line.status || "");
         if (statusStr !== "Cancelled") {
           const amt = line.invoiceAmountINR || 0;
           projectInvoiceRaised += amt;
+          // Invoice Payment workflow (Nov 2026): actual recorded cash (even a part-payment) and what is settled (cash + TDS) — see utils/invoiceCash.ts. Legacy lines keep the Paid-status rule.
+          projectPaidRaw += lineCashINR(line);
+          projectSettledRaw += lineSettledINR(line);
           totalInvoicedQty += line.quantityBilled || 0;
 
           if (statusStr === "Paid") {
             paidInvoiceVal += amt;
             paidCount++;
-            projectPaidRaw += amt;
           } else if (statusStr === "Raised" || statusStr === "Submitted") {
             raisedInvoiceVal += amt;
             submittedInvoiceVal += amt;
@@ -388,6 +393,7 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
       // Value. No new cap introduced here — only the per-line data source
       // above changed (project.invoiceItems -> authoritative backend lines).
       const pReceived = Math.min(projectPaidRaw, projectInvoiceRaised);
+      totalSettledAmount += Math.min(projectSettledRaw, projectInvoiceRaised);
 
       totalInvoiceRaised += projectInvoiceRaised;
       totalPaymentReceived += pReceived;
@@ -424,8 +430,9 @@ export function useReportsData(initialFilters?: Partial<ReportFilterState>) {
       deptMap[deptName].finalProfit += woVal - pExpenses - pLd;
     });
 
-    const totalOutstanding = Math.max(0, totalWOValue - totalPaymentReceived);
-    const totalOutstandingReceivable = Math.max(0, totalInvoiceRaised - totalPaymentReceived);
+    // Outstanding is measured against what is SETTLED (cash plus counted deductions such as TDS), never against cash alone.
+    const totalOutstanding = Math.max(0, totalWOValue - totalSettledAmount);
+    const totalOutstandingReceivable = Math.max(0, totalInvoiceRaised - totalSettledAmount);
     const balanceToInvoice = Math.max(0, totalWOValue - totalInvoiceRaised);
     const totalActualProjectCost = totalExpenses;
     const totalProfit = totalWOValue - totalActualProjectCost;

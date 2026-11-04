@@ -39,6 +39,9 @@ export interface InvoiceLineRow {
   currency: string;
   exchangeRateToINR: number;
   invoiceAmountOriginal: number | null;
+  // Invoice Payment workflow (Nov 2026) — present only for a line whose invoice has a recorded payment; see paymentCash.rules.ts.
+  recordedCashINR?: number | undefined;
+  settledINR?: number | undefined;
 }
 
 /** Raw per-item rows needed to derive invoiceQty/pendingQty at the project level — see dashboard.service.ts. Kept separate from groupQuantityTotals() because the LUMP SUM pending-quantity ceiling (see shared/utils/quantityProgress.ts) must be applied per item before summing, not on an already-summed project total. */
