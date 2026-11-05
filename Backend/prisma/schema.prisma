@@ -1043,9 +1043,64 @@ model InvoiceNumber {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  /// Invoice-level GST snapshot - absent for a legacy invoice (see InvoiceGstSnapshot).
+  gstSnapshot InvoiceGstSnapshot?
+
   createdAt DateTime @default(now())
 
   @@index([projectId])
+}
+
+// =============================================================================
+// Invoice-level GST snapshot (Nov 2026) - ADDITIVE.
+//
+// One row per invoice (the invoice is identified by its InvoiceNumber register
+// row, exactly like the Invoice Payment workflow identifies it by project +
+// number). It freezes the GST that applied WHEN THE INVOICE WAS RAISED, so the
+// settlement target of Record Payment is "taxable value + this saved GST" and can
+// never move because a project-level GST setting changes later.
+//
+// Three states are deliberately distinct and never interchangeable:
+//   * no row                      = legacy invoice (created before this table) - GST UNKNOWN, the
+//                                   settlement target stays the taxable value, nothing is assumed;
+//   * gstStatus NOT_APPLICABLE    = the invoice carried no GST (rate / type / amounts are NULL / 0);
+//   * gstStatus APPLICABLE        = GST applies at ratePercent, which may be 0 (applicable at 0%).
+//
+// Money is exact Decimal(18,3) like InvoicePayment (INR uses 2 decimals; GST is INR-only today, enforced by a CHECK).
+// The amounts are computed on the server with the same arithmetic the invoice screen and printout use, and are
+// never accepted from the client. A tax type of IGST holds its tax in igstAmount; CGST_SGST splits it into
+// cgstAmount + sgstAmount. buyerStateKnown records whether the buyer state was known when the type was chosen
+// (the buyer state itself is not stored by the backend).
+//
+// The snapshot follows the invoice: it is created with the first line of a NEW invoice, recomputed in the same
+// transaction whenever a line of that invoice changes, moved with the lines when the invoice number changes,
+// and removed with the register row when the whole invoice is deleted (ON DELETE CASCADE).
+// =============================================================================
+model InvoiceGstSnapshot {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  invoiceNumberId String        @unique
+  invoiceNumber   InvoiceNumber @relation(fields: [invoiceNumberId], references: [id], onDelete: Cascade)
+
+  /// APPLICABLE | NOT_APPLICABLE (CHECK constraint in the migration)
+  gstStatus       String
+  ratePercent     Decimal? @db.Decimal(7, 4)
+  /// IGST | CGST_SGST; NULL when NOT_APPLICABLE
+  taxType         String?
+  buyerStateKnown Boolean  @default(false)
+
+  currency      String
+  taxableAmount Decimal @db.Decimal(18, 3)
+  cgstAmount    Decimal @default(0) @db.Decimal(18, 3)
+  sgstAmount    Decimal @default(0) @db.Decimal(18, 3)
+  igstAmount    Decimal @default(0) @db.Decimal(18, 3)
+  gstAmount     Decimal @db.Decimal(18, 3)
+  totalAmount   Decimal @db.Decimal(18, 3)
+
+  createdByName String
+  updatedByName String
+  createdAt     DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
 }
 
 model InvoiceLine {

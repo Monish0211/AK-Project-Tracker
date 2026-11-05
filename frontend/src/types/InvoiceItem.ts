@@ -50,6 +50,45 @@ export type InvoiceCurrency = SupportedCurrency;
  */
 export type InvoiceMethod = "lump_sum" | "invoice_line_items" | "mlmp" | "amount_based";
 
+/** GST tax treatment of an invoice: one IGST amount, or CGST + SGST halves. */
+export type InvoiceGstTaxType = "IGST" | "CGST_SGST";
+
+/**
+ * Invoice-level GST snapshot (Nov 2026) — read-only, from the server. ONE per invoice (every line of an invoice carries the same one):
+ * the GST rate and tax type chosen when the invoice was first raised (frozen from then on), and the taxable / GST / total amounts the
+ * server recomputes from the invoice's lines. A line with no snapshot belongs to a LEGACY invoice (raised before this feature) — it is
+ * never backfilled and settles on its taxable value. NOT_APPLICABLE ("no GST on this invoice") and APPLICABLE at 0% are different states.
+ * Amounts are exact decimal strings in the invoice currency.
+ */
+export interface InvoiceGstSnapshot {
+  gstStatus: "APPLICABLE" | "NOT_APPLICABLE";
+  ratePercent: string | null;
+  taxType: InvoiceGstTaxType | null;
+  buyerStateKnown: boolean;
+  currency: string;
+  taxableAmount: string;
+  cgstAmount: string;
+  sgstAmount: string;
+  igstAmount: string;
+  gstAmount: string;
+  totalAmount: string;
+}
+
+/**
+ * What the user chose for a not-yet-snapshotted invoice that is about to be raised: sent to the server with the write that raises it.
+ * Never persisted locally; the server validates and recalculates it independently.
+ */
+export type InvoiceGstSelection =
+  /** "This invoice carries no GST" — an explicit choice, different from GST at 0%. */
+  | { applicable: false }
+  | {
+      applicable: true;
+      ratePercent: number;
+      taxType: InvoiceGstTaxType;
+      /** True when the buyer state was already known (so the tax type was suggested from it); false when the user picked it without one. */
+      buyerStateKnown: boolean;
+    };
+
 export interface InvoiceLine {
   id: string;
 
@@ -83,6 +122,9 @@ export interface InvoiceLine {
   recordedCashINR?: number;
   /** Cash plus the deductions the business counts (TDS) allocated to this line, in INR — what reduces Outstanding. */
   settledINR?: number;
+
+  /** Invoice-level GST snapshot (Nov 2026) — read-only, from the server; absent for a Draft and for a legacy invoice. See InvoiceGstSnapshot. */
+  gstSnapshot?: InvoiceGstSnapshot;
 
   /** Commercial adjustment = invoiceAmountINR - calculatedAmountINR (e.g. -189 or +500) */
   commercialAdjustmentINR?: number;

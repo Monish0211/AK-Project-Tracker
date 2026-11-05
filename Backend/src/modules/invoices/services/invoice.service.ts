@@ -52,6 +52,9 @@ import {
 } from "../repository/invoice.repository.js";
 import type { InvoiceAuditContext } from "../repository/invoiceStatusEvent.repository.js";
 import { hasActivePayments } from "../../invoicePayments/repository/invoicePayment.repository.js";
+import { countRaisedLines, syncInvoiceGstSnapshot, toSnapshotDto } from "../../invoiceGst/invoiceGst.service.js";
+import type { InvoiceGstSnapshotDto } from "../../invoiceGst/invoiceGst.service.js";
+import { findSnapshotsForInvoices, normalizeInvoiceNo } from "../../invoiceGst/invoiceGst.repository.js";
 import { loadPaymentFigures } from "../../invoicePayments/services/paymentFigures.service.js";
 import type { PaymentLineFigures } from "../../invoicePayments/paymentCash.rules.js";
 import { buildInvoiceAudit } from "../invoiceAudit.js";
@@ -144,7 +147,7 @@ function lineMatchesPayload(existing: InvoiceLineRow, incoming: IngestLineRow): 
   );
 }
 
-function toInvoiceLineDto(row: InvoiceLineRow, figures?: PaymentLineFigures): InvoiceLineDto {
+function toInvoiceLineDto(row: InvoiceLineRow, figures?: PaymentLineFigures, gstSnapshot?: InvoiceGstSnapshotDto): InvoiceLineDto {
   return {
     id: row.id,
     quantityItemId: row.quantityItemId,
@@ -167,6 +170,7 @@ function toInvoiceLineDto(row: InvoiceLineRow, figures?: PaymentLineFigures): In
     status: row.status,
     createdBy: row.createdBy,
     ...(figures && { recordedCashINR: figures.recordedCashINR, settledINR: figures.settledINR }),
+    ...(gstSnapshot && { gstSnapshot }),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -606,7 +610,18 @@ export async function createInvoiceLineForQuantityItem(
         createdBy,
       };
 
-      return createLineInRepository(quantityItemId, data, audit, tx);
+      // Invoice-level GST snapshot: read BEFORE the insert whether this invoice already had a raised line (the first raise creates the
+      // snapshot; an invoice that was already raised never gets one made for it), then bring the snapshot in step with the new line.
+      const hadRaisedBefore = (await countRaisedLines(tx, quantityItem.projectId, input.invoiceNo)) > 0;
+      const line = await createLineInRepository(quantityItemId, data, audit, tx);
+      await syncInvoiceGstSnapshot(tx, {
+        projectId: quantityItem.projectId,
+        invoiceNo: input.invoiceNo,
+        declaration: input.gst,
+        hadRaisedBefore,
+        actorName: audit.actorName,
+      });
+      return line;
     },
     // Same headroom reasoning as milestone.service.ts's createMilestoneForProject()
     // — this transaction can now block behind a slower concurrent write for
@@ -754,6 +769,8 @@ export async function updateInvoiceLine(
   const updated = await prisma.$transaction(
     async (tx) => {
       await lockQuantityItemForInvoiceWrite(tx, existing.quantityItemId);
+      // Invoice-level GST snapshot: did this invoice already have a raised line before this write? (also takes the invoice-number lock)
+      const hadRaisedBefore = (await countRaisedLines(tx, parentQuantityItem.projectId, existing.invoiceNo)) > 0;
 
       if (amountChange.invoiceAmountINR !== undefined) {
         await assertInvoiceAmountWithinLimit(
@@ -848,7 +865,32 @@ export async function updateInvoiceLine(
         tx
       );
       if (invoiceNoChanging) {
+        // The line moved to a NEW invoice number: that invoice inherits the old invoice's frozen GST settings (when the old one had a snapshot),
+        // and the old invoice is recomputed from the lines it still has. This runs BEFORE the old register row is released, so the snapshot
+        // can never be lost with it and the renamed invoice can never silently fall back to ex-GST settlement.
+        await syncInvoiceGstSnapshot(tx, {
+          projectId: parentQuantityItem.projectId,
+          invoiceNo: nextInvoiceNo,
+          declaration: input.gst,
+          hadRaisedBefore,
+          inheritFromInvoiceNo: existing.invoiceNo,
+          actorName: audit.actorName,
+        });
+        await syncInvoiceGstSnapshot(tx, {
+          projectId: parentQuantityItem.projectId,
+          invoiceNo: existing.invoiceNo,
+          hadRaisedBefore: true,
+          actorName: audit.actorName,
+        });
         await releaseInvoiceNumberIfUnused(existing.invoiceNo, parentQuantityItem.projectId, tx);
+      } else {
+        await syncInvoiceGstSnapshot(tx, {
+          projectId: parentQuantityItem.projectId,
+          invoiceNo: nextInvoiceNo,
+          declaration: input.gst,
+          hadRaisedBefore,
+          actorName: audit.actorName,
+        });
       }
       return written;
     },
@@ -984,6 +1026,8 @@ export async function deleteInvoiceLine(id: string, user: AccessTokenPayload): P
       // releases its number (the invoice no longer exists); cancelling keeps
       // it reserved.
       await releaseInvoiceNumberIfUnused(existing.invoiceNo, parentQuantityItem.projectId, tx);
+      // Invoice-level GST snapshot: when the invoice still has lines, its taxable amount and GST totals follow them.
+      await syncInvoiceGstSnapshot(tx, { projectId: parentQuantityItem.projectId, invoiceNo: existing.invoiceNo, hadRaisedBefore: true, actorName: audit.actorName });
     },
     { timeout: 30_000, maxWait: 10_000 }
   );
@@ -1135,6 +1179,8 @@ export async function listInvoiceItemsForProject(
   const lines = await getLinesByQuantityItemIds(quantityItems.map((q) => q.id));
   // Invoice Payment workflow (Nov 2026) — recorded cash / settled amounts for lines whose invoice has a recorded payment.
   const paymentFigures = await loadPaymentFigures(lines.map((row) => ({ id: row.id, projectId, invoiceNo: row.invoiceNo, status: row.status, invoiceAmountINR: row.invoiceAmountINR, invoiceAmountOriginal: row.invoiceAmountOriginal, currency: row.currency, exchangeRateToINR: row.exchangeRateToINR })));
+  // Invoice-level GST snapshot (Nov 2026): one batched read for every invoice of the project.
+  const gstSnapshots = await findSnapshotsForInvoices(lines.map((row) => ({ projectId, invoiceNo: row.invoiceNo })));
   const linesByQuantityItemId = new Map<string, InvoiceLineRow[]>();
   for (const line of lines) {
     const bucket = linesByQuantityItemId.get(line.quantityItemId);
@@ -1152,7 +1198,10 @@ export async function listInvoiceItemsForProject(
     uom: quantityItem.uom || "DAY",
     unitPrice: quantityItem.unitRateINR,
     totalPrice: quantityItem.woValue,
-    invoices: (linesByQuantityItemId.get(quantityItem.id) ?? []).map((row) => toInvoiceLineDto(row, paymentFigures.get(row.id))),
+    invoices: (linesByQuantityItemId.get(quantityItem.id) ?? []).map((row) => {
+      const snapshot = gstSnapshots.get(`${projectId}\u0000${normalizeInvoiceNo(row.invoiceNo)}`);
+      return toInvoiceLineDto(row, paymentFigures.get(row.id), snapshot ? toSnapshotDto(snapshot) : undefined);
+    }),
   }));
 
   return { items };

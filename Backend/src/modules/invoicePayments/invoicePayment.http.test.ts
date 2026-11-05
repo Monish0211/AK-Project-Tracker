@@ -17,7 +17,9 @@ import { signAccessToken } from "../../shared/utils/jwt.util.js";
  * directly (status Raised) so only the payment workflow itself changes their status.
  *
  * The rule under test: Total Settled = bank amount + all deductions (invoice currency); nothing -> status unchanged,
- * part -> Partially Paid, exact -> Paid, more -> refused. Every deduction category counts. There is no GST.
+ * part -> Partially Paid, exact -> Paid, more -> refused. Every deduction category counts. GST is never a deduction or a payment field; the invoice-level
+ * GST snapshot (see invoiceGst/) only changes the settlement TARGET of an invoice that has one. The invoices SEEDED in this file have no snapshot, i.e.
+ * they are LEGACY invoices, which keep settling on their taxable amount exactly as before.
  */
 
 const TAG = `ipay-${Date.now()}`;
@@ -280,7 +282,7 @@ test("Security Deposit and ISD persist their expected release and reminder dates
   assert.equal(worse.status, 400);
 });
 
-test("GST does not exist in this workflow: GST fields are ignored, GST TDS is not a category, and a project's GST switch changes nothing", async () => {
+test("GST is not a payment field: GST fields are ignored, GST TDS is not a category, and a project's GST switch changes nothing for a legacy invoice", async () => {
   const P = projects.INR!; // its GST switch is ON
   const inv = await seedInvoice(P);
   const res = await api("POST", "/invoice-payments", "recorder", { ...pay(P, inv.invoiceNo, "60000.00", [["TDS", "40000.00"]]), gst: { ratePercent: "18", amount: "18000.00" } });
@@ -288,8 +290,11 @@ test("GST does not exist in this workflow: GST fields are ignored, GST TDS is no
   assert.equal(res.data.newInvoiceStatus, "Paid", "settled against the invoice amount alone, with no GST due");
   const row = await prisma.invoicePayment.findUniqueOrThrow({ where: { id: res.data.payment.id }, include: { receipts: true } });
   assert.deepEqual([row.gstApplicable, row.gstAmount, row.gstRatePercent, row.receipts[0]!.gstReceived.toFixed(2)], [false, null, null, "0.00"], "a GST figure in the request is not stored");
-  const text = JSON.stringify(res.body);
-  assert.ok(!/"gst[A-Za-z]*"|GST/.test(text), `no GST key or text anywhere in the response: ${text.match(/.{30}("gst[A-Za-z]*"|GST).{30}/)?.[0]}`);
+  // No GST appears in the payment, its receipts / deductions or the settlement summary; the only GST in the response is the invoice's own breakdown,
+  // which for a legacy invoice says so and adds no tax.
+  const paymentText = JSON.stringify({ payment: res.data.payment, summary: res.data.overview.summary, payments: res.data.overview.payments });
+  assert.ok(!/"gst[A-Za-z]*"|GST/.test(paymentText), `no GST key or text in the payment / summary: ${paymentText.match(/.{30}("gst[A-Za-z]*"|GST).{30}/)?.[0]}`);
+  assert.deepEqual([res.data.overview.invoice.gst.availability, res.data.overview.invoice.gst.gstAmount, res.data.overview.invoice.gst.totalAmount], ["LEGACY", "0.00", "100000.00"]);
 
   const other = await seedInvoice(P);
   const gstTds = await api("POST", "/invoice-payments", "recorder", pay(P, other.invoiceNo, "1.00", [["GST_TDS", "1.00"]]));
@@ -597,7 +602,8 @@ test("the invoice is re-raised after a reversal: the old reversed payment neithe
   const oldId = paid.data.payment.id as string;
   assert.equal((await api("POST", `/invoice-payments/${oldId}/reverse`, "recorder", { reason: "invoice must be re-raised" })).status, 200);
   assert.equal((await patchLine("recorder", inv.lineIds[0]!, { status: "Cancelled" })).status, 200);
-  const reraised = await api("POST", `/quantity/${P.qi}/invoice-lines`, "recorder", { invoiceNo: inv.invoiceNo, invoiceIntent: "existing", invoiceDate: "2026-10-02", quantityBilled: 0, invoiceAmountINR: 100000, status: "Raised" });
+  // Re-raising on a project whose GST switch is ON is a deliberate raise, so the GST choice is explicit (0% here keeps the target at the taxable 1,00,000).
+  const reraised = await api("POST", `/quantity/${P.qi}/invoice-lines`, "recorder", { invoiceNo: inv.invoiceNo, invoiceIntent: "existing", invoiceDate: "2026-10-02", quantityBilled: 0, invoiceAmountINR: 100000, status: "Raised", gst: { applicable: true, ratePercent: 0, taxType: "IGST" } });
   assert.equal(reraised.status, 201, reraised.message);
   const before = await overviewOf("recorder", P, inv.invoiceNo);
   assert.deepEqual([before.data.payments, before.data.invoice.status, before.data.invoice.recordBlockedReason], [[], "Raised", null]);

@@ -6,7 +6,7 @@ import {
   getMilestonesForProject,
   getMlmpSetLabel,
   computeGstTax,
-  isGstApplicableForInvoice,
+  getInvoicePrintGst,
   isInterStateSupply,
   round,
   type GstTaxSplit,
@@ -115,7 +115,7 @@ export function mapProjectToInvoiceDocumentDTO(
           activityName: item.description,
           descriptionNotes: line.milestoneName || line.description || "",
           hsnSac: "998399", // Standard Engineering & Consulting HSN/SAC Code
-          gstRatePercent: project.gstRate || 18,
+          gstRatePercent: getInvoicePrintGst(project, invoiceNo, printCurrency.currency).ratePercent,
           basicUnitRateINR: unitRate,
           uom: item.uom || "MAN-HOUR",
           quantity: line.quantityBilled,
@@ -130,8 +130,10 @@ export function mapProjectToInvoiceDocumentDTO(
   subtotal = round(subtotal);
 
   // GST applicability — the same shared rule the Raise Invoice workspaces use
-  const isGstApplicable = isGstApplicableForInvoice(project, printCurrency.currency);
-  const gstRate = isGstApplicable ? (project.gstRate || 18) : 0;
+  // GST as saved with the invoice (its snapshot) - or, for an invoice with none, as it always was from the project setting.
+  const printGst = getInvoicePrintGst(project, invoiceNo, printCurrency.currency);
+  const isGstApplicable = printGst.isApplicable;
+  const gstRate = printGst.isApplicable ? printGst.ratePercent : 0;
   const buyerInfo = details.buyerInformation || {
     companyName: project.client || "",
     billingAddress: "",
@@ -144,7 +146,7 @@ export function mapProjectToInvoiceDocumentDTO(
     email: project.emailId || "",
   };
 
-  const isInterState = isInterStateSupply(buyerInfo.stateName);
+  const isInterState = printGst.isInterState ?? isInterStateSupply(buyerInfo.stateName);
 
   const { cgst, sgst, igst, totalTax } = isGstApplicable ? computeGstTax(subtotal, gstRate, isInterState) : NO_GST;
 
@@ -301,8 +303,10 @@ export function mapProjectToLumpSumInvoiceDocumentDTO(
     });
   });
 
-  const isGstApplicable = isGstApplicableForInvoice(project, printCurrency.currency);
-  const gstRate = isGstApplicable ? project.gstRate || 18 : 0;
+  // GST as saved with the invoice (its snapshot) - or, for an invoice with none, as it always was from the project setting.
+  const printGst = getInvoicePrintGst(project, invoiceNo, printCurrency.currency);
+  const isGstApplicable = printGst.isApplicable;
+  const gstRate = printGst.isApplicable ? printGst.ratePercent : 0;
 
   const buyerInfo = details.buyerInformation || {
     companyName: project.client || "",
@@ -316,7 +320,7 @@ export function mapProjectToLumpSumInvoiceDocumentDTO(
     email: project.emailId || "",
   };
 
-  const isInterState = isInterStateSupply(buyerInfo.stateName);
+  const isInterState = printGst.isInterState ?? isInterStateSupply(buyerInfo.stateName);
 
   const { cgst, sgst, igst, totalTax } = isGstApplicable ? computeGstTax(subtotal, gstRate, isInterState) : NO_GST;
 
@@ -455,8 +459,10 @@ export function mapProjectToMlmpInvoiceDocumentDTO(
     });
   });
 
-  const isGstApplicable = isGstApplicableForInvoice(project, printCurrency.currency);
-  const gstRate = isGstApplicable ? project.gstRate || 18 : 0;
+  // GST as saved with the invoice (its snapshot) - or, for an invoice with none, as it always was from the project setting.
+  const printGst = getInvoicePrintGst(project, invoiceNo, printCurrency.currency);
+  const isGstApplicable = printGst.isApplicable;
+  const gstRate = printGst.isApplicable ? printGst.ratePercent : 0;
 
   const buyerInfo = details.buyerInformation || {
     companyName: project.client || "",
@@ -470,7 +476,7 @@ export function mapProjectToMlmpInvoiceDocumentDTO(
     email: project.emailId || "",
   };
 
-  const isInterState = isInterStateSupply(buyerInfo.stateName);
+  const isInterState = printGst.isInterState ?? isInterStateSupply(buyerInfo.stateName);
 
   const { cgst, sgst, igst, totalTax } = isGstApplicable ? computeGstTax(subtotal, gstRate, isInterState) : NO_GST;
 
@@ -600,8 +606,10 @@ export function mapProjectToAmountBasedInvoiceDocumentDTO(
     });
   });
 
-  const isGstApplicable = isGstApplicableForInvoice(project, printCurrency.currency);
-  const gstRate = isGstApplicable ? project.gstRate || 18 : 0;
+  // GST as saved with the invoice (its snapshot) - or, for an invoice with none, as it always was from the project setting.
+  const printGst = getInvoicePrintGst(project, invoiceNo, printCurrency.currency);
+  const isGstApplicable = printGst.isApplicable;
+  const gstRate = printGst.isApplicable ? printGst.ratePercent : 0;
 
   const buyerInfo = details.buyerInformation || {
     companyName: project.client || "",
@@ -615,7 +623,7 @@ export function mapProjectToAmountBasedInvoiceDocumentDTO(
     email: project.emailId || "",
   };
 
-  const isInterState = isInterStateSupply(buyerInfo.stateName);
+  const isInterState = printGst.isInterState ?? isInterStateSupply(buyerInfo.stateName);
 
   const { cgst, sgst, igst, totalTax } = isGstApplicable ? computeGstTax(subtotal, gstRate, isInterState) : NO_GST;
 

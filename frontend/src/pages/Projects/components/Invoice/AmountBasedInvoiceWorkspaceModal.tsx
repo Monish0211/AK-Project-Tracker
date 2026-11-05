@@ -25,6 +25,8 @@ import { InvoiceCurrencyFields } from "./InvoiceCurrencyFields";
 import { useInvoiceCurrencyState } from "./useInvoiceCurrencyState";
 import { InvoiceNumberField } from "./InvoiceNumberField";
 import { useInvoiceNumberField } from "./useInvoiceNumberField";
+import { useInvoiceGstChoice } from "./useInvoiceGstChoice";
+import { InvoiceGstSelector } from "./InvoiceGstSelector";
 import { amountsFromOriginal, formatInvoiceMoney, getLineOriginalAmount, isForeignCurrency, roundToMinorUnit } from "./invoiceCurrency";
 import { InrReferenceNote, InvoiceTotalBoxes } from "./InvoiceTotalBoxes";
 
@@ -175,6 +177,8 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
   // Manual invoice numbering — the user's Tally number (required, editable for a new invoice).
   const numberField = useInvoiceNumberField(project, invoiceNo);
   const { currency: invoiceCurrency, selection: currencySelection } = currencyState;
+  // Invoice-level GST snapshot (Nov 2026): the GST rate / tax type — frozen from the saved snapshot, or chosen here for a first raise.
+  const gstChoice = useInvoiceGstChoice(project, invoiceNo, invoiceCurrency);
   const isForeign = isForeignCurrency(invoiceCurrency);
   const selectionRate = currencySelection?.exchangeRateToINR ?? null;
 
@@ -241,10 +245,10 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
   // INR equivalent — unchanged meaning for an INR invoice (it IS the entered total).
   const totalInvoiceAmount = round(selectedRows.reduce((sum, row) => sum + row.invoiceAmountINR, 0));
   const totalOriginalAmount = roundToMinorUnit(selectedRows.reduce((sum, row) => sum + row.invoiceAmount, 0), invoiceCurrency);
-  const gst = getGstBreakdown(project, totalInvoiceAmount, invoiceCurrency, invoiceNo);
+  const gst = getGstBreakdown(project, totalInvoiceAmount, invoiceCurrency, invoiceNo, gstChoice.selection);
   const hasRowError = rows.some((row) => row.error);
   const canSave =
-    selectedRows.length > 0 && !hasRowError && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
+    selectedRows.length > 0 && !hasRowError && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking && !gstChoice.blockerFor(invoiceStatus);
 
   const handleSave = async () => {
     if (!canSave || !currencySelection) return;
@@ -318,7 +322,7 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
       } satisfies ProjectNote);
     }
 
-    onSave({ ...project, invoiceItems: updatedItems, notes });
+    onSave({ ...project, invoiceItems: updatedItems, notes, ...gstChoice.toProjectPatch(savedInvoiceNo) });
   };
 
   return (
@@ -472,6 +476,8 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
                   </ul>
                 )}
               </div>
+
+              <InvoiceGstSelector choice={gstChoice} status={invoiceStatus} />
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">

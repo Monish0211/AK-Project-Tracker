@@ -3,6 +3,9 @@
  * quantity.dto.ts/milestone.dto.ts: response DTOs describe what the API
  * returns; Create/Update/Ingest DTOs describe what a request body carries.
  */
+
+import type { InvoiceGstSnapshotDto } from "../../invoiceGst/invoiceGst.service.js";
+
 export interface CreateInvoiceLineDto {
   invoiceNo: string;
   invoiceDate: string;
@@ -83,6 +86,8 @@ export interface InvoiceLineDto {
   recordedCashINR?: number;
   /** Cash plus the deductions the business counts (TDS) allocated to this line, in INR — what reduces Outstanding. */
   settledINR?: number;
+  /** Invoice-level GST snapshot (Nov 2026) - the same object on every line of an invoice that has one; absent for a legacy / Draft invoice. */
+  gstSnapshot?: InvoiceGstSnapshotDto;
 
   createdAt: Date;
   updatedAt: Date;

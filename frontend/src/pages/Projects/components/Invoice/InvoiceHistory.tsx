@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Edit2, Eye, History, Printer, Receipt, Send, Trash2 } from "lucide-react";
 import type { Project } from "../../../../types/Project";
-import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
+import type { InvoiceGstSelection, InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
 import { Card, CardBody, CardHeader } from "../../../../components/ui/Card";
 import { Badge, type Tone } from "../../../../components/ui/Badge";
 import { Input } from "../../../../components/ui/Input";
@@ -24,7 +24,9 @@ import {
 import { formatIndianCurrency } from "../../../../utils/formatCurrency";
 import { InvoicePaymentDetailsModal } from "./InvoicePaymentDetailsModal";
 import { buildInvoicePaymentContext, invoiceHasRecordedPayment } from "./invoicePaymentDetails";
-import { formatInvoiceMoney, getLineCurrency, getLineOriginalAmount, isForeignCurrency } from "./invoiceCurrency";
+import { InvoiceGstChoiceDialog } from "./InvoiceGstChoiceDialog";
+import { isGstChoiceNeeded } from "./invoiceGst";
+import { formatInvoiceMoney, getInvoiceCycleCurrency, getLineCurrency, getLineOriginalAmount, isForeignCurrency } from "./invoiceCurrency";
 
 interface Props {
   project: Project;
@@ -33,8 +35,8 @@ interface Props {
   onEdit?: (item: InvoiceItem, line: InvoiceLine) => void;
   /** Omit to hide the Delete action entirely — e.g. in a read-only context. */
   onDelete?: (item: InvoiceItem, line: InvoiceLine) => void;
-  /** Update status for an entire invoice cycle / group. */
-  onUpdateInvoiceStatus?: (invoiceNo: string, newStatus: InvoiceLineStatus) => void;
+  /** Update status for an entire invoice cycle / group. `gstSelection` accompanies the first raise of an invoice that GST applies to. */
+  onUpdateInvoiceStatus?: (invoiceNo: string, newStatus: InvoiceLineStatus, gstSelection?: InvoiceGstSelection) => void;
   /** Opens the Print Invoice Document modal for this line's invoice cycle — the same isolated-iframe print pipeline used everywhere else, never a raw window.print(). */
   onPrintInvoice?: (invoiceNo: string) => void;
   /** Request Invoice workflow — Section C: "Send Invoice To." Omit to hide the action entirely — e.g. in a read-only context, or for a Draft line (nothing has actually been raised yet to share). */
@@ -108,6 +110,8 @@ export function InvoiceHistory({
   const [deleteTarget, setDeleteTarget] = useState<{ item: InvoiceItem; line: InvoiceLine } | null>(null);
   // Choosing "Paid" or "Partially Paid" never applies the status here - it opens the Record Payment popup, where recording the payment is the only way to reach either.
   const [paymentDetailsInvoiceNo, setPaymentDetailsInvoiceNo] = useState<string | null>(null);
+  // Raising an invoice that GST applies to (and that has no GST snapshot yet) first asks for its rate and tax type, which are fixed on raise.
+  const [gstChoiceInvoiceNo, setGstChoiceInvoiceNo] = useState<string | null>(null);
 
   // Lump Sum and MLMP both bill against milestone percentages, not activity
   // quantities — the Qty Invoiced/Unit Rate/System Amount/Commercial
@@ -332,6 +336,13 @@ export function InvoiceHistory({
                                     setPaymentDetailsInvoiceNo(group.invoiceNo);
                                     return;
                                   }
+                                  if (
+                                    (nextStatus === "Raised") &&
+                                    isGstChoiceNeeded(project, group.invoiceNo, getInvoiceCycleCurrency(project, group.invoiceNo)?.currency ?? "INR")
+                                  ) {
+                                    setGstChoiceInvoiceNo(group.invoiceNo);
+                                    return;
+                                  }
                                   onUpdateInvoiceStatus(group.invoiceNo, nextStatus);
                                 }}
                                 className={`appearance-none pl-6 pr-6 py-1 rounded-md text-[11px] font-bold border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-[var(--nu-accent)] ${STATUS_DROPDOWN_STYLES[group.status]}`}
@@ -500,6 +511,18 @@ export function InvoiceHistory({
           context={buildInvoicePaymentContext(project, paymentDetailsInvoiceNo)}
           {...(onPaymentChanged && { onPaymentChanged })}
           onClose={() => setPaymentDetailsInvoiceNo(null)}
+        />
+      )}
+
+      {gstChoiceInvoiceNo !== null && (
+        <InvoiceGstChoiceDialog
+          project={project}
+          invoiceNo={gstChoiceInvoiceNo}
+          onCancel={() => setGstChoiceInvoiceNo(null)}
+          onConfirm={(selection) => {
+            onUpdateInvoiceStatus?.(gstChoiceInvoiceNo, "Raised", selection);
+            setGstChoiceInvoiceNo(null);
+          }}
         />
       )}
 

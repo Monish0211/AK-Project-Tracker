@@ -40,11 +40,6 @@ export function InvoiceTotalBoxes({ gst, currency, originalTotal, inrTotal, gran
         <div className={boxClass}>
           <p className={labelClass}>GST — {describeGstTreatment(gst)}</p>
           <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums">{formatIndianCurrency(gst.gstAmount)}</p>
-          {!gst.buyerStateKnown && (
-            <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-              Buyer state not entered yet — becomes IGST if the buyer is outside Tamil Nadu.
-            </p>
-          )}
         </div>
       )}
       <div className={`bg-white/90 dark:bg-slate-900/90 p-3 rounded-xl border border-blue-300 dark:border-cyan-800 ${grandTotalClassName}`}>

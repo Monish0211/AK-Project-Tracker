@@ -27,6 +27,8 @@ import { InvoiceCurrencyFields } from "./InvoiceCurrencyFields";
 import { useInvoiceCurrencyState } from "./useInvoiceCurrencyState";
 import { InvoiceNumberField } from "./InvoiceNumberField";
 import { useInvoiceNumberField } from "./useInvoiceNumberField";
+import { useInvoiceGstChoice } from "./useInvoiceGstChoice";
+import { InvoiceGstSelector } from "./InvoiceGstSelector";
 import { amountsFromInr, formatInvoiceMoney, isForeignCurrency, sumAmountsFromInr } from "./invoiceCurrency";
 
 interface Props {
@@ -249,6 +251,8 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
   // Manual invoice numbering — the user's Tally number (required, editable for a new invoice).
   const numberField = useInvoiceNumberField(project, invoiceNo);
   const { currency: invoiceCurrency, selection: currencySelection } = currencyState;
+  // Invoice-level GST snapshot (Nov 2026): the GST rate / tax type — frozen from the saved snapshot, or chosen here for a first raise.
+  const gstChoice = useInvoiceGstChoice(project, invoiceNo, invoiceCurrency);
   const isForeign = isForeignCurrency(invoiceCurrency);
 
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>(() => {
@@ -309,10 +313,10 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
   const totalInvoiceValue = round(rows.filter((row) => row.currentQty > 0).reduce((sum, row) => sum + row.invoiceValue, 0));
   // Same shared rule + arithmetic as the other three workspaces and the printed
   // invoice: GST only for an INR invoice on a GST-applicable INR project.
-  const gst = getGstBreakdown(project, totalInvoiceValue, invoiceCurrency, invoiceNo);
+  const gst = getGstBreakdown(project, totalInvoiceValue, invoiceCurrency, invoiceNo, gstChoice.selection);
   const hasBillableRow = rows.some((row) => row.currentQty > 0);
   const hasRowError = rows.some((row) => row.error);
-  const canSave = hasBillableRow && !hasRowError && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
+  const canSave = hasBillableRow && !hasRowError && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking && !gstChoice.blockerFor(invoiceStatus);
   // Foreign-currency invoice total — the sum of each line's own derived original amount, exactly what will be saved.
   // (OMR keeps its 3 decimals.)
   const totalOriginalValue =
@@ -388,7 +392,7 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
       notes.unshift(systemNote);
     }
 
-    onSave({ ...project, invoiceItems: updatedItems, notes });
+    onSave({ ...project, invoiceItems: updatedItems, notes, ...gstChoice.toProjectPatch(savedInvoiceNo) });
   };
 
   return (
@@ -532,11 +536,6 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
                         <tr className="bg-slate-50/80 dark:bg-slate-800/50">
                           <td colSpan={6} className="px-3 py-2 text-right font-bold text-[var(--nu-text-muted)] uppercase text-[11px] tracking-wide">
                             GST — {describeGstTreatment(gst)}
-                            {!gst.buyerStateKnown && (
-                              <span className="block normal-case font-medium text-[10px] tracking-normal">
-                                Buyer state not entered yet — becomes IGST if the buyer is outside Tamil Nadu.
-                              </span>
-                            )}
                           </td>
                           <td className="px-3 py-2 text-right font-extrabold text-[var(--nu-text)] tabular-nums whitespace-nowrap">
                             {formatIndianCurrency(gst.gstAmount)}
@@ -569,6 +568,8 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
                 </table>
               </div>
             </div>
+
+            <InvoiceGstSelector choice={gstChoice} status={invoiceStatus} />
 
             {/* Remarks */}
             <div>

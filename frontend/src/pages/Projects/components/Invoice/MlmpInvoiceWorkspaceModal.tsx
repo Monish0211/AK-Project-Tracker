@@ -32,6 +32,8 @@ import { InvoiceCurrencyFields } from "./InvoiceCurrencyFields";
 import { useInvoiceCurrencyState } from "./useInvoiceCurrencyState";
 import { InvoiceNumberField } from "./InvoiceNumberField";
 import { useInvoiceNumberField } from "./useInvoiceNumberField";
+import { useInvoiceGstChoice } from "./useInvoiceGstChoice";
+import { InvoiceGstSelector } from "./InvoiceGstSelector";
 import { amountsFromInr, formatInvoiceMoney, isForeignCurrency, sumAmountsFromInr } from "./invoiceCurrency";
 import { InrReferenceNote, InvoiceTotalBoxes } from "./InvoiceTotalBoxes";
 
@@ -198,6 +200,8 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
   // Manual invoice numbering — the user's Tally number (required, editable for a new invoice).
   const numberField = useInvoiceNumberField(project, invoiceNo);
   const { currency: invoiceCurrency, selection: currencySelection } = currencyState;
+  // Invoice-level GST snapshot (Nov 2026): the GST rate / tax type — frozen from the saved snapshot, or chosen here for a first raise.
+  const gstChoice = useInvoiceGstChoice(project, invoiceNo, invoiceCurrency);
   const isForeign = isForeignCurrency(invoiceCurrency);
 
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => {
@@ -342,10 +346,10 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
   }, [items, selectedItemIds, selectedKeys, selectedItem, selectedSets, project]);
 
   const totalInvoiceAmount = round(globalSelectedRows.reduce((sum, row) => sum + row.milestone.invoiceAmount, 0));
-  const gst = getGstBreakdown(project, totalInvoiceAmount, invoiceCurrency, invoiceNo);
+  const gst = getGstBreakdown(project, totalInvoiceAmount, invoiceCurrency, invoiceNo, gstChoice.selection);
   const activitiesTouched = selectedItemIds.size;
 
-  const canSave = globalSelectedRows.length > 0 && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
+  const canSave = globalSelectedRows.length > 0 && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking && !gstChoice.blockerFor(invoiceStatus);
 
   /** Original-currency + saved-INR totals of the lines the given rows will actually be saved as (null for an INR invoice). OMR keeps 3 decimals. */
   const sumForeign = (amountsINR: number[]) => (isForeign && currencySelection ? sumAmountsFromInr(amountsINR, currencySelection) : null);
@@ -453,7 +457,7 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
       } satisfies ProjectNote);
     }
 
-    onSave({ ...project, invoiceItems: updatedItems, notes });
+    onSave({ ...project, invoiceItems: updatedItems, notes, ...gstChoice.toProjectPatch(savedInvoiceNo) });
   };
 
   return (
@@ -725,6 +729,8 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
                         <Receipt size={16} className="text-blue-600 dark:text-cyan-400" />
                         <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 dark:text-white">Invoice Summary</h4>
                       </div>
+
+                      <InvoiceGstSelector choice={gstChoice} status={invoiceStatus} />
 
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                         <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">

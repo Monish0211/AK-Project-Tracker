@@ -1,4 +1,4 @@
-import type { InvoiceCurrency, InvoiceItem, InvoiceLine, InvoiceLineStatus, InvoiceMethod } from "../../../../types/InvoiceItem";
+import type { InvoiceCurrency, InvoiceGstSelection, InvoiceGstSnapshot, InvoiceGstTaxType, InvoiceItem, InvoiceLine, InvoiceLineStatus, InvoiceMethod } from "../../../../types/InvoiceItem";
 import type { Project } from "../../../../types/Project";
 import type { Tone } from "../../../../components/ui/Badge";
 import {
@@ -456,8 +456,25 @@ export function getMlmpSetRows(project: Project, item: InvoiceItem): MlmpSetGrou
   });
 }
 
+/**
+ * Where a GstBreakdown's rate and tax type came from:
+ * - "snapshot": the invoice's saved GST snapshot — frozen when it was first raised (Nov 2026);
+ * - "selection": what the user has just chosen on the invoice that is about to be raised;
+ * - "none": neither yet (a Draft before the choice is made, a legacy invoice, a foreign-currency invoice) — no GST is shown. The project's
+ *   Quantity-section GST switch and rate are NOT used: invoice GST is entered on the invoice itself.
+ */
+export type GstSource = "snapshot" | "selection" | "none";
+
+/** GST can be chosen only for an INR invoice (a foreign-currency invoice never carries GST). The project's GST switch is not consulted. */
+export function isGstSelectableForInvoice(invoiceCurrency: InvoiceCurrency): boolean {
+  return invoiceCurrency === "INR";
+}
+
 export interface GstBreakdown {
   isApplicable: boolean;
+  source: GstSource;
+  /** The tax treatment applied; null when GST does not apply. */
+  taxType: InvoiceGstTaxType | null;
   ratePercent: number;
   gstAmount: number;
   grandTotal: number;
@@ -534,30 +551,111 @@ export function computeGstTax(subtotal: number, ratePercent: number, isInterStat
  * the same state, rule (isInterStateSupply) and arithmetic (computeGstTax)
  * the printout uses, so screen and print always show the same tax.
  */
-export function getGstBreakdown(project: Project, baseAmount: number, invoiceCurrency: InvoiceCurrency, invoiceNo: string): GstBreakdown {
-  const isApplicable = isGstApplicableForInvoice(project, invoiceCurrency);
-  const ratePercent = isApplicable ? project.gstRate || 18 : 0;
-  const buyerState = getSavedBuyerState(project, invoiceNo);
-  const isInterState = isInterStateSupply(buyerState);
-  const split = isApplicable ? computeGstTax(baseAmount, ratePercent, isInterState) : { cgst: 0, sgst: 0, igst: 0, totalTax: 0 };
-  const grandTotal = round(baseAmount + split.totalTax);
-  return {
-    isApplicable,
-    ratePercent,
-    gstAmount: split.totalTax,
-    grandTotal,
-    isInterState,
-    buyerStateKnown: buyerState !== "",
-    cgst: split.cgst,
-    sgst: split.sgst,
-    igst: split.igst,
+export function getGstBreakdown(
+  project: Project,
+  baseAmount: number,
+  invoiceCurrency: InvoiceCurrency,
+  invoiceNo: string,
+  /** What the user has chosen for an invoice that has no snapshot yet (see InvoiceGstSelection); ignored once the invoice has one. */
+  selection?: InvoiceGstSelection | null
+): GstBreakdown {
+  const none = { cgst: 0, sgst: 0, igst: 0, totalTax: 0 };
+  const build = (
+    source: GstSource,
+    isApplicable: boolean,
+    ratePercent: number,
+    isInterState: boolean,
+    buyerStateKnown: boolean
+  ): GstBreakdown => {
+    const split = isApplicable ? computeGstTax(baseAmount, ratePercent, isInterState) : none;
+    return {
+      isApplicable,
+      source,
+      taxType: isApplicable ? (isInterState ? "IGST" : "CGST_SGST") : null,
+      ratePercent: isApplicable ? ratePercent : 0,
+      gstAmount: split.totalTax,
+      grandTotal: round(baseAmount + split.totalTax),
+      isInterState,
+      buyerStateKnown,
+      cgst: split.cgst,
+      sgst: split.sgst,
+      igst: split.igst,
+    };
   };
+
+  // The invoice's own saved snapshot wins over everything: its rate and tax type were frozen when it was raised, so a later change to the
+  // project's GST switch or rate can never change this invoice. Only the amount (the lines being edited) moves.
+  const snapshot = findInvoiceGstSnapshot(project, invoiceNo);
+  const fromSnapshot = (saved: InvoiceGstSnapshot) =>
+    saved.gstStatus !== "APPLICABLE"
+      ? build("snapshot", false, 0, false, saved.buyerStateKnown)
+      : build("snapshot", true, Number(saved.ratePercent ?? 0), saved.taxType === "IGST", saved.buyerStateKnown);
+  // Once the invoice has been raised its snapshot is FROZEN and wins over everything. While it is still a Draft the saved choice can be
+  // changed: what the user is choosing right now (if anything) is shown, otherwise the saved choice.
+  if (snapshot && invoiceHasRaisedLine(project, invoiceNo)) return fromSnapshot(snapshot);
+
+  const buyerStateKnown = getSavedBuyerState(project, invoiceNo) !== "";
+  if (!isGstSelectableForInvoice(invoiceCurrency)) return build("none", false, 0, false, buyerStateKnown);
+  if (selection) {
+    if (!selection.applicable) return build("selection", false, 0, false, buyerStateKnown);
+    return build("selection", true, selection.ratePercent, selection.taxType === "IGST", selection.buyerStateKnown);
+  }
+  return snapshot ? fromSnapshot(snapshot) : build("none", false, 0, false, buyerStateKnown);
+}
+
+/** Whether any line of this invoice is already raised (Raised / Partially Paid / Paid): from then on its GST snapshot is frozen. */
+export function invoiceHasRaisedLine(project: Project, invoiceNo: string): boolean {
+  const key = invoiceNoKey(invoiceNo);
+  return (project.invoiceItems ?? []).some((item) =>
+    (item.invoices ?? []).some((line) => invoiceNoKey(line.invoiceNo) === key && isRaisedInvoiceStatus(line.status))
+  );
+}
+
+/**
+ * The GST a PRINTED invoice shows. An invoice with a saved snapshot prints exactly that snapshot (its rate and tax type; "no GST" prints
+ * none) - so the printout always matches what was chosen on the invoice and what the payment screen settles. An invoice with no snapshot
+ * (a Draft, or one raised before snapshots existed) prints as it always has: from the project's GST setting.
+ * `isInterState` is null when the tax type is not fixed by a snapshot (the buyer state decides, as before).
+ */
+export function getInvoicePrintGst(
+  project: Project,
+  invoiceNo: string,
+  invoiceCurrency: InvoiceCurrency
+): { isApplicable: boolean; ratePercent: number; isInterState: boolean | null } {
+  const snapshot = findInvoiceGstSnapshot(project, invoiceNo);
+  if (snapshot) {
+    return snapshot.gstStatus === "APPLICABLE"
+      ? { isApplicable: true, ratePercent: Number(snapshot.ratePercent ?? 0), isInterState: snapshot.taxType === "IGST" }
+      : { isApplicable: false, ratePercent: 0, isInterState: null };
+  }
+  return { isApplicable: isGstApplicableForInvoice(project, invoiceCurrency), ratePercent: project.gstRate || 18, isInterState: null };
+}
+
+/** Invoice numbers compared ignoring case and outer spaces — the way the server's register does. */
+const invoiceNoKey = (value: string): string => value.trim().toUpperCase();
+
+/**
+ * The GST snapshot saved for this invoice (every line of one invoice carries the same one), or undefined for a Draft and for a LEGACY
+ * invoice raised before snapshots existed. The single reader of the persisted snapshot — all four workspaces, the history screens and the
+ * payment screen go through here.
+ */
+export function findInvoiceGstSnapshot(project: Project, invoiceNo: string): InvoiceGstSnapshot | undefined {
+  const key = invoiceNoKey(invoiceNo);
+  for (const item of project.invoiceItems ?? []) {
+    for (const line of item.invoices ?? []) {
+      if (line.gstSnapshot && invoiceNoKey(line.invoiceNo) === key) return line.gstSnapshot;
+    }
+  }
+  return undefined;
 }
 
 /** "IGST 18%" or "CGST 9% + SGST 9%" — the treatment actually applied. */
 export function describeGstTreatment(gst: GstBreakdown): string {
   return gst.isInterState ? `IGST ${gst.ratePercent}%` : `CGST ${gst.ratePercent / 2}% + SGST ${gst.ratePercent / 2}%`;
 }
+
+/** The GST invoice-status groups the snapshot lifecycle keys on: only these count as "raised" (a Draft and a Cancelled line do not). */
+export const isRaisedInvoiceStatus = (status: InvoiceLineStatus | string): boolean => status === "Raised" || status === "PartiallyPaid" || status === "Paid";
 
 export const INVOICE_LINE_STATUS_LABEL: Record<InvoiceLineStatus, string> = {
   Draft: "Draft",

@@ -25,6 +25,8 @@ import { InvoiceCurrencyFields } from "./InvoiceCurrencyFields";
 import { useInvoiceCurrencyState } from "./useInvoiceCurrencyState";
 import { InvoiceNumberField } from "./InvoiceNumberField";
 import { useInvoiceNumberField } from "./useInvoiceNumberField";
+import { useInvoiceGstChoice } from "./useInvoiceGstChoice";
+import { InvoiceGstSelector } from "./InvoiceGstSelector";
 import { amountsFromInr, formatInvoiceMoney, isForeignCurrency, sumAmountsFromInr } from "./invoiceCurrency";
 import { InrReferenceNote, InvoiceTotalBoxes } from "./InvoiceTotalBoxes";
 
@@ -97,6 +99,8 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
   // Manual invoice numbering — the user's Tally number (required, editable for a new invoice).
   const numberField = useInvoiceNumberField(project, invoiceNo);
   const { currency: invoiceCurrency, selection: currencySelection } = currencyState;
+  // Invoice-level GST snapshot (Nov 2026): the GST rate / tax type — frozen from the saved snapshot, or chosen here for a first raise.
+  const gstChoice = useInvoiceGstChoice(project, invoiceNo, invoiceCurrency);
   const isForeign = isForeignCurrency(invoiceCurrency);
 
   const [selectedMilestoneIds, setSelectedMilestoneIds] = useState<Set<string>>(() => {
@@ -121,9 +125,9 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
   const selectedRows = milestoneRows.filter((row) => selectedMilestoneIds.has(row.id));
   const totalPercent = round(selectedRows.reduce((sum, row) => sum + row.percent, 0));
   const invoiceAmount = round(selectedRows.reduce((sum, row) => sum + row.invoiceAmount, 0));
-  const gst = getGstBreakdown(project, invoiceAmount, invoiceCurrency, invoiceNo);
+  const gst = getGstBreakdown(project, invoiceAmount, invoiceCurrency, invoiceNo, gstChoice.selection);
 
-  const canSave = selectedRows.length > 0 && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking;
+  const canSave = selectedRows.length > 0 && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking && !gstChoice.blockerFor(invoiceStatus);
 
   // Original-currency total = the sum of every line handleSave() will actually create
   // (one per activity x selected milestone), each derived independently —
@@ -220,7 +224,7 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
       } satisfies ProjectNote);
     }
 
-    onSave({ ...project, invoiceItems: updatedItems, notes });
+    onSave({ ...project, invoiceItems: updatedItems, notes, ...gstChoice.toProjectPatch(savedInvoiceNo) });
   };
 
   return (
@@ -398,6 +402,8 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
                   </ul>
                 )}
               </div>
+
+              <InvoiceGstSelector choice={gstChoice} status={invoiceStatus} />
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">

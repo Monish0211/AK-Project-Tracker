@@ -1,7 +1,8 @@
-import type { InvoiceCurrency, InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../types/InvoiceItem";
+import type { InvoiceCurrency, InvoiceGstSelection, InvoiceGstSnapshot, InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../types/InvoiceItem";
 import { isSupportedCurrency } from "../constants/currencies";
 import { getProjectById, getProjects, saveProjects } from "./projectService";
 import { apiClient } from "./apiClient";
+import { computeGstTax } from "../pages/Projects/components/Invoice/InvoiceCalculations";
 
 // =============================================================================
 // INVOICE BACKEND PHASE — FRONTEND INTEGRATION
@@ -45,6 +46,8 @@ interface BackendInvoiceLineDto {
   // Invoice Payment workflow (Nov 2026) — present only for a line whose invoice has a recorded payment.
   recordedCashINR?: number;
   settledINR?: number;
+  // Invoice-level GST snapshot (Nov 2026) — present only for an invoice raised under the feature.
+  gstSnapshot?: InvoiceGstSnapshot;
   clientReference: string | null;
   remarks: string | null;
   status: string;
@@ -98,6 +101,19 @@ interface InvoiceLinePayload {
   currency?: InvoiceCurrency;
   exchangeRateToINR?: number;
   invoiceAmountOriginal?: number;
+  /** Invoice-level GST snapshot (Nov 2026) — the rate / tax type chosen for this invoice, sent only with the write that FIRST raises it. */
+  gst?: GstDeclarationPayload;
+}
+
+/** The body of `gst` on a create / update line request (see Backend's gstDeclarationSchema). The server recalculates and validates everything. */
+export interface GstDeclarationPayload {
+  /** false = an explicit "this invoice carries no GST" (no other field is sent). */
+  applicable: boolean;
+  ratePercent?: number;
+  taxType?: "IGST" | "CGST_SGST";
+  buyerStateKnown?: boolean;
+  /** The GST amount the screen showed — sent only when the invoice has a single line, so the server can refuse a figure it does not reproduce. */
+  expectedGstAmount?: number;
 }
 
 /** Same as InvoiceLinePayload, plus the id/quantityItemId being adopted and the historical snapshot fields preserved verbatim — Ingest-only, never sent by the ordinary create path. */
@@ -163,6 +179,7 @@ function toInvoiceLine(dto: BackendInvoiceLineDto): InvoiceLine {
     status: dto.status as InvoiceLineStatus,
     createdBy: dto.createdBy,
     ...(typeof dto.recordedCashINR === "number" && typeof dto.settledINR === "number" && { recordedCashINR: dto.recordedCashINR, settledINR: dto.settledINR }),
+    ...(dto.gstSnapshot && { gstSnapshot: dto.gstSnapshot }),
   };
 }
 
@@ -374,10 +391,44 @@ export async function sendInvoiceLineTo(invoiceLineId: string, userIds: string[]
   return apiClient.post<{ sentTo: string[] }>(`/invoice-lines/${invoiceLineId}/send-to`, { userIds });
 }
 
+/** Invoice numbers compared the way the backend does: ignoring case and outer spaces. */
+export const normalizeInvoiceNoKey = (value: string): string => value.trim().toUpperCase();
+
+/**
+ * The GST declaration to send with a write of this line: only for an invoice that has NO snapshot yet and for which the user chose a rate and
+ * tax type (the server uses it only at the invoice's first raise and ignores it afterwards). An invoice with a single active line also carries
+ * the GST amount the screen showed, so the server can refuse a figure it does not reproduce.
+ */
+function gstDeclarationFor(
+  line: InvoiceLine,
+  selections: Record<string, InvoiceGstSelection> | undefined,
+  nextItems: InvoiceItem[],
+  hasSnapshot: (invoiceNo: string) => boolean
+): GstDeclarationPayload | undefined {
+  const key = normalizeInvoiceNoKey(line.invoiceNo);
+  const selection = selections?.[key];
+  if (!selection || hasSnapshot(line.invoiceNo)) return undefined;
+  if (!selection.applicable) return { applicable: false };
+  const activeLines = nextItems.flatMap((item) => item.invoices).filter((candidate) => normalizeInvoiceNoKey(candidate.invoiceNo) === key && candidate.status !== "Cancelled");
+  const expected =
+    activeLines.length === 1
+      ? computeGstTax(line.invoiceAmountOriginal ?? line.invoiceAmountINR, selection.ratePercent, selection.taxType === "IGST").totalTax
+      : undefined;
+  return {
+    applicable: true,
+    ratePercent: selection.ratePercent,
+    taxType: selection.taxType,
+    buyerStateKnown: selection.buyerStateKnown,
+    ...(expected !== undefined && { expectedGstAmount: expected }),
+  };
+}
+
 export async function syncInvoiceLinesWithApi(
   projectId: string,
   previousItems: InvoiceItem[],
-  nextItems: InvoiceItem[]
+  nextItems: InvoiceItem[],
+  /** Invoice-level GST snapshot (Nov 2026): the user's rate / tax type per NEW invoice, keyed by normalizeInvoiceNoKey(invoiceNo). */
+  gstSelections?: Record<string, InvoiceGstSelection>
 ): Promise<InvoiceItem[]> {
   const previousLines = new Map<string, InvoiceLine>();
   for (const item of previousItems) {
@@ -399,8 +450,13 @@ export async function syncInvoiceLinesWithApi(
   // backend rejects "new" for any number already in use). The first line of
   // a number this project has never had is "new"; every other line is
   // "existing". Numbers compared ignoring case/outer spaces, as the backend does.
-  const normalizeNo = (value: string) => value.trim().toUpperCase();
+  const normalizeNo = normalizeInvoiceNoKey;
   const knownInvoiceNos = new Set(Array.from(previousLines.values(), (line) => normalizeNo(line.invoiceNo)));
+  // An invoice that has been raised and carries a snapshot is FROZEN: no declaration is ever sent for it. A Draft's saved choice is not
+  // frozen - it can still be changed until the invoice is first raised.
+  const raisedInvoiceNos = new Set(Array.from(previousLines.values()).filter((line) => line.status === "Raised" || line.status === "PartiallyPaid" || line.status === "Paid").map((line) => normalizeNo(line.invoiceNo)));
+  const snapshotInvoiceNos = new Set(Array.from(previousLines.values()).filter((line) => line.gstSnapshot).map((line) => normalizeNo(line.invoiceNo)));
+  const hasSnapshot = (invoiceNo: string) => snapshotInvoiceNos.has(normalizeNo(invoiceNo)) && raisedInvoiceNos.has(normalizeNo(invoiceNo));
 
   for (const [id, { line, quantityItemId }] of nextLineOwners) {
     const existing = previousLines.get(id);
@@ -408,12 +464,15 @@ export async function syncInvoiceLinesWithApi(
       const key = normalizeNo(line.invoiceNo);
       const invoiceIntent = knownInvoiceNos.has(key) ? "existing" : "new";
       knownInvoiceNos.add(key);
+      const gst = gstDeclarationFor(line, gstSelections, nextItems, hasSnapshot);
       await apiClient.post<BackendInvoiceLineDto>(`/quantity/${quantityItemId}/invoice-lines`, {
         ...toInvoiceLinePayload(line),
+        ...(gst && { gst }),
         invoiceIntent,
       });
     } else if (hasInvoiceLineChanged(existing, line)) {
-      await apiClient.patch<BackendInvoiceLineDto>(`/invoice-lines/${id}`, toInvoiceLinePayload(line));
+      const gst = gstDeclarationFor(line, gstSelections, nextItems, hasSnapshot);
+      await apiClient.patch<BackendInvoiceLineDto>(`/invoice-lines/${id}`, { ...toInvoiceLinePayload(line), ...(gst && { gst }) });
     }
   }
 

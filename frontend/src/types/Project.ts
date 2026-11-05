@@ -1,7 +1,7 @@
 import type { QuantityItem } from "./QuantityItem";
 import type { ManhourExpense } from "./ManhourExpense";
 import type { NonManhourExpense } from "./NonManhourExpense";
-import type { InvoiceItem, InvoiceMethod } from "./InvoiceItem";
+import type { InvoiceGstSelection, InvoiceItem, InvoiceMethod } from "./InvoiceItem";
 import type { QuantityRevision } from "./QuantityRevision";
 import type { ProjectNote } from "./ProjectNote";
 import type { TimesheetImportMonth } from "./Timesheet";
@@ -130,6 +130,13 @@ export interface Project {
   // invoicing is not offered; null = backend supports it, nothing locked
   // yet. See Invoice/invoiceCurrency.ts's isInvoiceCurrencySupported().
   invoiceCurrency?: string | null;
+  /**
+   * Invoice-level GST snapshot (Nov 2026) — TRANSIENT, never stored: the rate / tax type the user chose for a NEW invoice about to be
+   * raised, keyed by the invoice number upper-cased and trimmed. A Raise / Edit Invoice screen attaches it to the project it hands to
+   * onSave(); invoiceLineActions.ts's persistInvoiceProjectChange() takes it off before anything is saved locally and sends it to the
+   * server with the write that raises the invoice. The server then freezes it in the invoice's GST snapshot.
+   */
+  invoiceGstSelections?: Record<string, InvoiceGstSelection>;
 
   contractType: string;
 

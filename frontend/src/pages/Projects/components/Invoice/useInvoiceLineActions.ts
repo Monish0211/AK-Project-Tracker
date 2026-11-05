@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { Project } from "../../../../types/Project";
-import type { InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
+import type { InvoiceGstSelection, InvoiceItem, InvoiceLine, InvoiceLineStatus } from "../../../../types/InvoiceItem";
 import { useAuth } from "../../../../auth/authContext";
 import { hasApprovalPermission } from "../../../../auth/permissions";
 import { usePmoToast } from "../../../../components/ui/usePmoToast";
@@ -69,10 +69,12 @@ export function useInvoiceLineActions({ project, setProject, readOnly = false, o
     logInvoiceDeletedAudit(project.id, line.invoiceNo, line.invoiceAmountINR, "User deleted invoice line from Invoice History");
   };
 
-  const updateInvoiceCycleStatus = (invoiceNo: string, newStatus: InvoiceLineStatus) => {
+  const updateInvoiceCycleStatus = (invoiceNo: string, newStatus: InvoiceLineStatus, gstSelection?: InvoiceGstSelection) => {
     if (isReadOnly || !setProject) return;
     const { updatedProject, oldStatus } = setInvoiceCycleStatus(project, invoiceNo, newStatus);
-    if (!persistProjectChange(updatedProject)) return;
+    // Invoice-level GST snapshot (Nov 2026): raising an invoice that has none yet carries the rate / tax type chosen for it.
+    const withGstChoice = gstSelection ? { ...updatedProject, invoiceGstSelections: { [invoiceNo.trim().toUpperCase()]: gstSelection } } : updatedProject;
+    if (!persistProjectChange(withGstChoice)) return;
 
     // Audit Log "Invoice Status Updated"
     logInvoiceCycleStatusChangedAudit(project.id, invoiceNo, oldStatus, newStatus);

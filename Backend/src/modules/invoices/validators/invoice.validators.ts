@@ -50,6 +50,20 @@ const invoiceCurrencyFields = {
  * from the authenticated caller (see invoice.service.ts's
  * createInvoiceLineForQuantityItem()), never trusted from the request body.
  */
+/**
+ * Invoice-level GST snapshot (Nov 2026) - what the raise workflow declares about an invoice's GST. Only the rate, the tax type and
+ * whether the buyer state was known are CHOICES; the server decides eligibility, recomputes every amount itself and refuses a
+ * declaration it disagrees with. expectedGstAmount is an optional cross-check of what the screen displayed - never stored.
+ * Optional so existing callers keep working: it is read only when an invoice is first raised (see invoiceGst.service.ts).
+ */
+export const gstDeclarationSchema = z.object({
+  applicable: z.boolean(),
+  ratePercent: z.number().finite().min(0, "GST rate cannot be negative.").max(100, "GST rate cannot exceed 100.").optional(),
+  taxType: z.enum(["IGST", "CGST_SGST"]).optional(),
+  buyerStateKnown: z.boolean().optional(),
+  expectedGstAmount: z.number().finite().min(0).optional(),
+});
+
 export const createInvoiceLineSchema = z.object({
   // Manual invoice numbering (Oct 2026) — the user's own Tally number,
   // trimmed of outer whitespace only; never generated server-side. No
@@ -87,6 +101,8 @@ export const createInvoiceLineSchema = z.object({
   remarks: z.string().trim().optional().nullable(),
 
   status: z.enum(CREATE_INVOICE_LINE_STATUSES).default("Raised"),
+
+  gst: gstDeclarationSchema.optional(),
 });
 
 export type CreateInvoiceLineInput = z.infer<typeof createInvoiceLineSchema>;
@@ -121,6 +137,9 @@ export const updateInvoiceLineSchema = z.object({
   remarks: z.string().trim().optional().nullable(),
 
   status: z.enum(INVOICE_LINE_STATUSES).optional(),
+
+  // Read only at the first raise of an invoice that has no GST snapshot yet; ignored for every invoice that already has one.
+  gst: gstDeclarationSchema.optional(),
 });
 
 export type UpdateInvoiceLineInput = z.infer<typeof updateInvoiceLineSchema>;

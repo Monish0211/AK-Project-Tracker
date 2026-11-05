@@ -1,7 +1,7 @@
 // Record Payment - Invoice Settlement popup (Nov 2026) — the browser side of the payment workflow. These tests pin the pure logic (the
 // live settlement summary and its worked examples, the nine deduction categories, currency-aware input rules, nothing mandatory,
 // payload building, dirty detection, double-click guard), the service's wire contract and the wiring of both entry points. There is
-// no GST anywhere in this workflow. The settlement itself is the BACKEND's job and is tested there.
+// GST only as a read-only invoice component (never an input or a deduction). The settlement itself is the BACKEND's job and is tested there.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
@@ -404,11 +404,24 @@ test("the popup never saves by closing: recording a payment is reachable only fr
   for (const forbidden of [/localStorage|sessionStorage|indexedDB/, /showToast\(\{ type: "success"[^}]*\}\);\s*\n\s*onClose/]) assert.ok(!forbidden.test(text), String(forbidden));
 });
 
-test("there is no GST anywhere in the popup, its history, its service or its logic", () => {
-  for (const file of [MODAL, "pages/Projects/components/Invoice/PaymentHistoryPanel.tsx", "pages/Projects/components/Invoice/PaymentFormParts.tsx", "services/invoicePaymentService.ts", "pages/Projects/components/Invoice/invoicePaymentDetails.ts"]) {
+test("GST is shown read only in the popup and is never an input, a deduction, a draft field or part of the payment request", () => {
+  // The payment form, its history, its drafts and its payload builder know nothing about GST.
+  for (const file of ["pages/Projects/components/Invoice/PaymentHistoryPanel.tsx", "pages/Projects/components/Invoice/PaymentFormParts.tsx", "pages/Projects/components/Invoice/invoicePaymentDetails.ts"]) {
     const text = src(file).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     assert.ok(!/gst/i.test(text.replace(/resultingStatus/g, "")), file + " mentions GST");
   }
+  // The service carries GST only as read-only response data; what the popup SENDS has no GST field.
+  const service = src("services/invoicePaymentService.ts").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const payload = service.slice(service.indexOf("export interface PaymentSubmissionPayload"), service.indexOf("export const getInvoicePaymentOverview"));
+  assert.ok(payload.length > 50 && !/gst/i.test(payload), "the payment request has no GST");
+  assert.match(service, /export interface InvoiceGstBreakdownDto/);
+  // The popup renders it through the read-only panel only: no input / select / textarea of GST, no GST deduction tab.
+  const modal = src(MODAL).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  assert.match(modal, /<InvoicePaymentGstPanel gst=\{invoice\.gst\}/);
+  assert.ok(!/<(Input|Select|Textarea|input|select|textarea)[^>]*gst/i.test(modal), "no GST field in the popup");
+  const panel = src("pages/Projects/components/Invoice/InvoicePaymentGstPanel.tsx");
+  assert.ok(!/<(Input|Select|Textarea|input|select|textarea|button|Button)\b/.test(panel), "the GST panel has no controls: it is display only");
+  for (const label of ["Taxable value", "GST rate", "GST type", "GST amount", "Total incl. GST", "GST details not available (legacy invoice)"]) assert.ok(panel.includes(label), label);
 });
 
 test("the popup is one compact screen with the requested sections: invoice info, bank receipt, deduction tabs, a live settlement summary and Save / Cancel", () => {

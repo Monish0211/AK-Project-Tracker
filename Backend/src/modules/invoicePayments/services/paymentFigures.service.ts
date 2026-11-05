@@ -1,6 +1,8 @@
 import { figuresForInvoice } from "../paymentCash.rules.js";
 import type { LineForFigures, PaymentLineFigures } from "../paymentCash.rules.js";
 import { findActivePaymentsForProjects } from "../repository/invoicePayment.repository.js";
+import { findSnapshotsForInvoices, normalizeInvoiceNo } from "../../invoiceGst/invoiceGst.repository.js";
+import { decimalToMinor } from "../money.rules.js";
 
 /**
  * Invoice Payment workflow (Nov 2026) — the per-line recorded cash / settled figures for a set of invoice lines, read once
@@ -38,8 +40,12 @@ export async function loadPaymentFigures(lines: readonly LineWithInvoice[]): Pro
     else linesByInvoice.set(key, [line]);
   }
 
+  // GST snapshots of just the invoices that have a payment (one batched read). No snapshot (legacy) = gst 0 = the original arithmetic.
+  const snapshots = await findSnapshotsForInvoices([...linesByInvoice.values()].map((invoiceLines) => ({ projectId: invoiceLines[0]!.projectId, invoiceNo: invoiceLines[0]!.invoiceNo })));
   for (const [key, invoiceLines] of linesByInvoice) {
-    for (const [lineId, figures] of figuresForInvoice(invoiceLines, paymentsByInvoice.get(key)!)) result.set(lineId, figures);
+    const snapshot = snapshots.get(`${invoiceLines[0]!.projectId}\u0000${normalizeInvoiceNo(invoiceLines[0]!.invoiceNo)}`);
+    const gstMinor = snapshot ? decimalToMinor(snapshot.gstAmount, snapshot.currency) : 0n;
+    for (const [lineId, figures] of figuresForInvoice(invoiceLines, paymentsByInvoice.get(key)!, gstMinor)) result.set(lineId, figures);
   }
   return result;
 }

@@ -5,6 +5,7 @@ import { updateProject } from "../../../../services/projectService";
 import { fetchInvoiceItemsFromApi, fetchProjectInvoiceCurrency, syncInvoiceLinesWithApi } from "../../../../services/invoiceService";
 import { ApiError } from "../../../../services/apiClient";
 import { batchPmoDataChanged } from "../../../../utils/pmoDataChanged";
+import { findInvoiceMissingGstChoice } from "./invoiceGst";
 
 /**
  * The invoice View / Edit / Delete / status-change logic that used to live inline in InvoiceDashboard.tsx, extracted
@@ -123,7 +124,23 @@ async function readServerInvoiceCurrency(projectId: string, fallback: Project["i
  * refused. This is the single place invoice edits and deletes reach the existing PATCH / DELETE endpoints, and so
  * the single place every invoice status-history event originates from the UI.
  */
-export function persistInvoiceProjectChange({ project, updatedProject, setProject, syncing, onStart, onSynced, onSettled, deps }: PersistArgs): boolean {
+export function persistInvoiceProjectChange({ project, updatedProject: requestedProject, setProject, syncing, onStart, onSynced, onSettled, deps }: PersistArgs): boolean {
+  // Invoice-level GST snapshot (Nov 2026): the rate / tax type chosen for a NEW invoice travels on the project as a transient field. It is
+  // taken off here — it must never reach React state or the local copy — and handed to the server with the write that raises the invoice.
+  const { invoiceGstSelections: gstSelections, ...updatedProject } = requestedProject;
+  if (!syncing.current) {
+    // A first raise of an invoice that GST applies to must carry a rate and tax type; refuse here, clearly, instead of failing at the server.
+    const missingGstFor = findInvoiceMissingGstChoice(project, updatedProject as Project, gstSelections);
+    if (missingGstFor !== null) {
+      deps.showToast({
+        type: "error",
+        title: "Choose the GST for this invoice",
+        message: `Invoice ${missingGstFor} cannot be raised until its GST is chosen: No GST, or a rate and the tax type (IGST or CGST + SGST). It is fixed once the invoice is raised.`,
+        duration: 0,
+      });
+      return false;
+    }
+  }
   if (syncing.current) {
     deps.showToast({
       type: "error",
@@ -142,7 +159,7 @@ export function persistInvoiceProjectChange({ project, updatedProject, setProjec
   // write) announces once more when it settles instead of once per step.
   void batchPmoDataChanged(() =>
   deps
-    .syncInvoiceLinesWithApi(project.id, project.invoiceItems, updatedProject.invoiceItems)
+    .syncInvoiceLinesWithApi(project.id, project.invoiceItems, updatedProject.invoiceItems, gstSelections)
     .then(async (reconciledItems) => {
       const invoiceCurrency = await readServerInvoiceCurrency(project.id, updatedProject.invoiceCurrency, deps);
       const reconciledProject = { ...updatedProject, invoiceItems: reconciledItems, invoiceCurrency };

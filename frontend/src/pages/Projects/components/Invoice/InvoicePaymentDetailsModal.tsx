@@ -42,6 +42,7 @@ import {
 import type { AdjustmentDraft, DeductionCategory, InvoicePaymentContext, PaymentDetailsDraft, PaymentDetailsErrors, ReceiptDraft } from "./invoicePaymentDetails";
 import { Field, InrReference, Notice } from "./PaymentFormParts";
 import { PaymentHistoryPanel } from "./PaymentHistoryPanel";
+import { InvoicePaymentGstPanel } from "./InvoicePaymentGstPanel";
 
 /**
  * Record Payment - Invoice Settlement (Nov 2026). One compact screen:
@@ -49,8 +50,9 @@ import { PaymentHistoryPanel } from "./PaymentHistoryPanel";
  *
  * Total Settled = bank amount received + every deduction; Outstanding = invoice amount - Total Settled, all in the invoice currency.
  * The summary on the right updates while typing (display only); the BACKEND recalculates and is the authority when Save runs. The
- * invoice becomes Partially Paid or Paid from that result - never by choosing a status. There is no GST in this workflow, and
- * nothing is mandatory except that at least one amount must be entered. INR figures on a foreign invoice are reference only.
+ * invoice becomes Partially Paid or Paid from that result - never by choosing a status. GST (Nov 2026) is shown read only from the GST
+ * snapshot saved with the invoice: it is part of the invoice amount the settlement is measured against - never a deduction, never typed
+ * here. Nothing is mandatory except that at least one amount must be entered. INR figures on a foreign invoice are reference only.
  * Closing never saves: with unsaved changes it asks first.
  */
 
@@ -404,12 +406,12 @@ export function InvoicePaymentDetailsModal({ projectId, context, scopeNote, onCl
                     <InfoCell label="Invoice date">{context.invoiceDates.length === 0 ? "-" : context.invoiceDates.map(formatReviewDate).join(", ")}</InfoCell>
                     <InfoCell label="Project / PR">{context.prNo || "-"}</InfoCell>
                     <InfoCell label="Client">{context.client || "-"}</InfoCell>
-                    <InfoCell label="Invoice value">
+                    <InfoCell label={invoice.gst.availability === "SNAPSHOT" && invoice.gst.status === "APPLICABLE" ? "Invoice value (incl. GST)" : "Invoice value"}>
                       <span data-testid="invoice-value">{fmt(invoice.invoiceAmount)}</span>
                       {inrOf(invoice.invoiceAmount) && <span className="block text-[10.5px] font-medium text-[var(--nu-text-muted)]">INR equivalent {inrOf(invoice.invoiceAmount)}</span>}
                     </InfoCell>
                     <InfoCell label="Currency / status">
-                      <span className="mr-1.5 inline-flex items-center gap-1.5">
+                      <span className="flex max-w-full flex-wrap items-center gap-1.5">
                         <Badge tone="neutral" className="text-[10px]">{currency}</Badge>
                         <Badge tone={INVOICE_LINE_STATUS_TONE[currentStatus as keyof typeof INVOICE_LINE_STATUS_TONE] ?? "neutral"} dot className="text-[10px]">
                           {statusLabelOf(currentStatus)}
@@ -419,6 +421,8 @@ export function InvoicePaymentDetailsModal({ projectId, context, scopeNote, onCl
                   </dl>
                   {scopeNote && <p className="mt-1.5 text-[11.5px] text-[var(--nu-text-muted)]">{scopeNote}</p>}
                 </section>
+
+                <InvoicePaymentGstPanel gst={invoice.gst} fmt={fmt} />
 
                 <Notice tone={canEdit ? "info" : "warning"} id={noticeId}>
                   {canEdit ? (
@@ -610,7 +614,11 @@ export function InvoicePaymentDetailsModal({ projectId, context, scopeNote, onCl
                     <div className="space-y-2.5 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-3.5">
                       <h3 className="text-[13px] font-extrabold text-[var(--nu-text)]">Settlement Summary</h3>
                       <dl className="space-y-1.5 text-[12px]" data-testid="settlement-summary">
-                        <SummaryRow label="Invoice amount" value={fmt(live.invoiceAmount)} strong />
+                        <SummaryRow
+                          label={invoice.gst.availability === "SNAPSHOT" && invoice.gst.status === "APPLICABLE" ? "Invoice amount (incl. GST)" : "Invoice amount"}
+                          value={fmt(live.invoiceAmount)}
+                          strong
+                        />
                         <SummaryRow label="Previously received from bank" value={fmt(live.previousBank)} />
                         <SummaryRow label="Current bank receipt" value={fmt(live.currentBank)} />
                         <SummaryRow label="Total bank received" value={fmt(live.totalBank)} />

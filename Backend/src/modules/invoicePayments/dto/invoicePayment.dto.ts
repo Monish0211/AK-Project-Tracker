@@ -61,6 +61,33 @@ export interface SettlementSummaryDto {
   violations: Array<{ code: string; message: string }>;
 }
 
+/**
+ * The invoice's GST as Record Payment shows it - an INVOICE component (never a deduction, never entered again here).
+ *   SNAPSHOT = the invoice has a saved GST snapshot (taken when it was raised); the settlement target is taxable + GST.
+ *   LEGACY   = raised before GST snapshots existed: GST details are not available and the settlement target stays the taxable amount.
+ * A missing snapshot (LEGACY), an explicit NOT_APPLICABLE and an APPLICABLE snapshot at 0% are three different things.
+ */
+export interface InvoiceGstBreakdownDto {
+  availability: "SNAPSHOT" | "LEGACY";
+  /** null for a LEGACY invoice. */
+  status: "APPLICABLE" | "NOT_APPLICABLE" | null;
+  /** The selected rate ("18", "12.5", "0"), null when NOT_APPLICABLE or LEGACY. */
+  ratePercent: string | null;
+  taxType: "IGST" | "CGST_SGST" | null;
+  buyerStateKnown: boolean | null;
+  taxableAmount: string;
+  cgstAmount: string;
+  sgstAmount: string;
+  igstAmount: string;
+  gstAmount: string;
+  /** Taxable + GST: the settlement target. */
+  totalAmount: string;
+  /** True when the saved taxable amount no longer equals the invoice lines' total: payments are blocked until it is reconciled. */
+  mismatch: boolean;
+  /** "GST details not available (legacy invoice)" for a legacy invoice, otherwise null. */
+  note: string | null;
+}
+
 export interface InvoicePaymentContextDto {
   projectId: string;
   invoiceNo: string;
@@ -68,8 +95,10 @@ export interface InvoicePaymentContextDto {
   /** The invoice's status as the portal shows it (cycle roll-up of its non-cancelled lines). */
   status: string;
   lineCount: number;
-  /** The invoice amount, in the invoice currency. */
+  /** The settlement target in the invoice currency: taxable + saved GST, or just the taxable amount for a legacy invoice. */
   invoiceAmount: string;
+  /** The invoice's GST breakdown (see InvoiceGstBreakdownDto). */
+  gst: InvoiceGstBreakdownDto;
   /** Whether THIS caller may record or reverse payments (Edit Invoice approval, not Read Only). */
   canRecord: boolean;
   /** Why a payment cannot be recorded right now (invoice state), or null. */
@@ -97,6 +126,8 @@ export interface InvoicePaymentPreviewDto {
   alreadyRecorded: SettlementSummaryDto | null;
   /** True when saving would persist the payment (no field errors and not over-settled). */
   canSave: boolean;
+  /** The invoice's GST breakdown the settlement is measured against. */
+  gst: InvoiceGstBreakdownDto;
 }
 
 export interface RecordPaymentResultDto {

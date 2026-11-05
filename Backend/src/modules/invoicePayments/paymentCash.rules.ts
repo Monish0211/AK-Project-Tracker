@@ -75,19 +75,35 @@ export function baseDueOf(lines: readonly LineForFigures[], currency: InvoiceCur
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
 /** Per-line figures for ONE invoice that has at least one active payment. `lines` are its non-cancelled lines. */
-export function figuresForInvoice(lines: readonly LineForFigures[], active: readonly RecordedPayment[]): Map<string, PaymentLineFigures> {
+export function figuresForInvoice(lines: readonly LineForFigures[], active: readonly RecordedPayment[], gstMinor: bigint = 0n): Map<string, PaymentLineFigures> {
   const result = new Map<string, PaymentLineFigures>();
   if (lines.length === 0 || active.length === 0) return result;
 
   const currency = normalizeCurrency(lines[0]!.currency);
-  const settlement = settlementFromRecords({ currency, dueMinor: baseDueOf(lines, currency), active });
+  // GST (Nov 2026): an invoice with a saved GST snapshot is settled against taxable + GST, but the dashboard / report definitions stay EX-GST
+  // (confirmed decision). So the settlement is measured against the GST-inclusive target and then expressed ex-GST WITHOUT any proportional split:
+  //   outstanding (ex-GST) = min(taxable, the invoice's real outstanding);  settled (ex-GST) = taxable - that;  cash (ex-GST) = min(cash, settled).
+  // A fully settled invoice therefore reads fully settled, and a part-paid one never reads as fully settled just because the receipt exceeded its taxable
+  // amount. gstMinor is 0 for every legacy / NOT_APPLICABLE / 0% invoice, which leaves the original arithmetic below untouched.
+  const baseMinor = baseDueOf(lines, currency);
+  const settlement = settlementFromRecords({ currency, dueMinor: baseMinor + gstMinor, active });
 
   const rate = lines[0]!.exchangeRateToINR || 1;
   const scale = 10 ** decimalPlacesFor(currency);
   const invoiceTotalInr = lines.reduce((sum, line) => sum + line.invoiceAmountINR, 0);
-  const cashInr = round2((Number(settlement.cashMinor) / scale) * rate);
-  // A fully settled invoice settles its exact INR amount (no rounding drift between the two conversions); otherwise cash + deductions.
-  const settledInr = settlement.settled ? invoiceTotalInr : Math.min(invoiceTotalInr, round2((Number(settlement.settledMinor) / scale) * rate));
+  let cashInr: number;
+  let settledInr: number;
+  if (gstMinor > 0n) {
+    const outstandingExGstMinor = settlement.outstandingMinor < baseMinor ? settlement.outstandingMinor : baseMinor;
+    const settledExGstMinor = baseMinor - outstandingExGstMinor;
+    const cashExGstMinor = settlement.cashMinor < settledExGstMinor ? settlement.cashMinor : settledExGstMinor;
+    cashInr = round2((Number(cashExGstMinor) / scale) * rate);
+    settledInr = settledExGstMinor === baseMinor ? invoiceTotalInr : Math.min(invoiceTotalInr, round2((Number(settledExGstMinor) / scale) * rate));
+  } else {
+    cashInr = round2((Number(settlement.cashMinor) / scale) * rate);
+    // A fully settled invoice settles its exact INR amount (no rounding drift between the two conversions); otherwise cash + deductions.
+    settledInr = settlement.settled ? invoiceTotalInr : Math.min(invoiceTotalInr, round2((Number(settlement.settledMinor) / scale) * rate));
+  }
 
   let allocatedCash = 0;
   let allocatedSettled = 0;

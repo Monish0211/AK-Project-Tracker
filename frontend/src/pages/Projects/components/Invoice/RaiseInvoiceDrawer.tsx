@@ -46,6 +46,8 @@ import { InvoiceLineTable, type InvoiceLineRow } from "./InvoiceLineTable";
 import { InvoicePaymentDetailsModal } from "./InvoicePaymentDetailsModal";
 import { buildInvoicePaymentContext, invoiceHasRecordedPayment } from "./invoicePaymentDetails";
 import { amountsFromInr, getLineCurrency, getLineOriginalAmount, isForeignCurrency, roundToMinorUnit } from "./invoiceCurrency";
+import { useInvoiceGstChoice } from "./useInvoiceGstChoice";
+import { InvoiceGstSelector } from "./InvoiceGstSelector";
 import { formatIndianCurrency } from "../../../../utils/formatCurrency";
 import { LumpSumMilestoneTable } from "./LumpSumMilestoneTable";
 
@@ -506,12 +508,18 @@ export function RaiseInvoiceDrawer({
       ? createRows.some((row) => row.qtyToBill > 0 && !row.error)
       : editQtyValue > 0 && !editRows[0]?.error;
 
+  // Invoice-level GST snapshot (Nov 2026): a Draft / Cancelled invoice being raised here needs its GST rate and tax type (fixed on raise);
+  // one already raised shows its frozen snapshot. Looked up under the invoice's SAVED number, so a rename never loses it.
+  const gstChoice = useInvoiceGstChoice(project, existingLine?.invoiceNo ?? effectiveInvoiceNo, lineCurrency);
+  const statusBeingSaved: InvoiceLineStatus = isEditMode ? status : "Raised";
+
   const canSave =
     !isViewMode &&
     effectiveInvoiceNo.trim() !== "" &&
     invoiceDate.trim() !== "" &&
     isValidDateInput(invoiceDate) &&
-    hasBillableLine;
+    hasBillableLine &&
+    !gstChoice.blockerFor(statusBeingSaved);
 
   const handleSave = () => {
     if (!canSave) return;
@@ -556,6 +564,7 @@ export function RaiseInvoiceDrawer({
                 invoices: invoiceItem.invoices.map((line) => (line.id === existingLine.id ? updatedLine : line)),
               }
         ),
+        ...gstChoice.toProjectPatch(updatedLine.invoiceNo),
       });
       handleClose();
       return;
@@ -618,6 +627,7 @@ export function RaiseInvoiceDrawer({
           ? invoiceItem
           : { ...invoiceItem, invoices: [...invoiceItem.invoices, ...newLines] }
       ),
+      ...gstChoice.toProjectPatch(effectiveInvoiceNo.trim()),
     });
     handleClose();
   };
@@ -987,6 +997,8 @@ export function RaiseInvoiceDrawer({
                   </div>
                 )}
               </div>
+
+              {(!isViewMode || gstChoice.snapshot) && <InvoiceGstSelector choice={gstChoice} status={statusBeingSaved} />}
 
               <div>
                 <label className={labelClass}>Remarks / Internal Notes</label>

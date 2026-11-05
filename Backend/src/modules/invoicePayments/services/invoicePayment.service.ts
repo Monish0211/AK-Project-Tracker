@@ -6,6 +6,9 @@ import { getUserDisplayName } from "../../../shared/utils/userDisplayName.js";
 import { userHasApprovalPermission } from "../../../shared/middleware/requireApprovalPermission.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { lockInvoiceNumber, updateLine } from "../../invoices/repository/invoice.repository.js";
+import { findSnapshotByInvoiceNo } from "../../invoiceGst/invoiceGst.repository.js";
+import type { SnapshotRow } from "../../invoiceGst/invoiceGst.repository.js";
+import { snapshotAmountsMinor, toSnapshotDto } from "../../invoiceGst/invoiceGst.service.js";
 import type { InvoiceAuditContext } from "../../invoices/repository/invoiceStatusEvent.repository.js";
 import { normalizeCurrency } from "../../invoices/invoiceCurrency.rules.js";
 import type { InvoiceCurrency } from "../../invoices/invoiceCurrency.rules.js";
@@ -20,6 +23,7 @@ import { settlementFromRecords } from "../paymentCash.rules.js";
 import * as repo from "../repository/invoicePayment.repository.js";
 import type { PaymentRow } from "../repository/invoicePayment.repository.js";
 import type {
+  InvoiceGstBreakdownDto,
   InvoicePaymentContextDto,
   InvoicePaymentDto,
   InvoicePaymentOverviewDto,
@@ -77,11 +81,17 @@ interface LoadedInvoice {
   currency: InvoiceCurrency;
   lines: LineRow[];
   activeLines: LineRow[];
-  /** The invoice amount in the invoice currency's minor units. */
+  /** The SETTLEMENT TARGET in the invoice currency's minor units: taxable + saved GST (snapshot), or just the taxable amount (legacy). */
   dueMinor: bigint;
+  /** The invoice lines' taxable total (ex-GST) in minor units. */
+  taxableMinor: bigint;
+  gst: LoadedGst;
   status: string;
   blockedReason: string | null;
 }
+
+/** LEGACY = no snapshot (GST unknown, nothing assumed); SNAPSHOT = the invoice's saved GST. mismatch = the saved taxable amount no longer equals the lines. */
+type LoadedGst = { availability: "LEGACY" } | { availability: "SNAPSHOT"; snapshot: SnapshotRow; gstMinor: bigint; mismatch: boolean };
 
 function cycleStatus(activeLines: LineRow[]): string {
   if (activeLines.length === 0) return "Cancelled";
@@ -102,20 +112,34 @@ async function loadInvoice(client: Client, projectId: string, invoiceNo: string)
   if (currencies.size !== 1) throw new AppError("This invoice has lines in more than one currency, so a payment cannot be settled against it.", 409);
   const currency = [...currencies][0]!;
 
-  let dueMinor = 0n;
+  let taxableMinor = 0n;
   for (const line of activeLines) {
     if (currency !== "INR" && line.invoiceAmountOriginal === null) {
       throw new AppError("This invoice line has no amount in the invoice currency, so a payment cannot be settled against it.", 409);
     }
-    dueMinor += floatToMinor(line.invoiceAmountOriginal ?? line.invoiceAmountINR, currency);
+    taxableMinor += floatToMinor(line.invoiceAmountOriginal ?? line.invoiceAmountINR, currency);
+  }
+
+  // THE settlement target: taxable + the invoice's SAVED GST. A legacy invoice (no snapshot) keeps its taxable amount - GST is never derived
+  // from a project-level setting here. Reading the snapshot does not create one.
+  const snapshot = await findSnapshotByInvoiceNo(projectId, activeLines[0]!.invoiceNo, client);
+  let gst: LoadedGst = { availability: "LEGACY" };
+  let dueMinor = taxableMinor;
+  if (snapshot) {
+    const saved = snapshotAmountsMinor(snapshot);
+    gst = { availability: "SNAPSHOT", snapshot, gstMinor: saved.gstMinor, mismatch: saved.taxableMinor !== taxableMinor };
+    dueMinor = taxableMinor + saved.gstMinor;
   }
 
   const status = cycleStatus(activeLines);
   let blockedReason: string | null = null;
   if (activeLines.some((line) => line.status === "Draft")) blockedReason = "This invoice is still a Draft. Raise it before recording a payment.";
   else if (status === "Paid") blockedReason = "This invoice is already fully settled and marked Paid.";
+  else if (gst.availability === "SNAPSHOT" && gst.mismatch) {
+    blockedReason = `The saved GST details of this invoice were calculated on a taxable amount of ${currency} ${formatMoney(snapshotAmountsMinor(gst.snapshot).taxableMinor, currency)}, but its lines now total ${currency} ${formatMoney(taxableMinor, currency)}. Payments are blocked until the invoice's GST is reconciled; nothing has been changed automatically.`;
+  }
 
-  return { projectId, canonicalInvoiceNo: activeLines[0]!.invoiceNo.trim(), currency, lines, activeLines, dueMinor, status, blockedReason };
+  return { projectId, canonicalInvoiceNo: activeLines[0]!.invoiceNo.trim(), currency, lines, activeLines, dueMinor, taxableMinor, gst, status, blockedReason };
 }
 
 // ── Settlement helpers ──────────────────────────────────────────────────────────────────────────
@@ -208,6 +232,44 @@ async function assertCanRecord(user: AccessTokenPayload): Promise<void> {
 
 // ── Read ────────────────────────────────────────────────────────────────────────────────────────
 
+/** The GST breakdown shown in the popup and returned by the APIs. Read-only: it never creates or changes a snapshot. */
+function gstBreakdownOf(loaded: LoadedInvoice): InvoiceGstBreakdownDto {
+  const money = (minor: bigint) => formatMoney(minor, loaded.currency);
+  if (loaded.gst.availability === "LEGACY") {
+    return {
+      availability: "LEGACY",
+      status: null,
+      ratePercent: null,
+      taxType: null,
+      buyerStateKnown: null,
+      taxableAmount: money(loaded.taxableMinor),
+      cgstAmount: money(0n),
+      sgstAmount: money(0n),
+      igstAmount: money(0n),
+      gstAmount: money(0n),
+      totalAmount: money(loaded.taxableMinor),
+      mismatch: false,
+      note: "GST details not available (legacy invoice)",
+    };
+  }
+  const dto = toSnapshotDto(loaded.gst.snapshot);
+  return {
+    availability: "SNAPSHOT",
+    status: dto.gstStatus,
+    ratePercent: dto.ratePercent,
+    taxType: dto.taxType,
+    buyerStateKnown: dto.buyerStateKnown,
+    taxableAmount: dto.taxableAmount,
+    cgstAmount: dto.cgstAmount,
+    sgstAmount: dto.sgstAmount,
+    igstAmount: dto.igstAmount,
+    gstAmount: dto.gstAmount,
+    totalAmount: dto.totalAmount,
+    mismatch: loaded.gst.mismatch,
+    note: null,
+  };
+}
+
 function buildOverview(loaded: LoadedInvoice, payments: PaymentRow[], canRecord: boolean): InvoicePaymentOverviewDto {
   const active = payments.filter((payment) => payment.status === "ACTIVE");
   const context: InvoicePaymentContextDto = {
@@ -217,6 +279,7 @@ function buildOverview(loaded: LoadedInvoice, payments: PaymentRow[], canRecord:
     status: loaded.status,
     lineCount: loaded.activeLines.length,
     invoiceAmount: formatMoney(loaded.dueMinor, loaded.currency),
+    gst: gstBreakdownOf(loaded),
     canRecord,
     recordBlockedReason: loaded.blockedReason,
     exchangeRateToINR: String(loaded.activeLines[0]?.exchangeRateToINR ?? 1),
@@ -270,6 +333,7 @@ export async function previewInvoicePayment(submission: PaymentSubmission, user:
     summary: result ? toSummaryDto(result) : null,
     alreadyRecorded: toSummaryDto(settlementOf(loaded, active)),
     canSave: evaluation.errors.length === 0 && result !== null && result.violations.length === 0,
+    gst: gstBreakdownOf(loaded),
   };
 }
 
