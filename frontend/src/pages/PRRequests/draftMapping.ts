@@ -1,5 +1,6 @@
 import type { Project } from "../../types/Project";
 import type { PRRequestProjectData } from "../../types/PRRequest";
+import { toDateOnly } from "../../utils/dateOnly";
 
 /**
  * Converts the in-memory `Project`-shaped draft object (the exact same type
@@ -83,11 +84,14 @@ export function draftPayloadToProject(base: Project, data: PRRequestProjectData)
     domesticForeign: data.domesticForeign,
     projectTitle: data.projectTitle,
     workOrderStatus: data.workOrderStatus,
-    projectStartDate: data.projectStartDate,
-    projectEndDate: data.projectEndDate ?? "",
+    // The stored payload holds these as ISO timestamps ("2026-11-11T00:00:00.000Z"); a <input type="date"> shows such a value as an EMPTY box, which is why both dates were blank
+    // on the Accounts / PMO Manager review form. Cut the date part off (no timezone arithmetic); a missing date stays blank.
+    projectStartDate: toDateOnly(data.projectStartDate),
+    projectEndDate: toDateOnly(data.projectEndDate),
     projectStatus: data.projectStatus,
     workOrderNumber: data.workOrderNumber ?? "",
-    workOrderDate: data.workOrderDate ?? "",
+    // Same ISO-into-a-date-input problem as the two project dates above: cut the date part off, never convert; a missing date stays blank.
+    workOrderDate: toDateOnly(data.workOrderDate),
     eicName: data.eicName ?? "",
     contactNumber: data.contactNumber ?? undefined,
     emailId: data.emailId ?? undefined,
@@ -131,7 +135,8 @@ export function draftPayloadToProject(base: Project, data: PRRequestProjectData)
             id: `draft-milestone-${index}`,
             milestoneName: m.milestoneName,
             paymentPercentage: m.paymentPercentage,
-            dueDate: m.dueDate ?? "",
+            // The milestone card's date inputs need YYYY-MM-DD too; the stored value is an ISO timestamp. No due date stays blank.
+            dueDate: toDateOnly(m.dueDate),
             amount: 0,
           }))
         : base.paymentMilestones,

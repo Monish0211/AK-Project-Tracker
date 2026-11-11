@@ -13,6 +13,8 @@ import {
   rejectPRRequest,
 } from "../../services/prRequestService";
 import type { PRRequestDetail, PRRequestStatus } from "../../types/PRRequest";
+import { formatDateOnly } from "../../utils/dateOnly";
+import { ProjectTimeline } from "./ProjectTimeline";
 
 const STATUS_TONE: Record<PRRequestStatus, "neutral" | "warning" | "accent" | "success" | "danger"> = {
   Draft: "neutral",
@@ -35,7 +37,6 @@ const FIELD_LABELS: [string, string][] = [
   ["department", "Department"],
   ["domesticForeign", "Domestic / Foreign"],
   ["workOrderStatus", "Work Order Status"],
-  ["projectStartDate", "Project Start Date"],
   ["projectStatus", "Project Status"],
   ["workOrderNumber", "Work Order Number"],
   ["workOrderDate", "Work Order Date"],
@@ -44,6 +45,9 @@ const FIELD_LABELS: [string, string][] = [
   ["contractType", "Contract Type"],
   ["pmoCoordinator", "PMO Coordinator"],
 ];
+
+/** Fields of the list above that hold a date: stored as ISO timestamps, shown as "01 Nov 2026" (or "—"). */
+const DATE_FIELD_KEYS = new Set<string>(["workOrderDate"]);
 
 const PRRequestDetailPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -145,11 +149,14 @@ const PRRequestDetailPage = () => {
             <div key={key}>
               <p className="text-[10.5px] font-bold uppercase tracking-wide text-[var(--nu-text-muted)]">{label}</p>
               <p className="font-semibold text-[var(--nu-text)] mt-0.5">
-                {String((request.projectData as unknown as Record<string, unknown>)[key] ?? "—")}
+                {DATE_FIELD_KEYS.has(key) ? formatDateOnly((request.projectData as unknown as Record<string, string | null | undefined>)[key]) : String((request.projectData as unknown as Record<string, unknown>)[key] ?? "—")}
               </p>
             </div>
           ))}
         </div>
+
+        {/* The dates the requester entered. The approvers' editable review form shows the same two values in its Project Schedule box. */}
+        <ProjectTimeline start={request.projectData.projectStartDate} end={request.projectData.projectEndDate} />
 
         <div className="grid grid-cols-3 gap-3 pt-3 border-t border-[var(--nu-border)] text-[12px]">
           <div>
