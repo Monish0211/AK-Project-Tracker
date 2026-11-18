@@ -2,7 +2,7 @@ import { matchPath } from "react-router-dom";
 import {
   LayoutDashboard, FolderKanban, FolderPlus, PencilLine, Eye,
   Building2, Users, Clock3, Wallet, BarChart3, Settings,
-  CreditCard, FileText, Briefcase, History, Receipt
+  CreditCard, FileText, Briefcase, History, Receipt, Scale
 } from "lucide-react";
 import type { BreadcrumbItem } from "../types/BreadcrumbItem";
 import { getProjectById } from "../services/projectService";
@@ -89,6 +89,11 @@ export const getBreadcrumbs = (pathname: string): BreadcrumbItem[] => {
     { path: "/customers", items: [
       { label: "Dashboard", icon: LayoutDashboard, href: "/", clickable: true },
       { label: "Customer Master", icon: Building2, clickable: false }
+    ]},
+    { path: "/manpower/conversion-rates", items: [
+      { label: "Dashboard", icon: LayoutDashboard, href: "/", clickable: true },
+      { label: "Manpower", icon: Users, href: "/manpower", clickable: true },
+      { label: "Manpower Conversion Rates", icon: Scale, clickable: false }
     ]},
     { path: "/manpower", items: [
       { label: "Dashboard", icon: LayoutDashboard, href: "/", clickable: true },

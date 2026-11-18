@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search } from "lucide-react";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
 import type { ReportInvoiceLine } from "../../../services/invoiceService";
@@ -13,6 +13,7 @@ interface Props {
 }
 
 export function OverdueTable({ projects, invoiceLines }: Props) {
+  const money = useReportMoney();
   const [search, setSearch] = useState("");
 
   const pendingLines = useMemo(() => {
@@ -133,7 +134,7 @@ export function OverdueTable({ projects, invoiceLines }: Props) {
                     <td className="p-2.5 font-semibold text-[var(--nu-text)] max-w-[130px] truncate">{row.client}</td>
                     <td className="p-2.5 font-medium text-[var(--nu-text)] max-w-[180px] truncate">{row.projectTitle}</td>
                     <td className="p-2.5 text-right font-mono font-extrabold text-amber-600 dark:text-amber-400">
-                      {formatBusinessINR(row.amountINR)}
+                      {money.compact(row.amountINR)}
                     </td>
                     <td className="p-2.5 text-center font-mono font-bold">{row.ageDays}</td>
                     <td className="p-2.5 text-center">

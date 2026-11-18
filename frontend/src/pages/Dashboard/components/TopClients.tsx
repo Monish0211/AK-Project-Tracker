@@ -3,12 +3,18 @@ import { Trophy, ArrowRight, Info } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { EmptyState } from "../../../components/ui/EmptyState";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { moneyFormatter } from "../../../utils/currencyDisplay";
 import { useDashboardSummary } from "../DashboardSummaryContext";
+import { sectionTitle, topClientSections } from "../../../utils/dashboardCountrySections";
 
 const TopClients: React.FC = () => {
   const navigate = useNavigate();
-  const clients = useDashboardSummary().topClients;
+  const summary = useDashboardSummary();
+  // One ranking per country, each in that country's own currency (Phase 4 final): never merged, converted or added. A single-country view is one section and
+  // reads exactly as before; All Countries shows a titled section per country.
+  const sections = topClientSections(summary).filter((s) => s.data.length > 0);
+  const clients = sections.flatMap((s) => s.data);
+  const titled = sections.length > 1;
 
   return (
     <Card padded={false} className="h-[325px] flex flex-col justify-between bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-md rounded-[var(--nu-radius-lg)] hover:shadow-lg transition-all duration-200">
@@ -39,9 +45,18 @@ const TopClients: React.FC = () => {
           />
         ) : (
           <div className="space-y-1 px-3 sm:px-4">
-            {clients.map((client, index) => (
+            {sections.map((section) => {
+              const money = moneyFormatter(section.currency);
+              return (
+              <React.Fragment key={section.key}>
+                {titled && (
+                  <p data-testid="top-clients-section" className="pt-1.5 pb-0.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    {sectionTitle(section)}
+                  </p>
+                )}
+            {section.data.map((client, index) => (
               <div
-                key={client.client}
+                key={`${section.key}|${client.client}`}
                 className="flex justify-between items-center rounded-xl px-2.5 py-1.5 hover:bg-slate-50/50 dark:hover:bg-slate-800/40 border border-transparent hover:border-slate-100 dark:border-slate-800 dark:hover:border-slate-800 transition-all duration-150"
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -60,11 +75,14 @@ const TopClients: React.FC = () => {
                     {client.client}
                   </p>
                 </div>
-                <p className="text-[12px] font-extrabold text-slate-900 dark:text-white shrink-0" title={`₹ ${client.workOrderValue.toLocaleString("en-IN")}`}>
-                  {formatBusinessINR(client.workOrderValue)}
+                <p className="text-[12px] font-extrabold text-slate-900 dark:text-white shrink-0" title={section.currency === "INR" ? `₹ ${client.workOrderValue.toLocaleString("en-IN")}` : money.full(client.workOrderValue)}>
+                  {money.compact(client.workOrderValue)}
                 </p>
               </div>
             ))}
+              </React.Fragment>
+              );
+            })}
           </div>
         )}
       </CardBody>

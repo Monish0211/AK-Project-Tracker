@@ -13,10 +13,22 @@ export interface DashboardKpisDto {
   totalOutstanding: number;
   totalExpenses: number;
   totalActualProjectCost: number;
+  /** Phase 4: projects in this currency whose man-hour cost is incomplete because no conversion rate has been applied (always 0 for INR). */
+  manhourIncompleteProjects: number;
+  /** Phase 4 / Option A: projects whose automatic recalculation after an employee-rate change is pending or failed, so their manpower cost may be out of date. */
+  manhourRefreshPendingProjects: number;
   totalProfit: number;
   totalProfitPercentage: number;
 }
 
+
+/**
+ * The headline totals of ONE currency (Phase 3). Projects are totalled per regional currency and different currencies are NEVER added
+ * together. totalProjects here counts only the projects in this currency.
+ */
+export interface DashboardCurrencyKpisDto extends DashboardKpisDto {
+  currency: string;
+}
 
 export interface HoursOverrunProjectDto {
   id: string;
@@ -88,10 +100,25 @@ export interface TeamLeadWorkloadProjectRefDto {
 export interface TeamLeadWorkloadDto {
   reportingManager: string;
   activeProjectsCount: number;
+  /** The person's work order value in the HEADLINE currency only (unchanged for an India view); see totalsByCurrency for every currency. */
   totalWorkOrderValue: number;
   formattedWorkOrderValue: string;
+  /**
+   * The person's work order value per currency (Phase 4 follow-up). Each project contributes its work order value in ITS OWN regional currency, so an assignee
+   * with Oman and Malaysia projects shows an OMR total and a MYR total, never one added figure and never a 0 for the currency that is not the headline one.
+   * Headline currency first, then the others by project count. An India-only person has exactly one INR entry, equal to totalWorkOrderValue.
+   */
+  totalsByCurrency: TeamLeadWorkloadValueDto[];
   status: "High" | "Medium" | "Normal";
   projects: TeamLeadWorkloadProjectRefDto[];
+}
+
+export interface TeamLeadWorkloadValueDto {
+  currency: string;
+  /** Active projects of this person in this currency. */
+  projects: number;
+  totalWorkOrderValue: number;
+  formattedWorkOrderValue: string;
 }
 
 /** One active project with at least one Quantity Details row missing an Assigned To — see buildTeamLeads()'s missingAssigneeProjects. */
@@ -146,6 +173,27 @@ export interface TopClientDto {
   workOrderValue: number;
 }
 
+/**
+ * One country's ranking, in that country's own currency. Countries are never merged and currencies never added: the same customer can appear in
+ * several sections, each ranked and valued independently (Phase 4 final).
+ */
+export interface CountryTopClientsDto {
+  /** The stored country key (PR Category). */
+  countryKey: string;
+  /** What the UI shows ("FZE" for the stored key "FZI"). */
+  country: string;
+  currency: string;
+  clients: TopClientDto[];
+}
+
+export interface CountryDepartmentsDto {
+  countryKey: string;
+  country: string;
+  currency: string;
+  /** The same department figures as the overall panel, computed from this country's projects only; workOrderValue is in `currency`. */
+  departments: DepartmentsDto;
+}
+
 export interface ProjectHealthDto {
   onTrack: number;
   atRisk: number;
@@ -161,6 +209,9 @@ export interface RecentProjectDto {
   client: string;
   projectStatus: string;
   workOrderValueINR: number;
+  /** The work order value in the project's OWN regional currency, and that currency (Phase 3). For an INR or legacy project this equals workOrderValueINR and "INR". */
+  workOrderValue: number;
+  currency: string;
   createdAt: string;
 }
 
@@ -192,13 +243,24 @@ export interface DepartmentsDto {
 export interface DashboardSummaryDto {
   generatedAt: string;
   kpis: DashboardKpisDto;
+  /**
+   * The currency `kpis` is in (Phase 3). INR whenever the projects in view include INR or legacy projects (so the India dashboard is exactly
+   * as before); otherwise the one regional currency in view, e.g. OMR for an Oman view.
+   */
+  kpiCurrency: string;
+  /** The totals of every OTHER currency in view, listed separately and never added into `kpis`. Empty for a single-currency view. */
+  otherCurrencies: DashboardCurrencyKpisDto[];
   hoursOverrun: HoursOverrunDto;
   timelineAlerts: TimelineAlertsDto;
   teamLeads: TeamLeadsDto;
   timesheetPending: { items: TimesheetPendingItemDto[] };
   activity: { items: ActivityEventDto[] };
   topClients: TopClientDto[];
+  /** Top Clients per country (own currency each). One entry for a single-country view; one per country with projects for All Countries. */
+  topClientsByCountry: CountryTopClientsDto[];
   health: ProjectHealthDto;
   recentProjects: RecentProjectDto[];
   departments: DepartmentsDto;
+  /** The Departments panel per country (own currency each), same shape rules as topClientsByCountry. */
+  departmentsByCountry: CountryDepartmentsDto[];
 }

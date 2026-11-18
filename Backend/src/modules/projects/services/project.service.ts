@@ -1,6 +1,9 @@
 import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccess, assertProjectReadAccess, resolveProjectReadScope } from "../../../shared/utils/projectAccess.js";
+import { getCountryAccessMode, regionIdForPrCategory } from "../../../shared/utils/countryAccess.js";
+import { assertImportCountriesAcceptable, checkImportRows, resolveAndAuthorizeCreateCountry, resolveCountryForPrCategory } from "../prCategoryCountry.js";
+import { usesRegionalRules } from "../../quantity/quantityCurrency.rules.js";
 import { validatePrCategoryPrNoRule } from "../project.constants.js";
 import { reconcileUnassignedEntriesForProject } from "../../timesheets/services/timesheet.service.js";
 import {
@@ -26,6 +29,10 @@ import type {
 } from "../dto/project.dto.js";
 import type { Prisma as PrismaTypes } from "../../../../generated/prisma/client.js";
 import { getUserDisplayName } from "../../../shared/utils/userDisplayName.js";
+import { projectHasManhourCosting } from "../../manhourRates/manhourRate.repository.js";
+import { openTaskStatusesByProject } from "../../manhourCosting/manhourCosting.repository.js";
+import { projectRefreshStatus } from "../../manhourCosting/manhourCosting.rules.js";
+import type { ProjectRefreshStatus } from "../../manhourCosting/manhourCosting.rules.js";
 import { COMPLETED_STATUS, completionNoteMessage, decideCompletion } from "../projectCompletion.rules.js";
 import type { ExistingCompletionState, RecordLd } from "../projectCompletion.rules.js";
 import { createProjectNote } from "../repository/projectNote.repository.js";
@@ -36,7 +43,9 @@ import {
   claimLdRecording,
   countProjectsByStatus,
   createProject as createProjectInRepository,
+  countQuantityLinesForProject,
   createProjectsBulk,
+  findRegionalCurrenciesByProjectIds,
   findActiveProjectByPrNo,
   findActiveProjectsByPrNos,
   findProjectById,
@@ -63,6 +72,9 @@ import type {
 interface CommercialTotals {
   workOrderValueINR: number;
   pendingDueINR: number;
+  /** The same figures in the project's regional currency (Phase 3); equal to the INR ones for an INR or legacy project. */
+  workOrderValueRegional: number;
+  pendingDueRegional: number;
   /** Every non-Cancelled invoice line is actually Paid (none Draft / Raised / Partially Paid) — see allActiveInvoiceLinesPaid(). */
   allInvoicesPaid: boolean;
   /**
@@ -81,15 +93,25 @@ interface CommercialTotals {
   /** Oct 2026 — server-authoritative expense totals (see ProjectDto). */
   manhourCostINR: number;
   nonManhourCostINR: number;
+  /** Phase 4: man-hour cost in the project's own regional currency (the INR figure for an INR / legacy project) and the rows still without a rate. */
+  manhourCostRegional: number;
+  manhourRateMissingRows: number;
+  /** Phase 4 / Option A: CURRENT, or PENDING / FAILED while an employee-rate recalculation for this project has not completed. */
+  manhourRefreshStatus: ProjectRefreshStatus;
 }
 
 const DEFAULT_COMMERCIAL_TOTALS: CommercialTotals = {
   workOrderValueINR: 0,
   pendingDueINR: 0,
+  workOrderValueRegional: 0,
+  pendingDueRegional: 0,
   allInvoicesPaid: false,
   hasOpenInvoiceRequest: false,
   manhourCostINR: 0,
   nonManhourCostINR: 0,
+  manhourCostRegional: 0,
+  manhourRateMissingRows: 0,
+  manhourRefreshStatus: "CURRENT",
 };
 
 /**
@@ -110,14 +132,17 @@ export async function computeCommercialTotalsByProjectId(projectIds: string[]): 
   // hasOpenInvoiceRequest (Oct 2026) — one additional batched query
   // alongside the two already here, same shape/convention, never one per
   // project, never feeding into workOrderValueINR/pendingDueINR below.
-  const [quantityTotals, invoiceLines, openInvoiceRequestProjectIds, expenseTotals] = await Promise.all([
+  const [quantityTotals, invoiceLines, openInvoiceRequestProjectIds, expenseTotals, regionalCurrencies, openRefreshTasks] = await Promise.all([
     groupQuantityTotals(projectIds),
     findInvoiceLinesForProjects(projectIds),
     findOpenInvoiceRequestProjectIds(projectIds),
     sumExpenseTotalsByProjectIds(projectIds),
+    findRegionalCurrenciesByProjectIds(projectIds),
+    openTaskStatusesByProject(projectIds),
   ]);
 
   const woValueByProject = new Map(quantityTotals.map((row) => [row.projectId, row.woValue]));
+  const woValueRegionalByProject = new Map(quantityTotals.map((row) => [row.projectId, row.woValueRegional]));
   const linesByProject = new Map<string, { status: string; invoiceAmountINR: number }[]>();
   for (const line of invoiceLines) {
     const list = linesByProject.get(line.projectId) ?? [];
@@ -133,13 +158,27 @@ export async function computeCommercialTotalsByProjectId(projectIds: string[]): 
     // already uses (Math.max(projectValueINR - totalInvoiceRaised, 0)) — not a
     // new Pending Due rule, just this same one computed once more server-side.
     const pendingDueINR = Math.max(workOrderValueINR - totalInvoiceRaised, 0);
+    // Phase 3: in the project's regional currency. INR and legacy projects: identical to the INR figures. Any other region: the regional
+    // line sum (the INR column is 0 there by design; invoicing is not yet available for those projects, so nothing has been raised).
+    const storedRegional = regionalCurrencies.get(projectId) ?? null;
+    const nonInrRegion = usesRegionalRules(storedRegional) && storedRegional !== "INR";
+    const workOrderValueRegional = nonInrRegion ? (woValueRegionalByProject.get(projectId) ?? 0) : workOrderValueINR;
+    // A project in another currency: what is left to invoice, in ITS currency - the regional work order value less what has been raised in that currency
+    // (project-currency amounts of its non-cancelled lines, capped at the work order value exactly like the INR figure). Never mixed with the INR columns.
+    const raisedRegional = nonInrRegion ? projectCommercialTotals(workOrderValueRegional, linesByProject.get(projectId) ?? []).totalInvoiceRaised : 0;
+    const pendingDueRegional = nonInrRegion ? Math.max(workOrderValueRegional - raisedRegional, 0) : pendingDueINR;
     result.set(projectId, {
       workOrderValueINR,
       pendingDueINR,
+      workOrderValueRegional,
+      pendingDueRegional,
       allInvoicesPaid: allActiveInvoiceLinesPaid(linesByProject.get(projectId) ?? []),
       hasOpenInvoiceRequest: openRequestProjectIdSet.has(projectId),
       manhourCostINR: expenseTotals.manhour.get(projectId) ?? 0,
       nonManhourCostINR: expenseTotals.nonManhour.get(projectId) ?? 0,
+      manhourCostRegional: nonInrRegion ? (expenseTotals.manhourRegional.get(projectId) ?? 0) : (expenseTotals.manhour.get(projectId) ?? 0),
+      manhourRateMissingRows: nonInrRegion ? (expenseTotals.manhourNotConverted.get(projectId) ?? 0) : 0,
+      manhourRefreshStatus: projectRefreshStatus(openRefreshTasks.get(projectId) ?? []),
     });
   }
 
@@ -180,6 +219,8 @@ function toProjectDto(
     completedTimestamp: project.completedTimestamp,
     ldApplicable: project.ldApplicable,
     ldAmountINR: project.ldAmountINR === null ? null : Number(project.ldAmountINR),
+    ldCurrency: project.ldCurrency,
+    ldAmountRegional: project.ldAmountRegional === null ? null : Number(project.ldAmountRegional),
     ldRemarks: project.ldRemarks,
     ldRecordedByUserId: project.ldRecordedByUserId,
     ldRecordedAt: project.ldRecordedAt,
@@ -200,6 +241,7 @@ function toProjectDto(
     currentExchangeRate: project.currentExchangeRate,
     contractExchangeRate: project.contractExchangeRate,
     invoiceCurrency: project.invoiceCurrency,
+    regionalCurrency: project.regionalCurrency,
     manhourBudgetAmount: project.manhourBudgetAmount,
     manhourBudgetHours: project.manhourBudgetHours,
     manhourBudgetRemarks: project.manhourBudgetRemarks,
@@ -218,10 +260,15 @@ function toProjectDto(
     updatedAt: project.updatedAt,
     workOrderValueINR: commercial.workOrderValueINR,
     pendingDueINR: commercial.pendingDueINR,
+    workOrderValueRegional: commercial.workOrderValueRegional,
+    pendingDueRegional: commercial.pendingDueRegional,
     allInvoicesPaid: commercial.allInvoicesPaid,
     hasOpenInvoiceRequest: commercial.hasOpenInvoiceRequest,
     manhourCostINR: commercial.manhourCostINR,
     nonManhourCostINR: commercial.nonManhourCostINR,
+    manhourCostRegional: commercial.manhourCostRegional,
+    manhourRateMissingRows: commercial.manhourRateMissingRows,
+    manhourRefreshStatus: commercial.manhourRefreshStatus,
   };
 }
 
@@ -234,6 +281,8 @@ function toCompletionState(project: ProjectRow): ExistingCompletionState {
     completionRemarks: project.completionRemarks,
     ldApplicable: project.ldApplicable,
     ldAmountINR: project.ldAmountINR === null ? null : Number(project.ldAmountINR),
+    ldCurrency: project.ldCurrency,
+    ldAmountRegional: project.ldAmountRegional === null ? null : Number(project.ldAmountRegional),
     ldRemarks: project.ldRemarks,
   };
 }
@@ -271,7 +320,13 @@ async function writeCompletionNote(tx: PrismaTypes.TransactionClient, projectId:
         actualCompletionDate: row.actualCompletionDate ?? new Date(),
         completionRemarks: row.completionRemarks ?? "",
         completedByName,
-        ld: { ldApplicable: row.ldApplicable, ldAmountINR: row.ldAmountINR === null ? null : Number(row.ldAmountINR), ldRemarks: row.ldRemarks },
+        ld: {
+          ldApplicable: row.ldApplicable,
+          ldAmountINR: row.ldAmountINR === null ? null : Number(row.ldAmountINR),
+          ldCurrency: row.ldCurrency,
+          ldAmountRegional: row.ldAmountRegional === null ? null : Number(row.ldAmountRegional),
+          ldRemarks: row.ldRemarks,
+        },
         ldNewlyRecorded,
       }),
       createdBy: completedByName,
@@ -391,6 +446,22 @@ function toGeneralInfoData(input: GeneralInfoInput): ProjectGeneralInfoData {
 }
 
 /**
+ * Phase 3: a new project in a country whose regional currency is not INR starts in that currency at rate 1. The request schema defaults every project
+ * to INR at rate 1, so "INR at exactly 1" on a non-INR country is the untouched default (an API, import or PR Request creation that never chose a
+ * currency), never a real choice: INR priced against, say, OMR at rate 1 would be nonsense. Any other currency the caller chose is left alone.
+ */
+function regionalDefaultCurrencyFields(
+  input: { currency?: string | undefined; currentExchangeRate?: number | undefined },
+  regionalCurrency: string | null
+): { currency?: string; currentExchangeRate?: number; contractExchangeRate?: number } {
+  if (!usesRegionalRules(regionalCurrency) || regionalCurrency === "INR") return {};
+  if ((input.currency ?? "INR") === "INR" && (input.currentExchangeRate ?? 1) === 1) {
+    return { currency: regionalCurrency as string, currentExchangeRate: 1, contractExchangeRate: 1 };
+  }
+  return {};
+}
+
+/**
  * The creator identity comes from the authenticated caller's own JWT
  * (`req.user.sub`), never from the request body — there is no
  * `createdByUserId`/similar field in `createProjectSchema` to trust from the
@@ -398,15 +469,26 @@ function toGeneralInfoData(input: GeneralInfoInput): ProjectGeneralInfoData {
  */
 export async function createProject(input: CreateProjectRequestInput, creatorUserId: string): Promise<ProjectDto> {
   assertPrCategoryPrNoRule(input.prCategory, input.prNo);
+  // Country (Phase 2): the project's country comes from its PR Category only; the creator must hold that country (any authorized country
+  // is allowed whatever the creator's own country or the active-country selector). Checked before anything about the PR Number is revealed.
+  const { regionId: projectRegionId, regionalCurrency: projectRegionalCurrency } = await resolveAndAuthorizeCreateCountry(input.prCategory, creatorUserId);
   await assertPrNoAvailable(input.prNo);
 
   // Creating a project directly as Completed follows the same completion and
   // LD rules as completing one later (projectCompletion.rules.ts).
-  const completion = decideCompletion(null, input);
+  // The LD currency is the project's own (INR for India, the regional currency otherwise), decided here from the stored country, never from the client.
+  const completion = decideCompletion(null, input, projectRegionalCurrency);
   if (!completion.ok) throw new AppError(completion.message, completion.status);
   const completedByName = completion.isCompletion ? await getUserDisplayName(creatorUserId) : "";
 
-  const data = { ...toGeneralInfoData(input), createdByUserId: creatorUserId };
+  // The project's country is filled from the stored PR Category only (never the PR prefix, never the creator's country).
+  const data = {
+    ...toGeneralInfoData(input),
+    ...regionalDefaultCurrencyFields(input, projectRegionalCurrency),
+    createdByUserId: creatorUserId,
+    regionId: projectRegionId,
+    regionalCurrency: projectRegionalCurrency,
+  };
   const entryId = input.pmoCoordinatorEntryId;
   // The coordinator account linked by this create, if any — the allocation
   // email is sent only after the insert has committed (see below).
@@ -497,6 +579,15 @@ export async function bulkImportProjects(
     seen.add(key);
   }
 
+  // Each row's country comes from its OWN PR Category (never the PR prefix, the importer, their active country or the row order), so one
+  // file can mix countries. Every row is authorized against the importer's grants. Approved policy: one unauthorized, blank or unmapped
+  // row rejects the WHOLE file with a row-by-row report (enforce mode only); nothing is created.
+  const countryCheck = await checkImportRows(
+    input.projects.map((p) => ({ prNo: p.prNo, prCategory: p.prCategory })),
+    creatorUserId
+  );
+  assertImportCountriesAcceptable(countryCheck);
+
   const existing = await findActiveProjectsByPrNos(prNos);
   if (existing.length > 0) {
     const names = existing.map((p) => `"${p.prNo}"`).join(", ");
@@ -506,7 +597,7 @@ export async function bulkImportProjects(
   let created;
   try {
     created = await createProjectsBulk(
-      input.projects.map((p) => ({ ...toGeneralInfoData(p), createdByUserId: creatorUserId }))
+      input.projects.map((p, i) => ({ ...toGeneralInfoData(p), ...regionalDefaultCurrencyFields(p, countryCheck.rows[i]?.regionalCurrency ?? null), createdByUserId: creatorUserId, regionId: countryCheck.rows[i]?.regionId ?? null, regionalCurrency: countryCheck.rows[i]?.regionalCurrency ?? null }))
     );
   } catch (err) {
     // P1-17 — a concurrent request (another import, or a single-project
@@ -667,12 +758,63 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
 
   // Completion + Liquidated Damages (Oct 2026) — LD only on the completing
   // save, never changed afterwards; completion needs date + 20-char remarks.
-  const completion = decideCompletion(toCompletionState(existing), input);
+  const completion = decideCompletion(toCompletionState(existing), input, existing.regionalCurrency);
   if (!completion.ok) throw new AppError(completion.message, completion.status);
   const completionWrite = completion.isCompletion || completion.recordLd !== null;
   const completedByName = completion.isCompletion ? await getUserDisplayName(user.sub) : "";
 
   const updateData = toUpdateData(input);
+  // The country follows the stored PR Category while country access is not enforced (off / shadow), exactly as in Phase 1. When it IS
+  // enforced, an existing project's country is protected: an edit that would change the PR Category to one in a different country is
+  // refused (no silent move; a deliberate reassignment workflow is not approved yet). Saving the unchanged category is a no-op, so the
+  // edit form, which re-sends every field, never touches the country.
+  // Phase 3: a category change (possible in off / shadow mode) that would move the project to a country with a different default currency.
+  // Once any Quantity line is priced the regional currency is pinned and the change is refused, so those amounts stay meaningful. While nothing
+  // is priced yet (a project that was only just created) the regional currency follows the new country, exactly as the country itself does.
+  // Phase 4: a project's country decides the currency its manpower cost is converted into. Once it has timesheet hours or manpower costing records,
+  // an ordinary edit may not move it to another country: that would silently reinterpret those INR and regional amounts. No automatic re-pricing;
+  // a deliberate country-reassignment workflow is a separately approved feature.
+  if (
+    input.prCategory !== undefined &&
+    input.prCategory !== existing.prCategory &&
+    usesRegionalRules(existing.regionalCurrency) &&
+    (await regionIdForPrCategory(input.prCategory)) !== existing.regionId &&
+    (await projectHasManhourCosting(id))
+  ) {
+    throw new AppError(
+      "This project already has timesheet hours or manpower costing, which are converted into its country's currency. Its country cannot be changed by editing the project. Contact an Administrator.",
+      409
+    );
+  }
+  if (input.prCategory !== undefined && input.prCategory !== existing.prCategory && usesRegionalRules(existing.regionalCurrency)) {
+    const target = await resolveCountryForPrCategory(input.prCategory);
+    const targetCurrency = target.kind === "mapped" ? target.country.defaultCurrency : null;
+    if (targetCurrency !== existing.regionalCurrency) {
+      if ((await countQuantityLinesForProject(id)) > 0) {
+        throw new AppError(
+          `This project's regional currency (${existing.regionalCurrency}) is fixed once quantities are priced and cannot change with the PR Category.`,
+          409
+        );
+      }
+      updateData.regionalCurrency = targetCurrency;
+      if (existing.currency === existing.regionalCurrency) {
+        // The project was still in its (old) regional currency at rate 1: it starts in the new one the same way.
+        updateData.currency = targetCurrency ?? "INR";
+        updateData.currentExchangeRate = 1;
+        updateData.contractExchangeRate = 1;
+      }
+    }
+  }
+  if (input.prCategory !== undefined) {
+    if (getCountryAccessMode() !== "enforce") {
+      updateData.regionId = await regionIdForPrCategory(input.prCategory);
+    } else if (input.prCategory !== existing.prCategory && (await regionIdForPrCategory(input.prCategory)) !== existing.regionId) {
+      throw new AppError(
+        "Changing the PR Category would move this project to a different country. Moving a project between countries is not available yet; contact an Administrator.",
+        409
+      );
+    }
+  }
   const entryId = input.pmoCoordinatorEntryId;
   const isReadOnly = user.roleName === "Read Only";
 

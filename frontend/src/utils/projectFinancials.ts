@@ -28,6 +28,11 @@
  */
 import { lineCashINR, lineSettledINR } from "./invoiceCash";
 import { getTotalNonManhourCost } from "../services/expenseService";
+import { regionalCurrencyOf, regionalWorkOrderValue } from "./currencyDisplay";
+
+// Liquidated Damages and a project in another country (Phase 4 final). The approved rule: LD is entered in the project's OWN currency (INR for India, exactly as
+// before; MYR / OMR / AED / QAR otherwise) and a regional LD is deducted from that project's regional profit, never converted to or from INR. A LEGACY rupee LD
+// (recorded before regional LD existed, no currency) on a non-India project is never reinterpreted: it is shown as INR and NOT subtracted from the regional profit.
 import type { NonManhourExpense } from "../types/NonManhourExpense";
 
 export const INVOICE_STATUS_ORDER = ["Draft", "Raised", "PartiallyPaid", "Paid", "Cancelled"] as const;
@@ -53,10 +58,24 @@ export interface ProjectFinancialInputs {
   /** null = the caller has no invoice access (403 on invoice data). */
   invoiceLines: FinancialInvoiceLine[] | null;
   /** Recorded LD; omitted/null ldApplicable = not recorded. */
-  ld?: { ldApplicable: boolean | null | undefined; ldAmountINR: number | null | undefined } | null;
+  ld?: {
+    ldApplicable: boolean | null | undefined;
+    ldAmountINR: number | null | undefined;
+    ldAmountRegional?: number | null | undefined;
+    ldCurrency?: string | null | undefined;
+  } | null;
+  /** The project's regional currency (INR when omitted). The amounts above are in it; a non-INR project's INR LD is never deducted from them. */
+  currency?: string | undefined;
 }
 
 export interface LdBreakdown {
+  /** The currency of profitBeforeLd / finalProfit (INR unless the project is in another country). */
+  currency: string;
+  /**
+   * A LEGACY rupee LD on a NON-INR project (LD = Yes, recorded before regional LD existed): shown as INR, not deducted from the regional profit. null for an INR
+   * project, for a regional LD (which IS deducted, in ldDeduction) and whenever LD is No / not recorded.
+   */
+  ldInrNotDeducted: number | null;
   /** Same value as `profit` (WO − Expenses). */
   profitBeforeLd: number;
   /** Recorded deduction; 0 for LD = No; null when LD was never recorded. */
@@ -100,12 +119,26 @@ export function computeLdBreakdown(input: {
   expensesINR: number;
   ldApplicable: boolean | null | undefined;
   ldAmountINR: number | null | undefined;
+  /** A regional LD (Phase 4 final): the amount in the project's own currency, and the currency it was recorded in. */
+  ldAmountRegional?: number | null | undefined;
+  ldCurrency?: string | null | undefined;
+  /** The project's regional currency; INR when omitted. */
+  currency?: string | undefined;
 }): LdBreakdown {
+  const currency = input.currency || "INR";
   const workOrderValue = amount(input.workOrderValueINR);
   const profitBeforeLd = workOrderValue - amount(input.expensesINR);
-  const ldDeduction = input.ldApplicable === true ? amount(input.ldAmountINR) : input.ldApplicable === false ? 0 : null;
+  const inOtherCurrency = currency !== "INR";
+  // A regional LD recorded in the project's own currency is deducted from the regional profit as it is. Anything else on a non-INR project is a legacy rupee
+  // amount: shown as INR, not deducted (see the note at the top of this file). An INR project uses its INR amount exactly as before.
+  const regionalLd = inOtherCurrency && typeof input.ldAmountRegional === "number" && (input.ldCurrency ?? currency) === currency ? amount(input.ldAmountRegional) : null;
+  const rupeeLd = input.ldApplicable === true ? amount(input.ldAmountINR) : 0;
+  const recorded = input.ldApplicable === true ? (inOtherCurrency ? (regionalLd ?? 0) : rupeeLd) : input.ldApplicable === false ? 0 : null;
+  const ldDeduction = recorded;
   const finalProfit = profitBeforeLd - (ldDeduction ?? 0);
   return {
+    currency,
+    ldInrNotDeducted: inOtherCurrency && input.ldApplicable === true && regionalLd === null && typeof input.ldAmountINR === "number" ? rupeeLd : null,
     profitBeforeLd,
     ldDeduction,
     ldStatus: input.ldApplicable === true ? "Yes" : input.ldApplicable === false ? "No" : "Not recorded",
@@ -173,20 +206,33 @@ export function computeProjectFinancials(input: ProjectFinancialInputs): Project
     profit,
     profitPercent: workOrderValue === 0 ? null : (profit / workOrderValue) * 100,
     invoice: input.invoiceLines === null ? null : computeInvoiceFinancials(input.invoiceLines, workOrderValue),
-    ...computeLdBreakdown({ workOrderValueINR: workOrderValue, expensesINR: expenses, ldApplicable: input.ld?.ldApplicable, ldAmountINR: input.ld?.ldAmountINR }),
+    ...computeLdBreakdown({
+      workOrderValueINR: workOrderValue,
+      expensesINR: expenses,
+      ldApplicable: input.ld?.ldApplicable,
+      ldAmountINR: input.ld?.ldAmountINR,
+      ldAmountRegional: input.ld?.ldAmountRegional,
+      ldCurrency: input.ld?.ldCurrency,
+      currency: input.currency,
+    }),
   };
 }
 
 /** Minimal project shape for projectLdSummary (structurally a Project). */
 export interface LdSummaryProject {
+  regionalCurrency?: string | null;
+  workOrderValueRegional?: number;
+  backendWorkOrderValueRegional?: number;
   workOrderValueINR?: number;
   backendWorkOrderValueINR?: number;
   backendManhourCostINR?: number;
   backendNonManhourCostINR?: number;
-  resources?: { manhourCost?: number }[];
+  resources?: { manhourCost?: number; costingStatus?: string | null; manhourCostRegional?: number | null }[];
   nonManhourExpenses?: FinancialNonManhourRow[];
   ldApplicable?: boolean | null;
   ldAmountINR?: number | null;
+  ldAmountRegional?: number | null;
+  ldCurrency?: string | null;
 }
 
 /**
@@ -196,6 +242,24 @@ export interface LdSummaryProject {
  * only a backend without those totals falls back to the loaded rows.
  */
 export function projectLdSummary(p: LdSummaryProject): LdBreakdown {
+  const currency = regionalCurrencyOf(p);
+  if (currency !== "INR") {
+    // A project in another country: its profit is in its own currency (regional work order value less the converted man-hour cost and the other expenses, which
+    // are plain numbers in that currency). A row with no rate applied counts 0, exactly as Reports does. The INR LD is reported separately and not deducted.
+    const workOrderValue = typeof p.backendWorkOrderValueRegional === "number" ? p.backendWorkOrderValueRegional : regionalWorkOrderValue(p);
+    const manhour = (p.resources ?? []).reduce((sum, r) => sum + (r.costingStatus === "CONVERTED" && typeof r.manhourCostRegional === "number" ? r.manhourCostRegional : 0), 0);
+    const nonManhour =
+      typeof p.backendNonManhourCostINR === "number" ? p.backendNonManhourCostINR : getTotalNonManhourCost((p.nonManhourExpenses ?? []) as NonManhourExpense[]);
+    return computeLdBreakdown({
+      workOrderValueINR: workOrderValue,
+      expensesINR: manhour + nonManhour,
+      ldApplicable: p.ldApplicable,
+      ldAmountINR: p.ldAmountINR,
+      ldAmountRegional: p.ldAmountRegional,
+      ldCurrency: p.ldCurrency,
+      currency,
+    });
+  }
   const hasServerTotals = typeof p.backendManhourCostINR === "number" && typeof p.backendNonManhourCostINR === "number";
   const expensesINR = hasServerTotals
     ? p.backendManhourCostINR! + p.backendNonManhourCostINR!

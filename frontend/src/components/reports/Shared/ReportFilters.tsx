@@ -14,7 +14,8 @@ interface Props {
     categories: string[];
     statuses: string[];
     projectManagers: string[];
-    regions: string[];
+    /** Countries present in the projects the user may read, as { value: country key, label: display name }. */
+    countries: { value: string; label: string }[];
   };
 }
 
@@ -192,9 +193,9 @@ export function ReportFilters({ filters, setFilters, resetFilters, options }: Pr
               className="w-full bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-lg p-1.5 text-xs text-[var(--nu-text)] focus:outline-none focus:ring-1 focus:ring-[var(--nu-accent)]"
             >
               <option value="ALL">All Regions</option>
-              {options.regions.map((reg) => (
-                <option key={reg} value={reg}>
-                  {reg}
+              {options.countries.map((country) => (
+                <option key={country.value} value={country.value}>
+                  {country.label}
                 </option>
               ))}
             </select>

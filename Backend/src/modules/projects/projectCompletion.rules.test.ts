@@ -25,8 +25,8 @@ test("ldAmountError: positive, finite, ≤ 2 decimals, bounded", () => {
 });
 
 test("completion requires an explicit LD decision, a date and 20-char remarks", () => {
-  assert.deepEqual(decideCompletion(ACTIVE, { ...COMPLETE, ldApplicable: false }), { ok: true, isCompletion: true, recordLd: { ldApplicable: false, ldAmountINR: null, ldRemarks: null } });
-  assert.deepEqual(decideCompletion(ACTIVE, { ...COMPLETE, ldApplicable: true, ldAmountINR: 50000, ldRemarks: "  Clause 14.2  " }), { ok: true, isCompletion: true, recordLd: { ldApplicable: true, ldAmountINR: 50000, ldRemarks: "Clause 14.2" } });
+  assert.deepEqual(decideCompletion(ACTIVE, { ...COMPLETE, ldApplicable: false }), { ok: true, isCompletion: true, recordLd: { ldApplicable: false, ldCurrency: null, ldAmountINR: null, ldAmountRegional: null, ldRemarks: null } });
+  assert.deepEqual(decideCompletion(ACTIVE, { ...COMPLETE, ldApplicable: true, ldAmountINR: 50000, ldRemarks: "  Clause 14.2  " }), { ok: true, isCompletion: true, recordLd: { ldApplicable: true, ldCurrency: "INR", ldAmountINR: 50000, ldAmountRegional: null, ldRemarks: "Clause 14.2" } });
   const noDecision = decideCompletion(ACTIVE, COMPLETE);
   assert.equal(noDecision.ok, false);
   assert.ok(!noDecision.ok && noDecision.status === 400 && /choose whether/.test(noDecision.message));

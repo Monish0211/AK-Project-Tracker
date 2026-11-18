@@ -44,7 +44,20 @@ export interface ResourceDto {
   workingDays: number;
   totalHours: number;
 
+  /** INR, exactly as before. */
   manhourCost: number;
+
+  /**
+   * Phase 4 - regional costing of manhourCost. costingStatus is INR (no conversion), CONVERTED or RATE_MISSING; null on a row saved before Phase 4
+   * (an INR project needs none; on a non-INR project a null status means "Rate not set"). manhourCostRegional is in costCurrency, null unless CONVERTED.
+   */
+  costCurrency: string | null;
+  costingStatus: string | null;
+  fxRateVersion: number | null;
+  /** "1 regional currency unit = X INR" as used for this row. */
+  fxRateInrPerRegional: number | null;
+  manhourCostRegional: number | null;
+  rateSetAt: Date | null;
 
   lastSyncedAt: Date | null;
 

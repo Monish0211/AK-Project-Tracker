@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { EmptyState } from "../Shared/EmptyState";
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
 const COLORS = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b"];
 
 export function ContractValueChart({ projects }: Props) {
+  const money = useReportMoney();
   const pieData = useMemo(() => {
     const regMap: Record<string, number> = {};
 
@@ -57,7 +58,7 @@ export function ContractValueChart({ projects }: Props) {
                 <Cell key={`cell-${index}`} fill={entry.color} />
               ))}
             </Pie>
-            <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), "Contract Value"]} />
+            <Tooltip formatter={(val: any) => [money.compact(Number(val)), "Contract Value"]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
           </PieChart>
         </ResponsiveContainer>

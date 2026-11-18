@@ -46,6 +46,18 @@ export function describeMissingModule(user: UserSession | null, requirement: Mod
   return undefined;
 }
 
+/**
+ * Manpower > Manpower Conversion Rates (central country rates). Seeing it needs the explicit "Manpower Conversion Rates" grant and nothing else (not "Manpower", not
+ * a role). Changing or applying a rate also needs the Administrator or PMO Manager role. The API enforces both; this only decides what the screens offer.
+ */
+export function canViewConversionRates(user: UserSession | null): boolean {
+  return hasModuleAccess(user, "Manpower Conversion Rates");
+}
+
+export function canManageConversionRates(user: UserSession | null): boolean {
+  return canViewConversionRates(user) && (user?.role === "Administrator" || user?.role === "PMO Manager");
+}
+
 export function hasRegionAccess(user: UserSession | null, regionName: string): boolean {
   return !!user && user.regions.includes(regionName);
 }

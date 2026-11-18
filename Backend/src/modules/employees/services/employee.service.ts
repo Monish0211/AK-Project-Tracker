@@ -1,4 +1,7 @@
 import { AppError } from "../../../shared/utils/AppError.js";
+import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
+import { processRunSafely, recordRateChangeRun } from "../../manhourCosting/manhourCostRefresh.service.js";
+import { hourlyRateChanged } from "../../manhourCosting/manhourCosting.rules.js";
 import { countResourcesForEmployee } from "../../resources/services/resource.service.js";
 import type { EmployeeDto, ImportEmployeesResultDto, PaginatedEmployeeListDto } from "../dto/employee.dto.js";
 import type { EmployeeData } from "../employee.types.js";
@@ -9,6 +12,7 @@ import {
   findEmployeeById,
   findEmployeesByEmployeeNos,
   findEmployeesPage,
+  runEmployeeTransaction,
   updateEmployee as updateEmployeeInRepository,
 } from "../repository/employee.repository.js";
 import type {
@@ -59,18 +63,25 @@ function toEmployeeData(input: CreateEmployeeInput | ImportEmployeeRowInput): Em
     reportingManager: input.reportingManager ?? null,
     grade: input.grade,
     location: input.location,
-    manhourExpenses: input.manhourExpenses,
+    manhourExpenses: input.manhourExpenses ?? 0, // an import row with a blank rate never reaches here with undefined for an UPDATE (the service strips it); a new employee gets the default 0
     status: input.status,
     dateOfJoining: "dateOfJoining" in input ? input.dateOfJoining ?? null : null,
     employeeType: "employeeType" in input ? input.employeeType ?? null : null,
   };
 }
 
-export async function createEmployee(input: CreateEmployeeInput): Promise<EmployeeDto> {
+export async function createEmployee(input: CreateEmployeeInput, actor?: AccessTokenPayload): Promise<EmployeeDto> {
   await assertEmployeeNoAvailable(input.employeeNo);
 
-  const created = await createEmployeeInRepository(toEmployeeData(input));
-  return toEmployeeDto(created);
+  // Phase 4 / Option A: a new employee normally has no project assignments, so nothing is recalculated. Only if rows were already recorded under this
+  // employee number (assigned before the employee record existed, so priced at 0) are they recalculated with the saved rate.
+  const { created, run } = await runEmployeeTransaction(async (tx) => {
+    const row = await createEmployeeInRepository(toEmployeeData(input), tx);
+    const queued = await recordRateChangeRun(tx, { employeeNo: row.employeeNo, previousRate: null, newRate: row.manhourExpenses, source: "EMPLOYEE_CREATE", actor: actor ?? null });
+    return { created: row, run: queued };
+  });
+  const costingRefresh = run ? await processRunSafely(run.runId) : null;
+  return { ...toEmployeeDto(created), ...(costingRefresh ? { costingRefresh } : {}) };
 }
 
 /**
@@ -100,24 +111,48 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Employ
  * the opposite of the required "row-level error reporting, one bad row
  * doesn't kill the batch" behavior.
  */
-export async function bulkImportEmployees(input: ImportEmployeesInput): Promise<ImportEmployeesResultDto> {
+export async function bulkImportEmployees(input: ImportEmployeesInput, actor?: AccessTokenPayload): Promise<ImportEmployeesResultDto> {
   let added = 0;
   let updated = 0;
   let invalid = 0;
+  // Phase 4 / Option A: each row whose import really changes an existing employee's hourly rate records a recalculation run in the SAME transaction as that
+  // row's save; the runs are processed after the loop. An unchanged rate (and a new employee with no assignments) records nothing.
+  const runIds: string[] = [];
+  // Phase 4 / Option A safeguard: rows with a blank or unreadable rate (see importEmployeeRowSchema). Reported in the result, never silently turned into 0.
+  const ratesSkipped: NonNullable<ImportEmployeesResultDto["ratesSkipped"]> = [];
+  const skipReason = (row: ImportEmployeeRowInput) => (row.rateIssue === "UNREADABLE" ? ("UNREADABLE" as const) : ("NOT_PROVIDED" as const));
 
   const employeeNos = [...new Set(input.employees.map((row) => row.employeeNo))];
   const existingEmployees = await findEmployeesByEmployeeNos(employeeNos);
-  const knownIds = new Map(existingEmployees.map((e) => [e.employeeNo, e.id] as const));
+  const known = new Map(existingEmployees.map((e) => [e.employeeNo, { id: e.id, rate: e.manhourExpenses }] as const));
 
   for (const row of input.employees) {
     try {
-      const existingId = knownIds.get(row.employeeNo);
-      if (existingId) {
-        await updateEmployeeInRepository(existingId, toEmployeeData(row));
+      const existing = known.get(row.employeeNo);
+      if (existing) {
+        // A blank / unreadable rate is not a rate: the employee's saved rate is left exactly as it is (and so nothing is recalculated). Every other imported
+        // field is updated as before. An explicit rate, including an explicit 0, is applied as before.
+        const rateProvided = row.manhourExpenses !== undefined;
+        const changed = hourlyRateChanged(existing.rate, row.manhourExpenses);
+        const run = await runEmployeeTransaction(async (tx) => {
+          const { manhourExpenses: _rate, ...withoutRate } = toEmployeeData({ ...row, manhourExpenses: row.manhourExpenses ?? 0 });
+          await updateEmployeeInRepository(existing.id, rateProvided ? { ...withoutRate, manhourExpenses: row.manhourExpenses as number } : withoutRate, tx);
+          return changed ? recordRateChangeRun(tx, { employeeNo: row.employeeNo, previousRate: existing.rate, newRate: row.manhourExpenses as number, source: "EXCEL_IMPORT", actor: actor ?? null }) : null;
+        });
+        if (!rateProvided) ratesSkipped.push({ employeeNo: row.employeeNo, reason: skipReason(row), outcome: "EXISTING_RATE_KEPT" });
+        if (run) runIds.push(run.runId);
+        known.set(row.employeeNo, { id: existing.id, rate: rateProvided ? (row.manhourExpenses as number) : existing.rate });
         updated += 1;
       } else {
-        const created = await createEmployeeInRepository(toEmployeeData(row));
-        knownIds.set(row.employeeNo, created.id);
+        // A new employee with a blank rate has no saved rate to keep: it is created with the column's default 0 and the row is reported so the rate can be entered.
+        const newRate = row.manhourExpenses ?? 0;
+        const { created, run } = await runEmployeeTransaction(async (tx) => {
+          const createdRow = await createEmployeeInRepository(toEmployeeData({ ...row, manhourExpenses: newRate }), tx);
+          return { created: createdRow, run: await recordRateChangeRun(tx, { employeeNo: row.employeeNo, previousRate: null, newRate, source: "EMPLOYEE_CREATE", actor: actor ?? null }) };
+        });
+        if (row.manhourExpenses === undefined) ratesSkipped.push({ employeeNo: row.employeeNo, reason: skipReason(row), outcome: "CREATED_WITH_DEFAULT_0" });
+        if (run) runIds.push(run.runId);
+        known.set(row.employeeNo, { id: created.id, rate: newRate });
         added += 1;
       }
     } catch {
@@ -125,7 +160,20 @@ export async function bulkImportEmployees(input: ImportEmployeesInput): Promise<
     }
   }
 
-  return { added, updated, totalImported: added + updated, invalid };
+  let incompleteRuns = 0;
+  for (const runId of runIds) {
+    const summary = await processRunSafely(runId);
+    if (!summary || summary.status !== "SUCCEEDED") incompleteRuns += 1;
+  }
+
+  return {
+    added,
+    updated,
+    totalImported: added + updated,
+    invalid,
+    ...(runIds.length > 0 ? { costingRefresh: { runs: runIds.length, incompleteRuns } } : {}),
+    ...(ratesSkipped.length > 0 ? { ratesSkipped } : {}),
+  };
 }
 
 export async function getEmployeeById(id: string): Promise<EmployeeDto> {
@@ -133,7 +181,7 @@ export async function getEmployeeById(id: string): Promise<EmployeeDto> {
   return toEmployeeDto(employee);
 }
 
-export async function updateEmployee(id: string, input: UpdateEmployeeInput): Promise<EmployeeDto> {
+export async function updateEmployee(id: string, input: UpdateEmployeeInput, actor?: AccessTokenPayload): Promise<EmployeeDto> {
   const existing = await findEmployeeById(id);
   if (!existing) {
     throw new AppError("Employee not found.", 404);
@@ -143,7 +191,11 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput): Pr
     await assertEmployeeNoAvailable(input.employeeNo, id);
   }
 
-  const updated = await updateEmployeeInRepository(id, {
+  // Phase 4 / Option A: the save is unchanged; when it really changes the hourly rate, the recalculation of every affected project is recorded in the same
+  // transaction (see manhourCostRefresh.service.ts) and processed right after it commits.
+  const rateChanged = hourlyRateChanged(existing.manhourExpenses, input.manhourExpenses);
+  const { updated, run } = await runEmployeeTransaction(async (tx) => {
+  const saved = await updateEmployeeInRepository(id, {
     ...(input.employeeNo !== undefined && { employeeNo: input.employeeNo }),
     ...(input.employeeName !== undefined && { employeeName: input.employeeName }),
     ...(input.department !== undefined && { department: input.department }),
@@ -155,9 +207,15 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput): Pr
     ...(input.status !== undefined && { status: input.status }),
     ...(input.dateOfJoining !== undefined && { dateOfJoining: input.dateOfJoining }),
     ...(input.employeeType !== undefined && { employeeType: input.employeeType }),
+  }, tx);
+  const queued = rateChanged
+    ? await recordRateChangeRun(tx, { employeeNo: saved.employeeNo, previousEmployeeNo: existing.employeeNo, previousRate: existing.manhourExpenses, newRate: saved.manhourExpenses, source: "MANUAL_UPDATE", actor: actor ?? null })
+    : null;
+  return { updated: saved, run: queued };
   });
 
-  return toEmployeeDto(updated);
+  const costingRefresh = run ? await processRunSafely(run.runId) : null;
+  return { ...toEmployeeDto(updated), ...(costingRefresh ? { costingRefresh } : {}) };
 }
 
 /**

@@ -1,3 +1,5 @@
+import { isCountryContextRejection } from "../auth/countryContextLogic";
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000";
 
 // P1 reliability fix — every call was previously an unbounded fetch() with no
@@ -15,6 +17,8 @@ interface ApiEnvelope<T> {
   success: boolean;
   data: T;
   message?: string;
+  /** Structured detail the server attaches to some errors (e.g. per-row import problems). */
+  details?: unknown;
 }
 
 export interface ApiRequestOptions {
@@ -34,12 +38,15 @@ export class ApiError extends Error {
    * confirmed failure, since the server may have completed it anyway.
    */
   isTimeout?: boolean;
+  /** Structured, client-safe detail the server attached to the error (e.g. the per-row problems of a rejected import). */
+  details?: unknown;
 
-  constructor(status: number, message: string, isTimeout?: boolean) {
+  constructor(status: number, message: string, isTimeout?: boolean, details?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     if (isTimeout) this.isTimeout = true;
+    if (details !== undefined) this.details = details;
   }
 }
 
@@ -47,6 +54,24 @@ let accessToken: string | null = null;
 
 export function setAccessToken(token: string | null): void {
   accessToken = token;
+}
+
+/**
+ * Active country (Global Multi-Country Phase 1) — sent as X-Active-Country on every request while set. It only narrows what
+ * lists return; the backend re-validates it against the account's grants on every request and never trusts it for a write.
+ * null (the default, and always while the feature is off) sends no header, so behaviour is exactly as before.
+ */
+let activeCountry: string | null = null;
+
+export function setActiveCountry(value: string | null): void {
+  activeCountry = value;
+}
+
+/** Fired when the server refuses the active country (e.g. a grant was removed), so the country context can recover. */
+let onCountryContextRejected: (() => void) | null = null;
+
+export function setCountryContextRejectedHandler(handler: (() => void) | null): void {
+  onCountryContextRejected = handler;
 }
 
 /**
@@ -65,6 +90,9 @@ async function request<T>(path: string, options: RequestInit = {}, requestOption
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (accessToken) {
     headers["Authorization"] = `Bearer ${accessToken}`;
+  }
+  if (activeCountry) {
+    headers["X-Active-Country"] = activeCountry;
   }
 
   // One fresh AbortController per call — never shared/global, so one
@@ -111,8 +139,12 @@ async function request<T>(path: string, options: RequestInit = {}, requestOption
     onUnauthorized?.();
   }
 
+  if (isCountryContextRejection(response.status, body?.message ?? "")) {
+    onCountryContextRejected?.();
+  }
+
   if (!response.ok || !body?.success) {
-    throw new ApiError(response.status, body?.message ?? "Something went wrong. Please try again.");
+    throw new ApiError(response.status, body?.message ?? "Something went wrong. Please try again.", false, body?.details);
   }
 
   return body.data;
@@ -132,6 +164,9 @@ async function requestFormData<T>(path: string, formData: FormData, requestOptio
   const headers: Record<string, string> = {};
   if (accessToken) {
     headers["Authorization"] = `Bearer ${accessToken}`;
+  }
+  if (activeCountry) {
+    headers["X-Active-Country"] = activeCountry;
   }
 
   // Deliberately not routed through request() — see this file's own header
@@ -169,8 +204,12 @@ async function requestFormData<T>(path: string, formData: FormData, requestOptio
     onUnauthorized?.();
   }
 
+  if (isCountryContextRejection(response.status, body?.message ?? "")) {
+    onCountryContextRejected?.();
+  }
+
   if (!response.ok || !body?.success) {
-    throw new ApiError(response.status, body?.message ?? "Something went wrong. Please try again.");
+    throw new ApiError(response.status, body?.message ?? "Something went wrong. Please try again.", false, body?.details);
   }
 
   return body.data;
@@ -189,6 +228,9 @@ async function requestBlob(path: string, requestOptions: ApiRequestOptions = {})
   const headers: Record<string, string> = {};
   if (accessToken) {
     headers["Authorization"] = `Bearer ${accessToken}`;
+  }
+  if (activeCountry) {
+    headers["X-Active-Country"] = activeCountry;
   }
 
   const controller = new AbortController();

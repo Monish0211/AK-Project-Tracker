@@ -20,6 +20,8 @@ interface StatTileProps {
   emphasis?: "primary" | "secondary";
   /** Exact rupee amount `value` was rounded from — when provided, hovering the tile shows the exact-amount tooltip instead of the native title="{value}" (rounded-over-rounded) tooltip. */
   rawValue?: number;
+  /** The currency of `rawValue` (INR when omitted). A regional amount shows its own symbol in the tooltip, never the rupee. */
+  currency?: string;
   /** Inline badge shown next to the value, e.g. "30% Profit" / "-10% Loss". */
   percent?: { text: string; tone: "success" | "danger" | "neutral" };
   /** When true, the value text itself follows `tint` (green/red) instead of the default neutral text color — opt-in so existing tiles stay pixel-identical. */
@@ -66,7 +68,7 @@ const ACCENT_BAR: Record<StatTileTint, string> = {
   indigo: "bg-indigo-500",
 };
 
-export const StatTile = ({ label, value, icon, tint = "accent", trend, rawValue, percent, tintValue, tooltip, footnote }: StatTileProps) => {
+export const StatTile = ({ label, value, icon, tint = "accent", trend, rawValue, currency, percent, tintValue, tooltip, footnote }: StatTileProps) => {
   const isPrimary = true; // Make all tiles primary emphasis for equal uniform layout
 
   return (
@@ -97,7 +99,7 @@ export const StatTile = ({ label, value, icon, tint = "accent", trend, rawValue,
             className={`font-bold leading-none whitespace-nowrap overflow-visible ${tintValue ? VALUE_TONE[tint] : "text-[var(--nu-text)]"} ${isPrimary ? "text-[22px] xl:text-[19px] 2xl:text-[24px]" : "text-[18px]"}`}
             title={rawValue === undefined ? value : undefined}
           >
-            {rawValue === undefined ? value : <MoneyTooltip value={rawValue}>{value}</MoneyTooltip>}
+            {rawValue === undefined ? value : <MoneyTooltip value={rawValue} currency={currency}>{value}</MoneyTooltip>}
           </p>
           {percent && (
             <span className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${PERCENT_BADGE_TONE[percent.tone]}`}>

@@ -25,6 +25,7 @@ export const MODULE_FIELDS: { key: keyof UserModuleAccess; label: string }[] = [
   { key: "reminders", label: "Reminders" },
   { key: "approvals", label: "Approvals" },
   { key: "prRequest", label: "PR Request" },
+  { key: "manpowerConversionRates", label: "Manpower Conversion Rates" },
 ];
 
 export const REGION_FIELDS: { key: keyof UserProjectRegionAccess; label: string }[] = [

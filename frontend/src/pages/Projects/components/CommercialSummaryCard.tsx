@@ -1,11 +1,16 @@
 import { Landmark, Info } from "lucide-react";
 
 import { formatBusinessINR, formatFullINR } from "../../../utils/formatCurrency";
+import { formatMoney, formatMoneyCompact, isNonInrRegional, regionalCurrencyOf } from "../../../utils/currencyDisplay";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 
 interface Props {
   currency: string;
   workOrderValueINR: number;
+  /** Phase 3: the project's regional currency and its work order value / grand total in it. Absent or INR: the INR figures are shown as before. */
+  regionalCurrency?: string | null | undefined;
+  workOrderValueRegional?: number | undefined;
+  grandTotalRegional?: number | undefined;
   gstApplicable: boolean;
   gstRate: number;
   gstAmount: number;
@@ -18,6 +23,9 @@ interface Props {
 const CommercialSummaryCard = ({
   currency,
   workOrderValueINR,
+  regionalCurrency,
+  workOrderValueRegional,
+  grandTotalRegional,
   gstApplicable,
   gstRate,
   gstAmount,
@@ -25,6 +33,13 @@ const CommercialSummaryCard = ({
   editable,
   onGstApplicableChange,
 }: Props) => {
+  const regional = regionalCurrencyOf({ regionalCurrency });
+  const nonInrRegional = isNonInrRegional({ regionalCurrency });
+  // Any figure that is not INR is shown in the project's regional currency with its own code, never with a rupee sign.
+  const money = (inr: number, regionalValue: number | undefined) =>
+    nonInrRegional ? formatMoneyCompact(regionalValue ?? 0, regional) : formatBusinessINR(inr);
+  const moneyFull = (inr: number, regionalValue: number | undefined) =>
+    nonInrRegional ? formatMoney(regionalValue ?? 0, regional) : formatFullINR(inr);
   const isGstEligible = currency === "INR";
   const isGstEffective = isGstEligible && gstApplicable;
 
@@ -87,8 +102,8 @@ const CommercialSummaryCard = ({
             <span className="text-[12.5px] font-medium text-[var(--nu-text-secondary)]">
               Total Work Order Value
             </span>
-            <span className="text-[13px] font-bold text-[var(--nu-accent)] whitespace-nowrap" title={formatFullINR(workOrderValueINR)}>
-              {formatBusinessINR(workOrderValueINR)}
+            <span className="text-[13px] font-bold text-[var(--nu-accent)] whitespace-nowrap" title={moneyFull(workOrderValueINR, workOrderValueRegional)}>
+              {money(workOrderValueINR, workOrderValueRegional)}
             </span>
           </div>
 
@@ -114,8 +129,8 @@ const CommercialSummaryCard = ({
             <span className="text-[12.5px] font-medium text-[var(--nu-text-secondary)]">
               GST Amount
             </span>
-            <span className="text-[13px] font-bold text-[var(--nu-warning)] whitespace-nowrap" title={formatFullINR(gstAmount)}>
-              {formatBusinessINR(gstAmount)}
+            <span className="text-[13px] font-bold text-[var(--nu-warning)] whitespace-nowrap" title={moneyFull(gstAmount, 0)}>
+              {money(gstAmount, 0)}
             </span>
           </div>
         </div>
@@ -124,8 +139,8 @@ const CommercialSummaryCard = ({
           <span className="text-[11.5px] font-semibold uppercase tracking-wide text-[var(--nu-success)]">
             Grand Total (Incl. GST)
           </span>
-          <span className="text-[16px] font-bold text-[var(--nu-success)] whitespace-nowrap" title={formatFullINR(grandTotal)}>
-            {formatBusinessINR(grandTotal)}
+          <span className="text-[16px] font-bold text-[var(--nu-success)] whitespace-nowrap" title={moneyFull(grandTotal, grandTotalRegional)}>
+            {money(grandTotal, grandTotalRegional)}
           </span>
         </div>
       </CardBody>

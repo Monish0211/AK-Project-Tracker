@@ -1,6 +1,6 @@
-import { DollarSign, Percent, TrendingUp, TrendingDown, Gavel, BadgeIndianRupee } from "lucide-react";
+import { DollarSign, Percent, TrendingUp, TrendingDown, Gavel, BadgeIndianRupee, Banknote } from "lucide-react";
 import { KPIReportCard } from "../Shared/KPIReportCard";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { getTotalNonManhourCost } from "../../../services/expenseService";
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
 }
 
 export function ProfitCards({ projects, analytics }: Props) {
+  const money = useReportMoney();
   const a = analytics;
 
   // Calculate highest & lowest profit projects
@@ -34,7 +35,7 @@ export function ProfitCards({ projects, analytics }: Props) {
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       <KPIReportCard
         title="Gross Net Profit (before LD)"
-        value={formatBusinessINR(a.grossProfit)}
+        value={money.compact(a.grossProfit)}
         subtitle="Work Order Value - Actual Cost"
         icon={<DollarSign size={18} />}
         tone="emerald"
@@ -52,7 +53,7 @@ export function ProfitCards({ projects, analytics }: Props) {
 
       <KPIReportCard
         title="Highest Profit Contract"
-        value={formatBusinessINR(highestProj.profit)}
+        value={money.compact(highestProj.profit)}
         subtitle={highestProj.title}
         trend="Top Performer"
         trendType="positive"
@@ -62,7 +63,7 @@ export function ProfitCards({ projects, analytics }: Props) {
 
       <KPIReportCard
         title="Lowest Profit Contract"
-        value={formatBusinessINR(lowestProj.profit)}
+        value={money.compact(lowestProj.profit)}
         subtitle={lowestProj.title}
         trend={lowestProj.profit < 0 ? "Loss Making" : "Lowest"}
         trendType={lowestProj.profit < 0 ? "negative" : "neutral"}
@@ -72,7 +73,7 @@ export function ProfitCards({ projects, analytics }: Props) {
 
       <KPIReportCard
         title="LD Deductions"
-        value={formatBusinessINR(a.totalLdDeduction)}
+        value={money.compact(a.totalLdDeduction)}
         subtitle={`${a.ldCounts.applied} completed project(s) with LD`}
         icon={<Gavel size={18} />}
         tone="amber"
@@ -80,10 +81,10 @@ export function ProfitCards({ projects, analytics }: Props) {
 
       <KPIReportCard
         title="Final Profit (after LD)"
-        value={formatBusinessINR(a.totalFinalProfit)}
+        value={money.compact(a.totalFinalProfit)}
         subtitle={`${a.finalProfitPercentage.toFixed(1)}% final margin`}
         trendType={a.totalFinalProfit >= 0 ? "positive" : "negative"}
-        icon={<BadgeIndianRupee size={18} />}
+        icon={money.currency === "INR" ? <BadgeIndianRupee size={18} /> : <Banknote size={18} />}
         tone="emerald"
       />
     </div>

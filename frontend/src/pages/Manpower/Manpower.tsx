@@ -25,12 +25,16 @@ import {
   deleteEmployeeViaApi,
   exportEmployeesToExcel,
   importEmployeesFromExcel,
+  importRateNote,
   downloadEmployeeTemplate,
   loadEmployeesForApp,
   fetchAllEmployeesFromApi,
   type EmployeeMigrationResult,
 } from "../../services/employeeService";
 import { ApiError } from "../../services/apiClient";
+import { Link } from "react-router-dom";
+import { useAuth } from "../../auth/authContext";
+import { hasModuleAccess } from "../../auth/permissions";
 import EmployeeModal from "./components/EmployeeModal";
 import { Button } from "../../components/ui/Button";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -39,6 +43,8 @@ import { usePmoToast } from "../../components/ui/usePmoToast";
 
 const Manpower = () => {
   const { showToast } = usePmoToast();
+  const { user } = useAuth();
+  const canSeeConversionRates = hasModuleAccess(user, "Manpower Conversion Rates");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Live employee database state
@@ -267,13 +273,16 @@ const Manpower = () => {
       const result = await importEmployeesFromExcel(file);
       setEmployees(getEmployees());
       const skippedCount = result.invalid + result.blank;
+      // Phase 4 / Option A: blank or unreadable hourly rates are reported, never silently turned into 0.
+      const rateNote = importRateNote(result.ratesSkipped);
+      const warn = skippedCount > 0 || rateNote !== "";
       showToast({
-        type: skippedCount > 0 ? "warning" : "success",
-        title: skippedCount > 0 ? "Import completed with warnings" : undefined,
+        type: warn ? "warning" : "success",
+        title: warn ? "Import completed with warnings" : undefined,
         message:
-          skippedCount > 0
+          (skippedCount > 0
             ? `${result.totalImported} employee(s) imported (${result.added} added, ${result.updated} updated) — ${skippedCount} row(s) skipped (${result.invalid} invalid, ${result.blank} blank).`
-            : `${result.totalImported} employee(s) imported successfully (${result.added} added, ${result.updated} updated).`,
+            : `${result.totalImported} employee(s) imported${rateNote ? "" : " successfully"} (${result.added} added, ${result.updated} updated).`) + (rateNote ? ` ${rateNote}` : ""),
       });
     } catch (err: any) {
       showToast({ type: "error", message: err.message || "Failed to import Excel file. Verify file template format." });
@@ -436,6 +445,12 @@ const Manpower = () => {
             >
               Add Employee
             </Button>
+            {/* Only for a user holding the separate "Manpower Conversion Rates" grant: ordinary Manpower access does not show it. */}
+            {canSeeConversionRates && (
+              <Link to="/manpower/conversion-rates" className="text-xs font-semibold text-slate-100 underline decoration-slate-400/60 underline-offset-2 hover:text-white" data-testid="link-conversion-rates">
+                Manpower Conversion Rates
+              </Link>
+            )}
           </div>
         </div>
       </div>

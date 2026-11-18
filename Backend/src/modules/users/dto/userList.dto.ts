@@ -31,4 +31,6 @@ export interface UserListItemDto {
   approvals: string[];
   /** Project Manager Scope — ids of other users whose created projects this user (when Project Manager) can also see. Always [] for every other role. */
   scopedUserIds: string[];
+  /** The explicit All Countries right (Global Multi-Country Phase 1). */
+  allCountriesAccess: boolean;
 }

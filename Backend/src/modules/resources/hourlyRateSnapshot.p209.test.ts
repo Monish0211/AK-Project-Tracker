@@ -162,10 +162,11 @@ test("P2-09 — hourlyRateSnapshot is server-resolved and immune to client manip
     const createdJsonMissing = (await createResMissing.json()) as ResourceResponse;
     assert.equal(createdJsonMissing.data!.hourlyRateSnapshot, 0);
 
-    // ---- Test 4 — existing snapshot survives the Employee's rate changing
-    // later: empA's rate is now bumped to 600 in Employee Master; an
-    // ordinary update (changing totalHours only) must NOT re-derive the
-    // resource's frozen rate.
+    // ---- Test 4 (Phase 4 / Option A) — the Employee's CURRENT saved rate
+    // prices the row. Previously an existing snapshot survived a later rate
+    // change; under Option A a later rate change applies to all existing hours,
+    // so an ordinary update (changing totalHours only) now prices at the
+    // employee's current rate. The client still can never supply the rate.
     await prisma.employee.update({ where: { employeeNo: empA }, data: { manhourExpenses: 600 } });
 
     const ordinaryUpdateRes = await fetch(`${url}/resources/${createdJson.data!.id}`, {
@@ -175,11 +176,12 @@ test("P2-09 — hourlyRateSnapshot is server-resolved and immune to client manip
     });
     assert.equal(ordinaryUpdateRes.status, 200);
     const ordinaryUpdateJson = (await ordinaryUpdateRes.json()) as ResourceResponse;
-    assert.equal(ordinaryUpdateJson.data!.hourlyRateSnapshot, 500, "an Employee Master rate change must never silently change an existing resource's frozen snapshot");
-    assert.equal(ordinaryUpdateJson.data!.manhourCost, 20 * 500);
+    assert.equal(ordinaryUpdateJson.data!.hourlyRateSnapshot, 600, "Option A: the employee's current saved rate (600) prices the row");
+    assert.equal(ordinaryUpdateJson.data!.manhourCost, 20 * 600);
 
     // ---- Test 5 — malicious update: explicitly try to overwrite the
-    // existing (frozen) snapshot via the client payload.
+    // rate via the client payload. Still ignored: the rate is always the
+    // employee's current saved rate (now 600), never the client's value.
     const maliciousUpdateRes = await fetch(`${url}/resources/${createdJson.data!.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
@@ -187,10 +189,10 @@ test("P2-09 — hourlyRateSnapshot is server-resolved and immune to client manip
     });
     assert.equal(maliciousUpdateRes.status, 200);
     const maliciousUpdateJson = (await maliciousUpdateRes.json()) as ResourceResponse;
-    assert.equal(maliciousUpdateJson.data!.hourlyRateSnapshot, 500);
+    assert.equal(maliciousUpdateJson.data!.hourlyRateSnapshot, 600);
 
     const persistedAfterMalice = await prisma.projectResource.findUniqueOrThrow({ where: { id: createdJson.data!.id } });
-    assert.equal(persistedAfterMalice.hourlyRateSnapshot, 500);
+    assert.equal(persistedAfterMalice.hourlyRateSnapshot, 600);
 
     // ---- Test 6 — authorization is unaffected by the new lookup: a caller
     // without the Projects module grant still gets 403, never reaching the
@@ -225,7 +227,7 @@ test("P2-09 — hourlyRateSnapshot is server-resolved and immune to client manip
     const regressionJson = (await regressionUpdateRes.json()) as { data?: { assignmentStatus: string; workingDays: number; hourlyRateSnapshot: number } };
     assert.equal(regressionJson.data?.assignmentStatus, "Released");
     assert.equal(regressionJson.data?.workingDays, 5);
-    assert.equal(regressionJson.data?.hourlyRateSnapshot, 500);
+    assert.equal(regressionJson.data?.hourlyRateSnapshot, 600, "Option A: the row is priced at the employee's current saved rate (600), not the value it had when first created");
   } finally {
     if (createdProjectIds.length > 0) {
       await prisma.projectResource.deleteMany({ where: { projectId: { in: createdProjectIds } } });

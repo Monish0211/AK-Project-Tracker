@@ -322,7 +322,13 @@ const FormButtons = ({
         completedBy: projectToSave.completedBy || "Administrator",
         ld:
           projectToSave.ldApplicable === true || projectToSave.ldApplicable === false
-            ? { ldApplicable: projectToSave.ldApplicable, ldAmountINR: projectToSave.ldAmountINR ?? null, ldRemarks: projectToSave.ldRemarks ?? null }
+            ? {
+                ldApplicable: projectToSave.ldApplicable,
+                ldAmountINR: projectToSave.ldAmountINR ?? null,
+                ldAmountRegional: projectToSave.ldAmountRegional ?? null,
+                ldCurrency: projectToSave.ldCurrency ?? null,
+                ldRemarks: projectToSave.ldRemarks ?? null,
+              }
             : null,
       });
       updateProject({

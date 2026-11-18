@@ -39,6 +39,9 @@ export const MODULES = [
   // Requests. Neither implies the other, and neither replaces "Projects" / "Approvals".
   "Add Project",
   "PR Request",
+  // Independent (Nov 2026): who may see and manage the central country manpower conversion rates (Manpower > Manpower Conversion Rates). Granted
+  // per user by an Administrator; never implied by "Manpower", a role or a designation, and granted to nobody by the migration.
+  "Manpower Conversion Rates",
 ] as const;
 
 export const REGIONS = [

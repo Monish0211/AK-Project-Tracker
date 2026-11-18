@@ -42,6 +42,10 @@ export interface Project {
   // recorded (completed before this feature) — never treated as "No".
   ldApplicable?: boolean | null;
   ldAmountINR?: number | null;
+  // Regional LD (Phase 4 final): a non-INR project's LD is recorded in its own currency (ldAmountRegional + ldCurrency); ldAmountINR stays for an INR project.
+  // A recorded amount with no ldCurrency is a legacy rupee record, never read as regional.
+  ldCurrency?: string | null;
+  ldAmountRegional?: number | null;
   ldRemarks?: string | null;
   ldRecordedByUserId?: string | null;
   ldRecordedAt?: string | null;
@@ -96,6 +100,18 @@ export interface Project {
   workOrderValue: number;
 
   workOrderValueINR: number;
+
+  // Regional currency (Phase 3): the currency of the project's country, a snapshot the backend takes at creation. null / absent = a legacy
+  // project, treated as INR everywhere. `currency` above is the commercial (transaction) currency; the rate is regional currency per one
+  // unit of it. workOrderValueRegional / grandTotalRegional are the work order value in the regional currency (equal to the INR figures for
+  // an INR or legacy project).
+  regionalCurrency?: string | null;
+  workOrderValueRegional?: number;
+  grandTotalRegional?: number;
+  backendWorkOrderValueRegional?: number;
+  backendPendingDueRegional?: number;
+  /** Phase 4 / Option A: PENDING / FAILED while the automatic manpower recalculation after an employee-rate change has not completed for this project. */
+  manhourRefreshStatus?: "CURRENT" | "PENDING" | "FAILED";
 
   // Work Order Value / Pending Due — Aug 2026 bug fix. Server-computed
   // fallback aggregate from GET/POST/PATCH /projects (see Backend's
@@ -257,7 +273,17 @@ export interface ProjectResource {
   hourlyRateSnapshot?: number;
   workingDays: number;
   totalHours: number;
+  /** INR, exactly as before (hours x the employee's frozen INR rate). */
   manhourCost?: number;
+  /**
+   * Phase 4 - regional costing of manhourCost, from the backend. costingStatus: INR (no conversion) | CONVERTED | RATE_MISSING; null/absent on a row saved before
+   * Phase 4 (an INR project needs none; on a non-INR project that means "Rate not set"). manhourCostRegional is in costCurrency and only set when CONVERTED.
+   */
+  costCurrency?: string | null;
+  costingStatus?: string | null;
+  fxRateVersion?: number | null;
+  fxRateInrPerRegional?: number | null;
+  manhourCostRegional?: number | null;
   status: "Active" | "Released";
   location?: string;
 }

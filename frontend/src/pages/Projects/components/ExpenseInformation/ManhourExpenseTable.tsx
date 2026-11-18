@@ -2,18 +2,19 @@ import { Pencil, Trash2, Users } from "lucide-react";
 
 import type { ManhourExpense } from "../../../../types/ManhourExpense";
 
-import {
-  formatIndianCurrency,
-  formatIndianNumber,
-} from "../../../../utils/quantityCalculations";
+import { formatIndianNumber } from "../../../../utils/quantityCalculations";
+import { moneyFormatter } from "../../../../utils/currencyDisplay";
 
 interface Props {
+  /** The project's regional currency (Phase 3); INR when not given. */
+  currency?: string;
   expenses: ManhourExpense[];
   onEdit: (expense: ManhourExpense) => void;
   onDelete: (id: string) => void;
 }
 
-const ManhourExpenseTable = ({ expenses, onEdit, onDelete }: Props) => {
+const ManhourExpenseTable = ({ expenses, onEdit, onDelete, currency = "INR" }: Props) => {
+  const money = moneyFormatter(currency);
   const handleDelete = (id: string) => {
     if (!window.confirm("Are you sure you want to delete this expense?")) {
       return;
@@ -126,7 +127,7 @@ const ManhourExpenseTable = ({ expenses, onEdit, onDelete }: Props) => {
                 </td>
 
                 <td className="px-4 py-3 text-right">
-                  {formatIndianCurrency(expense.manhourRate)}
+                  {money.exact(expense.manhourRate)}
                 </td>
 
                 <td className="px-4 py-3 text-right">
@@ -134,7 +135,7 @@ const ManhourExpenseTable = ({ expenses, onEdit, onDelete }: Props) => {
                 </td>
 
                 <td className="px-4 py-3 text-right font-semibold text-blue-700">
-                  {formatIndianCurrency(expense.totalCost)}
+                  {money.exact(expense.totalCost)}
                 </td>
 
                 <td

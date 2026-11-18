@@ -1,19 +1,20 @@
 import { Wallet, Clock, AlertTriangle, Percent } from "lucide-react";
 import { KPIReportCard } from "../Shared/KPIReportCard";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 
 interface Props {
   analytics: any;
 }
 
 export function CollectionCards({ analytics }: Props) {
+  const money = useReportMoney();
   const a = analytics;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       <KPIReportCard
         title="Cash Realized"
-        value={formatBusinessINR(a.totalPaymentReceived)}
+        value={money.compact(a.totalPaymentReceived)}
         subtitle="Realized bank collection (Paid)"
         icon={<Wallet size={18} />}
         tone="emerald"
@@ -21,7 +22,7 @@ export function CollectionCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Outstanding Receivable"
-        value={formatBusinessINR(a.totalOutstandingReceivable ?? Math.max(0, a.totalInvoiceRaised - a.totalPaymentReceived))}
+        value={money.compact(a.totalOutstandingReceivable ?? Math.max(0, a.totalInvoiceRaised - a.totalPaymentReceived))}
         subtitle="Uncollected billed invoices"
         icon={<Clock size={18} />}
         tone="amber"
@@ -29,7 +30,7 @@ export function CollectionCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Overdue (60+ Days)"
-        value={formatBusinessINR(a.ageing["61-90 Days"] + a.ageing["90+ Days"])}
+        value={money.compact(a.ageing["61-90 Days"] + a.ageing["90+ Days"])}
         subtitle="Delayed customer payments"
         trend={a.ageing["90+ Days"] > 0 ? "High Risk" : "Low Risk"}
         trendType={a.ageing["90+ Days"] > 0 ? "negative" : "positive"}

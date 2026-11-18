@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { EmptyState } from "../Shared/EmptyState";
 import type { ReportInvoiceLine } from "../../../services/invoiceService";
 
@@ -12,6 +12,7 @@ interface Props {
 }
 
 export function CollectionTrend({ projects, invoiceLines }: Props) {
+  const money = useReportMoney();
   const collectionTrendData = useMemo(() => {
     const projectIds = new Set(projects.map((p) => p.id));
     const monthMap: Record<string, { month: string; collection: number }> = {};
@@ -56,8 +57,8 @@ export function CollectionTrend({ projects, invoiceLines }: Props) {
             </defs>
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
             <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-            <YAxis tickFormatter={(v) => formatBusinessINR(v)} tick={{ fontSize: 10 }} />
-            <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), "Collected"]} />
+            <YAxis tickFormatter={(v) => money.compact(v)} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(val: any) => [money.compact(Number(val)), "Collected"]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Area type="monotone" dataKey="collection" name="Cash Realized" stroke="#10b981" fillOpacity={1} fill="url(#colorCol)" />
           </AreaChart>

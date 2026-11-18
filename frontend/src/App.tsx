@@ -4,12 +4,16 @@ import Login from "./pages/Login/Login";
 import ChangePassword from "./pages/ChangePassword/ChangePassword";
 import ResetPassword from "./pages/ResetPassword/ResetPassword";
 import { AuthProvider } from "./auth/authContext";
+import { CountryProvider } from "./auth/countryContext";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import { PmoToastProvider } from "./components/ui/PmoToastProvider";
 
 function App() {
   return (
     <AuthProvider>
+      {/* Active-country context (Global Multi-Country Phase 1): dormant (no header, no selector) unless the backend's
+          COUNTRY_ACCESS_MODE is shadow or enforce. Sits inside AuthProvider and above everything that fetches data. */}
+      <CountryProvider>
       {/* Mounted once at the app root, outside BrowserRouter's <Routes> — so
           it's available on every route including Login/ChangePassword/
           ResetPassword, which render outside MainLayout and therefore
@@ -38,6 +42,7 @@ function App() {
         </Routes>
       </BrowserRouter>
       </PmoToastProvider>
+      </CountryProvider>
     </AuthProvider>
   );
 }

@@ -30,6 +30,9 @@ export interface BackendQuantityDto {
   unitRateINR: number;
   woValue: number;
   pendingAmount: number;
+  /** Regional-currency price and value (Phase 3); null on a row saved before Phase 3. */
+  unitRateRegional?: number | null;
+  woValueRegional?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -84,6 +87,8 @@ export function toQuantityItem(dto: BackendQuantityDto): QuantityItem {
     unitRateINR: dto.unitRateINR,
     woValue: dto.woValue,
     pendingAmount: dto.pendingAmount,
+    unitRateRegional: dto.unitRateRegional ?? null,
+    woValueRegional: dto.woValueRegional ?? null,
   };
 }
 

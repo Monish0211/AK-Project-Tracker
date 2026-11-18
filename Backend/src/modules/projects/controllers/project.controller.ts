@@ -4,12 +4,33 @@ import { AppError } from "../../../shared/utils/AppError.js";
 import { requireUser } from "../../../shared/utils/requireUser.js";
 import * as projectService from "../services/project.service.js";
 import { listProjectsQuerySchema } from "../validators/project.validators.js";
-import type { CreateProjectRequestInput, ImportProjectsInput, UpdateProjectInput } from "../validators/project.validators.js";
+import type { CreateProjectRequestInput, ImportPreviewInput, ImportProjectsInput, UpdateProjectInput } from "../validators/project.validators.js";
+import { checkImportRows, listPrCategoryCountries } from "../prCategoryCountry.js";
+import { getLdReview } from "../services/ldReview.service.js";
 
 export const createProject = asyncHandler(async (req: Request, res: Response) => {
   const user = requireUser(req);
   const project = await projectService.createProject(req.body as CreateProjectRequestInput, user.sub);
   res.status(201).json({ success: true, data: project, message: "Project created successfully." });
+});
+
+/** Read-only classification of how every existing LD record is read, with the proposed treatment (nothing is changed). */
+export const getLdReviewReport = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  res.json({ success: true, data: await getLdReview(user) });
+});
+
+/** The PR Category -> country reference, with whether the caller may create projects in each country. */
+export const getPrCategoryCountries = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  res.json({ success: true, data: await listPrCategoryCountries(user.sub) });
+});
+
+/** Non-committing import check: each row's country (from its own PR Category), the caller's authorization for it, and duplicate status. */
+export const previewImport = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  const body = req.body as ImportPreviewInput;
+  res.json({ success: true, data: await checkImportRows(body.rows, user.sub) });
 });
 
 export const importProjects = asyncHandler(async (req: Request, res: Response) => {

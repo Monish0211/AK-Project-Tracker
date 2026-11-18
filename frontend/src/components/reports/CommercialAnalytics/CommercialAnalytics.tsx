@@ -3,7 +3,7 @@ import { KPIReportCard } from "../Shared/KPIReportCard";
 import { MilestoneChart } from "./MilestoneChart";
 import { ContractValueChart } from "./ContractValueChart";
 import { CommercialTable } from "./CommercialTable";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { INVOICE_NOT_AVAILABLE, NO_INVOICE_ACCESS_HINT, useInvoiceDataAvailable } from "../Shared/invoiceAccess";
 import { InvoiceDataUnavailable } from "../Shared/InvoiceDataUnavailable";
 
@@ -13,6 +13,7 @@ interface Props {
 }
 
 export function CommercialAnalytics({ projects, analytics }: Props) {
+  const money = useReportMoney();
   const a = analytics;
   const inv = useInvoiceDataAvailable();
 
@@ -21,7 +22,7 @@ export function CommercialAnalytics({ projects, analytics }: Props) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <KPIReportCard
           title="Total Contract Value"
-          value={formatBusinessINR(a.totalWOValue)}
+          value={money.compact(a.totalWOValue)}
           subtitle="Signed Work Order Master Value"
           icon={<FileCheck size={18} />}
           tone="blue"
@@ -29,7 +30,7 @@ export function CommercialAnalytics({ projects, analytics }: Props) {
 
         <KPIReportCard
           title="Invoiced Revenue"
-          value={inv ? formatBusinessINR(a.totalInvoiceRaised) : INVOICE_NOT_AVAILABLE}
+          value={inv ? money.compact(a.totalInvoiceRaised) : INVOICE_NOT_AVAILABLE}
           subtitle={inv ? "Realized commercial billing" : NO_INVOICE_ACCESS_HINT}
           icon={<Receipt size={18} />}
           tone="emerald"
@@ -37,7 +38,7 @@ export function CommercialAnalytics({ projects, analytics }: Props) {
 
         <KPIReportCard
           title="Unbilled Commercial Balance"
-          value={inv ? formatBusinessINR(a.balanceToInvoice) : INVOICE_NOT_AVAILABLE}
+          value={inv ? money.compact(a.balanceToInvoice) : INVOICE_NOT_AVAILABLE}
           subtitle={inv ? "Remaining contract billing" : NO_INVOICE_ACCESS_HINT}
           icon={<DollarSign size={18} />}
           tone="amber"

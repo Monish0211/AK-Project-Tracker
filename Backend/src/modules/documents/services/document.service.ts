@@ -297,12 +297,17 @@ export async function getDocumentForDownload(id: string, user: AccessTokenPayloa
  * removing it; Administrator already has unrestricted visibility into every
  * Project and PR Request (see hasUnrestrictedProjectVisibility /
  * assertCanViewPRRequest), so no further per-parent check narrows anything.
+ *
+ * Multi-country exception (the one thing that DOES narrow an Administrator): a project's document belongs to the project's country, and an Administrator
+ * who does not hold that country may not delete it. The check is the shared project-access rule, which is a no-op unless country access is enforced, so
+ * nothing changes for anyone while it is off.
  */
-export async function deleteDocument(id: string): Promise<void> {
+export async function deleteDocument(id: string, user: AccessTokenPayload): Promise<void> {
   const doc = await repo.findDocumentById(id);
   if (!doc) {
     throw new AppError("Document not found.", 404);
   }
+  if (doc.projectId) await assertProjectAccessById(doc.projectId, user);
 
   const subDir = doc.projectId ? await resolveProjectDocumentSubDir(doc.projectId) : undefined;
 

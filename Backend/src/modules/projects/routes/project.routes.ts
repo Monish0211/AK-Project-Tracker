@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
+import { authorize } from "../../../shared/middleware/authorize.js";
 import { denyReadOnlyWrites, denyReadOnlyWritesExceptAssignedCoordinator } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireApprovalPermission } from "../../../shared/middleware/requireApprovalPermission.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
@@ -7,16 +8,19 @@ import { validate } from "../../../shared/middleware/validate.js";
 import {
   archiveProject,
   createProject,
+  getLdReviewReport,
+  getPrCategoryCountries,
   getProject,
   getProjects,
   getProjectStatusCounts,
   importProjects,
+  previewImport,
   permanentlyDeleteProject,
   restoreProject,
   updateProject,
 } from "../controllers/project.controller.js";
 import { getPmoCoordinatorOptions } from "../../pmoCoordinators/index.js";
-import { createProjectRequestSchema, importProjectsSchema, updateProjectSchema } from "../validators/project.validators.js";
+import { createProjectRequestSchema, importPreviewSchema, importProjectsSchema, updateProjectSchema } from "../validators/project.validators.js";
 
 const router = Router();
 
@@ -38,6 +42,12 @@ router.get("/status-counts", authenticate, requireModuleAccess("Projects"), getP
 // Information card (a PR Request stays text-only — see project.validators.ts), and a
 // requester holding only "PR Request" must still be able to fill it in.
 router.get("/pmo-coordinators", authenticate, requireModuleAccess("Projects", "Approvals", "PR Request"), getPmoCoordinatorOptions);
+// PR Category -> country reference (single backend source), with the caller's authorization per country. Before "/:id".
+// "Reports" is included because the country-aware Reports page labels each country section from it (a Reports-only user would otherwise see
+// the stored category name, e.g. FZI instead of FZE). The reference is read-only metadata and grants no project data.
+router.get("/pr-category-countries", authenticate, requireModuleAccess("Projects", "Approvals", "PR Request", "Reports"), getPrCategoryCountries);
+// Read-only Liquidated Damages classification report (Phase 4 final). Administrator / PMO Manager only; limited to the caller's countries in the service.
+router.get("/liquidated-damages/review", authenticate, requireModuleAccess("Projects"), authorize("Administrator", "PMO Manager"), getLdReviewReport);
 router.get("/:id", authenticate, requireModuleAccess("Projects"), getProject);
 // Direct project creation needs the "Add Project" grant IN ADDITION to "Projects" (Oct 2026) — two chained
 // requireModuleAccess calls, i.e. both are required, not either. Viewing/editing/archiving existing projects keep their own
@@ -64,6 +74,16 @@ router.post(
   requireModuleAccess("Add Project"),
   validate(importProjectsSchema),
   importProjects
+);
+// Non-committing import check (country per row, authorization, duplicates). Same gates as the import itself; writes nothing.
+router.post(
+  "/import/preview",
+  authenticate,
+  denyReadOnlyWrites,
+  requireModuleAccess("Projects"),
+  requireModuleAccess("Add Project"),
+  validate(importPreviewSchema),
+  previewImport
 );
 // Edit — a Read Only user may write here only while they are THIS
 // project's assigned PMO Coordinator (see

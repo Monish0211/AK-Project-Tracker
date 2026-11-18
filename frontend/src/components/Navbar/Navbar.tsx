@@ -6,6 +6,7 @@ import {
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../auth/authContext";
 import { NotificationBell } from "../../notifications/NotificationBell";
+import { CountrySelector } from "./CountrySelector";
 import WorkspaceHeader from "../WorkspaceHeader/WorkspaceHeader";
 
 // Dialog Modals
@@ -213,6 +214,9 @@ const Navbar = () => {
             <span className="hidden md:inline">Dark</span>
           </button>
         </div>
+
+        {/* Active country (Global Multi-Country Phase 1) — renders nothing while the feature is off */}
+        <CountrySelector />
 
         {/* 🔔 Notifications Dropdown Container */}
         <NotificationBell />

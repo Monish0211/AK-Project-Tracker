@@ -44,6 +44,8 @@ export interface SheetImportResult {
   rawPrIdentifier: string;
   matchedProjectId: string | null;
   matchedPrNo: string | null;
+  /** The matched project's regional currency (Phase 3), so the preview shows amounts in the currency they will be recorded in; null when unmatched or a legacy project (INR). */
+  matchedRegionalCurrency: string | null;
   unmatchedReason?: string;
   rowsFound: number;
   rowsImportable: ImportableExpenseRow[];

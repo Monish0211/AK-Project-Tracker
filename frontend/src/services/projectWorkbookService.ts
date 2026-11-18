@@ -77,6 +77,12 @@ const PROJECTS_COLUMNS: ColumnDef[] = [
   { header: "LD Amount (INR)", key: "ldAmount", width: 16, align: "right" },
   { header: "Profit Before LD (INR)", key: "profitBeforeLd", width: 20, align: "right" },
   { header: "Final Profit After LD (INR)", key: "finalProfitAfterLd", width: 22, align: "right" },
+  // Regional LD (Phase 4 final) — appended after the INR columns so no existing position moves. Each row names the currency its figures are in: the project's own
+  // currency for a regional LD (deducted from the profit in it), INR for an India project or a legacy rupee LD. Export-only; import ignores them.
+  { header: "LD Currency", key: "ldCurrency", width: 12 },
+  { header: "LD Amount (Project Currency)", key: "ldAmountProject", width: 24, align: "right" },
+  { header: "Profit Before LD (Project Currency)", key: "profitBeforeLdProject", width: 28, align: "right" },
+  { header: "Final Profit After LD (Project Currency)", key: "finalProfitAfterLdProject", width: 30, align: "right" },
 ];
 
 const QUANTITY_COLUMNS: ColumnDef[] = [
@@ -315,10 +321,10 @@ function addInstructionsSheet(workbook: ExcelJS.Workbook) {
     ["Multiple Rows", "One project may have several Quantity Activities, several Payment Milestones, and several Expense Budget lines — give each its own row. Never combine several activities into a single row."],
     ["Mandatory Fields", "Columns shaded light gray are mandatory (e.g. PR Number, RFQ No., Client Name, Project Title, Department, Work Order Value on Projects; Description/Qty/UOM/Unit Rate on Quantity Details)."],
     ["Date Format", "Dates display as dd-mmm-yyyy (e.g. 02-Feb-2026). PO Month displays as mmm-yyyy."],
-    ["Currency", "Work Order Value, rates and budgets are entered in the project's own Currency; the portal converts to INR using the Exchange Rate."],
+    ["Currency", "Work Order Value, rates and budgets are entered in the project's own Currency; the portal converts to the project's regional currency (INR for India, OMR for Oman, and so on) using the Exchange Rate: regional currency per one unit of the Currency. A line in the regional currency itself uses rate 1."],
     ["Dropdowns", "Department, Currency, Contract Type, Project Status, Work Order Status, Payment Terms, UOM and Expense Category must be chosen from their dropdown lists (sourced from the hidden Lookup sheet)."],
     ["PR Number Uniqueness", "Each PR Number must be unique — duplicates within the file, or a PR Number that already exists in the portal, will fail import."],
-    ["Liquidated Damages", "LD Status, LD Amount, Profit Before LD and Final Profit After LD (last Projects columns) are export-only and filled for Completed projects; LD is recorded only when completing a project in the portal, so import ignores these columns."],
+    ["Liquidated Damages", "LD Status, LD Amount, Profit Before LD and Final Profit After LD (last Projects columns) are export-only and filled for Completed projects; LD is recorded only when completing a project in the portal, so import ignores these columns. The first three are INR columns, exactly as before: for a project in another country they hold only a legacy rupee LD (recorded before regional LD existed) and the profit columns are blank. The last four columns (LD Currency and the Project Currency amounts) give the LD and the profits in the project's own currency: a non-India project's LD is entered, recorded and deducted in its own currency (never converted), a legacy rupee LD is shown as INR and not deducted."],
     ["Import Behaviour", "If any row in any sheet fails validation, the entire import is rejected — nothing is partially imported. Fix the reported row numbers and re-upload."],
     ["Sample Template", "Download Sample Template uses this exact layout, prefilled with one example project (PR-SAMPLE-001) — replace the sample rows with your own data, keeping the same PR Number across its Quantity/Milestone/Expense rows."],
   ];
@@ -385,10 +391,16 @@ function projectToRow(p: Project) {
     completionRemarks: p.completionRemarks || "",
     remarks: p.remarks || "",
     ldStatus: ld?.ldStatus,
-    // Not recorded -> blank amount (never 0, which would read as "No LD").
-    ldAmount: ld && ld.ldDeduction !== null ? ld.ldDeduction : undefined,
-    profitBeforeLd: ld?.profitBeforeLd,
-    finalProfitAfterLd: ld?.finalProfit,
+    // Not recorded -> blank amount (never 0, which would read as "No LD"). The three columns above are INR columns, unchanged for an India project: for a project in
+    // another country only a LEGACY rupee LD lands in "LD Amount (INR)", and its profit figures (in that project's own currency) are left blank there. A regional LD
+    // and the profit are in the "(Project Currency)" columns, with the currency named on the row.
+    ldAmount: ld && ld.ldInrNotDeducted !== null ? ld.ldInrNotDeducted : ld && ld.currency === "INR" && ld.ldDeduction !== null ? ld.ldDeduction : undefined,
+    profitBeforeLd: ld && ld.currency === "INR" ? ld.profitBeforeLd : undefined,
+    finalProfitAfterLd: ld && ld.currency === "INR" ? ld.finalProfit : undefined,
+    ldCurrency: ld && ld.ldStatus !== "Not recorded" ? (ld.ldInrNotDeducted !== null ? "INR" : ld.currency) : undefined,
+    ldAmountProject: ld && ld.ldInrNotDeducted !== null ? ld.ldInrNotDeducted : ld && ld.ldDeduction !== null ? ld.ldDeduction : undefined,
+    profitBeforeLdProject: ld ? ld.profitBeforeLd : undefined,
+    finalProfitAfterLdProject: ld ? ld.finalProfit : undefined,
   };
 }
 
@@ -667,6 +679,8 @@ function readHeaderMap(sheet: ExcelJS.Worksheet, columns: ColumnDef[], errors: s
 export interface ParsedWorkbookResult {
   projects: Project[];
   errors: string[];
+  /** One entry per parsed project row, in file order, with its Excel row number: what the backend import preview needs to report per row. */
+  rows?: { rowNumber: number; prNo: string; prCategory: string }[];
 }
 
 export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjects: Project[]): ParsedWorkbookResult {
@@ -720,7 +734,9 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
     const get = (key: string) => getCellByAliases(row, pMap, key);
     const prNo = cellText(get("PR Number"));
     const prCategoryRaw = cellText(get("PR Category"));
-    const prCategory = inferPrCategory(prNo, prCategoryRaw);
+    // A blank PR Category is NEVER guessed from the PR Number prefix: the category decides the project's country, and the prefix is
+    // ambiguous (Oman "EE" vs Elixir Qatar "EE-Q-"). The row is rejected and the user fills the category in.
+    const prCategory = prCategoryRaw.trim() ? inferPrCategory(prNo, prCategoryRaw) : "";
     const rfqNo = cellText(get("RFQ No.")).trim();
     const client = cellText(get("Client Name"));
     const projectTitle = cellText(get("Project Title"));
@@ -736,6 +752,7 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
     const manhourBudgetHours = cellNumber(get("Budget Hours"));
 
     if (!prNo) errors.push(`Projects, Row ${r}: PR Number is missing.`);
+    if (!prCategory) errors.push(`Projects, Row ${r}: PR Category is blank. Fill it in; the country is never guessed from the PR Number prefix.`);
     // Never defaulted or generated — a project without its real RFQ No. is
     // rejected, like any other missing mandatory column value.
     if (!rfqNo) errors.push(`Projects, Row ${r}: RFQ No. is missing.`);
@@ -1016,7 +1033,11 @@ export function parseProjectsWorkbook(workbook: ExcelJS.Workbook, existingProjec
     };
   });
 
-  return { projects, errors: [] };
+  return {
+    projects,
+    errors: [],
+    rows: drafts.map((d) => ({ rowNumber: d.rowNum, prNo: d.prNo, prCategory: String(d.fields["prCategory"] ?? "") })),
+  };
 }
 
 function buildQuantityDraft(description: string, qty: number, uom: string, unitRate: number, assignedTo: string) {

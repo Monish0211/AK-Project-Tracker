@@ -14,6 +14,7 @@ import {
   PauseCircle,
   PlayCircle,
   Receipt,
+  Scale,
   Settings,
   Users,
   XCircle,
@@ -65,6 +66,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Invoice Tracker", module: "Invoices", to: "/invoice-tracker", icon: Receipt },
   { label: "Customer Master", to: "/customers", icon: Building2 },
   { label: "Manpower", to: "/manpower", icon: Users },
+  // Central country manpower conversion rates (Nov 2026): its own Module Access grant, independent of "Manpower". The label is the exact Module name.
+  { label: "Manpower Conversion Rates", to: "/manpower/conversion-rates", icon: Scale },
   { label: "Timesheets", to: "/timesheets", icon: Clock3 },
   { label: "Reports", to: "/reports", icon: BarChart3 },
   // PR Request & Two-Level Approval Workflow — label doubles as the exact
@@ -382,25 +385,30 @@ const Sidebar = () => {
         /* ── Premium nav item hover ─────────────────────────────────── */
         .pmo-nav-item {
           position: relative;
-          transition: transform 230ms cubic-bezier(.22,.68,0,1.05),
-                      background-color 220ms ease,
+          transition: background-color 220ms ease,
                       box-shadow 230ms ease,
                       color 220ms ease;
         }
+        /* The item's own box must NOT move on hover: a pointer near its edge would leave the moved box, lose :hover, and the item would blink. Only its content slides. */
+        .pmo-nav-item > * {
+          transition: translate 230ms cubic-bezier(.22,.68,0,1.05);
+        }
         .pmo-nav-item:hover:not(.pmo-nav-active) {
-          transform: translate(3px, -1px);
           box-shadow: 0 4px 14px rgba(0,0,0,.22);
+        }
+        .pmo-nav-item:hover:not(.pmo-nav-active) > * {
+          translate: 3px 0;
         }
         .pmo-nav-item:focus-visible {
           outline: 2px solid rgba(96,165,250,.6);
           outline-offset: 2px;
         }
         .pmo-nav-icon {
-          transition: transform 220ms ease, filter 220ms ease;
+          transition: transform 220ms ease, filter 220ms ease, translate 230ms cubic-bezier(.22,.68,0,1.05);
           display: inline-flex;
         }
         .pmo-nav-item:hover .pmo-nav-icon { transform: scale(1.05); filter: brightness(1.25); }
-        .pmo-nav-label { transition: color 220ms ease, opacity 220ms ease; }
+        .pmo-nav-label { transition: color 220ms ease, opacity 220ms ease, translate 230ms cubic-bezier(.22,.68,0,1.05); }
         .pmo-nav-item:hover .pmo-nav-label { color: #ffffff; }
 
         /* ── Premium active state — soft glass gradient card ───────── */
@@ -410,7 +418,6 @@ const Sidebar = () => {
           box-shadow: 0 6px 20px rgba(37,99,235,.28), 0 2px 6px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.14);
           transform: translateY(-1px);
         }
-        .pmo-nav-active:hover { transform: translateY(-1.5px); }
 
         /* ── Projects dropdown expand/collapse ─────────────────────── */
         .pmo-dropdown-panel {
@@ -704,7 +711,7 @@ const Sidebar = () => {
               <li key={to}>
                 <NavLink
                   to={to!}
-                  end={to === "/"}
+                  end={to === "/" || to === "/manpower"}
                   onMouseEnter={(e) => scheduleNavTooltip(label, e.currentTarget)}
                   onMouseLeave={closeNavTooltip}
                   onFocus={(e) => openNavTooltipNow(label, e.currentTarget)}

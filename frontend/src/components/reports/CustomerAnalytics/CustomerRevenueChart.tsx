@@ -1,12 +1,13 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 
 interface Props {
   customerList: any[];
 }
 
 export function CustomerRevenueChart({ customerList }: Props) {
+  const money = useReportMoney();
   const chartData = useMemo(() => {
     return customerList.slice(0, 7).map((c) => ({
       client: c.client.length > 12 ? c.client.slice(0, 12) + "..." : c.client,
@@ -29,8 +30,8 @@ export function CustomerRevenueChart({ customerList }: Props) {
           <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
             <XAxis dataKey="client" tick={{ fontSize: 10 }} />
-            <YAxis tickFormatter={(v) => formatBusinessINR(v)} tick={{ fontSize: 10 }} />
-            <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), ""]} />
+            <YAxis tickFormatter={(v) => money.compact(v)} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(val: any) => [money.compact(Number(val)), ""]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="Contract Value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
             <Bar dataKey="Invoiced Revenue" fill="#10b981" radius={[4, 4, 0, 0]} />

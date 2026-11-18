@@ -6,6 +6,7 @@ import { Badge } from "../../../components/ui/Badge";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { statusTone } from "../../../components/ui/statusTone";
 import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { moneyFormatter } from "../../../utils/currencyDisplay";
 import { useDashboardSummary } from "../DashboardSummaryContext";
 
 const RecentProjects: React.FC = () => {
@@ -67,8 +68,9 @@ const RecentProjects: React.FC = () => {
                       {project.projectStatus || "—"}
                     </Badge>
                   </td>
-                  <td className="text-right py-2.5 px-2 font-extrabold text-slate-800 dark:text-slate-100" title={`₹ ${project.workOrderValueINR.toLocaleString("en-IN")}`}>
-                    {formatBusinessINR(project.workOrderValueINR)}
+                  <td className="text-right py-2.5 px-2 font-extrabold text-slate-800 dark:text-slate-100" title={project.currency && project.currency !== "INR" ? moneyFormatter(project.currency).full(project.workOrderValue ?? 0) : `₹ ${project.workOrderValueINR.toLocaleString("en-IN")}`}>
+                    {/* The project's OWN currency (Phase 3): an INR or legacy project reads exactly as before. */}
+                    {project.currency && project.currency !== "INR" ? moneyFormatter(project.currency).compact(project.workOrderValue ?? 0) : formatBusinessINR(project.workOrderValueINR)}
                   </td>
                 </tr>
               ))}

@@ -68,6 +68,12 @@ export function deleteAllByProject(projectId: string) {
 export function sumWoValueByProjectId(projectId: string) {
   return prisma.quantityItem.aggregate({
     where: { projectId },
-    _sum: { woValue: true },
+    _sum: { woValue: true, woValueRegional: true },
   });
+}
+
+/** The project's stored regional currency (Phase 3): null for a legacy project, which is treated as INR. */
+export async function getProjectRegionalCurrency(projectId: string): Promise<string | null> {
+  const row = await prisma.project.findUnique({ where: { id: projectId }, select: { regionalCurrency: true } });
+  return row?.regionalCurrency ?? null;
 }

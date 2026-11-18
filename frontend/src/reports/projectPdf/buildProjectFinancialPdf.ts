@@ -18,8 +18,9 @@ import regularFontUrl from "../../assets/fonts/NotoSans-Regular-subset.ttf?inlin
 import boldFontUrl from "../../assets/fonts/NotoSans-Bold-subset.ttf?inline";
 import logoUrl from "../../assets/logo-report.jpg?inline";
 import { computeProjectFinancials } from "../../utils/projectFinancials";
+import { amountPrefix, formatCurrencyNumber, regionalCurrencyOf, regionalWorkOrderValue } from "../../utils/currencyDisplay";
 import type { ProjectFinancials } from "../../utils/projectFinancials";
-import type { ProjectReportData } from "../../services/projectReportDataService";
+import type { ProjectReportData, ReportManhourRow } from "../../services/projectReportDataService";
 import { sanitizeForPdf, UNSUPPORTED_MARKER } from "./pdfText";
 
 export interface BuildProjectPdfOptions {
@@ -97,6 +98,16 @@ export function formatReportINR(value: number): string {
   return `₹ ${INR_FORMAT.format(Math.abs(value) < 0.005 ? 0 : value)}`;
 }
 
+/**
+ * An amount in the project's regional currency (Phase 3). INR is exactly formatReportINR; any other currency prints its own symbol or code and its own
+ * decimals ("RM43,200.00", "OMR 3,696.000"). Never prints a negative zero.
+ */
+export function formatReportMoney(value: number, currency: string): string {
+  if (currency === "INR") return formatReportINR(value);
+  const clean = Math.abs(value) < 0.0005 ? 0 : value;
+  return `${clean < 0 ? "-" : ""}${amountPrefix(currency)}${formatCurrencyNumber(Math.abs(clean), currency)}`;
+}
+
 /** "2026-10-16" → "16 Oct 2026"; null → "—". Parsed by components, so no time-zone shift. */
 export function formatReportDate(value: string | null): string {
   if (!value) return DASH;
@@ -167,13 +178,27 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
   const { project } = data;
   const tz = options.timeZone;
   const stamp = formatReportTimestamp(data.fetchedAt, tz);
+  // The project's own money is printed in its regional currency (the INR value for an INR or legacy project, exactly as before).
+  const currency = regionalCurrencyOf(project);
+  const fmt = (value: number): string => formatReportMoney(value, currency);
+  // Phase 4: man-hour cost is calculated in INR (INR rate x hours). For a project whose currency is not INR it is printed in the project's currency only
+  // when the row was converted with the project's manpower rate; a row with no rate is NOT added as an INR amount to the project-currency totals (it is
+  // listed as "Rate not set" and counted in a note). An INR / legacy project is exactly as before.
+  const nonInrProject = currency !== "INR";
+  const isConverted = (r: ReportManhourRow): boolean => r.costingStatus === "CONVERTED" && r.manhourCostRegional !== null;
+  const manhourCostInProjectCurrency = (r: ReportManhourRow): number => (!nonInrProject ? r.manhourCost : isConverted(r) ? (r.manhourCostRegional as number) : 0);
+  const unconvertedManhourRows = nonInrProject ? data.manhourRows.filter((r) => !isConverted(r)) : [];
   const financials = computeProjectFinancials({
-    workOrderValueINR: project.workOrderValueINR,
-    manhourCosts: data.manhourRows.map((r) => r.manhourCost),
+    workOrderValueINR: regionalWorkOrderValue(project),
+    manhourCosts: data.manhourRows.map(manhourCostInProjectCurrency),
     nonManhourRows: data.nonManhourRows,
     invoiceLines: data.invoiceRows,
-    ld: { ldApplicable: project.ldApplicable, ldAmountINR: project.ldAmountINR },
+    ld: { ldApplicable: project.ldApplicable, ldAmountINR: project.ldAmountINR, ldAmountRegional: project.ldAmountRegional, ldCurrency: project.ldCurrency },
+    currency,
   });
+  // Liquidated Damages is recorded in the project's own currency (INR for India) and deducted from the profit in it. Only a LEGACY rupee amount on a project in
+  // another country (recorded before regional LD existed) is printed as INR and NOT subtracted from the project's own-currency profit.
+  const ldInrNote = financials.ldInrNotDeducted !== null ? `${formatReportINR(financials.ldInrNotDeducted)} (INR)` : null;
   const inv = financials.invoice;
   const tPrepared = performance.now();
 
@@ -294,7 +319,7 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
     // Liquidated Damages (Oct 2026) — recorded at completion; null = not recorded.
     [
       ...detail("LD Applicable", financials.ldStatus),
-      ...detail("LD Amount", financials.ldDeduction === null ? NOT_RECORDED : formatReportINR(financials.ldDeduction)),
+      ...detail("LD Amount", ldInrNote ?? (financials.ldDeduction === null ? NOT_RECORDED : fmt(financials.ldDeduction))),
     ],
     ...(project.ldRemarks
       ? [
@@ -326,7 +351,7 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
   }
 
   // 3. KPI tiles --------------------------------------------------------
-  sectionTitle("Financial Summary", "All amounts in INR", 60);
+  sectionTitle("Financial Summary", `All amounts in ${currency}`, 60);
   interface Tile {
     label: string;
     value: string;
@@ -334,24 +359,24 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
     color: RGB;
   }
   const profitPct = financials.profitPercent === null ? DASH : `${financials.profitPercent.toFixed(1)}%`;
-  const draftNote = inv && inv.draftCount > 0 ? `incl. Drafts (${formatReportINR(inv.draftAmount)})` : "incl. Drafts";
+  const draftNote = inv && inv.draftCount > 0 ? `incl. Drafts (${fmt(inv.draftAmount)})` : "incl. Drafts";
   const tiles: Tile[] = [
-    { label: "Work Order Value", value: formatReportINR(financials.workOrderValue), sub: "Live from quantity items", color: NAVY },
-    { label: "Invoice Raised", value: inv ? formatReportINR(inv.raised) : "Not available", sub: inv ? draftNote : "No invoice access", color: BLUE },
-    { label: "Payment Received", value: inv ? formatReportINR(inv.received) : "Not available", sub: inv ? "Paid invoices" : "No invoice access", color: GREEN },
-    { label: "Outstanding", value: inv ? formatReportINR(inv.outstanding) : "Not available", sub: inv ? "Work Order Value − Received" : "No invoice access", color: AMBER },
-    { label: "Total Expenses", value: formatReportINR(financials.expenses), sub: "Man-hour + Non-man-hour", color: ROSE },
+    { label: "Work Order Value", value: fmt(financials.workOrderValue), sub: "Live from quantity items", color: NAVY },
+    { label: "Invoice Raised", value: inv ? fmt(inv.raised) : "Not available", sub: inv ? draftNote : "No invoice access", color: BLUE },
+    { label: "Payment Received", value: inv ? fmt(inv.received) : "Not available", sub: inv ? "Paid invoices" : "No invoice access", color: GREEN },
+    { label: "Outstanding", value: inv ? fmt(inv.outstanding) : "Not available", sub: inv ? "Work Order Value − Received" : "No invoice access", color: AMBER },
+    { label: "Total Expenses", value: fmt(financials.expenses), sub: "Man-hour + Non-man-hour", color: ROSE },
     // Liquidated Damages (Oct 2026) — recorded at completion; never "₹ 0" for a project where LD was not recorded.
     {
       label: "LD Deduction",
-      value: financials.ldDeduction === null ? NOT_RECORDED : formatReportINR(financials.ldDeduction),
-      sub: financials.ldStatus === "Yes" ? "Deducted from profit" : financials.ldStatus === "No" ? "LD not applicable" : "LD not recorded",
+      value: ldInrNote ?? (financials.ldDeduction === null ? NOT_RECORDED : fmt(financials.ldDeduction)),
+      sub: ldInrNote ? "Recorded in INR; not deducted" : financials.ldStatus === "Yes" ? "Deducted from profit" : financials.ldStatus === "No" ? "LD not applicable" : "LD not recorded",
       color: AMBER,
     },
-    { label: "Profit Before LD", value: formatReportINR(financials.profit), sub: `Profit % ${profitPct}`, color: financials.profit >= 0 ? GREEN : ROSE },
+    { label: "Profit Before LD", value: fmt(financials.profit), sub: `Profit % ${profitPct}`, color: financials.profit >= 0 ? GREEN : ROSE },
     {
       label: "Profit After LD",
-      value: formatReportINR(financials.finalProfit),
+      value: fmt(financials.finalProfit),
       sub: `Profit % ${financials.finalProfitPercent === null ? DASH : `${financials.finalProfitPercent.toFixed(1)}%`}${financials.ldDeduction === null ? " · LD not recorded" : ""}`,
       color: financials.finalProfit >= 0 ? GREEN : ROSE,
     },
@@ -423,7 +448,7 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
       doc.rect(tx, y, w, barH, "F");
     }
     setText(8, bar.value === null ? MUTED : TEXT, bar.value === null ? "normal" : "bold");
-    doc.text(bar.value === null ? "Not available" : formatReportINR(bar.value), PAGE_W - MARGIN, y + 3.2, { align: "right" });
+    doc.text(bar.value === null ? "Not available" : fmt(bar.value), PAGE_W - MARGIN, y + 3.2, { align: "right" });
     y += 7;
   }
   if (financials.profit < 0) {
@@ -442,19 +467,47 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
         r.designation ?? DASH,
         r.assignmentStatus || DASH,
         formatHours(r.totalHours),
-        formatReportINR(r.hourlyRate),
-        formatReportINR(r.manhourCost),
+        nonInrProject
+          ? isConverted(r) && r.totalHours > 0
+            ? // The project-currency hourly rate is derived from the server's authoritative cost and hours (never a second conversion of the rate).
+              `${fmt(Math.round(((r.manhourCostRegional as number) / r.totalHours) * 10 ** (currency === "OMR" ? 3 : 2)) / 10 ** (currency === "OMR" ? 3 : 2))}\n(${formatReportINR(r.hourlyRate)} base)`
+            : `Rate not set\n(${formatReportINR(r.hourlyRate)} base)`
+          : fmt(r.hourlyRate),
+        nonInrProject
+          ? isConverted(r)
+            ? `${fmt(r.manhourCostRegional as number)}\n(${formatReportINR(r.manhourCost)})`
+            : `Rate not set\n(${formatReportINR(r.manhourCost)})`
+          : fmt(r.manhourCost),
       ])
     : [[{ content: "No man-hour resources recorded for this project.", colSpan: 7, styles: { textColor: MUTED, halign: "center" } }]];
   autoTable(doc, {
     ...tableBase,
     startY: y,
-    head: [["Employee", "Emp. No.", "Designation", "Status", "Hours", "Rate / hr", "Man-hour Cost"]],
+    head: [["Employee", "Emp. No.", "Designation", "Status", "Hours", nonInrProject ? `Rate / hr (${currency})` : "Rate / hr", nonInrProject ? `Man-hour Cost (${currency})` : "Man-hour Cost"]],
     body: manhourBody,
-    foot: [[{ content: "Man-hour subtotal", colSpan: 6, styles: { halign: "right" } }, { content: formatReportINR(financials.manhourTotal), styles: { halign: "right" } }]],
+    foot: [[{ content: "Man-hour subtotal", colSpan: 6, styles: { halign: "right" } }, { content: fmt(financials.manhourTotal), styles: { halign: "right" } }]],
     columnStyles: { 0: { cellWidth: 38 }, 1: { cellWidth: 20 }, 2: { cellWidth: 30 }, 3: { cellWidth: 18 }, 4: { halign: "right", cellWidth: 16 }, 5: { halign: "right", cellWidth: 26 }, 6: { halign: "right" } },
   });
   y = lastTableY() + 2;
+  if (project.manhourRefreshStatus !== "CURRENT") {
+    // Phase 4 / Option A: figures from a project whose recalculation after an employee-rate change is pending or failed are never printed as current.
+    ensureSpace(9);
+    setText(7, MUTED);
+    doc.text(`Manpower costing recalculation is ${project.manhourRefreshStatus === "FAILED" ? "failed" : "still in progress"} for this project:`, MARGIN, y + 2);
+    doc.text("the man-hour figures above may be out of date.", MARGIN, y + 5.5);
+    y += 7;
+  }
+  if (unconvertedManhourRows.length > 0) {
+    ensureSpace(9);
+    setText(7, MUTED);
+    doc.text(
+      `Rate not set: ${unconvertedManhourRows.length} resource${unconvertedManhourRows.length === 1 ? "" : "s"} (INR amounts in brackets) ${unconvertedManhourRows.length === 1 ? "is" : "are"} not converted into ${currency}`,
+      MARGIN,
+      y + 2
+    );
+    doc.text(`and ${unconvertedManhourRows.length === 1 ? "is" : "are"} not included in the man-hour subtotal, expenses or profit.`, MARGIN, y + 5.5);
+    y += 7;
+  }
   if (data.manhourRows.some((r) => !r.nameFromDirectory)) {
     ensureSpace(5);
     setText(7, MUTED);
@@ -470,8 +523,8 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
         r.category || DASH,
         r.description || DASH,
         formatQuantity(r.quantity),
-        formatReportINR(r.unitCost),
-        formatReportINR(r.totalCost),
+        fmt(r.unitCost),
+        fmt(r.totalCost),
         r.remarks ?? DASH,
       ])
     : [[{ content: "No non-man-hour expenses recorded for this project.", colSpan: 6, styles: { textColor: MUTED, halign: "center" } }]];
@@ -480,7 +533,7 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
     startY: y,
     head: [["Category", "Description", "Qty", "Unit Cost", "Total Cost", "Remarks"]],
     body: nonManhourBody,
-    foot: [[{ content: "Non-man-hour subtotal", colSpan: 4, styles: { halign: "right" } }, { content: formatReportINR(financials.nonManhourTotal), styles: { halign: "right" } }, ""]],
+    foot: [[{ content: "Non-man-hour subtotal", colSpan: 4, styles: { halign: "right" } }, { content: fmt(financials.nonManhourTotal), styles: { halign: "right" } }, ""]],
     columnStyles: { 0: { cellWidth: 28 }, 1: { cellWidth: 46 }, 2: { halign: "right", cellWidth: 14 }, 3: { halign: "right", cellWidth: 27 }, 4: { halign: "right", cellWidth: 29 }, 5: {} },
   });
   y = lastTableY() + 4;
@@ -493,11 +546,11 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
     tableWidth: 90,
     margin: { left: PAGE_W - MARGIN - 90, right: MARGIN, top: continuationTop, bottom: FOOTER_RESERVE },
     body: [
-      ["Man-hour expenses", formatReportINR(financials.manhourTotal)],
-      ["Non-man-hour expenses", formatReportINR(financials.nonManhourTotal)],
+      ["Man-hour expenses", fmt(financials.manhourTotal)],
+      ["Non-man-hour expenses", fmt(financials.nonManhourTotal)],
       [
         { content: "Total Expenses", styles: { fontStyle: "bold", fillColor: SOFT, textColor: NAVY } },
-        { content: formatReportINR(financials.expenses), styles: { fontStyle: "bold", fillColor: SOFT, textColor: NAVY } },
+        { content: fmt(financials.expenses), styles: { fontStyle: "bold", fillColor: SOFT, textColor: NAVY } },
       ],
     ],
     styles: { font: FONT, fontSize: 8.5, cellPadding: 1.6, textColor: TEXT },
@@ -513,9 +566,11 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
   const ldDeductionText =
     financials.ldDeduction === null
       ? "LD not recorded"
-      : financials.ldStatus === "No"
-        ? `Not applicable ${formatReportINR(0)}`
-        : `− ${formatReportINR(financials.ldDeduction)}`;
+      : ldInrNote
+        ? `${ldInrNote}, not deducted from ${currency} profit`
+        : financials.ldStatus === "No"
+          ? `Not applicable ${fmt(0)}`
+          : `− ${fmt(financials.ldDeduction)}`;
   const finalPct = financials.finalProfitPercent === null ? DASH : `${financials.finalProfitPercent.toFixed(1)}%`;
   const finalColor = financials.finalProfit >= 0 ? GREEN : ROSE;
   autoTable(doc, {
@@ -525,11 +580,11 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
     tableWidth: 90,
     margin: { left: PAGE_W - MARGIN - 90, right: MARGIN, top: continuationTop, bottom: FOOTER_RESERVE },
     body: [
-      ["Profit Before LD", formatReportINR(financials.profitBeforeLd)],
+      ["Profit Before LD", fmt(financials.profitBeforeLd)],
       ["LD Deduction", ldDeductionText],
       [
         { content: `Final Profit After LD (${finalPct})`, styles: { fontStyle: "bold", fillColor: SOFT, textColor: NAVY } },
-        { content: formatReportINR(financials.finalProfit), styles: { fontStyle: "bold", fillColor: SOFT, textColor: finalColor } },
+        { content: fmt(financials.finalProfit), styles: { fontStyle: "bold", fillColor: SOFT, textColor: finalColor } },
       ],
     ],
     styles: { font: FONT, fontSize: 8.5, cellPadding: 1.6, textColor: TEXT },
@@ -555,7 +610,7 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
           const item = [r.milestoneName, r.itemDescription].filter(Boolean).join(" · ") || DASH;
           const status = r.status === "Draft" ? "DRAFT" : r.status === "Cancelled" ? "Cancelled (excluded)" : statusLabel(r.status);
           const original = r.currency !== "INR" && r.invoiceAmountOriginal !== null ? `${r.currency} ${INR_FORMAT.format(r.invoiceAmountOriginal)}` : DASH;
-          return [r.invoiceNo || DASH, formatReportDate(r.invoiceDate), item, status, original, formatReportINR(r.invoiceAmountINR)];
+          return [r.invoiceNo || DASH, formatReportDate(r.invoiceDate), item, status, original, fmt(r.invoiceAmountINR)];
         })
       : [[{ content: "No invoices raised for this project yet.", colSpan: 6, styles: { textColor: MUTED, halign: "center" } }]];
     autoTable(doc, {
@@ -584,7 +639,7 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
     const statusBody: CellInput[][] = inv.byStatus.map((s) => [
       s.status === "Cancelled" ? "Cancelled (excluded)" : statusLabel(s.status),
       String(s.count),
-      formatReportINR(s.amount),
+      fmt(s.amount),
     ]);
     const strong = (content: string, halign: "left" | "right" = "left"): CellInput => ({ content, styles: { fontStyle: "bold", fillColor: SOFT, textColor: NAVY, halign } });
     autoTable(doc, {
@@ -595,9 +650,9 @@ export function buildProjectFinancialPdf(input: ProjectReportData, options: Buil
       head: [["Totals by status", "Count", "Amount (INR)"]],
       body: [
         ...statusBody,
-        [strong("Invoice Raised (incl. Draft, excl. Cancelled)"), strong(""), strong(formatReportINR(inv.raised), "right")],
-        [strong("Payment Received (Paid)"), strong(""), strong(formatReportINR(inv.received), "right")],
-        [strong("Outstanding (Work Order Value − Received)"), strong(""), strong(formatReportINR(inv.outstanding), "right")],
+        [strong("Invoice Raised (incl. Draft, excl. Cancelled)"), strong(""), strong(fmt(inv.raised), "right")],
+        [strong("Payment Received (Paid)"), strong(""), strong(fmt(inv.received), "right")],
+        [strong("Outstanding (Work Order Value − Received)"), strong(""), strong(fmt(inv.outstanding), "right")],
       ],
       columnStyles: { 1: { halign: "right", cellWidth: 14 }, 2: { halign: "right", cellWidth: 32 } },
       pageBreak: "avoid",

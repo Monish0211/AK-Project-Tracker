@@ -5,6 +5,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { verifyAccessToken } from "../utils/jwt.util.js";
 import { findUserAccountStatusById } from "../../modules/auth/repository/auth.repository.js";
 import type { AccessTokenPayload } from "../types/auth.types.js";
+import { ACTIVE_COUNTRY_HEADER, buildCountryContext, getCountryAccessMode, loadAccountAndCountryGrants, runWithCountryContext } from "../utils/countryAccess.js";
 
 /**
  * Verifies the `Authorization: Bearer <token>` header and attaches the
@@ -49,7 +50,11 @@ export const authenticate = asyncHandler(async (req: Request, _res: Response, ne
     throw new AppError("Invalid authentication token.", 401);
   }
 
-  const status = await findUserAccountStatusById(payload.sub);
+  // Country access off (the default): exactly the previous single account-status lookup. Shadow / enforce: the account state and the country grants come back
+  // in ONE statement (see loadAccountAndCountryGrants), then the very same checks run in the very same order.
+  const mode = getCountryAccessMode();
+  const combined = mode === "off" ? null : await loadAccountAndCountryGrants(payload.sub);
+  const status = combined ? combined.account : await findUserAccountStatusById(payload.sub);
   if (!status || !status.isActive) {
     throw new AppError("Your account is inactive. Please contact your administrator.", 403);
   }
@@ -57,6 +62,17 @@ export const authenticate = asyncHandler(async (req: Request, _res: Response, ne
     throw new AppError("Your account is locked. Please contact your administrator.", 403);
   }
 
-  req.user = payload;
-  next();
+  // Country access (Global Multi-Country Phase 1). With the mode off (the default) this is exactly the previous behaviour: no
+  // extra query, no context. Otherwise the account's country grants are re-read from the database for THIS request (never taken
+  // from the token) and the context is made available both on req.user and to helpers that only receive a caller id. An invalid
+  // X-Active-Country is NOT rejected here, so /auth/me and logout still work with a stale header; it is refused when a
+  // project-scoped read or check actually needs it.
+  if (mode === "off" || !combined) {
+    req.user = payload;
+    next();
+    return;
+  }
+  const country = await buildCountryContext(payload.sub, req.headers[ACTIVE_COUNTRY_HEADER], mode, combined.grants);
+  req.user = { ...payload, country };
+  runWithCountryContext(country, () => next());
 });

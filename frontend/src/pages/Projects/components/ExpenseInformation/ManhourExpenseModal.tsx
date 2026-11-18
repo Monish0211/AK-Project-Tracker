@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { moneyFormatter } from "../../../../utils/currencyDisplay";
 import { X } from "lucide-react";
 
 import type { Employee } from "../../../../types/EmployeeModel";
@@ -7,6 +8,8 @@ import type { ManhourExpense } from "../../../../types/ManhourExpense";
 import { getEmployees } from "../../../../services/employeeService";
 
 interface Props {
+  /** The project's regional currency (Phase 3); INR when not given. */
+  currency?: string;
   expense?: ManhourExpense | null;
   onClose: () => void;
   onSave: (expense: ManhourExpense) => void;
@@ -95,7 +98,7 @@ const AutocompleteInput = ({
   );
 };
 
-const ManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
+const ManhourExpenseModal = ({ expense, onClose, onSave, currency = "INR" }: Props) => {
   const isEditMode = Boolean(expense);
 
   const [employees] = useState<Employee[]>(() => getEmployees());
@@ -387,7 +390,7 @@ const ManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
             </p>
 
             <h2 className="text-3xl font-bold text-blue-700">
-              ₹ {totalCost.toLocaleString("en-IN")}
+              {moneyFormatter(currency).full(totalCost)}
             </h2>
 
           </div>

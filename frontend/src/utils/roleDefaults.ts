@@ -29,6 +29,7 @@ const NO_MODULES: UserModuleAccess = {
   approvals: false,
   addProject: false,
   prRequest: false,
+  manpowerConversionRates: false,
 };
 
 const ALL_MODULES: UserModuleAccess = {
@@ -46,6 +47,8 @@ const ALL_MODULES: UserModuleAccess = {
   approvals: true,
   addProject: true,
   prRequest: true,
+  // Never pre-ticked, not even for an Administrator: this capability is granted explicitly, per user (it decides who manages the manpower conversion rates).
+  manpowerConversionRates: false,
 };
 
 function modules(...keys: (keyof UserModuleAccess)[]): UserModuleAccess {
@@ -163,16 +166,19 @@ export const ROLE_APPROVAL_DEFAULTS: Record<SystemRole, UserApprovalRights> = {
 };
 
 /** Sensible default region scope for a brand-new user of this role — broad for senior roles, empty for the rest (an Administrator assigns regions explicitly). */
+// Global Multi-Country Phase 1: NO role pre-selects any country. Country access is assigned explicitly by an Administrator and
+// is never derived from a role name (so no role gets India, and no role gets every country, by default). The previous
+// templates (Administrator, PMO Manager and Management Viewer: all regions; most other roles: India) are intentionally gone.
 export const ROLE_REGION_DEFAULTS: Record<SystemRole, UserProjectRegionAccess> = {
-  Administrator: ALL_REGIONS,
-  "PMO Manager": ALL_REGIONS,
-  "Project Manager": regions("india"),
-  "Project Coordinator": regions("india"),
-  "Department Head": regions("india"),
-  Engineer: regions("india"),
-  Finance: regions("india"),
-  Accounts: regions("india"),
-  "Management Viewer": ALL_REGIONS,
+  Administrator: NO_REGIONS,
+  "PMO Manager": NO_REGIONS,
+  "Project Manager": NO_REGIONS,
+  "Project Coordinator": NO_REGIONS,
+  "Department Head": NO_REGIONS,
+  Engineer: NO_REGIONS,
+  Finance: NO_REGIONS,
+  Accounts: NO_REGIONS,
+  "Management Viewer": NO_REGIONS,
   "Read Only": NO_REGIONS,
   // No Projects module access at all — region scoping is meaningless here.
   "PR Request User": NO_REGIONS,

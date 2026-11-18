@@ -9,7 +9,7 @@ import {
   calculateManhourCost,
   getTotalManhourCost,
 } from "../../../../services/expenseService";
-import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
+import { projectMoney, regionalCurrencyOf } from "../../../../utils/currencyDisplay";
 
 import ManhourExpenseModal from "./ManhourExpenseModal";
 import ManhourExpenseTable from "./ManhourExpenseTable";
@@ -118,6 +118,7 @@ const ManhourExpenseCard = ({ project, setProject }: Props) => {
         {/* Table */}
 
         <ManhourExpenseTable
+          currency={regionalCurrencyOf(project)}
           expenses={expenses}
           onEdit={handleEditClick}
           onDelete={handleDelete}
@@ -133,8 +134,8 @@ const ManhourExpenseCard = ({ project, setProject }: Props) => {
               Total Man-Hour Cost
             </p>
 
-            <h2 className="text-2xl font-bold text-blue-700 whitespace-nowrap" title={formatFullINR(totalManhourCost)}>
-              {formatBusinessINR(totalManhourCost)}
+            <h2 className="text-2xl font-bold text-blue-700 whitespace-nowrap" title={projectMoney(project).full(totalManhourCost)}>
+              {projectMoney(project).compact(totalManhourCost)}
             </h2>
 
           </div>
@@ -145,6 +146,7 @@ const ManhourExpenseCard = ({ project, setProject }: Props) => {
 
       {showModal && (
         <ManhourExpenseModal
+          currency={regionalCurrencyOf(project)}
           expense={editingExpense}
           onClose={handleCloseModal}
           onSave={handleSave}

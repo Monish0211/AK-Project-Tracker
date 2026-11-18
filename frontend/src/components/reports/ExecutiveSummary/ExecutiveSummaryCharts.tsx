@@ -12,7 +12,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { getTotalNonManhourCost } from "../../../services/expenseService";
 import { INVOICE_NOT_AVAILABLE, useInvoiceDataAvailable } from "../Shared/invoiceAccess";
 
@@ -22,6 +22,7 @@ interface Props {
 }
 
 export function ExecutiveSummaryCharts({ projects, analytics }: Props) {
+  const money = useReportMoney();
   const invoiceDataAvailable = useInvoiceDataAvailable();
   // Chart 1: Top 6 Projects Revenue vs Expense
   const topProjectsData = useMemo(() => {
@@ -82,8 +83,8 @@ export function ExecutiveSummaryCharts({ projects, analytics }: Props) {
             <BarChart data={topProjectsData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
               <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-              <YAxis tickFormatter={(v) => formatBusinessINR(v)} tick={{ fontSize: 10 }} />
-              <Tooltip formatter={(value: any) => [formatBusinessINR(Number(value)), ""]} />
+              <YAxis tickFormatter={(v) => money.compact(v)} tick={{ fontSize: 10 }} />
+              <Tooltip formatter={(value: any) => [money.compact(Number(value)), ""]} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar dataKey="WO Value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               {invoiceDataAvailable && <Bar dataKey="Invoice Raised" fill="#10b981" radius={[4, 4, 0, 0]} />}

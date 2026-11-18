@@ -80,7 +80,7 @@ export function getRemindersByProjectId(projectId: string) {
 export function getReminderById(id: string) {
   return prisma.projectReminder.findUnique({
     where: { id },
-    include: { project: { select: { createdByUserId: true, pmoCoordinatorUserId: true } } },
+    include: { project: { select: { createdByUserId: true, pmoCoordinatorUserId: true, regionId: true } } },
   });
 }
 

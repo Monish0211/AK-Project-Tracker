@@ -15,11 +15,17 @@ export interface DashboardProjectRow {
   updatedAt: Date;
   manhourBudgetHours: number | null;
   primaryProjectManager: string | null;
+  /** The project's regional currency (Phase 3); null = a legacy project, treated as INR. */
+  regionalCurrency: string | null;
+  /** The stored PR Category = the project's country key ("FZI" is FZE). Used to give every country its own Top Clients / Departments section. */
+  prCategory: string;
 }
 
 export interface QuantityTotalsRow {
   projectId: string;
   woValue: number;
+  /** Sum of the regional-currency line values (Phase 3); 0 when no line carries one. Used only for a project whose regional currency is not INR. */
+  woValueRegional: number;
   woQty: number;
 }
 
@@ -120,8 +126,16 @@ export async function findAuthorizedProjects(callerUserId: string | undefined): 
       updatedAt: true,
       manhourBudgetHours: true,
       primaryProjectManager: true,
+      regionalCurrency: true,
+      prCategory: true,
     },
   });
+}
+
+/** Display name per stored country key ("FZI" -> "FZE"), from the Region table: the single backend source the rest of the app uses. */
+export async function listCountryDisplayNames(): Promise<Map<string, string>> {
+  const regions = await prisma.region.findMany({ select: { name: true, displayName: true } });
+  return new Map(regions.map((r) => [r.name, r.displayName?.trim() || r.name] as [string, string]));
 }
 
 export async function groupQuantityTotals(projectIds: string[]): Promise<QuantityTotalsRow[]> {
@@ -129,11 +143,12 @@ export async function groupQuantityTotals(projectIds: string[]): Promise<Quantit
   const rows = await prisma.quantityItem.groupBy({
     by: ["projectId"],
     where: { projectId: { in: projectIds } },
-    _sum: { woValue: true, woQty: true },
+    _sum: { woValue: true, woQty: true, woValueRegional: true },
   });
   return rows.map((row) => ({
     projectId: row.projectId,
     woValue: row._sum.woValue ?? 0,
+    woValueRegional: row._sum.woValueRegional ?? 0,
     woQty: row._sum.woQty ?? 0,
   }));
 }
@@ -228,6 +243,32 @@ export async function groupExpenseTotals(projectIds: string[]): Promise<Map<stri
   });
   for (const row of rows) {
     map.set(row.projectId, row._sum.totalCost ?? 0);
+  }
+  return map;
+}
+
+/**
+ * Phase 4: per project, the man-hour cost already converted into the project's regional currency (only rows CONVERTED with a rate) and how many rows
+ * are not. Used for projects whose regional currency is not INR; an INR / legacy project keeps using groupManhourCostTotals unchanged.
+ */
+export async function groupRegionalManhour(projectIds: string[]): Promise<Map<string, { regional: number; notConverted: number }>> {
+  const map = new Map<string, { regional: number; notConverted: number }>();
+  if (projectIds.length === 0) return map;
+  const [converted, missing] = await Promise.all([
+    prisma.projectResource.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, costingStatus: "CONVERTED" }, _sum: { manhourCostRegional: true } }),
+    prisma.projectResource.groupBy({
+      by: ["projectId"],
+      where: { projectId: { in: projectIds }, OR: [{ costingStatus: null }, { costingStatus: { not: "CONVERTED" } }] },
+      _count: { _all: true },
+    }),
+  ]);
+  for (const row of converted) {
+    map.set(row.projectId, { regional: row._sum.manhourCostRegional ? Number(row._sum.manhourCostRegional.toFixed(3)) : 0, notConverted: 0 });
+  }
+  for (const row of missing) {
+    const entry = map.get(row.projectId) ?? { regional: 0, notConverted: 0 };
+    entry.notConverted = row._count._all;
+    map.set(row.projectId, entry);
   }
   return map;
 }

@@ -1,4 +1,4 @@
-import { FileText, IndianRupee, Gauge, Pencil, StickyNote, Wallet } from "lucide-react";
+import { FileText, Gauge, Pencil, StickyNote, Wallet } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Project } from "../../../../types/Project";
 import { Badge } from "../../../../components/ui/Badge";
@@ -22,9 +22,8 @@ interface Props {
   onEdit?: () => void;
 }
 
-import { formatBusinessINR, formatFullINR } from "../../../../utils/formatCurrency";
-
-const formatINR = (value: number): string => formatBusinessINR(value || 0);
+import { projectMoney, regionalCurrencyOf, regionalWorkOrderValue } from "../../../../utils/currencyDisplay";
+import { CurrencyIcon } from "../../../../components/ui/CurrencyIcon";
 
 const Field = ({ label, value, tooltip }: { label: string; value: string; tooltip?: string }) => (
   <div className="min-w-0">
@@ -57,6 +56,10 @@ const ProjectWorkspaceHeader = ({
   onOpenNotes,
   onEdit,
 }: Props) => {
+  // Phase 3: the project's own money (work order value, outstanding, invoice raised) is shown in its regional currency.
+  const money = projectMoney(project);
+  const regionalCurrency = regionalCurrencyOf(project);
+  const workOrderValue = regionalWorkOrderValue(project);
   const healthStatus = getProjectHealthStatus({ profitMargin, hasRevenue, pendingQtyPercentage });
 
   return (
@@ -89,9 +92,9 @@ const ProjectWorkspaceHeader = ({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap justify-end">
-          <HeroChip icon={<IndianRupee size={13} className="text-sky-300" />} label="Work Order Value" value={formatINR(project.workOrderValueINR || 0)} fullValue={formatFullINR(project.workOrderValueINR || 0)} />
-          <HeroChip icon={<Wallet size={13} className="text-red-300" />} label="Outstanding" value={formatINR(outstanding)} fullValue={formatFullINR(outstanding)} />
-          <HeroChip icon={<FileText size={13} className="text-emerald-300" />} label="Invoice Raised" value={formatINR(invoiceRaised)} fullValue={formatFullINR(invoiceRaised)} />
+          <HeroChip icon={<CurrencyIcon currency={regionalCurrency} size={13} className="text-sky-300" />} label="Work Order Value" value={money.compact(workOrderValue)} fullValue={money.full(workOrderValue)} />
+          <HeroChip icon={<Wallet size={13} className="text-red-300" />} label="Outstanding" value={money.compact(outstanding)} fullValue={money.full(outstanding)} />
+          <HeroChip icon={<FileText size={13} className="text-emerald-300" />} label="Invoice Raised" value={money.compact(invoiceRaised)} fullValue={money.full(invoiceRaised)} />
           <HeroChip icon={<Gauge size={13} className="text-amber-300" />} label="Completion" value={`${progressPercent.toFixed(0)}%`} />
         </div>
       </div>
@@ -106,7 +109,7 @@ const ProjectWorkspaceHeader = ({
               <Field label="Project Coordinator" value={project.projectCoordinator} />
               <Field label="PMO Coordinator" value={project.pmoCoordinator || "—"} />
               <Field label="Contract Type" value={project.contractType} />
-              <Field label="Work Order Value" value={formatINR(project.workOrderValueINR || 0)} tooltip={formatFullINR(project.workOrderValueINR || 0)} />
+              <Field label="Work Order Value" value={money.compact(workOrderValue)} tooltip={money.full(workOrderValue)} />
             </div>
           </div>
 

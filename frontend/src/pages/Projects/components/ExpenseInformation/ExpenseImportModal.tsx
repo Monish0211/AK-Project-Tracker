@@ -12,6 +12,7 @@ import {
 import { previewExpenseImport, commitExpenseImport } from "../../../../services/expenseImportService";
 import type { ImportRunResultDto, SheetImportResultDto } from "../../../../services/expenseImportService";
 import { usePmoToast } from "../../../../components/ui/usePmoToast";
+import { formatMoney } from "../../../../utils/currencyDisplay";
 
 interface Props {
   onClose: () => void;
@@ -20,6 +21,9 @@ interface Props {
 type Stage = "select" | "previewing" | "preview" | "importing" | "done";
 
 const formatINR = (value: number): string => `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+// An amount in the currency of the project this sheet matched (Phase 3): INR keeps the long-standing format, others use their own symbol or code.
+const fmtSheet = (sheet: { matchedRegionalCurrency?: string | null }, value: number): string =>
+  sheet.matchedRegionalCurrency && sheet.matchedRegionalCurrency !== "INR" ? formatMoney(value, sheet.matchedRegionalCurrency) : formatINR(value);
 
 /** Excel Import (Sept 2026) — Other Project Expenses. Select -> preview (parses + classifies, never writes) -> optional per-PR manual-expense confirmation -> commit -> result. Every sheet's outcome is shown distinctly (never silently hidden), per the approved design. */
 const ExpenseImportModal = ({ onClose }: Props) => {
@@ -148,9 +152,9 @@ const ExpenseImportModal = ({ onClose }: Props) => {
       {sheet.rowsImportable.length > 0 && (
         <p className="text-sm text-slate-700">
           <strong>{sheet.rowsImportable.length}</strong> row(s) importable — Debit-only total{" "}
-          <strong>{formatINR(sheet.computedDebitOnlyTotal)}</strong>
+          <strong>{fmtSheet(sheet, sheet.computedDebitOnlyTotal)}</strong>
           {sheet.previousActiveImportedTotal !== undefined && (
-            <> (previous active imported total: {formatINR(sheet.previousActiveImportedTotal)})</>
+            <> (previous active imported total: {fmtSheet(sheet, sheet.previousActiveImportedTotal)})</>
           )}
         </p>
       )}
@@ -165,7 +169,7 @@ const ExpenseImportModal = ({ onClose }: Props) => {
       {sheet.rowsSkippedCreditOnly.length > 0 && (
         <div className="text-xs text-slate-600 bg-slate-50 rounded-lg p-2">
           {sheet.rowsSkippedCreditOnly.length} Credit-only row(s) skipped (never used as a fallback): {" "}
-          {sheet.rowsSkippedCreditOnly.map((r) => `${r.particulars} (${formatINR(r.creditAmount)})`).join(", ")}
+          {sheet.rowsSkippedCreditOnly.map((r) => `${r.particulars} (${fmtSheet(sheet, r.creditAmount)})`).join(", ")}
         </div>
       )}
 
@@ -181,7 +185,7 @@ const ExpenseImportModal = ({ onClose }: Props) => {
           <AlertTriangle size={12} className="inline mr-1" />
           {sheet.rowsPendingCategoryDecision.length} row(s) use a Particulars value pending a business decision on
           category mapping — NOT imported: {" "}
-          {sheet.rowsPendingCategoryDecision.map((r) => `${r.particulars} (${formatINR(r.amount)})`).join(", ")}
+          {sheet.rowsPendingCategoryDecision.map((r) => `${r.particulars} (${fmtSheet(sheet, r.amount)})`).join(", ")}
         </div>
       )}
 
@@ -194,7 +198,7 @@ const ExpenseImportModal = ({ onClose }: Props) => {
           <ul className="text-amber-700 space-y-0.5">
             {sheet.existingManualExpenses.map((e) => (
               <li key={e.id}>
-                {e.category} — {e.description} — {formatINR(e.totalCost)}
+                {e.category} — {e.description} — {fmtSheet(sheet, e.totalCost)}
               </li>
             ))}
           </ul>

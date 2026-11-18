@@ -14,6 +14,8 @@ export interface SheetImportResultDto {
   rawPrIdentifier: string;
   matchedProjectId: string | null;
   matchedPrNo: string | null;
+  /** The matched project's regional currency (Phase 3); null / absent = INR. The preview shows amounts in the currency they will be recorded in. */
+  matchedRegionalCurrency?: string | null;
   unmatchedReason?: string;
   rowsFound: number;
   rowsImportable: ImportableExpenseRowDto[];

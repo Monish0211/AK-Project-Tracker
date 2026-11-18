@@ -99,7 +99,14 @@ export const importEmployeeRowSchema = z.object({
   reportingManager: z.string().trim().optional().nullable(),
   grade: z.string().trim().optional().default(""),
   location: z.string().trim().optional().default(""),
-  manhourExpenses: z.coerce.number().min(0).default(0),
+  // Phase 4 / Option A safeguard: a BLANK or missing rate is "no rate provided" (undefined here), no longer silently the number 0. An explicit 0 (or any valid
+  // rate >= 0) is read exactly as before. null / "" / absent all mean blank; non-numeric text and negatives still fail the schema, as before.
+  manhourExpenses: z.preprocess(
+    (value) => (value === null || value === undefined || (typeof value === "string" && value.trim() === "") ? undefined : typeof value === "string" ? Number(value) : value),
+    z.number().min(0).optional(),
+  ),
+  // Set by the browser parser when the rate cell had text that could not be read as a number (so the result can say so); the rate is then also blank.
+  rateIssue: z.enum(["UNREADABLE"]).optional(),
   status: z.enum(["Active", "Inactive"]).default("Active"),
 });
 

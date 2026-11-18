@@ -1,6 +1,7 @@
 import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccessById, assertProjectReadAccessById, resolveProjectReadScope } from "../../../shared/utils/projectAccess.js";
 import { findEmployeeByEmployeeNo } from "../../employees/repository/employee.repository.js";
+import { regionalSnapshotFields } from "../../manhourRates/manhourSnapshot.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type { ResourceDto, ResourceListDto } from "../dto/resource.dto.js";
 import {
@@ -36,6 +37,12 @@ function toResourceDto(row: Awaited<ReturnType<typeof getResourceById>>): Resour
     workingDays: row.workingDays,
     totalHours: row.totalHours,
     manhourCost: row.manhourCost,
+    costCurrency: row.costCurrency,
+    costingStatus: row.costingStatus,
+    fxRateVersion: row.fxRateVersion,
+    fxRateInrPerRegional: row.fxRateInrPerRegional ? Number(row.fxRateInrPerRegional.toFixed(6)) : null,
+    manhourCostRegional: row.manhourCostRegional ? Number(row.manhourCostRegional.toFixed(3)) : null,
+    rateSetAt: row.rateSetAt,
     lastSyncedAt: row.lastSyncedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -77,6 +84,8 @@ export async function createResourceForProject(
     workingDays: input.workingDays,
     totalHours: input.totalHours,
     manhourCost: input.totalHours * hourlyRateSnapshot,
+    // Phase 4: regional costing beside the unchanged INR figure (a new row takes the project's latest rate version, or is RATE_MISSING).
+    ...(await regionalSnapshotFields(projectId, input.totalHours * hourlyRateSnapshot, null)),
     lastSyncedAt: new Date(),
   };
 
@@ -171,7 +180,9 @@ export async function updateResourceItem(
   // the schema's own rule and recomputeProjectResource()'s proven P1-04
   // pattern (its updateData deliberately omits hourlyRateSnapshot too) —
   // always the persisted value, never re-derived or client-overridable here.
-  const hourlyRateSnapshot = existing.hourlyRateSnapshot;
+  // Phase 4 / Option A: the employee's CURRENT saved rate prices the row (the client can still never supply a rate). No Employee row: the row keeps its value.
+  const rateEmployee = await findEmployeeByEmployeeNo(existing.employeeNo);
+  const hourlyRateSnapshot = rateEmployee ? rateEmployee.manhourExpenses : existing.hourlyRateSnapshot;
   const totalHours = input.totalHours ?? existing.totalHours;
 
   const updated = await updateResourceInRepository(id, {
@@ -179,8 +190,11 @@ export async function updateResourceItem(
     ...(input.assignmentEndDate !== undefined && { assignmentEndDate: input.assignmentEndDate }),
     ...(input.assignmentStatus !== undefined && { assignmentStatus: input.assignmentStatus }),
     ...(input.workingDays !== undefined && { workingDays: input.workingDays }),
+    hourlyRateSnapshot,
     totalHours,
     manhourCost: totalHours * hourlyRateSnapshot,
+    // Phase 4: an already CONVERTED row keeps its rate version; a newer version never rewrites it (see decideRegionalSnapshot).
+    ...(await regionalSnapshotFields(existing.projectId, totalHours * hourlyRateSnapshot, existing)),
     lastSyncedAt: new Date(),
   });
 

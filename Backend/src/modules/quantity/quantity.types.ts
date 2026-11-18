@@ -20,4 +20,8 @@ export interface QuantityItemData {
   unitRateINR: number;
 
   woValue: number;
+
+  /** Regional-currency price and value (Phase 3). Always written by the service; NULL only on rows saved before Phase 3. */
+  unitRateRegional?: number | null;
+  woValueRegional?: number | null;
 }

@@ -6,11 +6,17 @@ import type { InvoiceItem } from "../types/InvoiceItem";
  * Description, Qty, UOM and Unit Price (INR) always come from the matching
  * Quantity item; only the raised-invoice history is owned by the Invoice tab
  * and preserved across re-syncs.
+ *
+ * Multi-country: for a project whose own currency is not INR (`regionalCurrency`), the unit price and total are the activity's REGIONAL figures (its INR-named
+ * ones are 0 by design). It is display only: the contract values the Invoice tab shows for such a project are in its own currency. Omitted / INR: the long-standing
+ * INR figures, unchanged.
  */
 export function syncInvoiceItemsWithQuantity(
   quantityItems: QuantityItem[],
-  invoiceItems: InvoiceItem[]
+  invoiceItems: InvoiceItem[],
+  regionalCurrency?: string | null | undefined
 ): InvoiceItem[] {
+  const regional = typeof regionalCurrency === "string" && regionalCurrency !== "" && regionalCurrency !== "INR";
   const safeQuantityItems = Array.isArray(quantityItems) ? quantityItems : [];
   const safeInvoiceItems = Array.isArray(invoiceItems) ? invoiceItems : [];
 
@@ -20,7 +26,7 @@ export function syncInvoiceItemsWithQuantity(
     );
 
     const qty = quantityItem.woQty || 0;
-    const unitPrice = quantityItem.unitRateINR || 0;
+    const unitPrice = regional ? quantityItem.unitRateRegional || 0 : quantityItem.unitRateINR || 0;
 
     return {
       id: quantityItem.id,
@@ -28,7 +34,7 @@ export function syncInvoiceItemsWithQuantity(
       qty,
       uom: quantityItem.uom || "DAY",
       unitPrice,
-      totalPrice: quantityItem.woValue || 0,
+      totalPrice: regional ? quantityItem.woValueRegional || 0 : quantityItem.woValue || 0,
       invoices: existing?.invoices ?? [],
     };
   });

@@ -2,7 +2,7 @@ import type { Project, ProjectResource } from "../types/Project";
 import type { InvoiceLine, InvoiceLineStatus } from "../types/InvoiceItem";
 import type { Employee } from "../types/EmployeeModel";
 import { createEmptyProject, inferPrCategory, inferDomesticForeign } from "../utils/createEmptyProject";
-import { calculateQuantity } from "../utils/quantityCalculations";
+import { calculateQuantity, priceQuantityLine, resolveOpeningCurrency } from "../utils/quantityCalculations";
 import { syncInvoiceItemsWithQuantity } from "./invoiceSyncService";
 import { notificationService } from "../notifications/notificationService";
 import { apiClient, ApiError } from "./apiClient";
@@ -26,7 +26,9 @@ export function normalizeProject(project: Project): Project {
 
   const normalizedPrNo = project.prNo || "";
   const normalizedPrCategory = inferPrCategory(normalizedPrNo, project.prCategory);
-  const normalizedCurrency = project.currency || "INR";
+  // Phase 3: a project that has a regional currency but no priced quantity line yet opens in that currency at rate 1 (an Oman project
+  // reads OMR, not the old INR default). Once any line is priced the saved commercial currency is left exactly as saved.
+  const { currency: normalizedCurrency, useRegionalDefault } = resolveOpeningCurrency(project);
   const normalizedDomesticForeign = inferDomesticForeign(normalizedCurrency, normalizedPrCategory, project.domesticForeign);
   const normalizedWorkOrderStatus = project.workOrderStatus || "";
   const normalizedProjectStatus = project.projectStatus || "";
@@ -35,8 +37,8 @@ export function normalizeProject(project: Project): Project {
   const normalizedPmoCoordinator = project.pmoCoordinator || "";
   const normalizedPoMonth = project.poMonth || (project.projectStartDate ? project.projectStartDate.substring(0, 7) : "");
 
-  const normalizedCurrentExchangeRate = typeof project.currentExchangeRate === "number" ? project.currentExchangeRate : 1;
-  const normalizedContractExchangeRate = typeof project.contractExchangeRate === "number" ? project.contractExchangeRate : 1;
+  const normalizedCurrentExchangeRate = useRegionalDefault ? 1 : typeof project.currentExchangeRate === "number" ? project.currentExchangeRate : 1;
+  const normalizedContractExchangeRate = useRegionalDefault ? 1 : typeof project.contractExchangeRate === "number" ? project.contractExchangeRate : 1;
 
   const normalizedQuantityItems = Array.isArray(project.quantityItems)
     ? project.quantityItems.map((item: any) => {
@@ -45,23 +47,25 @@ export function normalizeProject(project: Project): Project {
         const currency = item.currency || normalizedCurrency;
         const exchangeRate = typeof item.exchangeRate === "number" ? item.exchangeRate : normalizedCurrentExchangeRate;
         const unitRate = typeof item.unitRate === "number" ? item.unitRate : 0;
-        const unitRateINR = currency === "INR" ? unitRate : unitRate * exchangeRate;
+        // Phase 3: the same pricing rule the backend applies. A legacy project (no regionalCurrency) gets the original INR figures.
+        const priced = priceQuantityLine({ woQty: item.woQty || 0, uom, currency, unitRate, exchangeRate }, project.regionalCurrency);
         const isLumpSum = (uom || "").trim().toUpperCase() === "LUMP SUM";
-        const woValue = isLumpSum ? unitRateINR : (item.woQty || 0) * unitRateINR;
         const pendingQty = isLumpSum
           ? Math.max(1 - (item.invoiceQty || 0), 0)
           : Math.max((item.woQty || 0) - (item.invoiceQty || 0), 0);
-        const pendingAmount = pendingQty * unitRateINR;
+        const pendingAmount = pendingQty * priced.unitRateRegional;
 
         return {
           ...item,
           uom,
           assignedTo,
           currency,
-          exchangeRate,
+          exchangeRate: priced.exchangeRate,
           unitRate,
-          unitRateINR,
-          woValue,
+          unitRateINR: priced.unitRateINR,
+          woValue: priced.woValue,
+          unitRateRegional: priced.unitRateRegional,
+          woValueRegional: priced.woValueRegional,
           pendingQty,
           pendingAmount,
         };
@@ -75,14 +79,16 @@ export function normalizeProject(project: Project): Project {
     normalizedQuantityItems,
     normalizedCurrency,
     normalizedCurrentExchangeRate,
-    normalizedGstApplicable
+    normalizedGstApplicable,
+    project.regionalCurrency
   );
 
   const paymentMilestones = Array.isArray(project.paymentMilestones)
     ? project.paymentMilestones.map((milestone) => ({
         ...milestone,
         milestoneName: milestone.milestoneName || "",
-        amount: (totals.workOrderValueINR * (milestone.paymentPercentage || 0)) / 100,
+        // In the project's regional currency (the INR value for an INR or legacy project, exactly as before).
+        amount: (totals.workOrderValueRegional * (milestone.paymentPercentage || 0)) / 100,
       }))
     : defaults.paymentMilestones;
 
@@ -114,6 +120,12 @@ export function normalizeProject(project: Project): Project {
     totalInvoiceQty: totals.totalInvoiceQty,
     totalPendingQty: totals.totalPendingQty,
     workOrderValue: totals.workOrderValue,
+    regionalCurrency: project.regionalCurrency ?? null,
+    workOrderValueRegional:
+      normalizedQuantityItems.length === 0 && typeof project.backendWorkOrderValueRegional === "number"
+        ? project.backendWorkOrderValueRegional
+        : totals.workOrderValueRegional,
+    grandTotalRegional: totals.grandTotalRegional,
     // Bug fix (Aug 2026): when this project's real quantityItems haven't
     // been loaded into this browser yet — e.g. the Project Repository list,
     // for any account that hasn't personally opened Edit Project on this
@@ -137,7 +149,8 @@ export function normalizeProject(project: Project): Project {
     paymentMilestones,
     invoiceItems: syncInvoiceItemsWithQuantity(
       normalizedQuantityItems,
-      project.invoiceItems
+      project.invoiceItems,
+      project.regionalCurrency
     ).map((item) => ({
       ...item,
       invoices: Array.isArray(item.invoices)
@@ -220,7 +233,7 @@ export const completeProject = (
     completionRemarks: string;
     completedBy?: string;
     /** Liquidated Damages decision from the completion popup; omitted = keep whatever is recorded. */
-    ld?: { ldApplicable: boolean; ldAmountINR: number | null; ldRemarks: string | null } | null;
+    ld?: { ldApplicable: boolean; ldAmountINR: number | null; ldAmountRegional?: number | null; ldCurrency?: string | null; ldRemarks: string | null } | null;
   }
 ): void => {
   const projects = getProjects();
@@ -244,7 +257,13 @@ export const completeProject = (
     completedBy,
     completedTimestamp: timestamp,
     ...(completionData.ld
-      ? { ldApplicable: completionData.ld.ldApplicable, ldAmountINR: completionData.ld.ldAmountINR, ldRemarks: completionData.ld.ldRemarks }
+      ? {
+          ldApplicable: completionData.ld.ldApplicable,
+          ldAmountINR: completionData.ld.ldAmountINR,
+          ldAmountRegional: completionData.ld.ldAmountRegional ?? null,
+          ldCurrency: completionData.ld.ldCurrency ?? null,
+          ldRemarks: completionData.ld.ldRemarks,
+        }
       : {}),
   };
 
@@ -344,6 +363,9 @@ interface BackendProjectDto {
   // Liquidated Damages (Oct 2026) — absent on a backend without the feature.
   ldApplicable?: boolean | null;
   ldAmountINR?: number | null;
+  /** Regional LD (Phase 4 final): the amount in the project's own currency; ldCurrency null on a recorded amount = a legacy rupee record. */
+  ldCurrency?: string | null;
+  ldAmountRegional?: number | null;
   ldRemarks?: string | null;
   ldRecordedByUserId?: string | null;
   ldRecordedAt?: string | null;
@@ -393,6 +415,11 @@ interface BackendProjectDto {
   // ProjectDto and this file's writeThroughProjectsMirror() comment.
   workOrderValueINR: number;
   pendingDueINR: number;
+  // Regional currency (Phase 3): the project's country currency snapshot (null = legacy, treated as INR) and the same two figures in it.
+  regionalCurrency?: string | null;
+  workOrderValueRegional?: number;
+  pendingDueRegional?: number;
+  manhourRefreshStatus?: "CURRENT" | "PENDING" | "FAILED";
   // Every non-Cancelled invoice is actually Paid — absent on a backend that predates it (then "Paid" is never shown).
   allInvoicesPaid?: boolean;
   hasOpenInvoiceRequest: boolean;
@@ -469,6 +496,9 @@ interface ProjectGeneralInfoPayload {
   // and treats an identical re-send as a no-op.
   ldApplicable?: boolean;
   ldAmountINR?: number | null;
+  /** Phase 4 final: a non-INR project's LD amount, in its own currency. The server decides the currency from the project's country and only checks ldCurrency against it. */
+  ldAmount?: number | null;
+  ldCurrency?: string | null;
   ldRemarks?: string | null;
 }
 
@@ -541,11 +571,14 @@ function toGeneralInfoPayload(project: Project): ProjectGeneralInfoPayload {
     // backend's recorded one echoed back unchanged). Never for not-recorded
     // projects, so imports and ordinary saves can't invent a "No".
     ...(project.ldApplicable === true || project.ldApplicable === false
-      ? {
-          ldApplicable: project.ldApplicable,
-          ldAmountINR: project.ldApplicable ? (project.ldAmountINR ?? null) : null,
-          ldRemarks: project.ldRemarks ?? null,
-        }
+      ? typeof project.ldAmountRegional === "number" && project.ldApplicable
+        ? // A regional LD is re-sent in its own currency (an identical re-send is a no-op on the server).
+          { ldApplicable: true, ldAmount: project.ldAmountRegional, ldCurrency: project.ldCurrency ?? project.regionalCurrency ?? null, ldRemarks: project.ldRemarks ?? null }
+        : {
+            ldApplicable: project.ldApplicable,
+            ldAmountINR: project.ldApplicable ? (project.ldAmountINR ?? null) : null,
+            ldRemarks: project.ldRemarks ?? null,
+          }
       : {}),
   };
 }
@@ -654,6 +687,10 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     // computeCommercialTotalsByProjectId()), so it's never stale here either.
     backendWorkOrderValueINR: dto.workOrderValueINR,
     backendPendingDueINR: dto.pendingDueINR,
+    backendWorkOrderValueRegional: dto.workOrderValueRegional,
+    backendPendingDueRegional: dto.pendingDueRegional,
+    manhourRefreshStatus: dto.manhourRefreshStatus ?? "CURRENT",
+    regionalCurrency: dto.regionalCurrency ?? null,
     backendAllInvoicesPaid: dto.allInvoicesPaid,
     hasOpenInvoiceRequest: dto.hasOpenInvoiceRequest,
     invoiceCurrency: dto.invoiceCurrency,
@@ -661,6 +698,8 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     // backend's values, never whatever this browser cached before.
     ldApplicable: dto.ldApplicable ?? null,
     ldAmountINR: dto.ldAmountINR ?? null,
+    ldCurrency: dto.ldCurrency ?? null,
+    ldAmountRegional: dto.ldAmountRegional ?? null,
     ldRemarks: dto.ldRemarks ?? null,
     ldRecordedByUserId: dto.ldRecordedByUserId ?? null,
     ldRecordedAt: dto.ldRecordedAt ?? null,
@@ -823,6 +862,11 @@ export interface BackendResourceDto {
   workingDays: number;
   totalHours: number;
   manhourCost?: number;
+  costCurrency?: string | null;
+  costingStatus?: string | null;
+  fxRateVersion?: number | null;
+  fxRateInrPerRegional?: number | null;
+  manhourCostRegional?: number | null;
 }
 
 export function mapBackendResourceDto(r: BackendResourceDto, employees: Employee[]): ProjectResource {
@@ -843,6 +887,11 @@ export function mapBackendResourceDto(r: BackendResourceDto, employees: Employee
     workingDays: r.workingDays,
     totalHours: r.totalHours,
     manhourCost: cost,
+    costCurrency: r.costCurrency ?? null,
+    costingStatus: r.costingStatus ?? null,
+    fxRateVersion: r.fxRateVersion ?? null,
+    fxRateInrPerRegional: r.fxRateInrPerRegional ?? null,
+    manhourCostRegional: r.manhourCostRegional ?? null,
     status: (r.assignmentStatus === "Released" ? "Released" : "Active") as "Active" | "Released",
     location: emp?.location || "",
   };

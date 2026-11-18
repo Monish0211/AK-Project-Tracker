@@ -11,7 +11,6 @@ import {
   Briefcase,
   Layers,
   Activity,
-  IndianRupee,
   Users,
   Wallet,
   Receipt,
@@ -25,6 +24,9 @@ import type { Project } from "../../../types/Project";
 import type { Dispatch, SetStateAction } from "react";
 
 import GeneralInfoCard from "./GeneralInfoCard";
+import { formatMoney, isNonInrRegional, regionalCurrencyOf, regionalWorkOrderValue } from "../../../utils/currencyDisplay";
+import { currencyIconFor } from "../../../components/ui/currencyIconFor";
+import { usePrCategoryCountries } from "../usePrCategoryCountries";
 import { useAuth } from "../../../auth/authContext";
 import { isReadOnlyAssignedCoordinator } from "../../../auth/permissions";
 import ProjectDocumentsCard from "./ProjectDocumentsCard";
@@ -113,6 +115,8 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
   // blocked for Read Only on the backend. Decided from the project as
   // loaded, once — not from the coordinator picked in this session.
   const [isReadOnlyCoordinator] = useState(() => mode === "edit" && isReadOnlyAssignedCoordinator(user, project));
+  // The backend's PR Category -> country reference (and this user's own access to each country) for the General tab's PR Category field.
+  const prCategoryCountries = usePrCategoryCountries(true);
   const TABS = mode === "add" ? TABS_ADD : TABS_EDIT;
   const [activeTab, setActiveTab] = useState<TabKey>(
     initialTab && TABS.some((tab) => tab.key === initialTab)
@@ -288,7 +292,8 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
     setProject((prev) => {
       const synced = syncInvoiceItemsWithQuantity(
         prev.quantityItems,
-        prev.invoiceItems
+        prev.invoiceItems,
+        prev.regionalCurrency
       );
 
       if (JSON.stringify(synced) === JSON.stringify(prev.invoiceItems)) {
@@ -308,8 +313,13 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
     { label: "Project Status", value: project.projectStatus, icon: Activity },
     {
       label: "Work Order Value",
-      value: project.workOrderValueINR ? formatINR(project.workOrderValueINR) : "",
-      icon: IndianRupee,
+      // Phase 3: the work order value in the project's regional currency (an INR or legacy project reads exactly as before).
+      value: regionalWorkOrderValue(project)
+        ? isNonInrRegional(project)
+          ? formatMoney(regionalWorkOrderValue(project), regionalCurrencyOf(project))
+          : formatINR(project.workOrderValueINR)
+        : "",
+      icon: currencyIconFor(regionalCurrencyOf(project)),
     },
   ];
 
@@ -468,6 +478,9 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
                 errors={errors}
                 clearError={clearError}
                 lockPmoCoordinator={isReadOnlyCoordinator}
+                categoryCountries={prCategoryCountries}
+                lockCountry={mode === "edit" && prCategoryCountries?.enforced === true}
+                applyRegionalCurrency={mode === "add"}
               />
               <ProjectDocumentsCard
                 ownerType="project"

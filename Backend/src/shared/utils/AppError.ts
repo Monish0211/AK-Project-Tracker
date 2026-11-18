@@ -8,12 +8,15 @@
 export class AppError extends Error {
   public readonly statusCode: number;
   public readonly isOperational: boolean;
+  /** Optional structured, client-safe detail (e.g. the per-row problems of a rejected import). Never put internals here. */
+  public readonly details?: unknown;
 
-  constructor(message: string, statusCode: number) {
+  constructor(message: string, statusCode: number, details?: unknown) {
     super(message);
     this.name = "AppError";
     this.statusCode = statusCode;
     this.isOperational = true;
+    if (details !== undefined) this.details = details;
     Object.setPrototypeOf(this, AppError.prototype);
   }
 }

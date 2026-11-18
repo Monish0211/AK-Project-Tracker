@@ -1,19 +1,20 @@
 import { DollarSign, Wallet, TrendingDown, CheckCircle2 } from "lucide-react";
 import { KPIReportCard } from "../Shared/KPIReportCard";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 
 interface Props {
   analytics: any;
 }
 
 export function ExpenseCards({ analytics }: Props) {
+  const money = useReportMoney();
   const a = analytics;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       <KPIReportCard
         title="Total Approved Budget"
-        value={formatBusinessINR(a.totalBudget)}
+        value={money.compact(a.totalBudget)}
         subtitle="Manhour + Non-manhour allocation"
         icon={<DollarSign size={18} />}
         tone="blue"
@@ -21,15 +22,15 @@ export function ExpenseCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Actual Total Expenses"
-        value={formatBusinessINR(a.totalExpenses)}
-        subtitle={`Manhour: ${formatBusinessINR(a.totalManhourExpenses)} | Non-MH: ${formatBusinessINR(a.totalNonManhourExpenses)}`}
+        value={money.compact(a.totalExpenses)}
+        subtitle={`Manhour: ${money.compact(a.totalManhourExpenses)} | Non-MH: ${money.compact(a.totalNonManhourExpenses)}`}
         icon={<Wallet size={18} />}
         tone="rose"
       />
 
       <KPIReportCard
         title="Remaining Budget"
-        value={formatBusinessINR(a.remainingBudget)}
+        value={money.compact(a.remainingBudget)}
         subtitle="Available budget pool"
         trend={a.remainingBudget >= 0 ? "Under Budget" : "Overrun"}
         trendType={a.remainingBudget >= 0 ? "positive" : "negative"}

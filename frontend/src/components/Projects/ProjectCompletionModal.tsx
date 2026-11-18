@@ -1,14 +1,19 @@
 import { useState } from "react";
 import { CheckCircle2, AlertCircle, AlertTriangle, Scale, X } from "lucide-react";
 import { DATE_INPUT_MAX, DATE_INPUT_MIN, dateInputError } from "../../utils/dateInputValidation";
-import { formatIndianCurrency } from "../../utils/formatCurrency";
-import { isLdRecorded, LD_REMARKS_MAX, parseLdAmountInput } from "../../utils/liquidatedDamages";
+import { moneyFormatter } from "../../utils/currencyDisplay";
+import { isLdRecorded, ldAmountFields, LD_REMARKS_MAX, parseLdAmountInput, recordedLdAmount } from "../../utils/liquidatedDamages";
 import type { LdRecord } from "../../utils/liquidatedDamages";
 
 /** The LD decision captured by this popup (null when LD was already recorded earlier and is kept unchanged). */
 export interface CompletionLd {
   ldApplicable: boolean;
+  /** The project's own currency when LD applies (INR for India), null for "No LD". The server re-derives it from the project's country. */
+  ldCurrency: string | null;
+  /** Filled for an INR project only (exactly as before). */
   ldAmountINR: number | null;
+  /** Filled for a project in another currency: the amount in that currency. */
+  ldAmountRegional: number | null;
   ldRemarks: string | null;
 }
 
@@ -21,6 +26,8 @@ interface Props {
   /** Profit Before LD (WO − expenses) and WO value, only for the non-blocking "LD exceeds …" warning. */
   profitBeforeLd?: number | null;
   workOrderValueINR?: number | null;
+  /** The project's regional currency (INR when omitted). LD is entered and recorded in it, and deducted from the project's profit in it. */
+  projectCurrency?: string;
   onConfirm: (data: { actualCompletionDate: string; completionRemarks: string; completedBy: string; ld: CompletionLd | null }) => void;
   onCancel: () => void;
 }
@@ -32,6 +39,7 @@ export function ProjectCompletionModal({
   recordedLd = null,
   profitBeforeLd = null,
   workOrderValueINR = null,
+  projectCurrency = "INR",
   onConfirm,
   onCancel,
 }: Props) {
@@ -57,22 +65,26 @@ export function ProjectCompletionModal({
   if (!isOpen) return null;
 
   const ldAlreadyRecorded = recordedLd !== null && isLdRecorded(recordedLd.ldApplicable);
-  const parsedAmount = ldApplicable ? parseLdAmountInput(ldAmountText) : null;
+  const parsedAmount = ldApplicable ? parseLdAmountInput(ldAmountText, projectCurrency) : null;
   const amount = parsedAmount && parsedAmount.error === null ? parsedAmount.value : null;
   const warnings: string[] = [];
+  // The amount, the profit and the work order value are all in the project's own currency, so they compare directly (never rupees against another currency).
+  const inOtherCurrency = projectCurrency !== "INR";
+  const money = moneyFormatter(projectCurrency);
   if (amount !== null && typeof profitBeforeLd === "number" && amount > profitBeforeLd) {
-    warnings.push(`LD exceeds the project's Profit Before LD (${formatIndianCurrency(profitBeforeLd)}) — Final Profit After LD will be negative.`);
+    warnings.push(`LD exceeds the project's Profit Before LD (${money.exact(profitBeforeLd)}) — Final Profit After LD will be negative.`);
   }
   if (amount !== null && typeof workOrderValueINR === "number" && workOrderValueINR > 0 && amount > workOrderValueINR) {
-    warnings.push(`LD exceeds the Work Order Value (${formatIndianCurrency(workOrderValueINR)}).`);
+    warnings.push(`LD exceeds the Work Order Value (${money.exact(workOrderValueINR)}).`);
   }
+  const recorded = recordedLdAmount(recordedLd, projectCurrency);
 
   const confirmLabel = ldAlreadyRecorded
     ? "Mark Project Completed"
     : !ldApplicable
       ? "Mark Completed (No LD)"
       : amount !== null
-        ? `Mark Completed with LD ${formatIndianCurrency(amount)}`
+        ? `Mark Completed with LD ${money.exact(amount)}`
         : "Mark Completed with LD";
 
   const chooseLd = (value: boolean) => {
@@ -101,7 +113,7 @@ export function ProjectCompletionModal({
     let ld: CompletionLd | null = null;
     if (!ldAlreadyRecorded) {
       if (ldApplicable) {
-        const parsed = parseLdAmountInput(ldAmountText);
+        const parsed = parseLdAmountInput(ldAmountText, projectCurrency);
         if (parsed.error !== null) {
           setError(parsed.error);
           return;
@@ -110,9 +122,9 @@ export function ProjectCompletionModal({
           setError(`LD Reference / Remarks can be at most ${LD_REMARKS_MAX} characters.`);
           return;
         }
-        ld = { ldApplicable: true, ldAmountINR: parsed.value, ldRemarks: ldRemarks.trim() || null };
+        ld = { ldApplicable: true, ...ldAmountFields(parsed.value, projectCurrency), ldRemarks: ldRemarks.trim() || null };
       } else {
-        ld = { ldApplicable: false, ldAmountINR: null, ldRemarks: ldRemarks.trim() || null };
+        ld = { ldApplicable: false, ...ldAmountFields(null, projectCurrency), ldRemarks: ldRemarks.trim() || null };
       }
     }
 
@@ -214,14 +226,14 @@ export function ProjectCompletionModal({
           {/* Liquidated Damages (LD) */}
           <fieldset className="rounded-xl border border-[var(--nu-border)] p-3.5 space-y-3">
             <legend className="px-1.5 text-[11px] font-extrabold uppercase tracking-wider text-[var(--nu-text)] inline-flex items-center gap-1.5">
-              <Scale size={13} /> Liquidated Damages (LD)
+              <Scale size={13} /> {inOtherCurrency ? `Liquidated Damages (${projectCurrency})` : "Liquidated Damages (LD)"}
             </legend>
 
             {ldAlreadyRecorded ? (
               <p className="text-[11px] text-[var(--nu-text-muted)]">
                 LD was recorded when this project was first completed and is kept unchanged:{" "}
                 <strong className="text-[var(--nu-text)]">
-                  {recordedLd!.ldApplicable ? `Yes — ${formatIndianCurrency(recordedLd!.ldAmountINR ?? 0)}` : "No"}
+                  {recordedLd!.ldApplicable ? `Yes — ${recorded ? moneyFormatter(recorded.currency).exact(recorded.amount) : moneyFormatter(projectCurrency).exact(0)}${recorded?.legacyRupees ? " (INR, recorded before regional LD)" : ""}` : "No"}
                 </strong>
                 .
               </p>
@@ -246,7 +258,7 @@ export function ProjectCompletionModal({
                 {ldApplicable && (
                   <div>
                     <label htmlFor="ld-amount" className="block text-[11px] font-bold text-[var(--nu-text)] mb-1">
-                      LD Amount (₹) <span className="text-rose-500">*</span>
+                      LD Amount ({inOtherCurrency ? projectCurrency : "₹"}) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       id="ld-amount"
@@ -258,7 +270,7 @@ export function ProjectCompletionModal({
                         setLdAmountText(e.target.value);
                         setError("");
                       }}
-                      placeholder="e.g. 50000.00"
+                      placeholder={inOtherCurrency ? `e.g. 5000.${"0".repeat(projectCurrency === "OMR" ? 3 : 2)}` : "e.g. 50000.00"}
                       aria-invalid={ldAmountText !== "" && parsedAmount?.error ? true : undefined}
                       className="w-full pl-3 pr-3 py-2 bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] rounded-xl text-xs text-[var(--nu-text)] focus:outline-none focus:ring-2 focus:ring-[var(--nu-accent)] font-mono"
                     />
@@ -266,6 +278,11 @@ export function ProjectCompletionModal({
                     <p className="text-[10px] text-[var(--nu-text-muted)] mt-1">
                       Entered by you as agreed with the client — never calculated from dates. Deducted from profit only; invoices and collections are unaffected.
                     </p>
+                    {inOtherCurrency && (
+                      <p className="text-[10px] text-[var(--nu-text-muted)] mt-1" data-testid="ld-currency-note">
+                        Enter the amount in {projectCurrency}, this project&apos;s currency. It is recorded in {projectCurrency} and deducted from the project&apos;s {projectCurrency} profit.
+                      </p>
+                    )}
                   </div>
                 )}
 

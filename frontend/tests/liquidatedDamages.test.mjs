@@ -355,10 +355,18 @@ test("Projects Excel export: LD columns appended last; blank for non-Completed a
   await back.xlsx.load(await wb.xlsx.writeBuffer());
   const sheet = back.getWorksheet("Projects");
   const header = sheet.getRow(1).values.slice(1);
-  assert.deepEqual(header.slice(-5), ["Remarks", "LD Status", "LD Amount (INR)", "Profit Before LD (INR)", "Final Profit After LD (INR)"]);
+  // The original five columns keep their exact positions and names; the regional-LD columns (Phase 4 final) are appended after them.
+  assert.deepEqual(header.slice(-9), [
+    "Remarks", "LD Status", "LD Amount (INR)", "Profit Before LD (INR)", "Final Profit After LD (INR)",
+    "LD Currency", "LD Amount (Project Currency)", "Profit Before LD (Project Currency)", "Final Profit After LD (Project Currency)",
+  ]);
   // row.values is sparse and 1-based; Array.from turns holes into undefined.
-  const last4 = (r) => Array.from({ length: 4 }, (_, i) => sheet.getRow(r).values[header.length - 3 + i]);
-  assert.deepEqual(last4(2), ["Yes", 50000, 699999.5, 649999.5]);
+  const last4 = (r) => Array.from({ length: 4 }, (_, i) => sheet.getRow(r).values[header.length - 7 + i]);
+  assert.deepEqual(last4(2), ["Yes", 50000, 699999.5, 649999.5], "India: the INR columns are exactly as before");
   assert.deepEqual(last4(3), ["Not recorded", undefined, 699999.5, 699999.5]);
   assert.deepEqual(last4(4), [undefined, undefined, undefined, undefined]);
+  const project4 = (r) => Array.from({ length: 4 }, (_, i) => sheet.getRow(r).values[header.length - 3 + i]);
+  assert.deepEqual(project4(2), ["INR", 50000, 699999.5, 649999.5], "India: the project-currency columns say INR and repeat the same figures");
+  assert.deepEqual(project4(3), [undefined, undefined, 699999.5, 699999.5], "not recorded: no currency, no amount");
+  assert.deepEqual(project4(4), [undefined, undefined, undefined, undefined]);
 });

@@ -5,6 +5,7 @@ import { Card, CardBody, CardHeader } from "../../../../components/ui/Card";
 import { Button } from "../../../../components/ui/Button";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { ActivityRow } from "./ActivityRow";
+import { regionalCurrencyOf } from "../../../../utils/currencyDisplay";
 import { getInvoiceMethod } from "./InvoiceCalculations";
 
 interface Props {
@@ -136,6 +137,7 @@ export function ActivitiesTable({
                   isLumpSum={isLumpSum}
                   isMlmp={isMlmp}
                   isAmountBased={isAmountBased}
+                  currency={regionalCurrencyOf(project)}
                 />
               ))}
             </tbody>

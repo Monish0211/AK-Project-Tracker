@@ -43,8 +43,14 @@ export const validateQuantityTab = (project: Project): Record<string, string> =>
 
   if (!project.currency?.trim()) errors["currency"] = "Currency is required.";
   
-  if (project.currency !== "INR" && (!project.currentExchangeRate || project.currentExchangeRate <= 0)) {
-    errors["exchangeRate"] = "Exchange Rate is required.";
+  const regionalCurrency = project.regionalCurrency || "INR";
+  if (project.currency !== regionalCurrency && (!project.currentExchangeRate || project.currentExchangeRate <= 0)) {
+    errors["exchangeRate"] = project.regionalCurrency
+      ? `Exchange Rate is required: 1 ${project.currency} = ? ${regionalCurrency}.`
+      : "Exchange Rate is required.";
+  } else if (project.regionalCurrency && project.currency !== regionalCurrency && project.currentExchangeRate === 1) {
+    // Same rule the server applies: a rate of exactly 1 between two different currencies is an untouched default, not a real rate.
+    errors["exchangeRate"] = `A rate of exactly 1 is not valid for ${project.currency} to ${regionalCurrency}. Enter the actual rate: 1 ${project.currency} = ? ${regionalCurrency}.`;
   }
 
   project.quantityItems.forEach((item, index) => {

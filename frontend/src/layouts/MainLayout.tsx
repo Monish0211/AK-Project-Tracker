@@ -33,6 +33,7 @@ const EditProject = lazy(() => import("../pages/Projects/EditProject"));
 const Notes = lazy(() => import("../pages/Notes/Notes"));
 const CustomerMaster = lazy(() => import("../pages/CustomerMaster/CustomerMaster"));
 const Manpower = lazy(() => import("../pages/Manpower/Manpower"));
+const ManpowerConversionRates = lazy(() => import("../pages/Manpower/ManpowerConversionRates"));
 const Timesheets = lazy(() => import("../pages/Timesheets/Timesheets"));
 const ReportsPage = lazy(() => import("../pages/ReportsPage"));
 const Settings = lazy(() => import("../pages/Settings/Settings"));
@@ -189,6 +190,12 @@ const MainLayout = () => {
               <Route
                 path="/manpower"
                 element={<ModuleRoute module="Manpower"><Manpower /></ModuleRoute>}
+              />
+
+              {/* Its own Module Access grant: a user with ordinary Manpower access does NOT reach it, and a user with only this grant does not need Manpower. */}
+              <Route
+                path="/manpower/conversion-rates"
+                element={<ModuleRoute module="Manpower Conversion Rates"><ManpowerConversionRates /></ModuleRoute>}
               />
 
               <Route

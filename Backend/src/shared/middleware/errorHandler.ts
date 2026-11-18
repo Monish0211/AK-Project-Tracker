@@ -12,7 +12,7 @@ import type { ApiErrorResponse } from "../types/apiResponse.types.js";
  */
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
   if (err instanceof AppError) {
-    const body: ApiErrorResponse = { success: false, message: err.message };
+    const body: ApiErrorResponse = { success: false, message: err.message, ...(err.details !== undefined && { details: err.details }) };
     res.status(err.statusCode).json(body);
     return;
   }

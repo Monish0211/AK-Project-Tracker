@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search, ChevronDown, ChevronUp } from "lucide-react";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportGroup, useReportMoney } from "../reportCurrencyContext";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { buildRegistryRow } from "../../../utils/reportRegistryRows";
 import { ProjectPdfButton } from "./ProjectPdfButton";
@@ -29,6 +29,9 @@ function compareRows(valA: unknown, valB: unknown, asc: boolean): number {
 }
 
 export function ExecutiveSummaryTable({ projects, selectedPrNo = "ALL", invoiceDataAvailable = true }: Props) {
+  const money = useReportMoney();
+  // Every project in this table belongs to the one country of the report group being rendered.
+  const { countryLabel } = useReportGroup();
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState("prNo");
   const [sortAsc, setSortAsc] = useState(true);
@@ -130,8 +133,9 @@ export function ExecutiveSummaryTable({ projects, selectedPrNo = "ALL", invoiceD
                 <th className="p-3.5 px-4 cursor-pointer" onClick={() => handleSort("projectTitle")}>
                   Project Title
                 </th>
+                <th className="p-3.5 px-4" data-testid="registry-country-header">Country</th>
                 <th className="p-3.5 px-4 cursor-pointer text-right" onClick={() => handleSort("woValue")}>
-                  WO Value
+                  WO Value ({money.currency})
                 </th>
                 <th className="p-3.5 px-4 cursor-pointer text-right" onClick={() => handleSort("raised")}>
                   Raised
@@ -172,21 +176,22 @@ export function ExecutiveSummaryTable({ projects, selectedPrNo = "ALL", invoiceD
                   <td className="p-3.5 px-4 font-bold font-mono text-[var(--nu-accent)]">{row.prNo}</td>
                   <td className="p-3.5 px-4 font-semibold text-[var(--nu-text)] max-w-[140px] truncate">{row.client}</td>
                   <td className="p-3.5 px-4 font-medium text-[var(--nu-text)] max-w-[200px] truncate">{row.projectTitle}</td>
-                  <td className="p-3.5 px-4 text-right font-mono font-bold">{formatBusinessINR(row.woValue)}</td>
+                  <td className="p-3.5 px-4 font-semibold text-[var(--nu-text)]" data-testid="registry-country">{countryLabel || DASH}</td>
+                  <td className="p-3.5 px-4 text-right font-mono font-bold">{money.compact(row.woValue)}</td>
                   {row.raised === null ? (
                     <td colSpan={3} className="p-3.5 px-4 text-center text-[11px] italic text-[var(--nu-text-muted)]" title="Your account has no invoice access">
                       {NOT_AVAILABLE}
                     </td>
                   ) : (
                     <>
-                      <td className="p-3.5 px-4 text-right font-mono text-blue-600 dark:text-blue-400 font-bold">{formatBusinessINR(row.raised)}</td>
-                      <td className="p-3.5 px-4 text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">{formatBusinessINR(row.received ?? 0)}</td>
-                      <td className="p-3.5 px-4 text-right font-mono text-amber-600 dark:text-amber-400 font-bold">{formatBusinessINR(row.outstanding ?? 0)}</td>
+                      <td className="p-3.5 px-4 text-right font-mono text-blue-600 dark:text-blue-400 font-bold">{money.compact(row.raised)}</td>
+                      <td className="p-3.5 px-4 text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">{money.compact(row.received ?? 0)}</td>
+                      <td className="p-3.5 px-4 text-right font-mono text-amber-600 dark:text-amber-400 font-bold">{money.compact(row.outstanding ?? 0)}</td>
                     </>
                   )}
-                  <td className="p-3.5 px-4 text-right font-mono text-rose-600 dark:text-rose-400">{formatBusinessINR(row.expenses)}</td>
+                  <td className="p-3.5 px-4 text-right font-mono text-rose-600 dark:text-rose-400">{money.compact(row.expenses)}</td>
                   <td className={`p-3.5 px-4 text-right font-mono font-bold ${row.profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600"}`}>
-                    {formatBusinessINR(row.profit)}
+                    {money.compact(row.profit)}
                   </td>
                   <td className="p-3.5 px-4 text-right font-mono font-extrabold">
                     {row.profitPct === null ? (
@@ -203,10 +208,10 @@ export function ExecutiveSummaryTable({ projects, selectedPrNo = "ALL", invoiceD
                     {row.ldStatus ?? <span className="text-[var(--nu-text-muted)]">{row.status === "Completed" ? "Not recorded" : DASH}</span>}
                   </td>
                   <td className="p-3.5 px-4 text-right font-mono">
-                    {row.ldAmount === null ? <span className="text-[var(--nu-text-muted)]">{DASH}</span> : formatBusinessINR(row.ldAmount)}
+                    {row.ldAmount === null ? <span className="text-[var(--nu-text-muted)]">{DASH}</span> : money.compact(row.ldAmount)}
                   </td>
                   <td className={`p-3.5 px-4 text-right font-mono font-bold ${row.finalProfit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600"}`}>
-                    {formatBusinessINR(row.finalProfit)}
+                    {money.compact(row.finalProfit)}
                   </td>
                   <td className="p-3.5 px-4 text-right font-mono">
                     {row.finalProfitPct === null ? <span className="text-[var(--nu-text-muted)]">{DASH}</span> : `${row.finalProfitPct.toFixed(1)}%`}

@@ -43,7 +43,7 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
     throw new AppError("Authentication required.", 401);
   }
 
-  const profile = await authService.getProfile(req.user.sub);
+  const profile = await authService.getProfile(req.user.sub, req.user.country);
   res.status(200).json({ success: true, data: profile });
 });
 

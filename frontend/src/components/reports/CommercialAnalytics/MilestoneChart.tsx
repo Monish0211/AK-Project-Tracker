@@ -1,12 +1,13 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 
 interface Props {
   projects: any[];
 }
 
 export function MilestoneChart({ projects }: Props) {
+  const money = useReportMoney();
   const chartData = useMemo(() => {
     const catMap: Record<string, { category: string; woValue: number; billed: number }> = {};
 
@@ -43,8 +44,8 @@ export function MilestoneChart({ projects }: Props) {
           <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
             <XAxis dataKey="category" tick={{ fontSize: 10 }} />
-            <YAxis tickFormatter={(v) => formatBusinessINR(v)} tick={{ fontSize: 10 }} />
-            <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), ""]} />
+            <YAxis tickFormatter={(v) => money.compact(v)} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(val: any) => [money.compact(Number(val)), ""]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="woValue" name="Contract WO Value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
             <Bar dataKey="billed" name="Billed Revenue" fill="#10b981" radius={[4, 4, 0, 0]} />

@@ -6,6 +6,7 @@ import {
 import { findEmployeeByEmployeeNo } from "../../employees/repository/employee.repository.js";
 import { findEntriesForPair } from "../repository/timesheet.repository.js";
 import type { ProjectResourceData } from "../../resources/resource.types.js";
+import { regionalSnapshotFields } from "../../manhourRates/manhourSnapshot.js";
 
 /** "YYYY-MM-DD" from a stored workDate — the workDates this module stores are always UTC midnight (see excelParser.service.ts), so UTC getters are the correct read-back. */
 function dateKey(date: Date): string {
@@ -23,12 +24,13 @@ function round2(value: number): number {
  * touched pair at the end of timesheet.service.ts's processTimesheetImport(),
  * per the approved Stage 3/4 architecture.
  *
- * hourlyRateSnapshot is the one field this function will NEVER recompute
- * once a ProjectResource row already exists — it is captured only on this
- * pair's very first creation (below), frozen forever after, exactly per
- * Phase 3.7's original design and the Stage 3/4 clarifications reaffirming
- * it (an Employee Master rate change later must never silently change
- * historical cost).
+ * Phase 4 / Option A: hourlyRateSnapshot is no longer frozen. The employee's
+ * CURRENT saved hourly rate (Employee.manhourExpenses) prices every hour of the
+ * row, so the column now means "the rate used by the last costing of this
+ * row". It is refreshed here on every recompute and, for all of an employee's
+ * rows at once, by the automatic recalculation that runs when that rate
+ * changes (manhourCosting/manhourCostRefresh.service.ts). Only when no
+ * Employee row exists does the previous value stay (as before, 0 if none).
  *
  * assignmentStatus is deliberately NOT derived from totalHours reaching
  * zero — a correction to 0 hours is a different fact from "this employee
@@ -98,23 +100,21 @@ export async function recomputeProjectResource(employeeNo: string, projectId: st
         // Every TimesheetEntry for this pair was Removed (a zero-hour
         // correction wiped the last remaining row) — preserve the prior
         // historical values rather than nulling/resetting them. Never delete
-        // the ProjectResource row itself: doing so would force a fresh
-        // hourlyRateSnapshot capture if hours ever resume later, silently
-        // breaking the "frozen forever" guarantee below.
+        // the ProjectResource row itself: it carries the row's costing
+        // history (rate used, regional snapshot) for when hours resume.
         assignmentStartDate = existing?.assignmentStartDate ?? null;
         assignmentEndDate = existing?.assignmentEndDate ?? null;
         assignmentStatus = existing?.assignmentStatus ?? "Active";
       }
 
-      let hourlyRateSnapshot: number;
-      if (existing) {
-        hourlyRateSnapshot = existing.hourlyRateSnapshot;
-      } else {
-        const employee = await findEmployeeByEmployeeNo(employeeNo, tx);
-        hourlyRateSnapshot = employee?.manhourExpenses ?? 0;
-      }
+      // Option A: always the employee's CURRENT saved rate, read on this transaction. No Employee row (never created, or not found): keep what the row had, else 0.
+      const employee = await findEmployeeByEmployeeNo(employeeNo, tx);
+      const hourlyRateSnapshot = employee ? employee.manhourExpenses : (existing?.hourlyRateSnapshot ?? 0);
 
       const manhourCost = round2(totalHours * hourlyRateSnapshot);
+      // Phase 4 - the regional columns beside the (unchanged) INR cost: converted with the rate version the row already holds, the project's latest
+      // version for a brand-new row, or RATE_MISSING. Nothing about how the INR cost or the frozen hourly rate is determined has changed.
+      const regional = await regionalSnapshotFields(projectId, manhourCost, existing, tx);
 
       const createData: ProjectResourceData = {
         employeeNo,
@@ -125,18 +125,19 @@ export async function recomputeProjectResource(employeeNo: string, projectId: st
         workingDays,
         totalHours,
         manhourCost,
+        ...regional,
         lastSyncedAt: new Date(),
       };
-      // hourlyRateSnapshot is deliberately absent here — an existing row's
-      // frozen rate must never be touched by a recompute (see the
-      // module-level comment above).
+      // Option A: the rate used is refreshed with every recompute (see the module-level comment above).
       const updateData: Partial<ProjectResourceData> = {
+        hourlyRateSnapshot,
         assignmentStartDate,
         assignmentEndDate,
         assignmentStatus,
         workingDays,
         totalHours,
         manhourCost,
+        ...regional,
         lastSyncedAt: new Date(),
       };
 

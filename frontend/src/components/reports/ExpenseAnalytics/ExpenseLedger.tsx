@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search } from "lucide-react";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { getTotalNonManhourCost } from "../../../services/expenseService";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
@@ -10,6 +10,7 @@ interface Props {
 }
 
 export function ExpenseLedger({ projects }: Props) {
+  const money = useReportMoney();
   const [search, setSearch] = useState("");
 
   const expenseRows = useMemo(() => {
@@ -131,9 +132,9 @@ export function ExpenseLedger({ projects }: Props) {
                     </span>
                   </td>
                   <td className="p-2.5 text-center font-mono">{row.quantity}</td>
-                  <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">{formatBusinessINR(row.unitCost)}</td>
+                  <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">{money.compact(row.unitCost)}</td>
                   <td className="p-2.5 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
-                    {formatBusinessINR(row.totalCost)}
+                    {money.compact(row.totalCost)}
                   </td>
                 </tr>
               ))}

@@ -11,7 +11,7 @@ import { Card, CardBody, CardHeader } from "../../../components/ui/Card";
 import { StatTile } from "../../../components/ui/StatTile";
 import { Badge } from "../../../components/ui/Badge";
 import type { Tone } from "../../../components/ui/Badge";
-import { formatBusinessINR, formatFullINR } from "../../../utils/formatCurrency";
+import { formatMoney, formatMoneyCompact, regionalCurrencyOf, regionalWorkOrderValue } from "../../../utils/currencyDisplay";
 
 interface Props {
   project: Project;
@@ -73,7 +73,9 @@ const PaymentMilestoneView = ({ project }: Props) => {
 
   const remainingPercentage = 100 - totalPaymentPercentage;
 
-  const totalAmount = (project.workOrderValueINR * totalPaymentPercentage) / 100;
+  // Phase 3: amounts are in the project's regional currency (the INR value for an INR or legacy project, exactly as before).
+  const regionalCurrency = regionalCurrencyOf(project);
+  const totalAmount = (regionalWorkOrderValue(project) * totalPaymentPercentage) / 100;
 
   const isPercentageMismatch = Math.abs(totalPaymentPercentage - 100) > 0.01;
 
@@ -89,7 +91,7 @@ const PaymentMilestoneView = ({ project }: Props) => {
           tint={isPercentageMismatch ? "danger" : "success"}
         />
         <StatTile icon={<PieChart size={15} />} label="Remaining %" value={`${remainingPercentage.toFixed(2)}%`} tint="warning" />
-        <StatTile icon={<Wallet size={15} />} label="Total Amount" value={formatBusinessINR(totalAmount)} tint="success" />
+        <StatTile icon={<Wallet size={15} />} label="Total Amount" value={formatMoneyCompact(totalAmount, regionalCurrency)} tint="success" />
       </div>
 
       <Card padded={false} elevated>
@@ -112,7 +114,7 @@ const PaymentMilestoneView = ({ project }: Props) => {
                 const daysLeft = getDaysDifference(milestone.dueDate);
                 const status = getStatus(daysLeft);
                 const billed = isMilestoneBilled(project, milestone.id);
-                const amount = (project.workOrderValueINR * (milestone.paymentPercentage || 0)) / 100;
+                const amount = (regionalWorkOrderValue(project) * (milestone.paymentPercentage || 0)) / 100;
 
                 return (
                   <div key={milestone.id || idx} className="milestone-connector relative pl-8 pb-1">
@@ -144,7 +146,7 @@ const PaymentMilestoneView = ({ project }: Props) => {
                         </div>
                         <div>
                           <p className="text-[10.5px] uppercase tracking-wide text-[var(--nu-text-muted)] font-medium">Amount</p>
-                          <p className="text-[13px] font-bold text-[var(--nu-success)]">{formatFullINR(amount)}</p>
+                          <p className="text-[13px] font-bold text-[var(--nu-success)]">{formatMoney(amount, regionalCurrency)}</p>
                         </div>
                       </div>
                     </div>

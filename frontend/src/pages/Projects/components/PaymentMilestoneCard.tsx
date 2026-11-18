@@ -2,6 +2,7 @@ import { AlertTriangle, CreditCard, Percent, Plus, Trash2, Wallet } from "lucide
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { Project } from "../../../types/Project";
+import { formatMoney, regionalCurrencyOf, regionalWorkOrderValue } from "../../../utils/currencyDisplay";
 import { FormLabel } from "../../../components/ui/FormLabel";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { StatTile } from "../../../components/ui/StatTile";
@@ -40,15 +41,6 @@ function formatIndianNumber(value: number): string {
   return value.toLocaleString("en-IN", {
     maximumFractionDigits: 2,
   });
-}
-
-function formatIndianCurrency(value: number): string {
-  const formatted = value.toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
-  return `₹ ${formatted}`;
 }
 
 function calculateAmount(
@@ -164,7 +156,7 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
             id: firstMilestone?.id ?? crypto.randomUUID(),
             paymentPercentage: 100,
             dueDate: firstMilestone?.dueDate ?? "",
-            amount: calculateAmount(prev.workOrderValueINR, 100),
+            amount: calculateAmount(regionalWorkOrderValue(prev), 100),
           };
 
           return {
@@ -192,7 +184,7 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
             ? {
                 ...milestone,
                 paymentPercentage: value,
-                amount: calculateAmount(prev.workOrderValueINR, value),
+                amount: calculateAmount(regionalWorkOrderValue(prev), value),
               }
             : milestone
         );
@@ -318,7 +310,7 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
                 Work Order Value
               </p>
               <p className="text-[15px] font-bold text-[var(--nu-text)]">
-                {formatIndianCurrency(project.workOrderValueINR)}
+                {formatMoney(regionalWorkOrderValue(project), regionalCurrencyOf(project))}
               </p>
             </div>
 
@@ -407,11 +399,12 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
                       Amount
                     </label>
                     <p className="text-[14px] font-bold text-[var(--nu-success)]">
-                      {formatIndianCurrency(
+                      {formatMoney(
                         calculateAmount(
-                          project.workOrderValueINR,
+                          regionalWorkOrderValue(project),
                           singleMilestone?.paymentPercentage ?? 100
-                        )
+                        ),
+                        regionalCurrencyOf(project)
                       )}
                     </p>
                   </div>
@@ -500,11 +493,12 @@ const PaymentMilestoneCard = ({ project, setProject, errors = {}, clearError }: 
                         Amount
                       </label>
                       <p className="text-[14px] font-bold text-[var(--nu-success)]">
-                        {formatIndianCurrency(
+                        {formatMoney(
                           calculateAmount(
-                            project.workOrderValueINR,
+                            regionalWorkOrderValue(project),
                             milestone.paymentPercentage
-                          )
+                          ),
+                          regionalCurrencyOf(project)
                         )}
                       </p>
                     </div>

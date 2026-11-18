@@ -9,7 +9,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { isReceivedInvoiceLineStatus } from "../../../services/invoiceProgressService";
 import { EmptyState } from "../Shared/EmptyState";
 
@@ -18,6 +18,7 @@ interface Props {
 }
 
 export function RevenueTrendChart({ projects }: Props) {
+  const money = useReportMoney();
   const trendData = useMemo(() => {
     const monthMap: Record<string, { month: string; raised: number; received: number }> = {};
 
@@ -55,7 +56,7 @@ export function RevenueTrendChart({ projects }: Props) {
         <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--nu-text)]">
           Monthly Revenue & Collection Trend
         </h4>
-        <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">INR Trend</span>
+        <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">{money.currency} Trend</span>
       </div>
 
       {trendData.length === 0 ? (
@@ -76,8 +77,8 @@ export function RevenueTrendChart({ projects }: Props) {
             </defs>
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
             <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-            <YAxis tickFormatter={(v) => formatBusinessINR(v)} tick={{ fontSize: 10 }} />
-            <Tooltip formatter={(value: any) => [formatBusinessINR(Number(value)), ""]} />
+            <YAxis tickFormatter={(v) => money.compact(v)} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(value: any) => [money.compact(Number(value)), ""]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Area type="monotone" dataKey="raised" name="Invoiced Raised" stroke="#3b82f6" fillOpacity={1} fill="url(#colorRaised)" />
             <Area type="monotone" dataKey="received" name="Payment Received" stroke="#10b981" fillOpacity={1} fill="url(#colorReceived)" />

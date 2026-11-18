@@ -43,10 +43,19 @@ export interface ReportProjectDetails {
   secondaryProjectManager: string | null;
   pmoCoordinator: string | null;
   workOrderValueINR: number;
+  /** Regional currency (Phase 3): null = a legacy project, treated as INR. The report prints the project's own money in this currency. */
+  regionalCurrency: string | null;
+  /** The work order value in the regional currency (equal to workOrderValueINR for an INR or legacy project). */
+  workOrderValueRegional: number;
   /** Liquidated Damages (Oct 2026): null = not recorded (never shown as "No"). */
   ldApplicable: boolean | null;
   ldAmountINR: number | null;
+  /** Regional LD (Phase 4 final): the amount in the project's own currency and the currency it was recorded in; null on an INR or legacy rupee record. */
+  ldAmountRegional: number | null;
+  ldCurrency: string | null;
   ldRemarks: string | null;
+  /** Phase 4 / Option A: PENDING / FAILED while the automatic manpower recalculation after an employee-rate change has not completed for this project. */
+  manhourRefreshStatus: "CURRENT" | "PENDING" | "FAILED";
 }
 
 export interface ReportManhourRow {
@@ -57,8 +66,16 @@ export interface ReportManhourRow {
   designation: string | null;
   assignmentStatus: string;
   totalHours: number;
+  /** INR: the employee's frozen INR rate per hour (unchanged). */
   hourlyRate: number;
+  /** INR: hours x that rate (unchanged). */
   manhourCost: number;
+  /** Phase 4: INR | CONVERTED | RATE_MISSING (null = a row saved before Phase 4). */
+  costingStatus: string | null;
+  /** In the project's regional currency, only when CONVERTED. */
+  manhourCostRegional: number | null;
+  /** "1 regional currency unit = X INR" this row was converted with. */
+  fxRateInrPerRegional: number | null;
 }
 
 export interface ReportNonManhourRow {
@@ -140,9 +157,14 @@ interface RawProject {
   secondaryProjectManager?: string | null;
   pmoCoordinator?: string | null;
   workOrderValueINR?: number | null;
+  regionalCurrency?: string | null;
+  workOrderValueRegional?: number | null;
   ldApplicable?: boolean | null;
   ldAmountINR?: number | null;
+  ldAmountRegional?: number | null;
+  ldCurrency?: string | null;
   ldRemarks?: string | null;
+  manhourRefreshStatus?: string | null;
 }
 
 interface RawExpense {
@@ -160,6 +182,9 @@ interface RawResource {
   totalHours?: number | null;
   hourlyRateSnapshot?: number | null;
   manhourCost?: number | null;
+  costingStatus?: string | null;
+  manhourCostRegional?: number | null;
+  fxRateInrPerRegional?: number | null;
 }
 
 interface RawInvoiceLine {
@@ -223,9 +248,14 @@ function mapProject(raw: RawProject): ReportProjectDetails {
     secondaryProjectManager: optionalText(raw.secondaryProjectManager),
     pmoCoordinator: optionalText(raw.pmoCoordinator),
     workOrderValueINR: num(raw.workOrderValueINR),
+    regionalCurrency: typeof raw.regionalCurrency === "string" && raw.regionalCurrency.trim() !== "" ? raw.regionalCurrency : null,
+    workOrderValueRegional: raw.regionalCurrency ? num(raw.workOrderValueRegional) : num(raw.workOrderValueINR),
     ldApplicable: raw.ldApplicable === true ? true : raw.ldApplicable === false ? false : null,
     ldAmountINR: typeof raw.ldAmountINR === "number" && Number.isFinite(raw.ldAmountINR) ? raw.ldAmountINR : null,
+    ldAmountRegional: typeof raw.ldAmountRegional === "number" && Number.isFinite(raw.ldAmountRegional) ? raw.ldAmountRegional : null,
+    ldCurrency: typeof raw.ldCurrency === "string" && raw.ldCurrency.trim() !== "" ? raw.ldCurrency.trim().toUpperCase() : null,
     ldRemarks: optionalText(raw.ldRemarks),
+    manhourRefreshStatus: raw.manhourRefreshStatus === "PENDING" || raw.manhourRefreshStatus === "FAILED" ? raw.manhourRefreshStatus : "CURRENT",
   };
 }
 
@@ -248,6 +278,9 @@ function mapResources(raw: RawResource[], employees: Employee[]): ReportManhourR
       totalHours: num(r.totalHours),
       hourlyRate: num(r.hourlyRateSnapshot),
       manhourCost: num(r.manhourCost),
+      costingStatus: optionalText(r.costingStatus),
+      manhourCostRegional: typeof r.manhourCostRegional === "number" && Number.isFinite(r.manhourCostRegional) ? r.manhourCostRegional : null,
+      fxRateInrPerRegional: typeof r.fxRateInrPerRegional === "number" && Number.isFinite(r.fxRateInrPerRegional) ? r.fxRateInrPerRegional : null,
     };
   });
 }

@@ -7,7 +7,6 @@ import {
   CheckCircle,
   RefreshCw,
   Users,
-  IndianRupee,
   Briefcase,
   UserCog,
   TrendingUp,
@@ -36,11 +35,12 @@ interface Props {
   project: Project;
 }
 
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { formatMoney, isNonInrRegional, projectMoney, regionalCurrencyOf } from "../../../utils/currencyDisplay";
+import { CurrencyIcon } from "../../../components/ui/CurrencyIcon";
+import { RATE_NOT_SET, costingTotals, employeeCostFigure } from "../../../utils/manhourCosting";
+import { useManhourCosting } from "../useManhourCosting";
+import { ManhourRefreshBanner } from "./ManhourRefreshBanner";
 
-const fmtINR = (v: number) => formatBusinessINR(v || 0);
-const fmtINR2 = (v: number) =>
-  `₹${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtHrs = (v: number) => `${v.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 2 })} hrs`;
 
 // Sentinel for the "All" month filter — not a real "YYYY-MM" key, so it can
@@ -66,6 +66,15 @@ const InfoField = ({ label, value, accent }: { label: string; value: string; acc
 // grade, designation etc. are looked up fresh from the Employee Master on
 // every render too, never duplicated onto the project.
 const ExpandableTeamMembersCard = ({ project }: Props) => {
+  const regionalCurrency = regionalCurrencyOf(project);
+  // Phase 4 / Option A: every manpower AMOUNT on this screen is the server's authoritative figure (GET /projects/:id/manhour-costing, the same stored records
+  // Dashboard, Reports, the PDF and the exports use). This screen no longer prices hours with any employee rate of its own: it shows the roster and hours
+  // from the timesheets, and the rate, cost and its currency from the server. `conversion` is true for a project whose currency is not INR (amounts are the
+  // server's converted figures, the INR base stays visible as secondary text, and a row with no FX rate applied reads "Rate not set", never an INR amount in
+  // that currency). An INR / legacy project reads exactly as before.
+  const costingState = useManhourCosting(project.id);
+  const costing = costingState.costing;
+  const conversion = isNonInrRegional(project);
   const [allImports, setAllImports] = useState(() => getAllTimesheetImports());
   const [expandedEmployeeNo, setExpandedEmployeeNo] = useState<string | null>(null);
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
@@ -167,13 +176,47 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
     const totalEmployees = employees.length;
     const totalHours = employees.reduce((sum, e) => sum + (e.totalHours || 0), 0);
     const totalWorkingDays = employees.reduce((sum, e) => sum + (e.workingDays || 0), 0);
-    const totalManHourCost = employees.reduce((sum, e) => sum + e.totalCost, 0);
     const avgHoursPerEmployee = totalEmployees > 0 ? totalHours / totalEmployees : 0;
-    const avgHourlyRate =
-      totalEmployees > 0 ? employees.reduce((sum, e) => sum + e.hourlyRate, 0) / totalEmployees : 0;
 
-    return { totalEmployees, totalHours, totalWorkingDays, totalManHourCost, avgHoursPerEmployee, avgHourlyRate };
+    return { totalEmployees, totalHours, totalWorkingDays, avgHoursPerEmployee };
   }, [employees]);
+
+  // The server's figure for each employee shown (lifetime, or the selected month), and the KPIs as the sum of those SAME figures, so a KPI always equals its rows.
+  const figureOf = (employeeNo: string) => employeeCostFigure(costing, employeeNo, monthFilter);
+  const pending = costingState.loading && !costing;
+  const unavailableText = pending ? "…" : "Not available";
+  const hourlyText = (employeeNo: string): string => {
+    const f = figureOf(employeeNo);
+    if (!f) return unavailableText;
+    if (!conversion) return projectMoney(project).compact(f.hourlyInr || 0);
+    return f.hourlyProject === null ? RATE_NOT_SET : formatMoney(f.hourlyProject, regionalCurrency);
+  };
+  const costText = (employeeNo: string): string => {
+    const f = figureOf(employeeNo);
+    if (!f) return unavailableText;
+    if (!conversion) return `₹${f.costInr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return f.costProject === null ? RATE_NOT_SET : formatMoney(f.costProject, regionalCurrency);
+  };
+  const employeeNos = employees.map((e) => e.employeeNo);
+  const costTotals = costingTotals(costing, employeeNos, monthFilter);
+  const costFigures = employeeNos.map((no) => figureOf(no)).filter((f): f is NonNullable<typeof f> => f !== null);
+  const hourlyValues = costFigures.map((f) => (conversion ? f.hourlyProject : f.hourlyInr)).filter((v): v is number => v !== null);
+  const avgHourly = hourlyValues.length > 0 ? hourlyValues.reduce((s, v) => s + v, 0) / hourlyValues.length : 0;
+  const totalCostText = !costing
+    ? unavailableText
+    : !conversion
+      ? projectMoney(project).compact(costTotals.costInr)
+      : costTotals.costProject === 0 && costTotals.rateNotSet > 0
+        ? RATE_NOT_SET
+        : formatMoney(costTotals.costProject, regionalCurrency);
+  const costFootnote = !costing
+    ? undefined
+    : conversion
+      ? // The INR base is not shown to project users (hidden on request); a project with rows that have no rate still says so.
+        costTotals.rateNotSet > 0
+        ? `Rate not set for ${costTotals.rateNotSet}`
+        : undefined
+      : undefined;
 
 
   const handleExpandToggle = (employeeNo: string) => {
@@ -259,6 +302,13 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
         )}
       </Card>
 
+      {/* Phase 4 / Option A: a recalculation after an employee-rate change that is pending or failed is never shown as current. */}
+      {costing && <ManhourRefreshBanner status={costing.refreshStatus} projectId={project.id} onRetried={costingState.reload} />}
+      {costingState.error && !costing && <p className="text-[12px] text-[var(--nu-danger)]" role="alert">{costingState.error}</p>}
+
+      {/* The conversion rate and the INR base figures are NOT shown on a project: the country's rate is managed centrally (Manpower > Manpower Conversion Rates, for users
+          holding that permission) and a project user sees only the converted amounts, or "Rate not set" where the country has no rate. */}
+
       {!hasSyncedData ? (
         <Card>
           <EmptyState
@@ -293,10 +343,11 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
               tint="info"
             />
             <StatTile
-              icon={<IndianRupee size={14} />}
-              label="Total Man-Hour Cost"
-              value={fmtINR(resourceSummary.totalManHourCost)}
+              icon={<CurrencyIcon currency={regionalCurrency} size={14} />}
+              label={conversion ? `Total Man-Hour Cost (${regionalCurrency})` : "Total Man-Hour Cost"}
+              value={totalCostText}
               tint="warning"
+              {...(costFootnote ? { footnote: costFootnote } : {})}
             />
             <StatTile
               icon={<TrendingUp size={14} />}
@@ -304,7 +355,22 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
               value={resourceSummary.avgHoursPerEmployee.toFixed(1)}
               tint="accent"
             />
-            <StatTile icon={<Wallet size={14} />} label="Avg Hourly Rate" value={fmtINR(resourceSummary.avgHourlyRate)} tint="info" />
+            <StatTile
+              icon={<Wallet size={14} />}
+              label={conversion ? `Avg Hourly Rate (${regionalCurrency})` : "Avg Hourly Rate"}
+              value={
+                !costing
+                  ? unavailableText
+                  : conversion
+                    ? hourlyValues.length === 0
+                      ? costTotals.rateNotSet > 0
+                        ? RATE_NOT_SET
+                        : unavailableText
+                      : formatMoney(avgHourly, regionalCurrency)
+                    : projectMoney(project).compact(avgHourly)
+              }
+              tint="info"
+            />
           </div>
 
           {/* Team Members Table */}
@@ -319,10 +385,10 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
                     <th className="px-4 py-2.5 font-medium sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Designation</th>
                     <th className="px-4 py-2.5 font-medium sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Department</th>
                     <th className="px-4 py-2.5 font-medium sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Reporting Manager</th>
-                    <th className="px-4 py-2.5 text-right font-medium w-28 sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Hourly Rate</th>
+                    <th className="px-4 py-2.5 text-right font-medium w-28 sticky top-0 z-20 bg-[var(--nu-surface-alt)]">{conversion ? `Hourly Rate (${regionalCurrency})` : "Hourly Rate"}</th>
                     <th className="px-4 py-2.5 text-center font-medium w-24 sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Working Days</th>
                     <th className="px-4 py-2.5 text-right font-medium w-24 sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Total Hours</th>
-                    <th className="px-4 py-2.5 text-right font-medium w-32 sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Man-Hour Cost</th>
+                    <th className="px-4 py-2.5 text-right font-medium w-32 sticky top-0 z-20 bg-[var(--nu-surface-alt)]">{conversion ? `Man-Hour Cost (${regionalCurrency})` : "Man-Hour Cost"}</th>
                     <th className="px-4 py-2.5 text-center font-medium w-24 sticky top-0 z-20 bg-[var(--nu-surface-alt)]">Status</th>
                   </tr>
                 </thead>
@@ -368,13 +434,15 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
                           <td className="px-4 py-3 text-[12px] text-[var(--nu-text-secondary)]">{emp.designation || "—"}</td>
                           <td className="px-4 py-3 text-[12px] text-[var(--nu-text-secondary)]">{emp.department || "—"}</td>
                           <td className="px-4 py-3 text-[12px] text-[var(--nu-text-secondary)]">{emp.reportingManager || "—"}</td>
-                          <td className="px-4 py-3 text-right text-[12.5px] text-[var(--nu-text)]">{fmtINR(emp.hourlyRate)}</td>
+                          <td className="px-4 py-3 text-right text-[12.5px] text-[var(--nu-text)]">
+                            {hourlyText(emp.employeeNo)}
+                          </td>
                           <td className="px-4 py-3 text-center text-[12px] text-[var(--nu-text-secondary)]">{emp.workingDays} days</td>
                           <td className="px-4 py-3 text-right text-[12.5px] font-medium text-[var(--nu-text)]">
                             {fmtHrs(emp.totalHours)}
                           </td>
                           <td className="px-4 py-3 text-right text-[12.5px] font-semibold text-[var(--nu-text)]">
-                            {fmtINR2(emp.totalCost)}
+                            {costText(emp.employeeNo)}
                           </td>
                           <td className="px-4 py-3 text-center">
                             <Badge tone={emp.status === "Active" ? "success" : "neutral"}>{emp.status}</Badge>
@@ -399,7 +467,7 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
                                       <InfoField label="Department" value={emp.department || "—"} />
                                       <InfoField label="Reporting Manager" value={emp.reportingManager || "—"} />
                                       <InfoField label="Grade" value={emp.grade || "—"} />
-                                      <InfoField label="Hourly Rate" value={fmtINR(emp.hourlyRate)} />
+                                      <InfoField label={conversion ? `Hourly Rate (${regionalCurrency})` : "Hourly Rate"} value={hourlyText(emp.employeeNo)} />
                                     </div>
                                   </div>
 
@@ -416,7 +484,7 @@ const ExpandableTeamMembersCard = ({ project }: Props) => {
                                       <InfoField label="End Date" value={formatDisplayDate(emp.endDate)} />
                                       <InfoField label="Working Days" value={`${emp.workingDays} days`} />
                                       <InfoField label="Total Hours" value={fmtHrs(emp.totalHours)} />
-                                      <InfoField label="Man-Hour Cost" value={fmtINR2(emp.totalCost)} accent />
+                                      <InfoField label={conversion ? `Man-Hour Cost (${regionalCurrency})` : "Man-Hour Cost"} value={costText(emp.employeeNo)} accent />
                                     </div>
                                   </div>
                                 </div>

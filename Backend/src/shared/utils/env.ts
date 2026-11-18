@@ -239,6 +239,12 @@ const envSchema = z.object({
         }
       }, "APP_TIMEZONE must be a valid IANA timezone, e.g. Asia/Kolkata")
   ),
+  // Country access (Global Multi-Country Phase 1) — off (default): the feature has no effect at all; shadow: decisions are logged,
+  // never applied; enforce: the country boundary is applied. See shared/utils/countryAccess.ts. A typo fails startup.
+  COUNTRY_ACCESS_MODE: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() !== "" ? value.trim().toLowerCase() : undefined),
+    z.enum(["off", "shadow", "enforce"]).default("off")
+  ),
 });
 
 const parsed = envSchema.safeParse(process.env);

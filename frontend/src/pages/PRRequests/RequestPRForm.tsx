@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileText, LayoutGrid, Package, CreditCard, Wallet, Lock, Check } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -10,6 +10,8 @@ import type { PendingDocument } from "../Projects/components/ProjectDocumentsCar
 import { uploadPRRequestDocument } from "../../services/documentService";
 import { getUserFriendlyErrorMessage } from "../../utils/errorMessage";
 import QuantityCard from "../Projects/components/QuantityCard";
+import { usePrCategoryCountries } from "../Projects/usePrCategoryCountries";
+import { applyRegionalCurrencyToProject } from "../../utils/quantityCalculations";
 import CommercialCard from "../Projects/components/PaymentMilestoneCard";
 import ExpenseBudgetCard from "../Projects/components/ExpenseBudgetCard";
 import RequestPRFormButtons from "./RequestPRFormButtons";
@@ -80,6 +82,19 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
   const isFirstTab = activeIndex === 0;
 
   const { errors, validate, clearError, clearAllErrors } = useFormValidation<Project>();
+
+  // Regional currency (Phase 3): the project's country decides it, read from the backend's reference. Only the currency is taken from it here;
+  // which categories a requester may choose is unchanged.
+  const currencyReference = usePrCategoryCountries(true);
+  // A saved draft does not carry the regional currency, so it is looked up again from the category. A draft with no priced line yet also
+  // takes the regional currency at rate 1; a priced one keeps its saved currency and rates.
+  useEffect(() => {
+    if (!currencyReference || !project.prCategory || project.regionalCurrency) return;
+    const regional = currencyReference.items.find((i) => i.prCategory === project.prCategory)?.country?.defaultCurrency ?? null;
+    if (!regional) return;
+    const hasPricedLine = project.quantityItems.some((i) => i.unitRate > 0);
+    setProject((prev) => (prev.regionalCurrency ? prev : { ...prev, ...(hasPricedLine ? { regionalCurrency: regional } : applyRegionalCurrencyToProject(prev, regional)) }));
+  }, [currencyReference, project.prCategory, project.regionalCurrency, project.quantityItems, setProject]);
 
   // Supporting documents picked BEFORE this request has been saved (no
   // PR Request id yet) — same staging approach as Add Project: held in memory
@@ -237,6 +252,8 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
                 clearError={clearError}
                 showCustomerMasterWarning={false}
                 showCoordinatorLinkHint={false}
+                applyRegionalCurrency
+                currencyReference={currencyReference}
               />
               <ProjectDocumentsCard
                 ownerType="prRequest"

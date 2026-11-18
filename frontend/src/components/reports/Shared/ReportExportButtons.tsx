@@ -1,6 +1,8 @@
 import { Download, FileSpreadsheet } from "lucide-react";
 import * as XLSX from "xlsx";
 import { sanitizeExportRows } from "../../../utils/sanitizeExportCell";
+import { useReportGroup } from "../reportCurrencyContext";
+import { exportFileBase, withGroupColumns } from "../reportCurrency";
 
 interface Props {
   data: Record<string, any>[];
@@ -9,6 +11,10 @@ interface Props {
 }
 
 export function ReportExportButtons({ data, filename = "PMO_Report_Export" }: Props) {
+  // Phase 3: the export is of ONE country group, so every row names its Country and Currency (added in front of the existing columns, whose names
+  // and order are unchanged), and the file name carries the country so exports of different countries never overwrite or mix.
+  const group = useReportGroup();
+  const fileBase = exportFileBase(filename, group);
   const exportToExcel = () => {
     if (!data || data.length === 0) return;
     // P2-11 — every one of this component's 11 real callers (Financial,
@@ -16,21 +22,21 @@ export function ReportExportButtons({ data, filename = "PMO_Report_Export" }: Pr
     // Analytics, etc.) includes authenticated-user-entered free-text
     // fields (e.g. Project.client, remarks) that must never be handed to
     // the spreadsheet library unsanitized — see sanitizeExportCell.ts.
-    const ws = XLSX.utils.json_to_sheet(sanitizeExportRows(data));
+    const ws = XLSX.utils.json_to_sheet(sanitizeExportRows(withGroupColumns(data, group)));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Report Data");
-    XLSX.writeFile(wb, `${filename}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `${fileBase}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const exportToCSV = () => {
     if (!data || data.length === 0) return;
-    const ws = XLSX.utils.json_to_sheet(sanitizeExportRows(data));
+    const ws = XLSX.utils.json_to_sheet(sanitizeExportRows(withGroupColumns(data, group)));
     const csv = XLSX.utils.sheet_to_csv(ws);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${filename}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `${fileBase}_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

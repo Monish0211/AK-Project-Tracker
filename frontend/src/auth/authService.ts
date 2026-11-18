@@ -6,6 +6,7 @@ import { AUTH_CONFIG } from "./authConfig";
 // localStorage key — can't be wiped by just naming it; clearing it
 // requires calling back into the module that owns that storage.
 import { clearTimesheetCache } from "../services/timesheetService";
+import type { CountryAccessMode, CountryOption } from "./countryTypes";
 
 /**
  * Session shape kept close to the OLD mock UserSession (name, employeeId,
@@ -36,6 +37,16 @@ export interface UserSession {
   modules: string[];
   regions: string[];
   approvalPermissions: string[];
+  /**
+   * Country access (Global Multi-Country Phase 1) — read from GET /auth/me, which re-reads the grants from the database.
+   * `countries` is what this account may select; `allCountries` is the explicit All Countries right (never implied by
+   * a role). `countryAccessMode` is the backend's COUNTRY_ACCESS_MODE; while it is "off" nothing country-related is shown
+   * or sent. `countryAccessConfigured` is false when the account has no country at all.
+   */
+  countries: CountryOption[];
+  allCountries: boolean;
+  countryAccessMode: CountryAccessMode;
+  countryAccessConfigured: boolean;
   isAuthenticated: true;
 }
 
@@ -79,6 +90,11 @@ type MeResponseDto = SafeUserDto & {
   regions: string[];
   approvals: string[];
   reportingManager: { id: string; fullName: string } | null;
+  // Country access (additive; absent from an older backend, which is treated as "off").
+  countries?: CountryOption[];
+  allCountries?: boolean;
+  countryAccessMode?: CountryAccessMode;
+  countryAccessConfigured?: boolean;
 };
 
 function toUserSession(profile: MeResponseDto): UserSession {
@@ -100,6 +116,10 @@ function toUserSession(profile: MeResponseDto): UserSession {
     modules: profile.modules,
     regions: profile.regions,
     approvalPermissions: profile.approvals,
+    countries: profile.countries ?? [],
+    allCountries: profile.allCountries === true,
+    countryAccessMode: profile.countryAccessMode ?? "off",
+    countryAccessConfigured: profile.countryAccessConfigured ?? true,
     isAuthenticated: true,
   };
 }
@@ -142,6 +162,21 @@ function clearCachedBusinessDataOnLogout(): void {
     "view-project-notes", // utils/breadcrumbHelpers.ts, pages/Projects/ViewProject.tsx
   ];
   for (const key of sessionStorageKeysToClear) {
+    sessionStorage.removeItem(key);
+  }
+}
+
+/**
+ * Country switch (Global Multi-Country Phase 1): clears only the browser-side mirrors of PROJECT-scoped data, so the
+ * previous country's rows can never show under the new one before the refetch lands. Company-wide data (the employee
+ * master) and the session itself are kept. Logout still clears everything via clearCachedBusinessDataOnLogout().
+ */
+export function clearCachedProjectDataForCountrySwitch(): void {
+  for (const key of ["projects", "pmo_notifications", "pmo_reminders", "timesheets_imports"]) {
+    localStorage.removeItem(key);
+  }
+  clearTimesheetCache();
+  for (const key of ["view-project-tab", "view-project-notes"]) {
     sessionStorage.removeItem(key);
   }
 }

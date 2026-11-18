@@ -20,6 +20,7 @@ import { calculateProjectCompletionPercentage, getActualTimesheetEmployeeCount }
 import { useAuth } from "../../auth/authContext";
 import { canEditProject } from "../../auth/permissions";
 import { Button } from "../../components/ui/Button";
+import { useProjectCountryLock } from "./useProjectCountryLock";
 
 import GeneralView from "./components/GeneralView";
 import ProjectDocumentsCard from "./components/ProjectDocumentsCard";
@@ -28,6 +29,7 @@ import PaymentMilestoneView from "./components/PaymentMilestoneView";
 import ExpenseBudgetView from "./components/ExpenseBudgetView";
 import TeamAssignedView from "./components/TeamAssignedView";
 import NonManhourExpenseView from "./components/NonManhourExpenseView";
+import { isNonInrRegional, regionalCurrencyOf, regionalWorkOrderValue } from "../../utils/currencyDisplay";
 import InvoiceProgressView from "./components/InvoiceProgressView";
 import { ProjectWorkspaceDrawer } from "../../components/Dashboard/ProjectWorkspaceDrawer";
 
@@ -89,6 +91,9 @@ const ViewProject = () => {
   // with no synchronous setState call in the effect body itself.
   const [loadedId, setLoadedId] = useState<string | undefined>(undefined);
   const isLoading = !!id && loadedId !== id;
+  // The global country selector follows the project on screen: it shows the project's own country (from its PR Category) and cannot be switched while the project is
+  // open. A switch used to remount this page and refetch the same project, leaving it on screen under another country.
+  useProjectCountryLock(project && project.id === id ? project.prCategory : undefined, "view");
 
   // Sync active tab & notes state to session storage so Breadcrumb can read it
   useEffect(() => {
@@ -188,14 +193,16 @@ const ViewProject = () => {
 
   // ── Existing calculations, unchanged ───────────────────────────────────────
   const totalProjectCost = getTotalProjectCost(project.manhourExpenses, project.nonManhourExpenses);
-  const grossProfit = getGrossProfit(project.workOrderValueINR || 0, totalProjectCost);
-  const profitMargin = getProfitMargin(project.workOrderValueINR || 0, grossProfit);
-  const hasRevenue = (project.workOrderValueINR || 0) > 0;
+  const grossProfit = getGrossProfit(regionalWorkOrderValue(project), totalProjectCost);
+  const profitMargin = getProfitMargin(regionalWorkOrderValue(project), grossProfit);
+  const hasRevenue = (regionalWorkOrderValue(project)) > 0;
   const hasWoQty = project.totalWOQty > 0;
   const pendingQtyPercentage = hasWoQty ? (project.totalPendingQty / project.totalWOQty) * 100 : 0;
   const completionPercent = calculateProjectCompletionPercentage(project);
 
   const commercialSummary = getProjectCommercialSummary(project);
+  // Phase 3: a project whose regional currency is not INR has no invoices yet (invoicing is not available for it), so everything is still to collect.
+  const outstandingAmount = isNonInrRegional(project) ? regionalWorkOrderValue(project) : commercialSummary.outstandingCollection;
 
   const paymentReceived = commercialSummary.totalPaymentReceived;
 
@@ -240,17 +247,18 @@ const ViewProject = () => {
         hasRevenue={hasRevenue}
         pendingQtyPercentage={pendingQtyPercentage}
         invoiceRaised={commercialSummary.totalInvoiceRaised}
-        outstanding={commercialSummary.outstandingCollection}
+        outstanding={outstandingAmount}
         notesCount={project.notes?.length || 0}
         onOpenNotes={() => setIsNotesOpen(true)}
         onEdit={canEditProject(user, project) ? goEdit : undefined}
       />
 
       <ProjectSummaryStrip
-        workOrderValue={project.workOrderValueINR || 0}
+        currency={regionalCurrencyOf(project)}
+        workOrderValue={regionalWorkOrderValue(project)}
         invoiceRaised={commercialSummary.totalInvoiceRaised}
         paymentReceived={paymentReceived}
-        outstanding={commercialSummary.outstandingCollection}
+        outstanding={outstandingAmount}
         budget={budget}
         expenses={totalProjectCost}
         profit={grossProfit}
@@ -274,7 +282,7 @@ const ViewProject = () => {
           {activeTab === "payments" && <PaymentMilestoneView project={project} />}
           {activeTab === "budget" && <ExpenseBudgetView project={project} />}
           {activeTab === "team" && <TeamAssignedView project={project} />}
-          {activeTab === "expenses" && <NonManhourExpenseView expenses={project.nonManhourExpenses} />}
+          {activeTab === "expenses" && <NonManhourExpenseView currency={regionalCurrencyOf(project)} expenses={project.nonManhourExpenses} />}
           {activeTab === "invoices" && <InvoiceProgressView project={project} />}
           {activeTab === "timeline" && <ProjectActivityTimeline events={activityEvents} />}
         </div>

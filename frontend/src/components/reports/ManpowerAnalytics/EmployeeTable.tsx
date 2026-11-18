@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search } from "lucide-react";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
 
@@ -9,6 +9,7 @@ interface Props {
 }
 
 export function EmployeeTable({ projects }: Props) {
+  const money = useReportMoney();
   const [search, setSearch] = useState("");
 
   const employeeRows = useMemo(() => {
@@ -102,7 +103,7 @@ export function EmployeeTable({ projects }: Props) {
                   <td className="p-2.5 text-center font-mono font-bold">{row.workingDays} days</td>
                   <td className="p-2.5 text-center font-mono font-bold text-[var(--nu-accent)]">{row.billableHrs} hrs</td>
                   <td className="p-2.5 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                    {formatBusinessINR(row.costINR)}
+                    {money.compact(row.costINR)}
                   </td>
                 </tr>
               ))}

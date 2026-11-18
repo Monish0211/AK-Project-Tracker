@@ -69,6 +69,8 @@ model PortalUser {
   // Account security — see shared/middleware/authenticate.ts and
   // auth.service.ts for how these gate login.
   isActive            Boolean   @default(true)
+  // The explicit All Countries right (Global Multi-Country Phase 1). Set only by an Administrator; never implied by a role name.
+  allCountriesAccess  Boolean   @default(false)
   forcePasswordChange Boolean   @default(false)
   accountLocked       Boolean   @default(false)
   // Consecutive bad-password count since the last successful login or
@@ -109,8 +111,8 @@ model PortalUser {
   // (contrast Project.createdByUserId's SetNull-to-unclaimed rule, which
   // exists because a PROJECT survives its creator; a notification does not
   // survive its recipient).
-  notifications      Notification[]
-  pushSubscriptions  PushSubscription[]
+  notifications     Notification[]
+  pushSubscriptions PushSubscription[]
 
   // PR Request & Two-Level Approval Workflow — see PRRequest below.
   // onDelete: Restrict on all four of these (unlike Project.createdByUserId's
@@ -119,11 +121,11 @@ model PortalUser {
   // approving PMO Manager on, rejected, or actioned any PR Request can never
   // be hard-deleted while that record exists (deactivate instead), so the
   // audit trail can never be silently orphaned.
-  prRequestsSubmitted   PRRequest[]                @relation("PRRequestRequester")
-  prRequestsAssigned    PRRequest[]                @relation("PRRequestAssignedPmoManager")
-  prRequestsAssignedAsAccountsApprover PRRequest[] @relation("PRRequestAssignedAccountsApprover")
-  prRequestsRejected    PRRequest[]                @relation("PRRequestRejectedBy")
-  prRequestApprovalActions PRRequestApprovalHistory[]
+  prRequestsSubmitted                  PRRequest[]                @relation("PRRequestRequester")
+  prRequestsAssigned                   PRRequest[]                @relation("PRRequestAssignedPmoManager")
+  prRequestsAssignedAsAccountsApprover PRRequest[]                @relation("PRRequestAssignedAccountsApprover")
+  prRequestsRejected                   PRRequest[]                @relation("PRRequestRejectedBy")
+  prRequestApprovalActions             PRRequestApprovalHistory[]
 
   // Request Invoice workflow (Sept 2026) — same onDelete: Restrict
   // audit-preservation treatment as the PR Request relations above: a user
@@ -139,9 +141,9 @@ model PortalUser {
   invoiceRequestCcMemberships InvoiceRequestCcMember[]
 
   // Invoice Tracker (Oct 2026) — audit events this user caused (SetNull: the event keeps its actorName snapshot).
-  invoiceStatusEvents InvoiceStatusEvent[] @relation("InvoiceStatusEventActor")
-  invoicePaymentsRecorded InvoicePayment[] @relation("InvoicePaymentRecordedBy")
-  invoicePaymentsReversed InvoicePayment[] @relation("InvoicePaymentReversedBy")
+  invoiceStatusEvents     InvoiceStatusEvent[]  @relation("InvoiceStatusEventActor")
+  invoicePaymentsRecorded InvoicePayment[]      @relation("InvoicePaymentRecordedBy")
+  invoicePaymentsReversed InvoicePayment[]      @relation("InvoicePaymentReversedBy")
   invoicePaymentEvents    InvoicePaymentEvent[] @relation("InvoicePaymentEventActor")
 
   // Documents feature — onDelete: Restrict on Document.uploadedBy (see that
@@ -162,7 +164,7 @@ model PortalUser {
 
   // Weekly notification settings (Oct 2026) — settings this account last
   // edited, and the notification CC lists this account is linked to.
-  notificationSettingsUpdated NotificationSetting[]      @relation("NotificationSettingUpdatedBy")
+  notificationSettingsUpdated NotificationSetting[]     @relation("NotificationSettingUpdatedBy")
   notificationCcEntries       NotificationCcRecipient[] @relation("NotificationCcRecipientUser")
 
   createdAt DateTime @default(now())
@@ -232,6 +234,8 @@ model AuthAuditLog {
   event     String
   ipAddress String?
   userAgent String?
+  // Before/after values for security events that need them (country access changes). Null for every other event.
+  details   Json?
 
   createdAt DateTime @default(now())
 
@@ -289,7 +293,19 @@ model Region {
   name     String  @unique
   isActive Boolean @default(true)
 
+  manhourFxRates CountryManhourFxRate[]
+
+  // Country configuration (Global Multi-Country Phase 1) — all nullable and data-driven, so adding a country is a row, not code.
+  // `name` stays the stored key that grants and Project.prCategory depend on (still "FZI" for FZE until the audited rename);
+  // `displayName` is what the UI shows ("FZE"); `code` is an immutable lowercase key sent in X-Active-Country;
+  // `defaultCurrency` is the regional default transaction currency; `timezone` is reserved for Phase 5 and unused until then.
+  code            String? @unique
+  displayName     String?
+  defaultCurrency String?
+  timezone        String?
+
   userAccess UserRegionAccess[]
+  projects   Project[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -636,6 +652,10 @@ model Project {
 
   poMonth         String
   prCategory      String
+  // The project's country (Global Multi-Country Phase 1): the stored link to Region, filled from the stored PR Category only —
+  // never from the PR number prefix and never from the creator's country. Null = not yet classified.
+  regionId        String?
+  region          Region? @relation(fields: [regionId], references: [id], onDelete: SetNull)
   prNo            String
   // RFQ No. (Oct 2026) — mandatory on every create and on any update that
   // sends it (enforced in project.validators.ts, not here). Nullable only
@@ -667,8 +687,21 @@ model Project {
   // ldAmountINR: exact decimal INR, set only when ldApplicable is true.
   // ldRecordedByUserId/ldRecordedAt: from the authenticated session, never
   // from the request body.
+  //
+  // Regional LD (Phase 4 final, additive): the amount is in the PROJECT's own
+  // currency, decided by the server from the stored regionalCurrency — never
+  // trusted from the request.
+  //   ldCurrency NULL      = LEGACY record: ldAmountINR is a rupee amount typed
+  //                          before regional LD existed. Never reinterpreted.
+  //   ldCurrency = 'INR'   = India (or INR-region) record; amount in ldAmountINR
+  //                          exactly as before, ldAmountRegional stays NULL.
+  //   ldCurrency = AED etc = non-India record; amount in ldAmountRegional,
+  //                          ldAmountINR stays NULL, so a regional figure can
+  //                          never be mistaken for rupees.
   ldApplicable       Boolean?
   ldAmountINR        Decimal?  @db.Decimal(14, 2)
+  ldCurrency         String?
+  ldAmountRegional   Decimal?  @db.Decimal(18, 3)
   ldRemarks          String?
   ldRecordedByUserId String?
   ldRecordedAt       DateTime?
@@ -734,6 +767,11 @@ model Project {
   // enforcing the lock is a later phase, not implemented here.
   invoiceCurrency String?
 
+  // Regional currency (Global Multi-Country Phase 3): the currency of the project's country, copied ONCE from Region.defaultCurrency when the
+  // project is created. A snapshot, never read live. NULL = a legacy project, which behaves exactly as before (INR is its regional currency).
+  // Distinct from `currency` above (the commercial / transaction currency) and from `invoiceCurrency`.
+  regionalCurrency String?
+
   // Expense Budget — Phase 3.5. Deliberately flat on Project, NOT a child
   // table: this is a 1:1 attribute (exactly one Man-Hour Budget and one
   // Non-Man-Hour Budget per project, always), same treatment as every other
@@ -760,7 +798,7 @@ model Project {
 
   // Manual invoice numbering (Oct 2026) — the invoice numbers this project
   // owns. See InvoiceNumber below.
-  invoiceNumbers InvoiceNumber[]
+  invoiceNumbers  InvoiceNumber[]
   invoicePayments InvoicePayment[]
 
   // PMO Coordinator Management (Oct 2026) — the ACCOUNT assigned as this
@@ -802,6 +840,9 @@ model Project {
   // only so onDelete: Cascade (declared on ProjectResource) has something
   // to cascade from.
   projectResources ProjectResource[]
+
+  // Phase 4: the project's manpower conversion rate versions (append-only). See ProjectManhourFxRate.
+  manhourFxRates ProjectManhourFxRate[]
 
   // Project Notes — Phase 3.9. 1:Many append-only activity & notes ledger.
   projectNotes ProjectNote[]
@@ -869,23 +910,6 @@ model Project {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  @@index([isDeleted])
-  @@index([projectStatus])
-  @@index([department])
-  @@index([client])
-  @@index([createdByUserId])
-  @@index([prCategory])
-  // P1-08 — prNo is the project's own business identifier: looked up on
-  // every create/edit's duplicate-PR-number check (assertPrNoAvailable) and
-  // filtered/searched on directly from Projects/Reports/Timesheets, and by
-  // findAllProjectsForTimesheetMatching() (Keka matching), which
-  // deliberately includes archived projects (Decision 24) — a query with no
-  // isDeleted filter needs a plain, all-rows index to be servable, which
-  // the partial unique index below (WHERE "isDeleted" = false) cannot
-  // reliably provide by itself. Kept alongside the constraint below, not
-  // redundant with it.
-  @@index([prNo])
   // P1-17 — Project.prNo uniqueness. Business rule (confirmed from current
   // application code, assertPrNoAvailable() -> findActiveProjectByPrNo()):
   // prNo must be unique among ACTIVE (isDeleted = false) projects only — an
@@ -903,7 +927,24 @@ model Project {
   // enforce uniqueness across ALL rows including archived ones, breaking
   // the confirmed "reuse a PR number after archiving" business rule.
 
+  @@index([isDeleted])
+  @@index([projectStatus])
+  @@index([department])
+  @@index([client])
+  @@index([createdByUserId])
+  @@index([prCategory])
+  // P1-08 — prNo is the project's own business identifier: looked up on
+  // every create/edit's duplicate-PR-number check (assertPrNoAvailable) and
+  // filtered/searched on directly from Projects/Reports/Timesheets, and by
+  // findAllProjectsForTimesheetMatching() (Keka matching), which
+  // deliberately includes archived projects (Decision 24) — a query with no
+  // isDeleted filter needs a plain, all-rows index to be servable, which
+  // the partial unique index below (WHERE "isDeleted" = false) cannot
+  // reliably provide by itself. Kept alongside the constraint below, not
+  // redundant with it.
+  @@index([prNo])
   @@index([pmoCoordinatorUserId])
+  @@index([regionId])
 }
 
 model QuantityItem {
@@ -925,6 +966,11 @@ model QuantityItem {
   unitRateINR  Float
 
   woValue Float
+
+  // Regional-currency price and value (Phase 3): unitRate converted at exchangeRate into the project's regional currency. NULL on rows
+  // saved before Phase 3. unitRateINR / woValue above hold INR only: filled for INR-region projects, 0 for every other region.
+  unitRateRegional Float?
+  woValueRegional  Float?
 
   // invoiceQty / pendingQty / pendingAmount were removed from here (see
   // Priority #3 fix) — they were plain persisted columns that only the
@@ -1547,7 +1593,7 @@ model Document {
   // rather than adding a second one. The existing "exactly one parent" logic
   // in document.service.ts's getDocumentForDownload() widens to "at most one
   // of Project, PR Request, Customer" — same pattern, one more branch.
-  customerId String?  @unique
+  customerId String?   @unique
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   // Request Invoice attachments (Oct 2026) — a fourth, optional parent. A Document with this set has NO projectId (so it never
@@ -1640,9 +1686,12 @@ model ProjectResource {
   assignmentEndDate   DateTime?
   assignmentStatus    String    @default("Active")
 
-  // Frozen at row creation/update time from Employee.manhourExpenses —
-  // never re-derived from a later Employee read. See the model-level
-  // comment above for why this must never change historical cost.
+  // Phase 4 / Option A (revised meaning): the employee's CURRENT saved
+  // Employee.manhourExpenses as of the last costing of this row. It is NOT
+  // frozen any more: every recompute and the automatic recalculation that runs
+  // when an employee's hourly rate changes (ManhourRateChangeRun) refresh it, and
+  // manhourCost = totalHours x this rate. Kept as a column for compatibility with
+  // existing readers and as the "rate used" in the before/after audit.
   hourlyRateSnapshot Float
 
   workingDays Float @default(0)
@@ -1652,6 +1701,23 @@ model ProjectResource {
   // client — same "never trust a client-computed derived value" convention
   // as QuantityItem.woValue/unitRateINR and ProjectExpense.totalCost.
   manhourCost Float @default(0)
+
+  // Phase 4 - regional costing of the INR figure above. ALL nullable and additive: hourlyRateSnapshot / manhourCost keep meaning INR exactly as
+  // before (India and legacy rows are untouched). For a project whose regional currency is not INR, manhourCostRegional = manhourCost /
+  // fxRateInrPerRegional ("1 regional unit = X INR"), rounded half-up once to the currency's minor units (OMR 3, others 2).
+  //   costingStatus: INR (no conversion) | CONVERTED | RATE_MISSING (non-INR project, no rate applied to this row: nothing is guessed).
+  //   fxRateVersion / fxRateInrPerRegional: the exact ProjectManhourFxRate version and value this row was converted with. A later rate version
+  //   never rewrites them; only the explicit, audited apply action does (ProjectResourceRepriceAudit).
+  //   rateSetAt: when that rate version took effect.
+  costCurrency         String?
+  costingStatus        String?
+  fxRateVersion        Int?
+  fxRateInrPerRegional Decimal?  @db.Decimal(18, 6)
+  manhourCostRegional  Decimal?  @db.Decimal(18, 3)
+  rateSetAt            DateTime?
+  // Which table fxRateVersion points into: NULL = a legacy per-project version (ProjectManhourFxRate, kept as history only), COUNTRY = a central
+  // country version (CountryManhourFxRate). Without it a legacy version 1 could be mistaken for country version 1.
+  fxRateScope          String?
 
   lastSyncedAt DateTime?
 
@@ -1827,9 +1893,9 @@ model TimesheetImport {
   // used for employeeNo above and ProjectResource.employeeNo in Phase 3.7.
   uploadedByUserId String?
 
-  rowLogs                 TimesheetImportRowLog[]
-  entriesFirstCreated     TimesheetEntry[]        @relation("TimesheetEntryFirstImport")
-  entriesLastTouched      TimesheetEntry[]        @relation("TimesheetEntryLastImport")
+  rowLogs             TimesheetImportRowLog[]
+  entriesFirstCreated TimesheetEntry[]        @relation("TimesheetEntryFirstImport")
+  entriesLastTouched  TimesheetEntry[]        @relation("TimesheetEntryLastImport")
 
   createdAt DateTime @default(now())
 
@@ -2096,17 +2162,17 @@ model NotificationCcRecipient {
 model ScheduledJobRun {
   id String @id @default(dbgenerated("gen_random_uuid()"))
 
-  jobName   String
-  periodKey String
-  trigger   String // "scheduled" | "manual"
-  status    String
+  jobName    String
+  periodKey  String
+  trigger    String // "scheduled" | "manual"
+  status     String
   claimToken String
-  attempts  Int    @default(1)
+  attempts   Int    @default(1)
 
-  eligibleCount Int?
-  missingCount  Int?
+  eligibleCount  Int?
+  missingCount   Int?
   recipientCount Int?
-  error         String?
+  error          String?
 
   startedAt  DateTime  @default(now())
   finishedAt DateTime?
@@ -2114,4 +2180,252 @@ model ScheduledJobRun {
 
   @@unique([jobName, periodKey])
   @@index([jobName, startedAt])
+}
+
+// =============================================================================
+// Phase 4 - MANPOWER CONVERSION RATE (per project, append-only).
+// "1 regional currency unit = X INR" (e.g. 1 OMR = 243.156). Regional manpower cost = INR manpower cost / inrPerRegionalUnit.
+// Only needed for a project whose regional currency is not INR. Never fetched, never defaulted, never 1. A new version is a new row; rows are
+// never updated (a database trigger refuses UPDATE) and a later version never rewrites the regional costs already stored on ProjectResource.
+// Only Administrator and PMO Manager can add a version (enforced in the route, not only the screen).
+// =============================================================================
+model ProjectManhourFxRate {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  version Int
+
+  // The project's regional currency when the version was entered (a snapshot; a country change is blocked once costing exists).
+  regionalCurrency   String
+  inrPerRegionalUnit Decimal  @db.Decimal(18, 6)
+  effectiveFrom      DateTime @default(now())
+
+  createdByUserId String?
+  createdByName   String
+  createdByRole   String
+  note            String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, version])
+  @@index([projectId])
+}
+
+// Phase 4 (central country rates) - the manpower conversion rate of a COUNTRY ("1 regional currency unit = X INR"), one append-only version at a
+// time. It replaces the per-project rate: every project of the country converts with it. Saving a version rewrites nothing; only the explicit
+// preview-then-apply action moves existing rows (see CountryRateApplyRun). India has no row (fixed 1, never converted). A database trigger
+// refuses UPDATE and DELETE.
+model CountryManhourFxRate {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  regionId String
+  region   Region @relation(fields: [regionId], references: [id], onDelete: Restrict)
+
+  version Int
+
+  // The country's regional currency when the version was entered (Region.defaultCurrency).
+  regionalCurrency   String
+  inrPerRegionalUnit Decimal  @db.Decimal(18, 6)
+  effectiveFrom      DateTime @default(now())
+
+  createdByUserId String?
+  createdByName   String
+  createdByRole   String
+  note            String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([regionId, version])
+  @@index([regionId])
+}
+
+// Applying a country rate version to the existing rows of that country's projects: one RUN, one TASK per project. Same states and lock
+// discipline as the employee-rate recalculation (PENDING | PROCESSING | SUCCEEDED | PARTIAL | FAILED for a run; PENDING | SUCCEEDED | FAILED for a
+// task). A task converts the project's rows that are not yet on the target version; it is idempotent, so a retry never double-applies or skips.
+model CountryRateApplyRun {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  // Plain ids (no foreign keys): the trail outlives what it describes.
+  regionId      String
+  regionName    String
+  targetVersion Int
+
+  reason String?
+
+  actorUserId String?
+  actorName   String
+  actorRole   String
+
+  status         String  @default("PENDING")
+  projectCount   Int     @default(0)
+  succeededCount Int     @default(0)
+  failedCount    Int     @default(0)
+  lastError      String?
+
+  tasks CountryRateApplyTask[]
+
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([regionId])
+  @@index([status])
+}
+
+model CountryRateApplyTask {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  runId String
+  run   CountryRateApplyRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  projectId String
+
+  // PENDING | SUCCEEDED | FAILED
+  status    String  @default("PENDING")
+  attempts  Int     @default(0)
+  lastError String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  finishedAt DateTime?
+
+  @@unique([runId, projectId])
+  @@index([projectId, status])
+  @@index([status])
+}
+
+// Phase 4 - audit of the explicit "apply rate to existing records" action: one row per ProjectResource changed, with the old and new regional
+// snapshot, the rate and version used, who did it and when. Plain ids (no foreign keys) so the trail outlives the rows it describes.
+model ProjectResourceRepriceAudit {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  // Central country-rate applications only (NULL for the legacy per-project apply): the country, and the scope of the old and new version.
+  regionId       String?
+  oldFxRateScope String?
+  newFxRateScope String?
+
+  runId             String
+  projectId         String
+  projectResourceId String
+  employeeNo        String
+
+  manhourCostInr Float
+
+  oldStatus               String?
+  oldCostCurrency         String?
+  oldFxRateVersion        Int?
+  oldFxRateInrPerRegional Decimal? @db.Decimal(18, 6)
+  oldManhourCostRegional  Decimal? @db.Decimal(18, 3)
+
+  newStatus               String
+  newCostCurrency         String
+  newFxRateVersion        Int
+  newFxRateInrPerRegional Decimal @db.Decimal(18, 6)
+  newManhourCostRegional  Decimal @db.Decimal(18, 3)
+
+  reason String?
+
+  performedByUserId String?
+  performedByName   String
+  performedByRole   String
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
+  @@index([runId])
+}
+
+// =============================================================================
+// Phase 4 / Option A - AUTOMATIC MANPOWER RECALCULATION when an employee's hourly rate changes.
+// Employee.manhourExpenses stays the single source of truth. When it changes (Manpower edit or Excel import), a RUN is recorded in the SAME
+// transaction as the rate save, with one TASK per affected project. Each task recalculates that project's resource rows for the employee from
+// the CURRENT saved rate (read when the task executes, never a queued value), so a retry or a repeated run can never apply an obsolete rate or
+// double-count. A task is SUCCEEDED, PENDING or FAILED; any project with a task that is not SUCCEEDED is flagged on every screen as "refresh
+// pending / failed", so stale figures are never shown as current. This is a recalculation audit, NOT an employee rate history.
+// =============================================================================
+model ManhourRateChangeRun {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  employeeNo         String
+  // Set only when the same save also renamed the employee number (project rows may still carry the old number).
+  previousEmployeeNo String?
+  previousRate       Float?
+  newRate            Float
+  // MANUAL_UPDATE | EXCEL_IMPORT | EMPLOYEE_CREATE
+  source             String
+
+  actorUserId String?
+  actorName   String
+  actorRole   String
+
+  // PENDING | PROCESSING | SUCCEEDED | PARTIAL | FAILED
+  status         String  @default("PENDING")
+  projectCount   Int     @default(0)
+  succeededCount Int     @default(0)
+  failedCount    Int     @default(0)
+  lastError      String?
+
+  tasks ManhourRefreshTask[]
+
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([employeeNo])
+  @@index([status])
+}
+
+model ManhourRefreshTask {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  runId String
+  run   ManhourRateChangeRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  // Plain id (no foreign key): the audit trail must outlive a permanently deleted project.
+  projectId String
+
+  // PENDING | SUCCEEDED | FAILED
+  status    String  @default("PENDING")
+  attempts  Int     @default(0)
+  lastError String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  finishedAt DateTime?
+
+  @@unique([runId, projectId])
+  @@index([projectId, status])
+  @@index([status])
+}
+
+// One row per ProjectResource whose figures a refresh actually changed: the explanation of WHY a project's historical manpower cost moved.
+model ManhourCostChangeAudit {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+
+  runId             String
+  taskId            String?
+  projectId         String
+  projectResourceId String
+  employeeNo        String
+
+  totalHours   Float
+  previousRate Float
+  newRate      Float
+
+  previousCostInr Float
+  newCostInr      Float
+
+  costCurrency          String?
+  fxRateVersion         Int?
+  fxRateInrPerRegional  Decimal? @db.Decimal(18, 6)
+  previousCostRegional  Decimal? @db.Decimal(18, 3)
+  newCostRegional       Decimal? @db.Decimal(18, 3)
+  previousCostingStatus String?
+  newCostingStatus      String
+
+  createdAt DateTime @default(now())
+
+  @@index([runId])
+  @@index([projectId])
+  @@index([employeeNo])
 }

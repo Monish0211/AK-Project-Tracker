@@ -11,6 +11,7 @@ import { readEditProjectDeepLink } from "./editProjectDeepLink";
 import { batchPmoDataChanged } from "../../utils/pmoDataChanged";
 import type { SubresourceLoadStatus } from "./components/FormButtons";
 import { Button } from "../../components/ui/Button";
+import { useProjectCountryLock } from "./useProjectCountryLock";
 
 // P0 fix — EditProject data-loss protection. A resource that failed to load
 // must never be indistinguishable from one that genuinely loaded empty (see
@@ -67,6 +68,9 @@ const EditProject = () => {
   // the actual protection, unconditionally, regardless of this value.
   const [expensesConcurrencyBaseline, setExpensesConcurrencyBaseline] = useState<ExpensesConcurrencySignal | null>(null);
   const isLoading = !!id && loadedId !== id;
+  // The project's country as SAVED (its PR Category at load time, never the form's live value) locks the global selector for as long as this page is open.
+  const [savedFor, setSavedFor] = useState<{ id: string; prCategory: string } | null>(null);
+  useProjectCountryLock(savedFor && savedFor.id === id ? savedFor.prCategory : undefined);
 
   useEffect(() => {
     // No id at all — the initial state above already reflects "not found";
@@ -85,6 +89,7 @@ const EditProject = () => {
         }
 
         setNotFound(false);
+        setSavedFor({ id, prCategory: fetched.prCategory });
 
         // P0 fix — reset per-project BEFORE starting this project's
         // subresource fetches, so a previous project's successful load can
@@ -155,7 +160,11 @@ const EditProject = () => {
         if (isMounted) setNotFound(true);
       }))
       .finally(() => {
-        if (isMounted) setLoadedId(id);
+        if (isMounted) {
+          setLoadedId(id);
+          // The breadcrumb reads the project's PR number from the browser mirror this load has just written; tell it, so it never stays on "Loading...".
+          window.dispatchEvent(new Event("pmo-project-view-state-change"));
+        }
       });
 
     return () => {

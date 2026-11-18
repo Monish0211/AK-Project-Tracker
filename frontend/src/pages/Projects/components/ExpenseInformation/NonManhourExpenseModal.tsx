@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { moneyFormatter } from "../../../../utils/currencyDisplay";
 import { X } from "lucide-react";
 
 import type { NonManhourExpense } from "../../../../types/NonManhourExpense";
@@ -6,12 +7,14 @@ import { EXPENSE_CATEGORIES, isKnownExpenseCategory } from "../../../../types/ex
 import Portal from "../../../../components/ui/Portal";
 
 interface Props {
+  /** The project's regional currency (Phase 3); INR when not given. */
+  currency?: string;
   expense?: NonManhourExpense | null;
   onClose: () => void;
   onSave: (expense: NonManhourExpense) => void;
 }
 
-const NonManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
+const NonManhourExpenseModal = ({ expense, onClose, onSave, currency = "INR" }: Props) => {
   useEffect(() => {
     const originalStyle = window.getComputedStyle(document.body).overflow;
     document.body.style.overflow = "hidden";
@@ -259,7 +262,7 @@ const NonManhourExpenseModal = ({ expense, onClose, onSave }: Props) => {
             </p>
 
             <h2 className="text-2xl sm:text-3xl font-bold text-orange-600 dark:text-orange-400">
-              ₹ {totalCost.toLocaleString("en-IN")}
+              {moneyFormatter(currency).full(totalCost)}
             </h2>
 
           </div>

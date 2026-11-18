@@ -1,6 +1,6 @@
 import { DollarSign, Receipt, Wallet, AlertCircle, FileSpreadsheet } from "lucide-react";
 import { KPIReportCard } from "../Shared/KPIReportCard";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { INVOICE_NOT_AVAILABLE, NO_INVOICE_ACCESS_HINT, useInvoiceDataAvailable } from "../Shared/invoiceAccess";
 
 interface Props {
@@ -8,6 +8,7 @@ interface Props {
 }
 
 export function FinancialCards({ analytics }: Props) {
+  const money = useReportMoney();
   const a = analytics;
   const inv = useInvoiceDataAvailable();
 
@@ -15,7 +16,7 @@ export function FinancialCards({ analytics }: Props) {
     <div className="grid gap-3.5 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
       <KPIReportCard
         title="Total Work Order"
-        value={formatBusinessINR(a.totalWOValue)}
+        value={money.compact(a.totalWOValue)}
         subtitle="Contracted project value"
         icon={<DollarSign size={16} />}
         tone="blue"
@@ -23,7 +24,7 @@ export function FinancialCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Invoice Raised"
-        value={inv ? formatBusinessINR(a.totalInvoiceRaised) : INVOICE_NOT_AVAILABLE}
+        value={inv ? money.compact(a.totalInvoiceRaised) : INVOICE_NOT_AVAILABLE}
         subtitle={inv ? `${((a.totalInvoiceRaised / (a.totalWOValue || 1)) * 100).toFixed(1)}% of total WO` : NO_INVOICE_ACCESS_HINT}
         icon={<Receipt size={16} />}
         tone="indigo"
@@ -31,7 +32,7 @@ export function FinancialCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Payment Received"
-        value={inv ? formatBusinessINR(a.totalPaymentReceived) : INVOICE_NOT_AVAILABLE}
+        value={inv ? money.compact(a.totalPaymentReceived) : INVOICE_NOT_AVAILABLE}
         subtitle={inv ? `${a.collectionPercent.toFixed(1)}% collection rate` : NO_INVOICE_ACCESS_HINT}
         trend={inv ? `${a.collectionPercent.toFixed(0)}% Collected` : undefined}
         trendType="positive"
@@ -41,7 +42,7 @@ export function FinancialCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Contract Outstanding"
-        value={inv ? formatBusinessINR(a.totalOutstanding) : INVOICE_NOT_AVAILABLE}
+        value={inv ? money.compact(a.totalOutstanding) : INVOICE_NOT_AVAILABLE}
         subtitle={inv ? "Contract balance uncollected" : NO_INVOICE_ACCESS_HINT}
         trend={inv ? (a.totalOutstanding > 0 ? "Pending" : "Cleared") : undefined}
         trendType={a.totalOutstanding > 0 ? "negative" : "positive"}
@@ -51,7 +52,7 @@ export function FinancialCards({ analytics }: Props) {
 
       <KPIReportCard
         title="Balance to Invoice"
-        value={inv ? formatBusinessINR(a.balanceToInvoice) : INVOICE_NOT_AVAILABLE}
+        value={inv ? money.compact(a.balanceToInvoice) : INVOICE_NOT_AVAILABLE}
         subtitle={inv ? "Unbilled contract work" : NO_INVOICE_ACCESS_HINT}
         icon={<FileSpreadsheet size={16} />}
         tone="cyan"

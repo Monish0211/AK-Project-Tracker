@@ -130,11 +130,16 @@ export async function getLookups() {
   const [roles, modules, regions, approvalTypes] = await Promise.all([
     prisma.portalRole.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.module.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    prisma.region.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.region.findMany({ where: { isActive: true }, select: { id: true, name: true, code: true, displayName: true, defaultCurrency: true }, orderBy: { name: "asc" } }),
     prisma.approvalType.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
-  return { roles, modules, regions, approvalTypes };
+  return {
+    roles,
+    modules,
+    regions: regions.map((r) => ({ id: r.id, name: r.name, code: r.code, displayName: r.displayName ?? r.name, defaultCurrency: r.defaultCurrency })),
+    approvalTypes,
+  };
 }
 
 export interface CreatePortalUserData {
@@ -150,6 +155,7 @@ export interface CreatePortalUserData {
   isActive: boolean;
   forcePasswordChange: boolean;
   passwordExpiresAt: Date;
+  allCountriesAccess?: boolean;
 }
 
 export function createPortalUser(tx: Prisma.TransactionClient, data: CreatePortalUserData) {
@@ -196,6 +202,7 @@ export interface UpdatePortalUserData {
   isActive?: boolean;
   forcePasswordChange?: boolean;
   accountLocked?: boolean;
+  allCountriesAccess?: boolean;
 }
 
 export function updatePortalUser(tx: Prisma.TransactionClient, id: string, data: UpdatePortalUserData) {

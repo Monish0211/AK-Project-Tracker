@@ -9,6 +9,9 @@ import { buildAccountCreatedEmail } from "../../../shared/email/templates/accoun
 import { buildAdminPasswordResetEmail } from "../../../shared/email/templates/adminPasswordReset.template.js";
 import type { CreatedUserDto, UserLookupsDto } from "../dto/createUser.dto.js";
 import type { UserListItemDto } from "../dto/userList.dto.js";
+import { assertMayChangeCountryAccess, auditCountryAccessChange, describeCountryAccessChange } from "../countryAccessAdmin.js";
+import { assertMayChangeConversionRateAccess, auditConversionRateAccessChange, CONVERSION_RATES_MODULE_NAME } from "../conversionRateAccessAudit.js";
+import type { CountryAccessRequester } from "../countryAccessAdmin.js";
 import {
   createPortalUser,
   createProjectManagerScope,
@@ -105,7 +108,14 @@ export interface CreateUserResult {
  * is a secondary, best-effort one. A user must never be rolled back or
  * deleted just because their welcome email couldn't be delivered.
  */
-export async function createUser(input: CreateUserInput): Promise<CreateUserResult> {
+export async function createUser(input: CreateUserInput, requester?: CountryAccessRequester): Promise<CreateUserResult> {
+  // Country access (Global Multi-Country Phase 1): granting any country, or All Countries, at creation is a country access change
+  // like any other: Administrator only, audited. Creating a user with none is unrestricted, as before.
+  const countryBefore = { regionIds: [] as string[], allCountries: false };
+  const countryChange = describeCountryAccessChange(countryBefore, { regionIds: input.regionIds, allCountries: input.allCountriesAccess });
+  await assertMayChangeCountryAccess(requester, null, countryChange, { regionIds: input.regionIds, allCountries: input.allCountriesAccess });
+  await assertMayChangeConversionRateAccess(requester, null, false, input.moduleIds);
+
   const existingUser = await findUserByEmail(input.email);
   if (existingUser) {
     throw new AppError("A user with this email already exists.", 409);
@@ -141,6 +151,7 @@ export async function createUser(input: CreateUserInput): Promise<CreateUserResu
       isActive: input.isActive ?? true,
       forcePasswordChange: input.forcePasswordChange ?? true,
       passwordExpiresAt,
+      allCountriesAccess: input.allCountriesAccess === true,
     });
 
     await createUserModuleAccess(tx, user.id, input.moduleIds);
@@ -150,6 +161,9 @@ export async function createUser(input: CreateUserInput): Promise<CreateUserResu
 
     return user;
   });
+
+  await auditCountryAccessChange(requester, createdUser.id, countryBefore, { regionIds: input.regionIds, allCountries: input.allCountriesAccess === true }, countryChange);
+  await auditConversionRateAccessChange(requester, createdUser.id, false, input.moduleIds);
 
   // Transaction already committed above — everything below is best-effort.
   // Sent exactly once, here, and nowhere else in the create-user path.
@@ -245,6 +259,7 @@ function toUserListItemDto(user: Awaited<ReturnType<typeof findAllUsers>>[number
     regions: user.regionAccess.map((grant) => grant.region.name),
     approvals: user.approvalPermissions.map((grant) => grant.approvalType.name),
     scopedUserIds: user.projectManagerScopes.map((grant) => grant.grantedUserId),
+    allCountriesAccess: user.allCountriesAccess === true,
   };
 }
 
@@ -283,7 +298,8 @@ export async function getUsers(): Promise<UserListItemDto[]> {
 export async function updateUser(
   targetUserId: string,
   input: UpdateUserInput,
-  requestingUserId: string
+  requestingUserId: string,
+  requester?: CountryAccessRequester
 ): Promise<UserListItemDto> {
   if (targetUserId === requestingUserId && input.roleId !== undefined) {
     throw new AppError("You cannot change your own role.", 400);
@@ -293,6 +309,14 @@ export async function updateUser(
   if (!existingUser) {
     throw new AppError("User not found.", 404);
   }
+
+  // Country access (Global Multi-Country Phase 1): only a real change (a different set of countries, or a flipped All Countries
+  // flag) is an attempt. Only an Administrator may change it, and nobody may change their own. Refused attempts are audited.
+  const countryBefore = { regionIds: existingUser.regionAccess.map((grant) => grant.regionId), allCountries: existingUser.allCountriesAccess === true };
+  const countryChange = describeCountryAccessChange(countryBefore, { regionIds: input.regionIds, allCountries: input.allCountriesAccess });
+  await assertMayChangeCountryAccess(requester, targetUserId, countryChange, { regionIds: input.regionIds, allCountries: input.allCountriesAccess });
+  const hadConversionAccess = existingUser.moduleAccess.some((grant) => grant.module.name === CONVERSION_RATES_MODULE_NAME);
+  await assertMayChangeConversionRateAccess(requester, targetUserId, hadConversionAccess, input.moduleIds);
 
   if (input.email && input.email !== existingUser.email) {
     const emailOwner = await findUserByEmail(input.email);
@@ -352,13 +376,27 @@ export async function updateUser(
       ...(input.isActive !== undefined && { isActive: input.isActive }),
       ...(input.forcePasswordChange !== undefined && { forcePasswordChange: input.forcePasswordChange }),
       ...(input.accountLocked !== undefined && { accountLocked: input.accountLocked }),
+      ...(countryChange.allCountriesChanged && { allCountriesAccess: input.allCountriesAccess === true }),
     });
 
     await replaceUserModuleAccess(tx, targetUserId, input.moduleIds);
-    await replaceUserRegionAccess(tx, targetUserId, input.regionIds);
+    // Rewritten only when the set of countries actually changed (an unchanged list the form re-sent is a no-op).
+    await replaceUserRegionAccess(tx, targetUserId, countryChange.regionsChanged ? input.regionIds : undefined);
     await replaceUserApprovalPermissions(tx, targetUserId, input.approvalIds);
     await replaceProjectManagerScope(tx, targetUserId, scopedUserIds);
   });
+
+  await auditCountryAccessChange(
+    requester,
+    targetUserId,
+    countryBefore,
+    {
+      regionIds: countryChange.regionsChanged ? (input.regionIds ?? []) : countryBefore.regionIds,
+      allCountries: countryChange.allCountriesChanged ? input.allCountriesAccess === true : countryBefore.allCountries,
+    },
+    countryChange
+  );
+  await auditConversionRateAccessChange(requester, targetUserId, hadConversionAccess, input.moduleIds);
 
   // Deactivating or locking a user must end their existing session, not
   // just block new ones — every outstanding refresh token stops working

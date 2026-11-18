@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search } from "lucide-react";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
 import type { ReportInvoiceLine } from "../../../services/invoiceService";
@@ -18,6 +18,7 @@ interface Props {
 }
 
 export function InvoiceLedger({ projects, invoiceLines }: Props) {
+  const money = useReportMoney();
   const [search, setSearch] = useState("");
 
   const ledgerRows = useMemo(() => {
@@ -107,7 +108,7 @@ export function InvoiceLedger({ projects, invoiceLines }: Props) {
                 <th className="p-2.5">Client</th>
                 <th className="p-2.5">Activity Description</th>
                 <th className="p-2.5 text-center">Billed Qty</th>
-                <th className="p-2.5 text-right">Invoiced Amount (INR)</th>
+                <th className="p-2.5 text-right">Invoiced Amount ({money.currency})</th>
                 <th className="p-2.5 text-center">Status</th>
               </tr>
             </thead>
@@ -121,7 +122,7 @@ export function InvoiceLedger({ projects, invoiceLines }: Props) {
                   <td className="p-2.5 font-medium text-[var(--nu-text)] max-w-[180px] truncate">{row.activityName}</td>
                   <td className="p-2.5 text-center font-mono font-bold">{row.quantityBilled}</td>
                   <td className="p-2.5 text-right font-mono font-extrabold text-blue-600 dark:text-blue-400">
-                    {formatBusinessINR(row.amountINR)}
+                    {money.compact(row.amountINR)}
                     {row.invoiceCurrency !== "INR" && (
                       <div className="text-[10px] font-semibold text-[var(--nu-text-muted)]">
                         {formatInvoiceMoney(row.amountOriginal, row.invoiceCurrency)} @ {row.exchangeRateToINR ?? "-"}

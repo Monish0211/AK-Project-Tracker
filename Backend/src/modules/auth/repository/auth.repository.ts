@@ -187,6 +187,8 @@ export interface AuthAuditEntry {
   event: string;
   ipAddress?: string | null | undefined;
   userAgent?: string | null | undefined;
+  /** Before/after values for events that need them (country access changes). */
+  details?: Prisma.InputJsonValue | undefined;
 }
 
 export function createAuditLog(entry: AuthAuditEntry) {
@@ -197,6 +199,7 @@ export function createAuditLog(entry: AuthAuditEntry) {
       event: entry.event,
       ipAddress: entry.ipAddress ?? null,
       userAgent: entry.userAgent ?? null,
+      ...(entry.details !== undefined && { details: entry.details }),
     },
   });
 }

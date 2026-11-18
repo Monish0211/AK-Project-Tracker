@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
+import { requireUser } from "../../../shared/utils/requireUser.js";
 import * as employeeService from "../services/employee.service.js";
 import { employeeIdParamSchema, listEmployeesQuerySchema } from "../validators/employee.validators.js";
 import type { CreateEmployeeInput, ImportEmployeesInput, UpdateEmployeeInput } from "../validators/employee.validators.js";
@@ -16,12 +17,12 @@ function parseEmployeeIdParam(req: Request): string {
 }
 
 export const createEmployee = asyncHandler(async (req: Request, res: Response) => {
-  const employee = await employeeService.createEmployee(req.body as CreateEmployeeInput);
+  const employee = await employeeService.createEmployee(req.body as CreateEmployeeInput, requireUser(req));
   res.status(201).json({ success: true, data: employee, message: "Employee created successfully." });
 });
 
 export const importEmployees = asyncHandler(async (req: Request, res: Response) => {
-  const result = await employeeService.bulkImportEmployees(req.body as ImportEmployeesInput);
+  const result = await employeeService.bulkImportEmployees(req.body as ImportEmployeesInput, requireUser(req));
   res.status(201).json({
     success: true,
     data: result,
@@ -50,7 +51,7 @@ export const getEmployee = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const updateEmployee = asyncHandler(async (req: Request, res: Response) => {
-  const employee = await employeeService.updateEmployee(parseEmployeeIdParam(req), req.body as UpdateEmployeeInput);
+  const employee = await employeeService.updateEmployee(parseEmployeeIdParam(req), req.body as UpdateEmployeeInput, requireUser(req));
   res.status(200).json({ success: true, data: employee, message: "Employee updated successfully." });
 });
 

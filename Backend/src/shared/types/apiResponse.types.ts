@@ -12,4 +12,6 @@ export interface ApiSuccessResponse<T> {
 export interface ApiErrorResponse {
   success: false;
   message: string;
+  /** Present only when an AppError carries structured client-safe detail (e.g. per-row import problems). */
+  details?: unknown;
 }

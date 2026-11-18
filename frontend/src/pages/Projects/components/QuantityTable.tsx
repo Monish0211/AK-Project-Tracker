@@ -1,8 +1,17 @@
 import { Clock, Package, Wallet, Layers, ListChecks } from "lucide-react";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import {
+  formatCurrencyNumber,
+  formatMoney,
+  formatMoneyCompact,
+  isNonInrRegional,
+  lineRegionalUnitRate,
+  lineRegionalValue,
+  rateDirectionLabel,
+  regionalCurrencyOf,
+  regionalWorkOrderValue,
+} from "../../../utils/currencyDisplay";
 import type { Project } from "../../../types/Project";
 import {
-  formatIndianCurrency,
   formatIndianNumber,
   calculateProjectDuration,
 } from "../../../utils/quantityCalculations";
@@ -17,6 +26,10 @@ interface Props {
 
 const QuantityTable = ({ project }: Props) => {
   const items = project.quantityItems;
+  // Phase 3: amounts are shown in the project's regional currency (INR for a legacy project, exactly as before).
+  const regionalCurrency = regionalCurrencyOf(project);
+  const nonInrRegional = isNonInrRegional(project);
+  const isRegionalCurrency = (project.currency || "INR") === regionalCurrency;
   const projectDuration = calculateProjectDuration(
     project.projectStartDate,
     project.projectEndDate
@@ -65,10 +78,12 @@ const QuantityTable = ({ project }: Props) => {
               <span className="text-[var(--nu-text-muted)]">
                 Currency: <span className="font-semibold text-[var(--nu-text)]">{project.currency || "INR"}</span>
               </span>
-              {(project.currency || "INR") !== "INR" && (
+              {!isRegionalCurrency && (
                 <span className="text-[var(--nu-text-muted)]">
                   Exchange Rate:{" "}
-                  <span className="font-semibold text-[var(--nu-text)]">{formatIndianNumber(project.currentExchangeRate || 1)}</span>
+                  <span className="font-semibold text-[var(--nu-text)]">
+                    {rateDirectionLabel(project.currency || "INR", regionalCurrency, project.currentExchangeRate || 1)}
+                  </span>
                 </span>
               )}
             </div>
@@ -84,7 +99,7 @@ const QuantityTable = ({ project }: Props) => {
                 <th className="w-24 border-b border-[var(--nu-border)] px-3 py-2.5 text-right font-semibold">Qty</th>
                 <th className="w-28 border-b border-[var(--nu-border)] px-3 py-2.5 text-center font-semibold">UOM</th>
                 <th className="w-28 border-b border-[var(--nu-border)] px-3 py-2.5 text-right font-semibold">Unit Rate</th>
-                <th className="w-32 border-b border-[var(--nu-border)] px-3 py-2.5 text-right font-semibold">Unit Rate (INR)</th>
+                <th className="w-32 border-b border-[var(--nu-border)] px-3 py-2.5 text-right font-semibold">Unit Rate ({regionalCurrency})</th>
                 <th className="w-32 border-b border-[var(--nu-border)] px-3 py-2.5 text-right font-semibold">WO Value</th>
                 <th className="w-40 border-b border-[var(--nu-border)] px-3 py-2.5 text-left font-semibold">Assigned To</th>
               </tr>
@@ -109,9 +124,11 @@ const QuantityTable = ({ project }: Props) => {
                       <Badge tone="accent">{item.uom || "DAY"}</Badge>
                     </td>
                     <td className="px-3 py-2.5 text-right">{formatIndianNumber(item.unitRate || 0)}</td>
-                    <td className="px-3 py-2.5 text-right">{formatIndianNumber(item.unitRateINR || 0)}</td>
+                    <td className="px-3 py-2.5 text-right">
+                      {nonInrRegional ? formatCurrencyNumber(lineRegionalUnitRate(item, project), regionalCurrency) : formatIndianNumber(item.unitRateINR || 0)}
+                    </td>
                     <td className="px-3 py-2.5 text-right font-semibold text-[var(--nu-success)]">
-                      {formatIndianCurrency(item.woValue || 0)}
+                      {formatMoney(lineRegionalValue(item, project), regionalCurrency)}
                     </td>
                     <td className="px-3 py-2.5 text-left font-medium text-[var(--nu-text-secondary)] truncate" title={item.assignedTo}>
                       {item.assignedTo || "—"}
@@ -160,7 +177,7 @@ const QuantityTable = ({ project }: Props) => {
         <StatTile
           icon={<Wallet size={15} />}
           label="Total WO Value"
-          value={formatBusinessINR(project.workOrderValueINR || 0)}
+          value={formatMoneyCompact(regionalWorkOrderValue(project), regionalCurrency)}
           tint="success"
         />
       </div>
@@ -168,6 +185,9 @@ const QuantityTable = ({ project }: Props) => {
       <CommercialSummaryCard
         currency={project.currency}
         workOrderValueINR={project.workOrderValueINR}
+        regionalCurrency={project.regionalCurrency}
+        workOrderValueRegional={project.workOrderValueRegional}
+        grandTotalRegional={project.grandTotalRegional}
         gstApplicable={project.gstApplicable}
         gstRate={project.gstRate}
         gstAmount={project.gstAmount}

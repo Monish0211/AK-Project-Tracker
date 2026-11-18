@@ -215,7 +215,39 @@ export function calculateTimelineAlert(
   };
 }
 
-export function formatCurrencyCompact(amount: number): string {
+const INTERNATIONAL_UNITS = [
+  { size: 1_000_000_000, suffix: "B" },
+  { size: 1_000_000, suffix: "M" },
+  { size: 1_000, suffix: "K" },
+] as const;
+
+/**
+ * International abbreviation, the same rule the frontend's shared formatter applies to every non-India country: 1,000 = 1K, 52,850 = 52.85K, 1,250,000 = 1.25M,
+ * 1,000,000,000 = 1B, at most two decimals with no trailing zeros, no space before the letter; a value that rounds up to the next unit is shown in it (999,996 = 1M).
+ */
+function abbreviateInternational(abs: number): string {
+  for (let i = 0; i < INTERNATIONAL_UNITS.length; i += 1) {
+    const unit = INTERNATIONAL_UNITS[i]!;
+    if (abs < unit.size) continue;
+    const scaled = Number((abs / unit.size).toFixed(2));
+    if (scaled >= 1000 && i > 0) {
+      const larger = INTERNATIONAL_UNITS[i - 1]!;
+      return `${Number((abs / larger.size).toFixed(2))}${larger.suffix}`;
+    }
+    return `${scaled}${unit.suffix}`;
+  }
+  const small = Number(abs.toFixed(2));
+  return small >= 1000 ? "1K" : String(small);
+}
+
+export function formatCurrencyCompact(amount: number, currency: string = "INR"): string {
+  if (currency !== "INR") {
+    // Another currency (Phase 3): its own prefix ("RM " for MYR, the ISO code otherwise, each followed by a space) and international K / M / B notation, never a rupee sign.
+    const prefix = `${currency === "MYR" ? "RM" : currency} `;
+    const safe = Number.isFinite(amount) ? amount : 0;
+    const body = abbreviateInternational(Math.abs(safe));
+    return `${safe < 0 && body !== "0" ? "-" : ""}${prefix}${body}`;
+  }
   if (!amount || amount === 0) return "₹ 0";
   if (amount >= 10000000) {
     const cr = amount / 10000000;

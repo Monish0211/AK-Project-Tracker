@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 
 interface Props {
   ageing: Record<string, number>;
@@ -48,6 +48,7 @@ interface PositionedLabel {
 }
 
 export function InvoiceAgeingChart({ ageing }: Props) {
+  const money = useReportMoney();
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
   const { slices, labels } = useMemo(() => {
@@ -61,7 +62,7 @@ export function InvoiceAgeingChart({ ageing }: Props) {
     // Calculate percentage and display string
     const processed = rawItems.map((item) => {
       const pct = total > 0 ? (item.value / total) * 100 : 0;
-      const amountStr = item.value === 0 ? "₹ 0.00" : formatBusinessINR(item.value);
+      const amountStr = item.value === 0 ? money.exact(0) : money.compact(item.value);
       const pctStr = `(${pct.toFixed(2)}%)`;
       return {
         ...item,
@@ -246,7 +247,7 @@ export function InvoiceAgeingChart({ ageing }: Props) {
     });
 
     return { slices: sliceList, labels: positionedLabels, totalAmount: total };
-  }, [ageing]);
+  }, [ageing, money]);
 
   return (
     <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] p-4 rounded-2xl space-y-3">
@@ -378,7 +379,7 @@ export function InvoiceAgeingChart({ ageing }: Props) {
               />
               <span className="font-mono text-[var(--nu-text)]">{cfg.label}</span>
               <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">
-                ({val === 0 ? "₹ 0.00" : formatBusinessINR(val)})
+                ({val === 0 ? money.exact(0) : money.compact(val)})
               </span>
             </div>
           );

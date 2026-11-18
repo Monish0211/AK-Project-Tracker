@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search } from "lucide-react";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
 import { INVOICE_NOT_AVAILABLE } from "../Shared/invoiceAccess";
@@ -10,6 +10,7 @@ interface Props {
 }
 
 export function CustomerTable({ customerList }: Props) {
+  const money = useReportMoney();
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -69,7 +70,7 @@ export function CustomerTable({ customerList }: Props) {
                     <tr key={row.client} className="hover:bg-[var(--nu-surface-alt)]/50 transition">
                       <td className="p-2.5 font-extrabold text-[var(--nu-text)]">{row.client}</td>
                       <td className="p-2.5 text-center font-mono font-bold">{row.projectCount}</td>
-                      <td className="p-2.5 text-right font-mono font-bold">{formatBusinessINR(row.woValue)}</td>
+                      <td className="p-2.5 text-right font-mono font-bold">{money.compact(row.woValue)}</td>
                       <td colSpan={4} className="p-2.5 text-center text-[11px] italic text-[var(--nu-text-muted)]" title="Your account has no invoice access">
                         {INVOICE_NOT_AVAILABLE}
                       </td>
@@ -82,15 +83,15 @@ export function CustomerTable({ customerList }: Props) {
                   <tr key={row.client} className="hover:bg-[var(--nu-surface-alt)]/50 transition">
                     <td className="p-2.5 font-extrabold text-[var(--nu-text)]">{row.client}</td>
                     <td className="p-2.5 text-center font-mono font-bold">{row.projectCount}</td>
-                    <td className="p-2.5 text-right font-mono font-bold">{formatBusinessINR(row.woValue)}</td>
+                    <td className="p-2.5 text-right font-mono font-bold">{money.compact(row.woValue)}</td>
                     <td className="p-2.5 text-right font-mono text-blue-600 dark:text-blue-400 font-bold">
-                      {formatBusinessINR(row.raised)}
+                      {money.compact(row.raised)}
                     </td>
                     <td className="p-2.5 text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                      {formatBusinessINR(row.received)}
+                      {money.compact(row.received)}
                     </td>
                     <td className="p-2.5 text-right font-mono text-amber-600 dark:text-amber-400 font-bold">
-                      {formatBusinessINR(row.outstanding)}
+                      {money.compact(row.outstanding)}
                     </td>
                     <td className="p-2.5 text-right font-mono font-extrabold">
                       <span

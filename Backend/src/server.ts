@@ -5,6 +5,8 @@ import { verifyEmailConnection } from "./shared/email/transporter.js";
 import { startTimesheetPollScheduler } from "./shared/scheduler/timesheetPollScheduler.js";
 import { startMissingExpenseScheduler } from "./shared/scheduler/missingExpenseScheduler.js";
 import { startUnpaidInvoiceScheduler } from "./shared/scheduler/unpaidInvoiceScheduler.js";
+import { resumeInterruptedRuns } from "./modules/manhourCosting/manhourCostRefresh.service.js";
+import { resumeInterruptedApplyRuns } from "./modules/manhourRates/countryRate.service.js";
 
 app.listen(env.PORT, () => {
   console.log(`PMO Portal backend listening on port ${env.PORT} [${env.NODE_ENV}]`);
@@ -37,4 +39,8 @@ app.listen(env.PORT, () => {
   startMissingExpenseScheduler();
   // Weekly "Invoices Unpaid for 30+ Days" email — see shared/scheduler/unpaidInvoiceScheduler.ts.
   startUnpaidInvoiceScheduler();
+  // Phase 4 / Option A - crash recovery, once at start-up only (not a recurring job): finishes any employee-rate recalculation a restart interrupted. Runs that
+  // FAILED are never retried automatically; they stay visible on their projects until an authorised user retries them.
+  void resumeInterruptedRuns().catch((err) => console.warn("[Startup] Could not resume interrupted manpower recalculations:", err));
+  void resumeInterruptedApplyRuns().catch((err) => console.warn("[Startup] Could not resume interrupted country conversion-rate applications:", err));
 });

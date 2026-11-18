@@ -2,6 +2,8 @@ import type { AccessTokenPayload } from "../types/auth.types.js";
 import { AppError } from "./AppError.js";
 import { prisma } from "./prismaClient.js";
 import { userHasApprovalPermission } from "../middleware/requireApprovalPermission.js";
+import type { Prisma } from "../../../generated/prisma/client.js";
+import { countryAllowsProject, projectCountryWhere } from "./countryAccess.js";
 
 /**
  * Roles with unrestricted project visibility — every "may this caller see
@@ -70,12 +72,19 @@ export interface ProjectOwnershipCheck {
   // PMO Coordinator Management (Oct 2026) — required (not optional) so every
   // call site must select it; a missing select would silently deny coordinators.
   pmoCoordinatorUserId: string | null;
+  // Country access (Global Multi-Country Phase 1) — required for the same reason: every call site must select it, or a project
+  // could silently look "unclassified". The project's country is its own column, never the creator's country.
+  regionId: string | null;
 }
 
 /** The project's own fields that canAccessProject() needs — use for every minimal access lookup. */
-export const PROJECT_ACCESS_SELECT = { createdByUserId: true, pmoCoordinatorUserId: true } as const;
+export const PROJECT_ACCESS_SELECT = { createdByUserId: true, pmoCoordinatorUserId: true, regionId: true } as const;
 
 export async function canAccessProject(user: AccessTokenPayload, project: ProjectOwnershipCheck): Promise<boolean> {
+  // Country access is an ADDITIONAL boundary and is checked first: the user's countries must include the project's country
+  // before any of the existing rules below can grant access. It never grants anything itself, and it is a no-op unless
+  // COUNTRY_ACCESS_MODE is shadow or enforce. Deny wins, including for Administrator and PMO Manager.
+  if (!countryAllowsProject(user, project.regionId)) return false;
   if (hasUnrestrictedProjectVisibility(user.roleName)) return true;
   if (project.createdByUserId === null) return true;
   if (project.createdByUserId === user.sub) return true;
@@ -200,10 +209,16 @@ export async function getProjectCreatorUserId(projectId: string): Promise<string
  * grants gets back exactly the same two-branch OR as before this feature
  * existed.
  */
-export async function projectOwnershipWhereOr(callerUserId: string | undefined) {
-  if (!callerUserId) return undefined;
+export async function projectOwnershipWhereOr(callerUserId: string | undefined): Promise<Prisma.ProjectWhereInput[] | undefined> {
+  // Country access (Global Multi-Country Phase 1): when a country scope applies to this request (COUNTRY_ACCESS_MODE=enforce and
+  // an authenticated request), it is ANDed into every ownership branch, so every list built on this helper (projects, dashboard,
+  // timesheets, resources, reminders, notes, invoices and the bulk report reads) is limited to the active countries without each
+  // call site changing. (A OR B) AND C is written as (A AND C) OR (B AND C), so callers still receive an OR list and can only
+  // ever see FEWER rows than before. With no country scope (mode off, shadow, background jobs) the result is exactly as before.
+  const country = projectCountryWhere();
+  if (!callerUserId) return country ? [country] : undefined;
   const grantedUserIds = await getProjectManagerGrantedUserIds(callerUserId);
-  return [
+  const branches: Prisma.ProjectWhereInput[] = [
     { createdByUserId: null },
     { createdByUserId: callerUserId },
     ...(grantedUserIds.length > 0 ? [{ createdByUserId: { in: grantedUserIds } }] : []),
@@ -211,6 +226,7 @@ export async function projectOwnershipWhereOr(callerUserId: string | undefined) 
     // the list-side mirror of canAccessProject()'s coordinator branch.
     { pmoCoordinatorUserId: callerUserId },
   ];
+  return country ? branches.map((branch) => ({ AND: [branch, country] })) : branches;
 }
 
 /**

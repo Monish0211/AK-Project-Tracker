@@ -196,9 +196,14 @@ const EmployeeModal = ({
     };
 
     setSaving(true);
+    let incompleteRefresh = "";
     try {
       if (employee) {
-        await updateEmployeeViaApi(employee.id, candidate);
+        const saved = await updateEmployeeViaApi(employee.id, candidate);
+        // Phase 4 / Option A: the rate is saved either way. If the automatic recalculation of the employee's projects did not complete for every project, say so.
+        if (saved.costingRefresh && saved.costingRefresh.status !== "SUCCEEDED") {
+          incompleteRefresh = `The new rate is saved, but the manpower costs of ${saved.costingRefresh.projectCount - saved.costingRefresh.succeededCount} of ${saved.costingRefresh.projectCount} projects could not be recalculated yet. They are marked on those projects and an authorised user can retry the recalculation there.`;
+        }
       } else {
         await createEmployeeViaApi(candidate);
       }
@@ -211,6 +216,10 @@ const EmployeeModal = ({
 
     setEmployees(getEmployees());
 
+    if (incompleteRefresh) {
+      setError(incompleteRefresh);
+      return;
+    }
     onClose();
   };
 

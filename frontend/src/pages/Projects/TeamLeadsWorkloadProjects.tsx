@@ -7,6 +7,7 @@ import {
   type TeamLeadWorkload,
 } from "../../services/dashboardSummaryService";
 import { useLiveRefresh } from "../../hooks/useLiveRefresh";
+import { LeadWorkOrderValue } from "../Dashboard/components/LeadWorkOrderValue";
 import { ApiError } from "../../services/apiClient";
 
 /**
@@ -320,7 +321,7 @@ export default function TeamLeadsWorkloadProjects() {
                       </td>
 
                       <td className="py-3 px-4 text-right font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                        {lead.formattedWorkOrderValue}
+                        <LeadWorkOrderValue lead={lead} />
                       </td>
                     </tr>
                   ))

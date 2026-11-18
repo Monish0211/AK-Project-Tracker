@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { getTotalNonManhourCost } from "../../../services/expenseService";
 import { EmptyState } from "../Shared/EmptyState";
 
@@ -11,6 +11,7 @@ interface Props {
 const COLORS = ["#ef4444", "#3b82f6", "#f59e0b", "#10b981", "#8b5cf6", "#ec4899", "#06b6d4"];
 
 export function ExpenseCategoryChart({ projects }: Props) {
+  const money = useReportMoney();
   const categoryData = useMemo(() => {
     const catMap: Record<string, number> = {};
 
@@ -60,13 +61,13 @@ export function ExpenseCategoryChart({ projects }: Props) {
               outerRadius={80}
               paddingAngle={4}
               dataKey="value"
-              label={({ name, value }) => `${name}: ${formatBusinessINR(value)}`}
+              label={({ name, value }) => `${name}: ${money.compact(value)}`}
             >
               {categoryData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.color} />
               ))}
             </Pie>
-            <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), "Cost"]} />
+            <Tooltip formatter={(val: any) => [money.compact(Number(val)), "Cost"]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
           </PieChart>
         </ResponsiveContainer>

@@ -12,7 +12,7 @@ import { isGenuinePaidTransition } from "../../invoiceRequests/invoiceRequestEma
 import { findProjectByIdAny } from "../../projects/repository/project.repository.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { getMilestonePercentageById } from "../../milestones/services/milestone.service.js";
-import { getQuantityItemById, listQuantityForProject } from "../../quantity/services/quantity.service.js";
+import { assertProjectInvoicable, getQuantityItemById, listQuantityForProject } from "../../quantity/services/quantity.service.js";
 // Sept 2026 — Reports/Dashboard Invoice Raised discrepancy fix. Reuses the
 // EXACT SAME authorized-project lookup and InvoiceLine query the
 // Dashboard's own Invoice Raised KPI already uses
@@ -514,6 +514,8 @@ export async function createInvoiceLineForQuantityItem(
 ): Promise<InvoiceLineDto> {
   const quantityItem = await getQuantityItemById(quantityItemId);
   await assertProjectAccessById(quantityItem.projectId, user);
+  // Multi-country: the invoice module is INR-only; refuse (409) for a project in another currency instead of producing wrong figures.
+  await assertProjectInvoicable(quantityItem.projectId);
 
   // Never trusts a client-supplied name — always the current fullName for
   // the authenticated caller, so a line can never be attributed to someone
@@ -1304,6 +1306,7 @@ export async function ingestInvoiceLinesForProject(
   user: AccessTokenPayload
 ): Promise<IngestInvoiceLinesResultDto> {
   await assertProjectAccessById(projectId, user);
+  await assertProjectInvoicable(projectId);
 
   const quantityResult = await listQuantityForProject(projectId, user);
   const validQuantityItemIds = new Set(quantityResult.items.map((q) => q.id));

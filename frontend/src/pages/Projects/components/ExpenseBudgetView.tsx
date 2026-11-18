@@ -23,7 +23,10 @@ import InfoSection from "./InfoSection";
 import { StatTile, type StatTileTint } from "../../../components/ui/StatTile";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { Badge } from "../../../components/ui/Badge";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { formatMoneyCompact, regionalCurrencyOf } from "../../../utils/currencyDisplay";
+import { RATE_NOT_SET } from "../../../utils/manhourCosting";
+import { useManhourCosting } from "../useManhourCosting";
+import { ManhourRefreshBanner } from "./ManhourRefreshBanner";
 import {
   calculateBudgetExecution,
   getBudgetUtilizationTier,
@@ -36,11 +39,11 @@ interface Props {
   project: Project;
 }
 
-const formatCurrency = (value: number): string => formatBusinessINR(value || 0);
+const formatCurrency = (value: number, currency: string = "INR"): string => formatMoneyCompact(value || 0, currency);
 const formatHours = (value: number): string => `${value.toLocaleString("en-IN")} Hrs`;
 
-const formatVarianceCurrency = (value: number): string => {
-  const formatted = formatCurrency(Math.abs(value));
+const formatVarianceCurrency = (value: number, currency: string = "INR"): string => {
+  const formatted = formatCurrency(Math.abs(value), currency);
   if (value > 0) return `+${formatted}`;
   return formatted;
 };
@@ -137,14 +140,14 @@ const UTILIZATION_LEGEND: { label: string; range: string; color: string }[] = [
   { label: "Over Budget",       range: "Above 100%", color: "var(--nu-danger)"   },
 ];
 
-const getInsightMessage = (tier: BudgetUtilizationTier, analysis: BudgetExecution): string => {
-  const varianceAbs = formatCurrency(Math.abs(analysis.budgetVarianceRemaining));
+const getInsightMessage = (tier: BudgetUtilizationTier, analysis: BudgetExecution, currency: string = "INR"): string => {
+  const varianceAbs = formatCurrency(Math.abs(analysis.budgetVarianceRemaining), currency);
   const utilization = analysis.budgetUtilizationPercent.toFixed(0);
   switch (tier) {
     case "over":
       return `Project has exceeded the approved budget by ${varianceAbs}. Immediate financial review is recommended.`;
     case "onBudget":
-      return `Project cost exactly matches the approved budget of ${formatCurrency(analysis.approvedBudget)}. Continue monitoring closely.`;
+      return `Project cost exactly matches the approved budget of ${formatCurrency(analysis.approvedBudget, currency)}. Continue monitoring closely.`;
     case "approaching":
       return `Project is approaching its approved budget — ${utilization}% utilized with ${varianceAbs} remaining. Review remaining scope before further spend.`;
     default:
@@ -174,6 +177,10 @@ const InsightIcon = ({ tier }: { tier: BudgetUtilizationTier }) => {
 };
 
 export default function ExpenseBudgetView({ project }: Props) {
+  const currency = regionalCurrencyOf(project);
+  // Phase 4: for a non-INR project the existing INR man-hour amounts are converted with the project's manpower rate (the same conversion Team Assigned
+  // uses, so the two always agree); null for an INR / legacy project, which is exactly as before.
+  const costingState = useManhourCosting(project.id);
   const [mounted, setMounted] = useState(false);
 
   // Trigger CSS entrance animations after first paint
@@ -215,8 +222,17 @@ export default function ExpenseBudgetView({ project }: Props) {
   // when that independent read became stale/complete, hence the 3-second
   // forceTick poll below (removed) papering over it. With the real prop,
   // React's normal re-render on prop change is enough.
-  const analysis = calculateBudgetExecution(project.id, project);
+  const analysis = calculateBudgetExecution(project.id, project, costingState.costing);
   if (!analysis) return null;
+  // While the rate is still loading the man-hour cells show a placeholder, not "Rate not set"; once loaded without a rate they say so.
+  const manhourPending = analysis.manhourCostingPending;
+  const excludesManhour = analysis.manhourRateMissing && !manhourPending;
+  // The man-hour cell: a placeholder while the server costing loads, "Rate not set" when no row has an FX rate, otherwise the server's figure (with a note when some rows are not in it).
+  const manhourActualText = manhourPending
+    ? "…"
+    : analysis.manhourRateMissing && analysis.actualManhourBudget === 0
+      ? RATE_NOT_SET
+      : formatCurrency(analysis.actualManhourBudget, currency) + (analysis.manhourRateMissing ? " (excl. Rate not set)" : "");
 
   const tier = getBudgetUtilizationTier(analysis.budgetUtilizationPercent);
   const badge = UTILIZATION_BADGE[tier];
@@ -258,36 +274,46 @@ export default function ExpenseBudgetView({ project }: Props) {
       subtitle: "Approved man-hour budget",
       plannedRaw: analysis.plannedManhourBudget,
       varianceRaw: analysis.manhourBudgetVariance,
-      planned: formatCurrency(analysis.plannedManhourBudget),
-      actual:  formatCurrency(analysis.actualManhourBudget),
-      variance: analysis.manhourBudgetVariance,
-      varianceLabel: formatVarianceCurrency(analysis.manhourBudgetVariance),
+      planned: formatCurrency(analysis.plannedManhourBudget, currency),
+      actual:  manhourActualText,
+      variance: manhourPending || analysis.manhourRateMissing ? 0 : analysis.manhourBudgetVariance,
+      varianceLabel: manhourPending || analysis.manhourRateMissing ? "—" : formatVarianceCurrency(analysis.manhourBudgetVariance, currency),
     },
     {
       label: "Non Man-Hour Budget",
       subtitle: "Approved non man-hour budget",
       plannedRaw: analysis.plannedNonManhourBudget,
       varianceRaw: analysis.nonManhourBudgetVariance,
-      planned: formatCurrency(analysis.plannedNonManhourBudget),
-      actual:  formatCurrency(analysis.actualNonManhourBudget),
+      planned: formatCurrency(analysis.plannedNonManhourBudget, currency),
+      actual:  formatCurrency(analysis.actualNonManhourBudget, currency),
       variance: analysis.nonManhourBudgetVariance,
-      varianceLabel: formatVarianceCurrency(analysis.nonManhourBudgetVariance),
+      varianceLabel: formatVarianceCurrency(analysis.nonManhourBudgetVariance, currency),
     },
     {
       label: "Total Budget",
       subtitle: "Total approved project budget",
       plannedRaw: analysis.approvedBudget,
       varianceRaw: analysis.totalBudgetVariance,
-      planned: formatCurrency(analysis.approvedBudget),
-      actual:  formatCurrency(analysis.actualTotalBudget),
+      planned: formatCurrency(analysis.approvedBudget, currency),
+      actual:  manhourPending ? "…" : formatCurrency(analysis.actualTotalBudget, currency) + (analysis.manhourRateMissing ? " (excl. Rate not set)" : ""),
       variance: analysis.totalBudgetVariance,
-      varianceLabel: formatVarianceCurrency(analysis.totalBudgetVariance),
+      varianceLabel: formatVarianceCurrency(analysis.totalBudgetVariance, currency),
       emphasis: true,
     },
   ];
 
   return (
     <div className="space-y-3.5">
+
+      {/* Phase 4 / Option A: a recalculation after an employee-rate change that is pending or failed is never shown as current. */}
+      {costingState.costing && <ManhourRefreshBanner status={costingState.costing.refreshStatus} projectId={project.id} onRetried={costingState.reload} />}
+
+      {excludesManhour && (
+        <div role="note" data-testid="expense-budget-rate-missing" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-[12.5px] text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+          {RATE_NOT_SET}. The actual man-hour cost of this project is not included below, because the INR man-hour cost has not been converted into {currency}. An authorised Administrator or PMO Manager can set
+          the country's rate in Manpower &gt; Manpower Conversion Rates.
+        </div>
+      )}
 
       {/* ── Micro-animation CSS ───────────────────────────────────── */}
       <style dangerouslySetInnerHTML={{ __html: `
@@ -346,14 +372,14 @@ export default function ExpenseBudgetView({ project }: Props) {
         icon={<PiggyBank size={16} />}
       >
         <div className="col-span-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
-          <div className={`eb-kpi eb-kpi-1${mounted ? " vis" : ""}`}><StatTile label="Total Man-Hour Budget"     value={formatCurrency(analysis.plannedManhourBudget)}    icon={<Wallet    size={15} />} tint="accent"  /></div>
-          <div className={`eb-kpi eb-kpi-2${mounted ? " vis" : ""}`}><StatTile label="Total Non Man-Hour Budget" value={formatCurrency(analysis.plannedNonManhourBudget)} icon={<Receipt   size={15} />} tint="info"    /></div>
-          <div className={`eb-kpi eb-kpi-3${mounted ? " vis" : ""}`}><StatTile label="Total Project Cost"        value={formatCurrency(totalProjectCost)}                 icon={<Calculator size={15} />} tint="warning" /></div>
-          <div className={`eb-kpi eb-kpi-4${mounted ? " vis" : ""}`}><StatTile label="Total Project Budget"      value={formatCurrency(totalProjectBudget)}               icon={<PiggyBank size={15} />} tint="success" /></div>
+          <div className={`eb-kpi eb-kpi-1${mounted ? " vis" : ""}`}><StatTile label="Total Man-Hour Budget"     value={formatCurrency(analysis.plannedManhourBudget, currency)}    icon={<Wallet    size={15} />} tint="accent"  /></div>
+          <div className={`eb-kpi eb-kpi-2${mounted ? " vis" : ""}`}><StatTile label="Total Non Man-Hour Budget" value={formatCurrency(analysis.plannedNonManhourBudget, currency)} icon={<Receipt   size={15} />} tint="info"    /></div>
+          <div className={`eb-kpi eb-kpi-3${mounted ? " vis" : ""}`}><StatTile label="Total Project Cost"        value={formatCurrency(totalProjectCost, currency)}                 icon={<Calculator size={15} />} tint="warning" /></div>
+          <div className={`eb-kpi eb-kpi-4${mounted ? " vis" : ""}`}><StatTile label="Total Project Budget"      value={formatCurrency(totalProjectBudget, currency)}               icon={<PiggyBank size={15} />} tint="success" /></div>
           <div className={`eb-kpi eb-kpi-5${mounted ? " vis" : ""}`}>
             <StatTile
               label="Project Profit"
-              value={formatCurrency(projectProfit)}
+              value={formatCurrency(projectProfit, currency)}
               icon={<ProfitIcon size={15} />}
               tint={profitTint}
               tintValue
@@ -566,21 +592,21 @@ export default function ExpenseBudgetView({ project }: Props) {
               <div className={`eb-sumrow eb-sumrow-1${mounted ? " vis" : ""}`}>
                 <SummaryRow
                   label="Approved Budget"
-                  value={formatCurrency(analysis.approvedBudget)}
+                  value={formatCurrency(analysis.approvedBudget, currency)}
                   icon={<IndianRupee size={12} className="text-[var(--nu-text-muted)]" />}
                 />
               </div>
               <div className={`eb-sumrow eb-sumrow-2${mounted ? " vis" : ""}`}>
                 <SummaryRow
                   label="Actual Project Cost"
-                  value={formatCurrency(analysis.actualTotalBudget)}
+                  value={manhourPending ? "…" : formatCurrency(analysis.actualTotalBudget, currency) + (analysis.manhourRateMissing ? " (excl. Rate not set)" : "")}
                   icon={<Calculator size={12} className="text-[var(--nu-text-muted)]" />}
                 />
               </div>
               <div className={`eb-sumrow eb-sumrow-3${mounted ? " vis" : ""}`}>
                 <SummaryRow
                   label="Budget Variance"
-                  value={formatVarianceCurrency(analysis.budgetVarianceRemaining)}
+                  value={formatVarianceCurrency(analysis.budgetVarianceRemaining, currency)}
                   tone={remainingTone(analysis.budgetVarianceRemaining)}
                   icon={<Scale size={12} className="text-[var(--nu-text-muted)]" />}
                 />
@@ -606,7 +632,7 @@ export default function ExpenseBudgetView({ project }: Props) {
           <div className={`mt-4 rounded-[var(--nu-radius-md)] px-4 py-3 flex items-start gap-2.5 ${INSIGHT_STYLE[tier].wrapper} eb-insight${mounted ? " vis" : ""}`}>
             <InsightIcon tier={tier} />
             <p className={`text-[12.5px] leading-snug font-medium ${INSIGHT_STYLE[tier].text}`}>
-              {getInsightMessage(tier, analysis)}
+              {getInsightMessage(tier, analysis, currency)}
             </p>
           </div>
         </CardBody>

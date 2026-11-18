@@ -12,8 +12,16 @@ import type { EmployeeData } from "../employee.types.js";
  * cannot be undone").
  */
 
-export function createEmployee(data: EmployeeData) {
-  return prisma.employee.create({ data });
+export function createEmployee(data: EmployeeData, tx: Prisma.TransactionClient | typeof prisma = prisma) {
+  return tx.employee.create({ data });
+}
+
+/**
+ * Phase 4 / Option A: lets the service save an employee and record the manpower recalculation it triggers in ONE transaction, so a rate can never be
+ * saved with its recalculation forgotten.
+ */
+export function runEmployeeTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+  return prisma.$transaction(fn, { timeout: 30_000, maxWait: 15_000 });
 }
 
 export function findEmployeeById(id: string) {
@@ -30,7 +38,7 @@ export function findEmployeesByEmployeeNos(employeeNos: string[]) {
   if (employeeNos.length === 0) return Promise.resolve([]);
   return prisma.employee.findMany({
     where: { employeeNo: { in: employeeNos } },
-    select: { id: true, employeeNo: true },
+    select: { id: true, employeeNo: true, manhourExpenses: true },
   });
 }
 
@@ -45,8 +53,8 @@ export function createEmployeesBulk(rows: EmployeeData[]) {
   return prisma.employee.createManyAndReturn({ data: rows });
 }
 
-export function updateEmployee(id: string, data: Partial<EmployeeData>) {
-  return prisma.employee.update({ where: { id }, data });
+export function updateEmployee(id: string, data: Partial<EmployeeData>, tx: Prisma.TransactionClient | typeof prisma = prisma) {
+  return tx.employee.update({ where: { id }, data });
 }
 
 export function deleteEmployee(id: string) {

@@ -26,6 +26,10 @@ export const getUserById = (id: string): User | undefined => store.getById(id);
 export interface UserLookupItem {
   id: string;
   name: string;
+  /** Regions only (Global Multi-Country Phase 1): what to show. The stored `name` is still the key used to match grants. */
+  displayName?: string;
+  code?: string | null;
+  defaultCurrency?: string | null;
 }
 
 /** Real database ids for every role/module/region/approval type — the Add User form needs these to submit valid foreign keys. */
@@ -55,6 +59,8 @@ export interface CreateUserPayload {
   approvalIds: string[];
   /** Project Manager Scope — only meaningful when the selected role is "Project Manager"; the backend ignores this for every other role. */
   scopedUserIds: string[];
+  /** The explicit All Countries right. Only an Administrator may send it; the backend refuses it from anyone else. */
+  allCountriesAccess?: boolean;
 }
 
 export interface CreatedPortalUser {
@@ -101,6 +107,8 @@ interface BackendUserListItem {
   regions: string[];
   approvals: string[];
   scopedUserIds: string[];
+  /** Explicit All Countries right (additive; absent from an older backend). */
+  allCountriesAccess?: boolean;
 }
 
 /**
@@ -131,6 +139,7 @@ function toLocalUser(u: BackendUserListItem): User {
     projectRegionAccess: buildRegionAccess(u.regions),
     approvalRights: buildApprovalRights(u.approvals),
     scopedUserIds: u.scopedUserIds,
+    allCountriesAccess: u.allCountriesAccess === true,
     accountSecurity: {
       forcePasswordChangeOnFirstLogin: u.forcePasswordChange,
       accountLocked: u.accountLocked,
@@ -164,6 +173,8 @@ export interface UpdateUserPayload {
   approvalIds?: string[];
   /** Omit to leave existing Project Manager Scope grants untouched; send an array (including []) to replace them. Only meaningful when role is/becomes "Project Manager". */
   scopedUserIds?: string[];
+  /** Omit to leave the All Countries right untouched. Only an Administrator may change it. */
+  allCountriesAccess?: boolean;
   forcePasswordChange?: boolean;
   accountLocked?: boolean;
 }

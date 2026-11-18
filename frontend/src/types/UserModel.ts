@@ -49,6 +49,8 @@ export interface UserModuleAccess {
   addProject: boolean;
   /** Submitting PR Requests (create / edit / delete one's own Draft, Send to Accounts). Never grants approval authority and is independent of `addProject`. */
   prRequest: boolean;
+  /** Manpower > Manpower Conversion Rates: seeing and managing the central country conversion rates. Independent of `manpower`; granted per user, never implied by a role. */
+  manpowerConversionRates: boolean;
 }
 
 /**
@@ -130,6 +132,12 @@ export interface User {
    * role changes away from Project Manager — see user.service.ts).
    */
   scopedUserIds: string[];
+
+  /**
+   * Explicit All Countries right (Global Multi-Country Phase 1). Set only by an Administrator, never implied by the role.
+   * Optional so existing in-memory fixtures keep compiling; absent means no.
+   */
+  allCountriesAccess?: boolean;
 
   // ── Account Information (audit) ─────────────────────────────────────
   createdAt: string;

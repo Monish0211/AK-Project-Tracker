@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Building2,
   ArrowRight,
@@ -15,11 +15,15 @@ import {
   CalendarCheck,
   Flame,
   Table as TableIcon,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardHeader } from "../../../components/ui/Card";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { moneyFormatter } from "../../../utils/currencyDisplay";
 import { useDashboardSummary } from "../DashboardSummaryContext";
+import { departmentSections, sectionTitle } from "../../../utils/dashboardCountrySections";
 
 // Helper for department icon selection
 const getDeptIcon = (deptName: string) => {
@@ -35,7 +39,52 @@ const getDeptIcon = (deptName: string) => {
 
 const DepartmentSummary: React.FC = () => {
   const navigate = useNavigate();
-  const { departments } = useDashboardSummary();
+  const summary = useDashboardSummary();
+  const { departments, kpiCurrency = "INR" } = summary;
+  // Work order values are shown per country, each in its own currency (Phase 4 final): a single-country view is one section and reads exactly as before;
+  // All Countries shows a titled section per country. Counts and percentages below stay overall, because they carry no currency.
+  const sections = useMemo(() => departmentSections(summary), [summary]);
+  const titled = sections.length > 1;
+  // All Countries: each country is a collapsible section. With one or two countries they start open; with more they start collapsed, because the country header already
+  // carries the summary (departments, projects, team, average completion and that country's top Work Order Value department). Presentation state only.
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+  const defaultOpen = sections.length <= 2;
+  const isOpen = (key: string): boolean => !titled || (overrides[key] ?? defaultOpen);
+  const setAllOpen = (open: boolean): void => setOverrides(Object.fromEntries(sections.map((section) => [section.key, open])));
+  const openCount = sections.filter((section) => isOpen(section.key)).length;
+  const money = moneyFormatter(sections.length === 1 ? sections[0]!.currency : kpiCurrency);
+  const isShown = (dept: (typeof departments.list)[number]) =>
+    dept.activeProjects > 0 ||
+    dept.completedProjects > 0 ||
+    dept.onHoldProjects > 0 ||
+    dept.delayedProjects > 0 ||
+    dept.teamMembers > 0 ||
+    dept.workOrderValue > 0;
+  // The table: one block per country (its own currency), or the single list as before.
+  const tableGroups = useMemo(
+    () =>
+      sections.map((s) => ({
+        key: s.key,
+        label: titled ? sectionTitle(s) : null,
+        money: moneyFormatter(s.currency),
+        totals: s.data.totals,
+        list: s.data.list.filter(isShown),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sections, titled]
+  );
+  // Highest work order value: compared only WITHIN a country, so each country names its own leader in its own currency.
+  const highestWoBySection = useMemo(
+    () =>
+      sections
+        .map((s) => {
+          const top = [...s.data.list].filter(isShown).sort((a, b) => b.workOrderValue - a.workOrderValue)[0];
+          return top ? { key: s.key, title: sectionTitle(s), department: top.department, value: moneyFormatter(s.currency).compact(top.workOrderValue) } : null;
+        })
+        .filter((x): x is { key: string; title: string; department: string; value: string } => x !== null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sections]
+  );
   const deptList = useMemo(
     () =>
       departments.list.filter(
@@ -190,52 +239,118 @@ const DepartmentSummary: React.FC = () => {
                   Department Performance Summary
                 </h4>
               </div>
-              <span className="text-[10.5px] font-bold text-slate-500 dark:text-slate-400">
-                {deptList.length} Departments
-              </span>
+              <div className="flex items-center gap-2">
+                {titled && (
+                  <>
+                    <span data-testid="department-open-count" className="hidden sm:inline text-[10.5px] font-semibold text-slate-500 dark:text-slate-400">
+                      {openCount} of {sections.length} countries open
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAllOpen(true)}
+                      disabled={openCount === sections.length}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 text-[10.5px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-default cursor-pointer"
+                    >
+                      <ChevronsUpDown size={11} aria-hidden="true" /> Expand all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAllOpen(false)}
+                      disabled={openCount === 0}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 text-[10.5px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-default cursor-pointer"
+                    >
+                      <ChevronsDownUp size={11} aria-hidden="true" /> Collapse all
+                    </button>
+                  </>
+                )}
+                <span className="text-[10.5px] font-bold text-slate-500 dark:text-slate-400">
+                  {deptList.length} Departments
+                </span>
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar min-h-0 flex flex-col">
+            <div className={`flex-1 overflow-y-auto overflow-x-auto custom-scrollbar min-h-0 flex flex-col ${titled ? "max-h-[440px]" : ""}`}>
               <table className="w-full text-left text-xs border-collapse flex-1">
                 <thead className="bg-slate-100/90 dark:bg-slate-800/90 text-[10px] uppercase font-extrabold text-slate-600 dark:text-slate-400 sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700">
                   <tr>
-                    <th className="p-2.5 pl-3">Department</th>
-                    <th className="p-2.5 text-center">Active</th>
-                    <th className="p-2.5 text-center">Completed</th>
-                    <th className="p-2.5 text-center">On Hold</th>
-                    <th className="p-2.5 text-center">Delayed</th>
-                    <th className="p-2.5 text-center">Team</th>
-                    <th className="p-2.5 text-center">Completion %</th>
-                    <th className="p-2.5 text-right">WO Value</th>
-                    <th className="p-2.5 pr-3 text-center">Pending Inv</th>
+                    <th className="py-1.5 pl-3 pr-2">Department</th>
+                    <th className="px-2 py-1.5 text-center">Active</th>
+                    <th className="px-2 py-1.5 text-center">Completed</th>
+                    <th className="px-2 py-1.5 text-center">On Hold</th>
+                    <th className="px-2 py-1.5 text-center">Delayed</th>
+                    <th className="px-2 py-1.5 text-center">Team</th>
+                    <th className="px-2 py-1.5 text-center">Completion %</th>
+                    <th className="px-2 py-1.5 text-right">WO Value</th>
+                    <th className="px-2 py-1.5 pr-3 text-center">Pending Inv</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium text-slate-700 dark:text-slate-300 text-[11.5px] flex-1">
-                  {deptList.map((dept) => (
-                    <tr key={dept.department} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="p-2.5 pl-3 font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 truncate max-w-[130px]">
-                        <Building2 size={12} className="text-blue-500 shrink-0" />
-                        <span className="truncate">{dept.department}</span>
-                      </td>
-                      <td className="p-2.5 text-center font-bold text-slate-800 dark:text-slate-200">{dept.activeProjects}</td>
-                      <td className="p-2.5 text-center font-bold text-emerald-600 dark:text-emerald-400">{dept.completedProjects}</td>
-                      <td className="p-2.5 text-center font-bold text-amber-600 dark:text-amber-400">{dept.onHoldProjects}</td>
-                      <td className="p-2.5 text-center font-bold text-rose-600 dark:text-rose-400">{dept.delayedProjects}</td>
-                      <td className="p-2.5 text-center font-bold">{dept.teamMembers}</td>
-                      <td className="p-2.5 text-center">
-                        <span className="inline-flex items-center gap-1 font-black text-blue-600 dark:text-blue-400">
-                          {dept.completion}%
-                        </span>
-                      </td>
-                      <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
-                        {formatBusinessINR(dept.workOrderValue)}
-                      </td>
-                      <td className="p-2.5 pr-3 text-center font-bold text-slate-800 dark:text-slate-200">
-                        {dept.pendingInvoices}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
+                {tableGroups.map((group) => {
+                  const open = isOpen(group.key);
+                  const panelId = `dept-panel-${group.key.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+                  const topWo = highestWoBySection.find((row) => row.key === group.key);
+                  return (
+                    <React.Fragment key={group.key}>
+                      {group.label && (
+                        <tbody>
+                          <tr data-testid="department-section" className="bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200/70 dark:border-slate-700/60">
+                            <td colSpan={9} className="p-0">
+                              <button
+                                type="button"
+                                onClick={() => setOverrides((prev) => ({ ...prev, [group.key]: !open }))}
+                                aria-expanded={open}
+                                aria-controls={panelId}
+                                className="w-full flex items-center gap-x-2.5 gap-y-0.5 flex-wrap px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                              >
+                                <ChevronRight size={13} aria-hidden="true" className={`shrink-0 text-slate-500 transition-transform ${open ? "rotate-90" : ""}`} />
+                                <span data-testid="department-section-title" className="text-[11px] font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                                  {group.label}
+                                </span>
+                                <span data-testid="department-section-summary" className="text-[10.5px] font-semibold text-slate-500 dark:text-slate-400">
+                                  {group.list.length} {group.list.length === 1 ? "department" : "departments"} · {group.totals?.totalProjects ?? 0} projects · {group.totals?.teamMembers ?? 0} team · avg {group.totals?.averageCompletion ?? 0}%
+                                </span>
+                                {topWo && (
+                                  <span className="ml-auto text-[10.5px] font-semibold text-slate-500 dark:text-slate-400 truncate max-w-full">
+                                    Top WO · {topWo.department} · <span className="font-black font-mono text-emerald-600 dark:text-emerald-400">{topWo.value}</span>
+                                  </span>
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        </tbody>
+                      )}
+                      <tbody
+                        id={group.label ? panelId : undefined}
+                        hidden={group.label ? !open : false}
+                        className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium text-slate-700 dark:text-slate-300 text-[11.5px]"
+                      >
+                        {group.list.map((dept) => (
+                          <tr key={`${group.key}|${dept.department}`} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                            <td className="py-1.5 pl-3 pr-2 font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 truncate max-w-[130px]">
+                              <Building2 size={12} className="text-blue-500 shrink-0" />
+                              <span className="truncate">{dept.department}</span>
+                            </td>
+                            <td className="px-2 py-1.5 text-center font-bold text-slate-800 dark:text-slate-200">{dept.activeProjects}</td>
+                            <td className="px-2 py-1.5 text-center font-bold text-emerald-600 dark:text-emerald-400">{dept.completedProjects}</td>
+                            <td className="px-2 py-1.5 text-center font-bold text-amber-600 dark:text-amber-400">{dept.onHoldProjects}</td>
+                            <td className="px-2 py-1.5 text-center font-bold text-rose-600 dark:text-rose-400">{dept.delayedProjects}</td>
+                            <td className="px-2 py-1.5 text-center font-bold">{dept.teamMembers}</td>
+                            <td className="px-2 py-1.5 text-center">
+                              <span className="inline-flex items-center gap-1 font-black text-blue-600 dark:text-blue-400">
+                                {dept.completion}%
+                              </span>
+                            </td>
+                            <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
+                              {group.money.compact(dept.workOrderValue)}
+                            </td>
+                            <td className="px-2 py-1.5 pr-3 text-center font-bold text-slate-800 dark:text-slate-200">
+                              {dept.pendingInvoices}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </React.Fragment>
+                  );
+                })}
               </table>
             </div>
           </div>
@@ -243,7 +358,7 @@ const DepartmentSummary: React.FC = () => {
         </div>
 
         {/* RIGHT PANEL: Department Analytics (Span 5 cols on lg, flex column stretching to exact height) */}
-        <div className="lg:col-span-5 flex flex-col justify-between space-y-3.5 h-full">
+        <div className="lg:col-span-5 flex flex-col justify-start gap-3.5 self-start w-full">
           <div className="flex items-center gap-2 px-1 shrink-0">
             <TrendingUp size={15} className="text-blue-600 dark:text-blue-400" />
             <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-800 dark:text-slate-200">
@@ -313,20 +428,30 @@ const DepartmentSummary: React.FC = () => {
                 <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
                   Highest WO Value
                 </span>
+                {titled ? (
+                  <div className="mt-1 max-h-[64px] overflow-y-auto custom-scrollbar space-y-0.5" data-testid="highest-wo-by-country">
+                    {highestWoBySection.map((row) => (
+                      <p key={row.key} className="text-[10.5px] leading-tight text-slate-700 dark:text-slate-300 truncate" title={`${row.title}: ${row.department} ${row.value}`}>
+                        <span className="font-bold">{row.title}</span> · {row.department} · <span className="font-black font-mono text-emerald-600 dark:text-emerald-400">{row.value}</span>
+                      </p>
+                    ))}
+                  </div>
+                ) : (
                 <div className="mt-1">
                   <p className="font-bold text-slate-900 dark:text-slate-100 truncate text-[11.5px]" title={highestWODept?.department || "—"}>
                     {highestWODept?.department || "—"}
                   </p>
                   <p className="text-sm font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
-                    {highestWODept ? formatBusinessINR(highestWODept.workOrderValue) : "—"}
+                    {highestWODept ? money.compact(highestWODept.workOrderValue) : "—"}
                   </p>
                 </div>
+                )}
               </div>
             </div>
           </div>
 
           {/* CARD 2: Department Workload Ranking (Horizontal Ranking Bars) */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800/90 rounded-xl p-3.5 shadow-xs space-y-2.5 flex-1 flex flex-col justify-between min-h-0">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800/90 rounded-xl p-3 shadow-xs space-y-2 shrink-0">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2 shrink-0">
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
                 Top Department Workload
@@ -334,16 +459,16 @@ const DepartmentSummary: React.FC = () => {
               <span className="text-[10.5px] font-semibold text-slate-400 dark:text-slate-500">Utilization %</span>
             </div>
 
-            <div className="space-y-2 flex-1 flex flex-col justify-around">
+            <div className="space-y-1.5">
               {deptList.slice(0, 5).map((dept) => (
-                <div key={dept.department} className="space-y-1">
+                <div key={dept.department} className="space-y-0.5">
                   <div className="flex justify-between items-center text-[11.5px]">
                     <span className="font-bold text-slate-700 dark:text-slate-300 truncate max-w-[170px]">
                       {dept.department}
                     </span>
                     <span className="font-black text-slate-900 dark:text-slate-100">{dept.workloadPercent}%</span>
                   </div>
-                  <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-500"
                       style={{ width: `${dept.workloadPercent}%` }}

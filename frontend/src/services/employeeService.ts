@@ -84,12 +84,46 @@ export function deleteEmployee(id: string): void {
   saveEmployees(employees);
 }
 
+export interface RateSkipped {
+  employeeNo: string;
+  reason: "NOT_PROVIDED" | "UNREADABLE";
+  outcome: "EXISTING_RATE_KEPT" | "CREATED_WITH_DEFAULT_0";
+}
+
 export interface ImportResult {
   added: number;
   updated: number;
   totalImported: number;
   invalid: number;
   blank: number;
+  /** Phase 4 / Option A: rows whose hourly rate was blank or unreadable (existing rate kept / new employee created at 0). Absent when none. */
+  ratesSkipped?: RateSkipped[];
+}
+
+/**
+ * Reads the hourly-rate cell of an employee import row. A BLANK cell (or a missing column, which reads as blank) is "no rate provided" => value null,
+ * never 0; text with no readable number is also null and flagged UNREADABLE so the result can report it. A typed 0 stays 0 (an explicit zero). Currency
+ * symbols and thousands separators are stripped exactly as before ("₹1,200.50" => 1200.5).
+ */
+/** One sentence for the import toast about rows whose rate was blank/unreadable, or "" when there were none. */
+export function importRateNote(skipped: RateSkipped[] | undefined): string {
+  if (!skipped || skipped.length === 0) return "";
+  const kept = skipped.filter((row) => row.outcome === "EXISTING_RATE_KEPT");
+  const created = skipped.filter((row) => row.outcome === "CREATED_WITH_DEFAULT_0");
+  const list = (rows: RateSkipped[]) => rows.slice(0, 5).map((row) => row.employeeNo).join(", ") + (rows.length > 5 ? `, +${rows.length - 5} more` : "");
+  const parts: string[] = [];
+  if (kept.length > 0) parts.push(`${kept.length} employee(s) had a blank or unreadable hourly rate, so their saved rate was kept (${list(kept)})`);
+  if (created.length > 0) parts.push(`${created.length} new employee(s) had no readable rate and were created with a rate of 0 - set it in Manpower (${list(created)})`);
+  return parts.join("; ") + ".";
+}
+
+export function parseImportedRate(raw: string): { value: number | null; issue?: "UNREADABLE" } {
+  const text = raw.trim();
+  if (text === "") return { value: null };
+  const cleaned = text.replace(/[^0-9.]/g, "");
+  const parsed = cleaned === "" ? Number.NaN : Number(cleaned);
+  if (!Number.isFinite(parsed)) return { value: null, issue: "UNREADABLE" };
+  return { value: parsed };
 }
 
 function normalizeHeaderText(value: unknown): string {
@@ -287,7 +321,9 @@ export async function importEmployeesFromExcel(
     location: string;
     reportingManager: string;
     grade: string;
-    manhourExpenses: number;
+    // Omitted from the request when the cell is blank/unreadable (see parseImportedRate): the server then keeps an existing employee's saved rate.
+    manhourExpenses?: number;
+    rateIssue?: "UNREADABLE";
     status: Employee["status"];
   }[] = [];
 
@@ -312,7 +348,7 @@ export async function importEmployeesFromExcel(
       return;
     }
 
-    const manhourExpenses = Number(rawManhourExpenses.replace(/[^0-9.]/g, "")) || 0;
+    const rate = parseImportedRate(rawManhourExpenses);
     const status = resolveEmployeeStatus(statusText);
 
     parsedRows.push({
@@ -323,7 +359,8 @@ export async function importEmployeesFromExcel(
       location,
       reportingManager,
       grade,
-      manhourExpenses,
+      ...(rate.value !== null ? { manhourExpenses: rate.value } : {}),
+      ...(rate.issue ? { rateIssue: rate.issue } : {}),
       status,
     });
   });
@@ -333,7 +370,7 @@ export async function importEmployeesFromExcel(
   }
 
   // 60s override (default 30s) — a batch import of parsed spreadsheet rows.
-  const result = await apiClient.post<{ added: number; updated: number; totalImported: number; invalid: number }>(
+  const result = await apiClient.post<{ added: number; updated: number; totalImported: number; invalid: number; costingRefresh?: { runs: number; incompleteRuns: number }; ratesSkipped?: RateSkipped[] }>(
     "/employees/import",
     { employees: parsedRows },
     { timeoutMs: 60_000 }
@@ -344,6 +381,8 @@ export async function importEmployeesFromExcel(
   // import that pushed the real count past it. See fetchAllEmployeesFromApi's
   // own comment.
   await fetchAllEmployeesFromApi();
+  // Phase 4 / Option A: a changed imported rate recalculated that employee's projects on the server: refresh every open project screen and report.
+  if (result.costingRefresh) dispatchPmoDataChanged({ entity: "project" });
 
   return {
     added: result.added,
@@ -351,6 +390,7 @@ export async function importEmployeesFromExcel(
     totalImported: result.totalImported,
     invalid: invalid + result.invalid,
     blank,
+    ...(result.ratesSkipped && result.ratesSkipped.length > 0 ? { ratesSkipped: result.ratesSkipped } : {}),
   };
 }
 
@@ -405,7 +445,21 @@ interface BackendEmployeeDto {
   employeeType: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Phase 4 / Option A: present only when this save changed the hourly rate of an employee with project assignments. */
+  costingRefresh?: CostingRefreshInfo;
 }
+
+/** The outcome of the automatic manpower recalculation a rate change triggers. status SUCCEEDED = every affected project is current. */
+export interface CostingRefreshInfo {
+  runId: string;
+  status: string;
+  projectCount: number;
+  succeededCount: number;
+  failedCount: number;
+}
+
+/** An employee as saved, plus the recalculation outcome when the save changed the hourly rate. */
+export type EmployeeSaveResult = Employee & { costingRefresh?: CostingRefreshInfo };
 
 interface BackendPaginatedEmployeeList {
   items: BackendEmployeeDto[];
@@ -594,11 +648,13 @@ export async function createEmployeeViaApi(employee: Employee): Promise<Employee
 }
 
 /** Updates an employee via the real backend — PATCH /employees/:id. */
-export async function updateEmployeeViaApi(id: string, employee: Employee): Promise<Employee> {
+export async function updateEmployeeViaApi(id: string, employee: Employee): Promise<EmployeeSaveResult> {
   const dto = await apiClient.patch<BackendEmployeeDto>(`/employees/${id}`, toEmployeePayload(employee));
   const updated = toEmployee(dto);
   writeThroughEmployeesMirror([updated]);
-  return updated;
+  // Phase 4 / Option A: a rate change recalculated the employee's projects on the server. Tell every open project screen, report and costing view to reload.
+  if (dto.costingRefresh) dispatchPmoDataChanged({ entity: "project" });
+  return { ...updated, ...(dto.costingRefresh ? { costingRefresh: dto.costingRefresh } : {}) };
 }
 
 /**

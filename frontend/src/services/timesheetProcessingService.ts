@@ -143,6 +143,9 @@ function getDayGroups(allImports: TimesheetImportMonth[]): RawDayGroup[] {
   return groups;
 }
 
+// Phase 4 / Option A: the `hourlyRate`, `dailyCost` and `totalCost` this service derives are NOT used for any displayed manpower amount any more. Team Assigned,
+// Expense Budget, Dashboard, Reports, the PDF and the exports all take their amounts from the server's central costing (GET /projects/:id/manhour-costing and
+// the stored ProjectResource figures). This service remains the source of the roster, hours, working days and the daily drill-down only.
 function rateForEmployee(employeeNo: string, masterEmployees: ReturnType<typeof getEmployees>): number {
   const master = masterEmployees.find(
     (e) => e.employeeNo.trim().toLowerCase() === employeeNo.trim().toLowerCase()

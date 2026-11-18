@@ -1,14 +1,18 @@
 import { useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Info } from "lucide-react";
-import { formatBusinessINR, formatFullINR } from "../../utils/formatCurrency";
+import { formatBusinessINR } from "../../utils/formatCurrency";
+import { moneyTooltipText } from "../../utils/moneyTooltipText";
+import { formatMoneyCompact } from "../../utils/currencyDisplay";
 
 interface MoneyTooltipProps {
-  /** Exact underlying rupee amount the rounded display represents. */
+  /** Exact underlying amount the rounded display represents, in `currency` (rupees unless `currency` says otherwise). */
   value: number;
   /** The already-rounded content to display unchanged (e.g. "₹2.22 L"). */
   children: ReactNode;
   className?: string;
+  /** The amount's currency. Omitted = INR, exactly as before; a regional amount (AED, OMR, ...) shows its own symbol and wording, never the rupee. */
+  currency?: string;
 }
 
 /** formatBusinessINR only compacts (and rounds) to K/L/Cr at/above this magnitude — below it, the displayed value already IS the exact amount, so no tooltip is needed. */
@@ -21,7 +25,8 @@ const ROUNDING_THRESHOLD = 1_000;
  * displayed value or any calculation. Portal-rendered to <body> so it can
  * never be clipped by a scrollable table container.
  */
-export function MoneyTooltip({ value, children, className }: MoneyTooltipProps) {
+export function MoneyTooltip({ value, children, className, currency = "INR" }: MoneyTooltipProps) {
+  const text = moneyTooltipText(value, currency);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
 
@@ -59,11 +64,11 @@ export function MoneyTooltip({ value, children, className }: MoneyTooltipProps) 
               Actual Calculated Amount
             </p>
             <p className="mt-1 text-[15px] font-extrabold text-[var(--nu-text)] tabular-nums">
-              {formatFullINR(value)}
+              {text.exact}
             </p>
             <p className="mt-1.5 text-[11px] leading-snug text-[var(--nu-text-secondary)]">
-              Displayed as <strong className="font-semibold text-[var(--nu-text)]">{formatBusinessINR(value)}</strong> for
-              readability. Amounts in the table are rounded to Lakhs/Crores.
+              Displayed as <strong className="font-semibold text-[var(--nu-text)]">{text.compact}</strong> for
+              readability. {text.note}
             </p>
             <span
               className="absolute left-1/2 top-full -mt-[5px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 border-b border-r border-[var(--nu-border)] bg-[var(--nu-surface)]"
@@ -77,10 +82,12 @@ export function MoneyTooltip({ value, children, className }: MoneyTooltipProps) 
 }
 
 /** Convenience wrapper for the common case: the trigger text IS formatBusinessINR(value). */
-export function MoneyValue({ value, className }: { value: number; className?: string }) {
+export function MoneyValue({ value, className, currency }: { value: number; className?: string; currency?: string | undefined }) {
+  // currency omitted (or INR) = the long-standing rupee form; any other currency shows its own symbol and K / M, never the rupee.
+  const code = currency || "INR";
   return (
-    <MoneyTooltip value={value} className={className}>
-      {formatBusinessINR(value)}
+    <MoneyTooltip value={value} className={className} currency={code}>
+      {code === "INR" ? formatBusinessINR(value) : formatMoneyCompact(value, code)}
     </MoneyTooltip>
   );
 }

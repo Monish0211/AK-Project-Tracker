@@ -3,6 +3,7 @@ import { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { normalizeProjectCode } from "../../../shared/utils/projectCode.util.js";
+import { grantedProjectCountryWhere } from "../../../shared/utils/countryAccess.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { parseExpenseWorkbook } from "./expenseImportParser.js";
 import { mapParticularsToCategory } from "./expenseImport.constants.js";
@@ -70,8 +71,9 @@ export async function runExpenseImport(
 
   const parsed = parseExpenseWorkbook(file.buffer);
 
-  const activeProjects = await findActiveProjectsByNormalizedPrNos();
-  const projectByNormalizedCode = new Map<string, { id: string; prNo: string }>();
+  // Country boundary (Phase 2): the file may only be matched to projects in countries the importer holds (preview and commit alike).
+  const activeProjects = await findActiveProjectsByNormalizedPrNos(await grantedProjectCountryWhere(user.sub));
+  const projectByNormalizedCode = new Map<string, { id: string; prNo: string; regionalCurrency: string | null }>();
   for (const project of activeProjects) {
     const key = normalizeProjectCode(project.prNo);
     if (key) projectByNormalizedCode.set(key, project);
@@ -92,7 +94,7 @@ export async function runExpenseImport(
         sheetName: sheet.sheetName,
         rawPrIdentifier: sheet.rawPrIdentifier,
         matchedProjectId: null,
-        matchedPrNo: null,
+        matchedPrNo: null, matchedRegionalCurrency: null,
         unmatchedReason: `Sheet "${sheet.sheetName}" has no recognizable header row, or is missing a required column (Particulars/Debit/Credit) — nothing could be read from it.`,
         rowsFound: 0,
         rowsImportable: [],
@@ -116,7 +118,7 @@ export async function runExpenseImport(
         sheetName: sheet.sheetName,
         rawPrIdentifier: sheet.rawPrIdentifier,
         matchedProjectId: null,
-        matchedPrNo: null,
+        matchedPrNo: null, matchedRegionalCurrency: null,
         unmatchedReason: `No active project found matching "${sheet.rawPrIdentifier}".`,
         rowsFound: sheet.rows.length,
         rowsImportable: [],
@@ -230,7 +232,7 @@ export async function runExpenseImport(
       sheetName: sheet.sheetName,
       rawPrIdentifier: sheet.rawPrIdentifier,
       matchedProjectId: matchedProject.id,
-      matchedPrNo: matchedProject.prNo,
+      matchedPrNo: matchedProject.prNo, matchedRegionalCurrency: matchedProject.regionalCurrency ?? null,
       rowsFound: sheet.rows.length,
       rowsImportable,
       rowsSkippedCreditOnly,

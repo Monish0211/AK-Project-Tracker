@@ -2,18 +2,19 @@ import { Briefcase } from "lucide-react";
 
 import type { NonManhourExpense } from "../../../types/NonManhourExpense";
 
-import {
-  formatIndianCurrency,
-  formatIndianNumber,
-} from "../../../utils/quantityCalculations";
+import { formatIndianNumber } from "../../../utils/quantityCalculations";
+import { moneyFormatter } from "../../../utils/currencyDisplay";
 import { Card, CardBody, CardHeader } from "../../../components/ui/Card";
 import { EmptyState } from "../../../components/ui/EmptyState";
 
 interface Props {
+  /** The project's regional currency (Phase 3); INR when not given. */
+  currency?: string;
   expenses: NonManhourExpense[];
 }
 
-const NonManhourExpenseView = ({ expenses }: Props) => {
+const NonManhourExpenseView = ({ expenses, currency = "INR" }: Props) => {
+  const money = moneyFormatter(currency);
   return (
     <Card padded={false}>
       <CardHeader
@@ -51,9 +52,9 @@ const NonManhourExpenseView = ({ expenses }: Props) => {
                   <td className="px-4 py-2.5 font-medium text-[var(--nu-text)]">{expense.category}</td>
                   <td className="px-4 py-2.5">{expense.description || "—"}</td>
                   <td className="px-4 py-2.5 text-center">{formatIndianNumber(expense.quantity)}</td>
-                  <td className="px-4 py-2.5 text-right">{formatIndianCurrency(expense.unitCost)}</td>
+                  <td className="px-4 py-2.5 text-right">{money.exact(expense.unitCost)}</td>
                   <td className="px-4 py-2.5 text-right font-semibold text-[var(--nu-warning)]">
-                    {formatIndianCurrency(expense.totalCost)}
+                    {money.exact(expense.totalCost)}
                   </td>
                   <td className="px-4 py-2.5 max-w-[12rem] truncate" title={expense.remarks}>
                     {expense.remarks || "—"}

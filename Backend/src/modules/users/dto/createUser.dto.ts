@@ -17,6 +17,7 @@ export interface CreateUserRequestDto {
   regionIds: string[];
   approvalIds: string[];
   scopedUserIds: string[];
+  allCountriesAccess?: boolean;
 }
 
 /**
@@ -54,9 +55,16 @@ export interface LookupItem {
  * approval selections into real database UUIDs before submitting — without
  * this, the frontend would have nothing but hardcoded display names to send.
  */
+/** A region lookup (Global Multi-Country Phase 1): `name` is the stored key grants match on; the rest is display and default configuration. */
+export interface RegionLookupItem extends LookupItem {
+  code: string | null;
+  displayName: string;
+  defaultCurrency: string | null;
+}
+
 export interface UserLookupsDto {
   roles: LookupItem[];
   modules: LookupItem[];
-  regions: LookupItem[];
+  regions: RegionLookupItem[];
   approvalTypes: LookupItem[];
 }

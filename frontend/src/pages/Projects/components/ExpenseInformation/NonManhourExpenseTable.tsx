@@ -3,19 +3,20 @@ import { Briefcase, Pencil, Trash2, FileSpreadsheet } from "lucide-react";
 
 import type { NonManhourExpense } from "../../../../types/NonManhourExpense";
 
-import {
-  formatIndianCurrency,
-  formatIndianNumber,
-} from "../../../../utils/quantityCalculations";
+import { formatIndianNumber } from "../../../../utils/quantityCalculations";
+import { moneyFormatter } from "../../../../utils/currencyDisplay";
 import { ConfirmDialog } from "../../../../components/ui/ConfirmDialog";
 
 interface Props {
+  /** The project's regional currency (Phase 3); INR when not given. */
+  currency?: string;
   expenses: NonManhourExpense[];
   onEdit: (expense: NonManhourExpense) => void;
   onDelete: (id: string) => void;
 }
 
-const NonManhourExpenseTable = ({ expenses, onEdit, onDelete }: Props) => {
+const NonManhourExpenseTable = ({ expenses, onEdit, onDelete, currency = "INR" }: Props) => {
+  const money = moneyFormatter(currency);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const handleDelete = (id: string) => setDeleteTargetId(id);
@@ -128,11 +129,11 @@ const NonManhourExpenseTable = ({ expenses, onEdit, onDelete }: Props) => {
                 </td>
 
                 <td className="px-4 py-3 text-right">
-                  {formatIndianCurrency(expense.unitCost)}
+                  {money.exact(expense.unitCost)}
                 </td>
 
                 <td className="px-4 py-3 text-right font-semibold text-orange-700">
-                  {formatIndianCurrency(expense.totalCost)}
+                  {money.exact(expense.totalCost)}
                 </td>
 
                 <td

@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test --test-timeout=120000 \"tests/*.test.mjs\""
+    "test": "node --test --test-concurrency=4 --test-timeout=120000 \"tests/*.test.mjs\""
   },
   "dependencies": {
     "@sentry/react": "^11.0.0",

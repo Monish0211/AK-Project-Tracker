@@ -2,6 +2,8 @@ import type { AuthenticatedProfile, AuthEventContext, SafeUser } from "../../../
 import { AppError } from "../../../shared/utils/AppError.js";
 import { addDays, addMinutes } from "../../../shared/utils/date.util.js";
 import { env } from "../../../shared/utils/env.js";
+import { getCountryAccessMode, loadCountryGrants } from "../../../shared/utils/countryAccess.js";
+import type { CountryRegionInfo } from "../../../shared/types/auth.types.js";
 import { signAccessToken } from "../../../shared/utils/jwt.util.js";
 import { comparePassword, hashPassword } from "../../../shared/utils/password.util.js";
 import { generateOpaqueToken, hashToken } from "../../../shared/utils/token.util.js";
@@ -253,12 +255,20 @@ export async function changeFirstPassword(
   };
 }
 
-export async function getProfile(userId: string): Promise<AuthenticatedProfile> {
+/**
+ * `country` is the grants this same request's authenticate() has just read (shadow / enforce mode): reusing them is the same fresh data milliseconds apart and saves
+ * re-reading them. Without it (mode off, or any other caller) the grants are read here exactly as before.
+ */
+export async function getProfile(userId: string, country?: { allCountries: boolean; assigned: unknown[]; selectable: CountryRegionInfo[] }): Promise<AuthenticatedProfile> {
   const user = await findUserAccessById(userId);
 
   if (!user) {
     throw new AppError("User not found.", 404);
   }
+
+  // Country access (Global Multi-Country Phase 1): re-read fresh, like every other grant here. `countries` is what this account
+  // may select; the explicit All Countries right is never implied by the role.
+  const countryGrants = country ?? (await loadCountryGrants(userId));
 
   return {
     ...toSafeUser(user),
@@ -268,6 +278,10 @@ export async function getProfile(userId: string): Promise<AuthenticatedProfile> 
     reportingManager: user.reportingManager
       ? { id: user.reportingManager.id, fullName: user.reportingManager.fullName }
       : null,
+    countries: countryGrants.selectable,
+    allCountries: countryGrants.allCountries,
+    countryAccessMode: getCountryAccessMode(),
+    countryAccessConfigured: countryGrants.allCountries || countryGrants.assigned.length > 0,
   };
 }
 

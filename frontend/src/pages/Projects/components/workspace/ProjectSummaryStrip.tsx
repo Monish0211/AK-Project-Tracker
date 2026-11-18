@@ -3,7 +3,6 @@ import {
   CalendarCheck,
   FileText,
   Gauge,
-  IndianRupee,
   Landmark,
   Receipt,
   TrendingUp,
@@ -13,6 +12,8 @@ import {
 import { StatTile } from "../../../../components/ui/StatTile";
 
 interface Props {
+  /** The project's regional currency (Phase 3); INR when not given. */
+  currency?: string;
   workOrderValue: number;
   invoiceRaised: number;
   paymentReceived: number;
@@ -25,9 +26,8 @@ interface Props {
   teamCount: number;
 }
 
-import { formatBusinessINR } from "../../../../utils/formatCurrency";
-
-const formatINR = (value: number): string => formatBusinessINR(value || 0);
+import { moneyFormatter } from "../../../../utils/currencyDisplay";
+import { CurrencyIcon } from "../../../../components/ui/CurrencyIcon";
 
 const ProjectSummaryStrip = ({
   workOrderValue,
@@ -40,16 +40,18 @@ const ProjectSummaryStrip = ({
   completionPercent,
   milestoneCount,
   teamCount,
+  currency = "INR",
 }: Props) => {
+  const money = moneyFormatter(currency);
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-      <StatTile emphasis="secondary" label="Work Order Value" value={formatINR(workOrderValue)} icon={<IndianRupee size={14} />} tint="accent" />
-      <StatTile emphasis="secondary" label="Invoice Raised" value={formatINR(invoiceRaised)} icon={<FileText size={14} />} tint="info" />
-      <StatTile emphasis="secondary" label="Payment Received" value={formatINR(paymentReceived)} icon={<Landmark size={14} />} tint="success" />
-      <StatTile emphasis="secondary" label="Outstanding" value={formatINR(outstanding)} icon={<Wallet size={14} />} tint="danger" />
-      <StatTile emphasis="secondary" label="Budget" value={formatINR(budget)} icon={<Briefcase size={14} />} tint="info" />
-      <StatTile emphasis="secondary" label="Expenses" value={formatINR(expenses)} icon={<Receipt size={14} />} tint="warning" />
-      <StatTile emphasis="secondary" label="Profit" value={formatINR(profit)} icon={<TrendingUp size={14} />} tint={profit >= 0 ? "success" : "danger"} />
+      <StatTile emphasis="secondary" label="Work Order Value" value={money.compact(workOrderValue)} icon={<CurrencyIcon currency={currency} size={14} />} tint="accent" />
+      <StatTile emphasis="secondary" label="Invoice Raised" value={money.compact(invoiceRaised)} icon={<FileText size={14} />} tint="info" />
+      <StatTile emphasis="secondary" label="Payment Received" value={money.compact(paymentReceived)} icon={<Landmark size={14} />} tint="success" />
+      <StatTile emphasis="secondary" label="Outstanding" value={money.compact(outstanding)} icon={<Wallet size={14} />} tint="danger" />
+      <StatTile emphasis="secondary" label="Budget" value={money.compact(budget)} icon={<Briefcase size={14} />} tint="info" />
+      <StatTile emphasis="secondary" label="Expenses" value={money.compact(expenses)} icon={<Receipt size={14} />} tint="warning" />
+      <StatTile emphasis="secondary" label="Profit" value={money.compact(profit)} icon={<TrendingUp size={14} />} tint={profit >= 0 ? "success" : "danger"} />
       <StatTile emphasis="secondary" label="Completion %" value={`${completionPercent.toFixed(1)}%`} icon={<Gauge size={14} />} tint="accent" />
       <StatTile emphasis="secondary" label="Milestones" value={milestoneCount.toString()} icon={<CalendarCheck size={14} />} tint="info" />
       <StatTile emphasis="secondary" label="Team Members" value={teamCount.toString()} icon={<Users size={14} />} tint="accent" />

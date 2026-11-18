@@ -2,16 +2,17 @@ import { Users } from "lucide-react";
 
 import type { ManhourExpense } from "../../../types/ManhourExpense";
 
-import {
-  formatIndianCurrency,
-  formatIndianNumber,
-} from "../../../utils/quantityCalculations";
+import { formatIndianNumber } from "../../../utils/quantityCalculations";
+import { moneyFormatter } from "../../../utils/currencyDisplay";
 
 interface Props {
+  /** The project's regional currency (Phase 3); INR when not given. */
+  currency?: string;
   expenses: ManhourExpense[];
 }
 
-const ManhourExpenseView = ({ expenses }: Props) => {
+const ManhourExpenseView = ({ expenses, currency = "INR" }: Props) => {
+  const money = moneyFormatter(currency);
   return (
     <div className="rounded-2xl border border-gray-100 dark:border-slate-800 bg-white dark:bg-[#1E293B] shadow-sm overflow-hidden">
 
@@ -123,7 +124,7 @@ const ManhourExpenseView = ({ expenses }: Props) => {
                   </td>
 
                   <td className="px-4 py-3 text-right">
-                    {formatIndianCurrency(expense.manhourRate)}
+                    {money.exact(expense.manhourRate)}
                   </td>
 
                   <td className="px-4 py-3 text-right">
@@ -131,7 +132,7 @@ const ManhourExpenseView = ({ expenses }: Props) => {
                   </td>
 
                   <td className="px-4 py-3 text-right font-semibold text-blue-700">
-                    {formatIndianCurrency(expense.totalCost)}
+                    {money.exact(expense.totalCost)}
                   </td>
 
                   <td

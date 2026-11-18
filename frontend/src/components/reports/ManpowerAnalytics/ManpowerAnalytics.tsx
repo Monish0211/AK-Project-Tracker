@@ -3,13 +3,14 @@ import { KPIReportCard } from "../Shared/KPIReportCard";
 import { UtilizationChart } from "./UtilizationChart";
 import { BillableChart } from "./BillableChart";
 import { EmployeeTable } from "./EmployeeTable";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 
 interface Props {
   projects: any[];
 }
 
 export function ManpowerAnalytics({ projects }: Props) {
+  const money = useReportMoney();
   let totalHours = 0;
   let totalManhourCost = 0;
   const specialists = new Set<string>();
@@ -48,7 +49,7 @@ export function ManpowerAnalytics({ projects }: Props) {
 
         <KPIReportCard
           title="Total Manhour Cost"
-          value={formatBusinessINR(totalManhourCost)}
+          value={money.compact(totalManhourCost)}
           subtitle="Timesheet-backed engineering cost"
           icon={<CheckCircle size={18} />}
           tone="slate"

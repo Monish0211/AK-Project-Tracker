@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search } from "lucide-react";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { getTotalNonManhourCost } from "../../../services/expenseService";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
@@ -11,6 +11,7 @@ interface Props {
 }
 
 export function ProfitTable({ projects }: Props) {
+  const money = useReportMoney();
   const [search, setSearch] = useState("");
 
   const tableData = useMemo(() => {
@@ -114,12 +115,12 @@ export function ProfitTable({ projects }: Props) {
                   <td className="p-2.5 font-semibold text-[var(--nu-text)] max-w-[130px] truncate">{row.client}</td>
                   <td className="p-2.5 font-medium text-[var(--nu-text)] max-w-[180px] truncate">{row.projectTitle}</td>
                   <td className="p-2.5 text-[var(--nu-text-muted)]">{row.department}</td>
-                  <td className="p-2.5 text-right font-mono font-bold text-blue-600 dark:text-blue-400">{formatBusinessINR(row.woValue)}</td>
-                  <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">{formatBusinessINR(row.manhour)}</td>
-                  <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">{formatBusinessINR(row.nonManhour)}</td>
-                  <td className="p-2.5 text-right font-mono text-rose-600 dark:text-rose-400">{formatBusinessINR(row.totalExpenses)}</td>
+                  <td className="p-2.5 text-right font-mono font-bold text-blue-600 dark:text-blue-400">{money.compact(row.woValue)}</td>
+                  <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">{money.compact(row.manhour)}</td>
+                  <td className="p-2.5 text-right font-mono text-[var(--nu-text-muted)]">{money.compact(row.nonManhour)}</td>
+                  <td className="p-2.5 text-right font-mono text-rose-600 dark:text-rose-400">{money.compact(row.totalExpenses)}</td>
                   <td className={`p-2.5 text-right font-mono font-extrabold ${row.profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600"}`}>
-                    {formatBusinessINR(row.profit)}
+                    {money.compact(row.profit)}
                   </td>
                   <td className="p-2.5 text-right font-mono font-extrabold">
                     <span
@@ -135,9 +136,9 @@ export function ProfitTable({ projects }: Props) {
                     </span>
                   </td>
                   <td className="p-2.5 text-center font-semibold">{row.ldStatus ?? <span className="text-[var(--nu-text-muted)]">—</span>}</td>
-                  <td className="p-2.5 text-right font-mono">{row.ldAmount === null ? <span className="text-[var(--nu-text-muted)]">—</span> : formatBusinessINR(row.ldAmount)}</td>
+                  <td className="p-2.5 text-right font-mono">{row.ldAmount === null ? <span className="text-[var(--nu-text-muted)]">—</span> : money.compact(row.ldAmount)}</td>
                   <td className={`p-2.5 text-right font-mono font-extrabold ${row.finalProfit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600"}`}>
-                    {formatBusinessINR(row.finalProfit)}
+                    {money.compact(row.finalProfit)}
                   </td>
                   <td className="p-2.5 text-right font-mono">{row.finalMarginPct === null ? "—" : `${row.finalMarginPct.toFixed(1)}%`}</td>
                 </tr>

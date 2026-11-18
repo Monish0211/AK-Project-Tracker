@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { getTotalNonManhourCost } from "../../../services/expenseService";
 
 interface Props {
@@ -8,6 +8,7 @@ interface Props {
 }
 
 export function BudgetVsActual({ projects }: Props) {
+  const money = useReportMoney();
   const chartData = useMemo(() => {
     return projects
       .map((p) => {
@@ -40,8 +41,8 @@ export function BudgetVsActual({ projects }: Props) {
           <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
             <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-            <YAxis tickFormatter={(v) => formatBusinessINR(v)} tick={{ fontSize: 10 }} />
-            <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), ""]} />
+            <YAxis tickFormatter={(v) => money.compact(v)} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(val: any) => [money.compact(Number(val)), ""]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="Budget" fill="#3b82f6" radius={[4, 4, 0, 0]} />
             <Bar dataKey="Actual Expense" fill="#ef4444" radius={[4, 4, 0, 0]} />

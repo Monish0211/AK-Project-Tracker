@@ -15,6 +15,7 @@ import {
   deleteQuantity as deleteQuantityInRepository,
   getQuantityById,
   getQuantityForProjectsPage,
+  getProjectRegionalCurrency,
   getQuantityByProjectId,
   sumWoValueByProjectId,
   updateQuantity as updateQuantityInRepository,
@@ -22,6 +23,7 @@ import {
 import type { QuantityItemData } from "../quantity.types.js";
 import { buildInvoiceAudit } from "../../invoices/invoiceAudit.js";
 import type { CreateQuantityInput, UpdateQuantityInput } from "../validators/quantity.validators.js";
+import { assertQuantityCurrency, computeQuantityAmounts, usesRegionalRules } from "../quantityCurrency.rules.js";
 
 /**
  * billedQty is the sum of this item's non-Cancelled InvoiceLine.quantityBilled
@@ -35,7 +37,9 @@ function toQuantityDto(row: Awaited<ReturnType<typeof getQuantityById>>, billedQ
   }
 
   const { invoiceQty, pendingQty } = computeInvoiceProgress(row.woQty, row.uom, billedQty);
-  const pendingAmount = pendingQty * row.unitRateINR;
+  // In the project's regional currency: for an India or legacy project that is INR (the row's regional price equals unitRateINR, or is
+  // absent on a row saved before Phase 3), so this is exactly the long-standing figure.
+  const pendingAmount = pendingQty * (row.unitRateRegional ?? row.unitRateINR);
 
   return {
     id: row.id,
@@ -52,6 +56,8 @@ function toQuantityDto(row: Awaited<ReturnType<typeof getQuantityById>>, billedQ
     unitRateINR: row.unitRateINR,
     woValue: row.woValue,
     pendingAmount,
+    unitRateRegional: row.unitRateRegional,
+    woValueRegional: row.woValueRegional,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -67,20 +73,19 @@ function toQuantityDto(row: Awaited<ReturnType<typeof getQuantityById>>, billedQ
  * they depend on real invoicing activity, not on anything settable here
  * (see toQuantityDto() above).
  */
-function computeDerivedFields(fields: {
-  woQty: number;
-  uom: string;
-  currency: string;
-  unitRate: number;
-  exchangeRate: number;
-}): Pick<QuantityItemData, "unitRateINR" | "woValue"> {
-  const isLumpSum = fields.uom.trim().toUpperCase() === "LUMP SUM";
-
-  const unitRateINR = fields.currency === "INR" ? fields.unitRate : fields.unitRate * fields.exchangeRate;
-
-  const woValue = isLumpSum ? unitRateINR : fields.woQty * unitRateINR;
-
-  return { unitRateINR, woValue };
+function computeDerivedFields(
+  fields: {
+    woQty: number;
+    uom: string;
+    currency: string;
+    unitRate: number;
+    exchangeRate: number;
+  },
+  regionalCurrency: string | null
+): Pick<QuantityItemData, "exchangeRate" | "unitRateINR" | "woValue" | "unitRateRegional" | "woValueRegional"> {
+  // Phase 3: the pure rules live in quantityCurrency.rules.ts. For a legacy project (no stored regional currency) and for an INR-region
+  // project the INR figures are the original formulas byte for byte; any other region fills the regional columns and leaves INR at 0.
+  return computeQuantityAmounts(fields, regionalCurrency);
 }
 
 /** Throws AppError(404) if the project doesn't exist, or 403 if the caller isn't authorized for it — see shared/utils/projectAccess.ts. */
@@ -95,13 +100,20 @@ export async function createQuantityForProject(
 ): Promise<QuantityDto> {
   await assertProjectExists(projectId, user);
 
-  const derived = computeDerivedFields({
-    woQty: input.woQty,
-    uom: input.uom,
-    currency: input.currency,
-    unitRate: input.unitRate,
-    exchangeRate: input.exchangeRate,
-  });
+  // Currency is validated against the PROJECT's stored regional currency (never the user's country or the selector).
+  const regionalCurrency = await getProjectRegionalCurrency(projectId);
+  assertQuantityCurrency(input.currency, input.exchangeRate, regionalCurrency);
+
+  const derived = computeDerivedFields(
+    {
+      woQty: input.woQty,
+      uom: input.uom,
+      currency: input.currency,
+      unitRate: input.unitRate,
+      exchangeRate: input.exchangeRate,
+    },
+    regionalCurrency
+  );
 
   const data: QuantityItemData = {
     description: input.description,
@@ -110,7 +122,7 @@ export async function createQuantityForProject(
     assignedTo: input.assignedTo ?? null,
     currency: input.currency,
     unitRate: input.unitRate,
-    exchangeRate: input.exchangeRate,
+    // derived carries exchangeRate too: it is forced to 1 when the transaction currency is the project's regional currency.
     ...derived,
   };
 
@@ -161,7 +173,9 @@ export async function updateQuantityItem(
     exchangeRate: input.exchangeRate ?? existing.exchangeRate,
   };
 
-  const derived = computeDerivedFields(merged);
+  const regionalCurrency = await getProjectRegionalCurrency(existing.projectId);
+  assertQuantityCurrency(merged.currency, merged.exchangeRate, regionalCurrency);
+  const derived = computeDerivedFields(merged, regionalCurrency);
 
   const updated = await updateQuantityInRepository(id, {
     ...(input.description !== undefined && { description: input.description }),
@@ -210,6 +224,30 @@ export async function getQuantityItemById(id: string): Promise<QuantityDto> {
 }
 
 /**
+ * Phase 3 guard for the Invoices module. Invoicing (INR equivalents, GST, settlement) is built around INR-named amounts and has not been
+ * extended to projects whose regional currency is not INR yet. Creating an invoice line there would silently produce wrong INR figures, so it
+ * is refused with a clear message until that step is built. INR-region and legacy projects are untouched.
+ */
+export async function assertProjectInvoicable(projectId: string): Promise<void> {
+  const regionalCurrency = await getRegionalInvoiceProjectCurrency(projectId);
+  if (regionalCurrency !== null) {
+    throw new AppError(
+      `Invoicing is not available yet for a project whose currency is ${regionalCurrency}. The invoice module works in INR only, so an invoice here would produce wrong figures. India and legacy projects are not affected.`,
+      409
+    );
+  }
+}
+
+/**
+ * The project's regional currency when it is NOT INR (MYR, OMR, AED, QAR), otherwise null. null means an INR or legacy project, whose invoices follow the original INR
+ * rules untouched. Read from the project's stored regional currency, never from its PR number or the user's country.
+ */
+export async function getRegionalInvoiceProjectCurrency(projectId: string): Promise<string | null> {
+  const regionalCurrency = await getProjectRegionalCurrency(projectId);
+  return usesRegionalRules(regionalCurrency) && regionalCurrency !== "INR" ? regionalCurrency : null;
+}
+
+/**
  * The backend equivalent of the frontend's workOrderValueINR — sum of every
  * QuantityItem.woValue for this project. Exported for the Payment
  * Milestones module (see milestone.service.ts's computeAmount()), which
@@ -219,6 +257,9 @@ export async function getQuantityItemById(id: string): Promise<QuantityDto> {
  * this value is read.
  */
 export async function getWorkOrderValueForProject(projectId: string): Promise<number> {
-  const result = await sumWoValueByProjectId(projectId);
+  const [result, regionalCurrency] = await Promise.all([sumWoValueByProjectId(projectId), getProjectRegionalCurrency(projectId)]);
+  // Phase 3: the Work Order Value in the project's REGIONAL currency. For a legacy or INR-region project that is the INR sum, exactly as
+  // before; for any other region it is the regional sum (the INR column is 0 there by design).
+  if (usesRegionalRules(regionalCurrency) && regionalCurrency !== "INR") return result._sum.woValueRegional ?? 0;
   return result._sum.woValue ?? 0;
 }

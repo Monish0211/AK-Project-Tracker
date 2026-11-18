@@ -5,7 +5,7 @@ import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { StatTile } from "../../../components/ui/StatTile";
 import { Input } from "../../../components/ui/Input";
 import { Textarea } from "../../../components/ui/Textarea";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { amountPrefix, currencyInputPadding, currencyPrefix, formatMoneyCompact, regionalCurrencyOf, regionalWorkOrderValue } from "../../../utils/currencyDisplay";
 import { budgetInputValue, parseBudgetInput } from "../../../utils/budgetAmount";
 
 interface Props {
@@ -23,22 +23,27 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
   const nonManhourBudgetAmount = project.nonManhourBudgetAmount || 0;
   const nonManhourBudgetRemarks = project.nonManhourBudgetRemarks || "";
 
-  const totalProjectBudget = project.workOrderValueINR || 0;
+  // Phase 3: budgets, expenses and the work order value are all in the project's REGIONAL currency (INR for a legacy project).
+  const regionalCurrency = regionalCurrencyOf(project);
+  const totalProjectBudget = regionalWorkOrderValue(project);
   const totalProjectCost = manhourBudgetAmount + nonManhourBudgetAmount;
 
-  const formatINR = (value: number) => formatBusinessINR(value || 0);
+  const formatINR = (value: number) => formatMoneyCompact(value || 0, regionalCurrency);
+  const amountPrefixText = amountPrefix(regionalCurrency);
 
+  // INR keeps this card's long-standing one-decimal K form exactly; every other country uses the shared international formatter (no second implementation).
   const formatK = (value: number) => {
-    if (value === 0) return "₹0";
+    if (regionalCurrency !== "INR") return formatMoneyCompact(value || 0, regionalCurrency);
+    if (value === 0) return `${amountPrefixText}0`;
     const kVal = value / 1000;
     const formatted = kVal % 1 === 0 ? kVal.toFixed(0) : kVal.toFixed(1);
-    return `₹${formatted}K`;
+    return `${amountPrefixText}${formatted}K`;
   };
 
   const budgetedProfitAmount = totalProjectBudget - totalProjectCost;
   const budgetedProfitPercent = totalProjectBudget > 0 ? (budgetedProfitAmount / totalProjectBudget) * 100 : 0;
 
-  const formattedProfitAmount = formatBusinessINR(budgetedProfitAmount);
+  const formattedProfitAmount = formatMoneyCompact(budgetedProfitAmount, regionalCurrency);
 
   const formattedProfitPercent = `${budgetedProfitPercent.toFixed(2)} %`;
 
@@ -167,10 +172,10 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
           />
           <CardBody className="space-y-4">
             <div>
-              <label className={labelClass}>Budget Amount (INR)</label>
+              <label className={labelClass}>Budget Amount ({regionalCurrency})</label>
               <div className="relative">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--nu-text-muted)] text-[13px] font-semibold">
-                  ₹
+                  {currencyPrefix(regionalCurrency)}
                 </span>
                 <Input
                   type="number"
@@ -182,7 +187,7 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                     }))
                   }
                   placeholder="Enter Man-Hour Budget Amount"
-                  className="pl-7"
+                  className={currencyInputPadding(regionalCurrency)}
                 />
               </div>
             </div>
@@ -230,10 +235,10 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
           />
           <CardBody className="space-y-4">
             <div>
-              <label className={labelClass}>Non Man-Hour Budget Amount (INR)</label>
+              <label className={labelClass}>Non Man-Hour Budget Amount ({regionalCurrency})</label>
               <div className="relative">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--nu-text-muted)] text-[13px] font-semibold">
-                  ₹
+                  {currencyPrefix(regionalCurrency)}
                 </span>
                 <Input
                   type="number"
@@ -246,7 +251,7 @@ export default function ExpenseBudgetCard({ project, setProject }: Props) {
                     }))
                   }
                   placeholder="Enter Non Man-Hour Budget Amount"
-                  className="pl-7"
+                  className={currencyInputPadding(regionalCurrency)}
                 />
               </div>
             </div>

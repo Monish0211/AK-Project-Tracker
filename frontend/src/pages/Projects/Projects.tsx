@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { formatBusinessINR } from "../../utils/formatCurrency";
+import { formatMoneyCompact, isNonInrRegional, moneyFormatter, regionalCurrencyOf, regionalWorkOrderValue } from "../../utils/currencyDisplay";
 import {
   FolderKanban,
   Search,
@@ -31,6 +31,9 @@ import {
 } from "../../services/projectService";
 import { persistImportedProjectChildRecords } from "../../services/projectImportPersistenceService";
 import { ApiError } from "../../services/apiClient";
+import { importRejectionFromError, previewProjectImport } from "../../services/projectCountryImportService";
+import type { ImportPreview, ImportRejection } from "../../services/projectCountryImportService";
+import ProjectImportPreviewModal from "./components/ProjectImportPreviewModal";
 import { getProjectCommercialSummary } from "../../services/invoiceProgressService";
 import { isActiveProjectStatus, PROJECT_STATUS_OPTIONS } from "../../constants/projectStatus";
 // The SAME PR Category source General Information already uses — never a
@@ -135,7 +138,10 @@ const getPrSeries = (prNo: string | null | undefined): string | null => {
 const getRepositoryInvoiceSummary = (
   p: Project
 ): { pendingDue: number; invoiceStatus: "Not Started" | "Partially Paid" | "Paid" } =>
-  repositoryInvoiceSummary(p.workOrderValueINR, p.backendPendingDueINR, p.backendAllInvoicesPaid === true);
+  // Phase 3: a project whose regional currency is not INR carries its amounts in that currency (the INR figures are 0 by design there).
+  isNonInrRegional(p)
+    ? repositoryInvoiceSummary(regionalWorkOrderValue(p), p.backendPendingDueRegional, p.backendAllInvoicesPaid === true)
+    : repositoryInvoiceSummary(p.workOrderValueINR, p.backendPendingDueINR, p.backendAllInvoicesPaid === true);
 
 const Projects = ({ mode = "repository" }: ProjectsProps) => {
   const navigate = useNavigate();
@@ -186,6 +192,10 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   // Holding the id/project here (rather than confirming inline) is what lets
   // a single reusable modal serve both actions.
   const [archiveTargetId, setArchiveTargetId] = useState<string | null>(null);
+  // Import Projects: the backend's per-row check awaiting the user's confirmation, or the row report of a rejected import.
+  const [importReview, setImportReview] = useState<{ imported: Project[]; preview: ImportPreview } | null>(null);
+  const [importRejection, setImportRejection] = useState<ImportRejection | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<Project | null>(null);
 
   // Search & Filter State — initialised FROM the URL so returning from a
@@ -325,10 +335,18 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
     const onHold = projects.filter((p) => p.projectStatus === "On Hold").length;
     const completed = allProjects.filter((p) => p.projectStatus === "Completed").length;
     const cancelled = projects.filter((p) => p.projectStatus === "Cancelled").length;
-    const totalWOValue = projects.reduce(
-      (sum, p) => sum + (p.workOrderValueINR || 0),
-      0
-    );
+    // Phase 3: money totals are kept per regional currency and never added across currencies. INR whenever INR or legacy projects are in the
+    // list (so the India list reads exactly as before); otherwise the currency with the most projects. Other currencies are named, not summed.
+    const countByCurrency = new Map<string, number>();
+    for (const p of projects) countByCurrency.set(regionalCurrencyOf(p), (countByCurrency.get(regionalCurrencyOf(p)) ?? 0) + 1);
+    const currency =
+      countByCurrency.has("INR") || countByCurrency.size === 0
+        ? "INR"
+        : [...countByCurrency.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+    const otherCurrencies = [...countByCurrency.keys()].filter((c) => c !== currency);
+    const totalWOValue = projects
+      .filter((p) => regionalCurrencyOf(p) === currency)
+      .reduce((sum, p) => sum + regionalWorkOrderValue(p), 0);
 
     let pendingInvoice = 0;
     let totalOutstanding = 0;
@@ -338,7 +356,10 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       if (comm.invoiceStatus !== "Completed") {
         pendingInvoice++;
       }
-      totalOutstanding += comm.outstandingCollection;
+      if (regionalCurrencyOf(p) === currency) {
+        // A non-INR project has nothing invoiced yet (invoicing is not available for it), so all of its work order value is still to collect.
+        totalOutstanding += isNonInrRegional(p) ? regionalWorkOrderValue(p) : comm.outstandingCollection;
+      }
     });
 
     return {
@@ -349,6 +370,8 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       totalWOValue,
       pendingInvoice,
       totalOutstanding,
+      currency,
+      otherCurrencies,
     };
   }, [projects, allProjects]);
 
@@ -547,11 +570,16 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
   }, [currentPage, totalPages]);
 
   // Format currency helpers
-  const fmtWOValue = (v: number) => formatBusinessINR(v || 0);
-
   const fmtCurrency = (v: number) => {
     if (v === 0) return <span className="text-gray-400 dark:text-gray-600 font-medium">—</span>;
     return "₹\u202F" + v.toLocaleString("en-IN");
+  };
+
+  // A project's own money in its regional currency (code, never a rupee sign, when that currency is not INR).
+  const fmtProjectMoney = (v: number, p: Project) => {
+    if (!isNonInrRegional(p)) return fmtCurrency(v);
+    if (v === 0) return <span className="text-gray-400 dark:text-gray-600 font-medium">—</span>;
+    return formatMoneyCompact(v, regionalCurrencyOf(p));
   };
 
   // Export to Excel
@@ -586,7 +614,8 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       await workbook.xlsx.load(arrayBuffer);
 
       const existing = getProjects();
-      const { projects: imported, errors } = parseProjectsWorkbook(workbook, existing);
+      const parsed = parseProjectsWorkbook(workbook, existing);
+      const { projects: imported, errors } = parsed;
 
       if (errors.length > 0) {
         showToast({
@@ -605,6 +634,26 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
         return;
       }
 
+      // Nothing is created yet. The backend checks every row (country from its own PR Category, this user's access to it, duplicates)
+      // and the user reviews the result in the preview dialog; confirmImport() below does the actual, all-or-nothing import.
+      const preview = await previewProjectImport(
+        parsed.rows ?? imported.map((p, i) => ({ rowNumber: i + 2, prNo: p.prNo, prCategory: p.prCategory ?? "" }))
+      );
+      setImportReview({ imported, preview });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Unknown error while reading the file.";
+      showToast({ type: "error", title: "Import failed", message: `Error reading file: ${message}` });
+    } finally {
+      e.target.value = ""; // clear file
+    }
+  };
+
+  // Runs only after the user confirms the preview. All-or-nothing, exactly as before; the backend re-checks every row.
+  const confirmImport = async () => {
+    if (!importReview) return;
+    const imported = importReview.imported;
+    setImportBusy(true);
+    try {
       // Persistence layer: General Information for every parsed row goes to
       // the real backend in one request (POST /projects/import), which
       // issues the real ids used everywhere else in the app from this point
@@ -648,10 +697,17 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
         });
       }
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Unknown error while reading the file.";
-      showToast({ type: "error", title: "Import failed", message: `Error reading file: ${message}` });
+      // A rejected import (country / unrecognised category) carries a row-by-row report: show it in the same dialog as the preview.
+      const rejection = importRejectionFromError(err);
+      if (rejection) {
+        setImportRejection(rejection);
+      } else {
+        const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Unknown error while importing.";
+        showToast({ type: "error", title: "Import failed", message });
+      }
     } finally {
-      e.target.value = ""; // clear file
+      setImportBusy(false);
+      setImportReview(null);
     }
   };
 
@@ -874,7 +930,12 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
             </div>
             <div>
               <div className="ml text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase">Outstanding</div>
-              <div className="mv text-lg font-black text-rose-600 dark:text-rose-400 leading-none mt-1">{fmtWOValue(stats.totalOutstanding)}</div>
+              <div
+                className="mv text-lg font-black text-rose-600 dark:text-rose-400 leading-none mt-1"
+                title={stats.otherCurrencies.length > 0 ? `Projects in ${stats.otherCurrencies.join(", ")} are not added into this total.` : undefined}
+              >
+                {moneyFormatter(stats.currency).compact(stats.totalOutstanding)}
+              </div>
             </div>
           </div>
         </div>
@@ -1202,10 +1263,10 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                         </span>
                       </td>
                       <td className="p-3 text-right font-bold text-slate-800 dark:text-slate-100 grp pmo-prno">
-                        {fmtCurrency(p.workOrderValueINR)}
+                        {fmtProjectMoney(isNonInrRegional(p) ? regionalWorkOrderValue(p) : p.workOrderValueINR, p)}
                       </td>
                       <td className={`p-3 text-right font-bold pmo-prno ${comm.pendingDue === 0 ? "text-emerald-600" : "text-amber-600"}`}>
-                        {fmtCurrency(comm.pendingDue)}
+                        {fmtProjectMoney(comm.pendingDue, p)}
                       </td>
                       {ld && (
                         <>
@@ -1213,13 +1274,21 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                             {ld.ldStatus === "Not recorded" ? <span className="text-slate-400">Not recorded</span> : ld.ldStatus}
                           </td>
                           <td className="p-3 text-right font-bold pmo-prno">
-                            {ld.ldDeduction === null ? <span className="text-slate-400">—</span> : "₹\u202F" + ld.ldDeduction.toLocaleString("en-IN")}
+                            {ld.ldInrNotDeducted !== null ? (
+                              <span title="A rupee Liquidated Damages recorded before regional LD existed: shown as INR and not deducted from this project's profit in its own currency">{"₹\u202F" + ld.ldInrNotDeducted.toLocaleString("en-IN")} <span className="text-[10px] font-normal text-slate-400">INR</span></span>
+                            ) : ld.ldDeduction === null ? (
+                              <span className="text-slate-400">—</span>
+                            ) : ld.currency !== "INR" ? (
+                              moneyFormatter(ld.currency).exact(ld.ldDeduction)
+                            ) : (
+                              "₹\u202F" + ld.ldDeduction.toLocaleString("en-IN")
+                            )}
                           </td>
                           <td className={`p-3 text-right font-bold pmo-prno ${ld.profitBeforeLd < 0 ? "text-red-600" : ""}`}>
-                            {"₹\u202F" + ld.profitBeforeLd.toLocaleString("en-IN")}
+                            {ld.currency !== "INR" ? moneyFormatter(ld.currency).exact(ld.profitBeforeLd) : "₹\u202F" + ld.profitBeforeLd.toLocaleString("en-IN")}
                           </td>
                           <td className={`p-3 text-right font-bold pmo-prno ${ld.finalProfit < 0 ? "text-red-600" : "text-emerald-600"}`}>
-                            {"₹\u202F" + ld.finalProfit.toLocaleString("en-IN")}
+                            {ld.currency !== "INR" ? moneyFormatter(ld.currency).exact(ld.finalProfit) : "₹\u202F" + ld.finalProfit.toLocaleString("en-IN")}
                           </td>
                         </>
                       )}
@@ -1356,6 +1425,18 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
       />
 
       {showExpenseImportModal && <ExpenseImportModal onClose={() => setShowExpenseImportModal(false)} />}
+      <ProjectImportPreviewModal
+        open={importReview !== null || importRejection !== null}
+        preview={importReview?.preview ?? null}
+        rejection={importRejection}
+        busy={importBusy}
+        onConfirm={() => void confirmImport()}
+        onClose={() => {
+          if (importBusy) return;
+          setImportReview(null);
+          setImportRejection(null);
+        }}
+      />
     </div>
   );
 };

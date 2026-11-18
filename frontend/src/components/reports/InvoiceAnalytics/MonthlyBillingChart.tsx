@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { EmptyState } from "../Shared/EmptyState";
 import type { ReportInvoiceLine } from "../../../services/invoiceService";
 
@@ -16,6 +16,7 @@ interface Props {
 }
 
 export function MonthlyBillingChart({ projects, invoiceLines }: Props) {
+  const money = useReportMoney();
   const billingData = useMemo(() => {
     const projectIds = new Set(projects.map((p) => p.id));
     const monthMap: Record<string, { month: string; amount: number; count: number }> = {};
@@ -44,7 +45,7 @@ export function MonthlyBillingChart({ projects, invoiceLines }: Props) {
         <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--nu-text)]">
           Monthly Invoicing & Billing Run Rate
         </h4>
-        <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">INR Billing</span>
+        <span className="text-[11px] text-[var(--nu-text-muted)] font-mono">{money.currency} Billing</span>
       </div>
 
       {billingData.length === 0 ? (
@@ -55,8 +56,8 @@ export function MonthlyBillingChart({ projects, invoiceLines }: Props) {
           <BarChart data={billingData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
             <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-            <YAxis tickFormatter={(v) => formatBusinessINR(v)} tick={{ fontSize: 10 }} />
-            <Tooltip formatter={(val: any) => [formatBusinessINR(Number(val)), "Billed Amount"]} />
+            <YAxis tickFormatter={(v) => money.compact(v)} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(val: any) => [money.compact(Number(val)), "Billed Amount"]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="amount" name="Invoiced Amount" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
           </BarChart>

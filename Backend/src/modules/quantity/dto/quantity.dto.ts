@@ -67,6 +67,14 @@ export interface QuantityDto {
   woValue: number;
   pendingAmount: number;
 
+  /**
+   * Regional-currency price and value (Phase 3): the line converted into the PROJECT's regional currency at exchangeRate
+   * (regional currency per one unit of `currency`). null on a row saved before Phase 3. unitRateINR / woValue stay INR-only.
+   * pendingAmount is in the project's regional currency (INR for an India or legacy project, exactly as before).
+   */
+  unitRateRegional: number | null;
+  woValueRegional: number | null;
+
   createdAt: Date;
   updatedAt: Date;
 }

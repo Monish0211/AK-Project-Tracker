@@ -3,7 +3,7 @@ import { KPIReportCard } from "../Shared/KPIReportCard";
 import { CustomerRevenueChart } from "./CustomerRevenueChart";
 import { CustomerOutstanding } from "./CustomerOutstanding";
 import { CustomerTable } from "./CustomerTable";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { INVOICE_NOT_AVAILABLE, NO_INVOICE_ACCESS_HINT, useInvoiceDataAvailable } from "../Shared/invoiceAccess";
 import { InvoiceDataUnavailable } from "../Shared/InvoiceDataUnavailable";
 
@@ -12,6 +12,7 @@ interface Props {
 }
 
 export function CustomerAnalytics({ analytics }: Props) {
+  const money = useReportMoney();
   const a = analytics;
   const inv = useInvoiceDataAvailable();
 
@@ -36,7 +37,7 @@ export function CustomerAnalytics({ analytics }: Props) {
 
         <KPIReportCard
           title="Total Client Revenue"
-          value={inv ? formatBusinessINR(a.totalInvoiceRaised) : INVOICE_NOT_AVAILABLE}
+          value={inv ? money.compact(a.totalInvoiceRaised) : INVOICE_NOT_AVAILABLE}
           subtitle={inv ? "Total invoiced across clients" : NO_INVOICE_ACCESS_HINT}
           icon={<DollarSign size={18} />}
           tone="indigo"
@@ -44,7 +45,7 @@ export function CustomerAnalytics({ analytics }: Props) {
 
         <KPIReportCard
           title="Client Contract Outstanding"
-          value={inv ? formatBusinessINR(a.totalOutstanding) : INVOICE_NOT_AVAILABLE}
+          value={inv ? money.compact(a.totalOutstanding) : INVOICE_NOT_AVAILABLE}
           subtitle={inv ? "Uncollected client contract balances" : NO_INVOICE_ACCESS_HINT}
           icon={<AlertCircle size={18} />}
           tone="amber"

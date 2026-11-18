@@ -75,8 +75,8 @@ export const downloadDocument = asyncHandler(async (req: Request, res: Response)
 });
 
 export const deleteDocument = asyncHandler(async (req: Request, res: Response) => {
-  requireUser(req);
+  const user = requireUser(req);
   const id = requireParam(req, "id");
-  await documentService.deleteDocument(id);
+  await documentService.deleteDocument(id, user);
   res.status(200).json({ success: true, data: null, message: "Document deleted successfully." });
 });

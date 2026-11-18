@@ -46,6 +46,9 @@ export const createProjectSchema = z.object({
   // deliberately absent: the server sets them from the session.
   ldApplicable: z.boolean().optional(),
   ldAmountINR: z.number().optional().nullable(),
+  // Phase 4 final: the amount in the PROJECT's currency. ldCurrency is only checked against the project's own currency, never trusted.
+  ldAmount: z.number().optional().nullable(),
+  ldCurrency: z.string().trim().max(3).optional().nullable(),
   ldRemarks: z.string().optional().nullable(),
 
   workOrderNumber: z.string().trim().min(1, "Work Order Number is required."),
@@ -169,6 +172,9 @@ export const updateProjectSchema = z.object({
   // deliberately absent: the server sets them from the session.
   ldApplicable: z.boolean().optional(),
   ldAmountINR: z.number().optional().nullable(),
+  // Phase 4 final: the amount in the PROJECT's currency. ldCurrency is only checked against the project's own currency, never trusted.
+  ldAmount: z.number().optional().nullable(),
+  ldCurrency: z.string().trim().max(3).optional().nullable(),
   ldRemarks: z.string().optional().nullable(),
 
   workOrderNumber: z.string().trim().min(1).optional(),
@@ -281,3 +287,23 @@ export const importProjectsSchema = z.object({
 });
 
 export type ImportProjectsInput = z.infer<typeof importProjectsSchema>;
+
+/**
+ * POST /projects/import/preview — the non-committing country/duplicate check the Import UI shows before anything is created. It carries
+ * only what the country and duplicate rules need, and DELIBERATELY accepts a blank PR Category (so the row can be reported, not rejected
+ * by the schema). It writes nothing.
+ */
+export const importPreviewSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        rowNumber: z.number().int().positive().optional(),
+        prNo: z.string().trim().max(100),
+        prCategory: z.string().trim().max(100).default(""),
+      })
+    )
+    .min(1, "At least one row is required.")
+    .max(5000, "A preview can check at most 5000 rows at a time."),
+});
+
+export type ImportPreviewInput = z.infer<typeof importPreviewSchema>;

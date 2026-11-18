@@ -1,7 +1,7 @@
 import type { InvoiceItem } from "../../../../types/InvoiceItem";
 import { Badge, type Tone } from "../../../../components/ui/Badge";
 import { MoneyValue } from "../../../../components/ui/MoneyTooltip";
-import { formatIndianCurrency } from "../../../../utils/formatCurrency";
+import { formatMoney } from "../../../../utils/currencyDisplay";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 import {
   getInvoiceRaisedAmount,
@@ -19,6 +19,8 @@ interface Props {
   isMlmp?: boolean;
   /** Amount Based bills a direct amount against remaining Contract Value — no quantity at all, so Order Qty/Completed/Remaining/Progress/Unit Rate are all meaningless and must not render. */
   isAmountBased?: boolean;
+  /** The project's own currency (multi-country); omitted = INR, so India and legacy projects read exactly as before. */
+  currency?: string | undefined;
 }
 
 const STATUS_BADGE: Record<InvoiceStatus, Tone> = {
@@ -35,7 +37,7 @@ const STATUS_BADGE: Record<InvoiceStatus, Tone> = {
  * itself happens through the single project-wide "+ Raise Invoice" workflow,
  * never from this table.
  */
-export function ActivityRow({ item, slNo, isLumpSum, isMlmp = false, isAmountBased = false }: Props) {
+export function ActivityRow({ item, slNo, isLumpSum, isMlmp = false, isAmountBased = false, currency }: Props) {
   const invoiceRaised = getInvoiceRaisedAmount(item);
   const balance = Math.max(item.totalPrice - invoiceRaised, 0);
   const status = calculateInvoiceStatus(item);
@@ -61,16 +63,16 @@ export function ActivityRow({ item, slNo, isLumpSum, isMlmp = false, isAmountBas
         </>
       )}
       {!isAmountBased && (
-        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{formatIndianCurrency(item.unitPrice)}</td>
+        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{formatMoney(item.unitPrice, currency ?? "INR")}</td>
       )}
       <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">
-        <MoneyValue value={item.totalPrice} />
+        <MoneyValue value={item.totalPrice} currency={currency} />
       </td>
       <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">
-        <MoneyValue value={invoiceRaised} className="font-semibold text-[var(--nu-accent)]" />
+        <MoneyValue value={invoiceRaised} className="font-semibold text-[var(--nu-accent)]" currency={currency} />
       </td>
       <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">
-        <MoneyValue value={balance} />
+        <MoneyValue value={balance} currency={currency} />
       </td>
       <td className="px-3 py-3 text-center whitespace-nowrap">
         <Badge tone={STATUS_BADGE[status]} dot className="text-[10.5px]">{status}</Badge>

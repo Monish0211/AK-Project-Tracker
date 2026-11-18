@@ -2,6 +2,7 @@ import React from "react";
 import { ArrowRight, User, Users, Info, CheckCircle2, AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useDashboardSummary } from "../DashboardSummaryContext";
+import { LeadWorkOrderValue } from "./LeadWorkOrderValue";
 
 const TeamLeadsWorkloadWidget: React.FC = () => {
   const navigate = useNavigate();
@@ -160,7 +161,7 @@ const TeamLeadsWorkloadWidget: React.FC = () => {
                     </td>
 
                     <td className="py-1.5 px-2 font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                      {lead.formattedWorkOrderValue}
+                      <LeadWorkOrderValue lead={lead} />
                     </td>
                   </tr>
                 ))}
@@ -190,7 +191,7 @@ const TeamLeadsWorkloadWidget: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-slate-400 text-[9.5px] uppercase font-medium">Work Order Value</p>
-                    <p className="font-semibold text-slate-700 dark:text-slate-300">{lead.formattedWorkOrderValue}</p>
+                    <p className="font-semibold text-slate-700 dark:text-slate-300"><LeadWorkOrderValue lead={lead} /></p>
                   </div>
                 </div>
 

@@ -32,6 +32,10 @@ export interface ProjectDto {
   // ldApplicable null = not recorded (never "No"); ldAmountINR set only when true.
   ldApplicable: boolean | null;
   ldAmountINR: number | null;
+  // Regional LD (Phase 4 final): ldCurrency null on a recorded amount = legacy rupee amount; otherwise the project's currency, with the amount in
+  // ldAmountINR (INR) or ldAmountRegional (every other currency) — never both.
+  ldCurrency: string | null;
+  ldAmountRegional: number | null;
   ldRemarks: string | null;
   ldRecordedByUserId: string | null;
   ldRecordedAt: Date | null;
@@ -71,6 +75,10 @@ export interface ProjectDto {
   // invoice service still infers INR for projects with pre-feature raised
   // invoices — see invoiceCurrency.rules.ts's resolveEffectiveLock()).
   invoiceCurrency: string | null;
+
+  // Regional currency (Phase 3): the currency of the project's country, a snapshot taken at creation. null = a legacy project, which
+  // behaves exactly as before (INR). Distinct from `currency` (the commercial / transaction currency) and `invoiceCurrency`.
+  regionalCurrency: string | null;
 
   // Expense Budget — Phase 3.5.
   manhourBudgetAmount: number | null;
@@ -114,6 +122,12 @@ export interface ProjectDto {
   workOrderValueINR: number;
   pendingDueINR: number;
   /**
+   * The same two figures in the project's REGIONAL currency (Phase 3). For an INR or legacy project they equal the INR figures above.
+   * For any other region the INR-named figures above are 0 by design and these carry the amounts.
+   */
+  workOrderValueRegional: number;
+  pendingDueRegional: number;
+  /**
    * True when every non-Cancelled invoice line of this project has actually reached "Paid" (and there is at least one). The
    * Project Repository's Invoice Status shows "Paid" only when the Work Order Value is fully invoiced AND this is true — fully
    * invoiced alone is "Partially Paid". Server-computed from the same invoice lines as pendingDueINR, never from the browser cache.
@@ -138,6 +152,17 @@ export interface ProjectDto {
    */
   manhourCostINR: number;
   nonManhourCostINR: number;
+  /**
+   * Phase 4 - man-hour cost in the project's OWN regional currency: the INR figure for an INR / legacy project, otherwise the sum of the rows converted
+   * with a rate. manhourRateMissingRows counts the rows of a non-INR project that have no rate applied (their cost is NOT in the total above).
+   */
+  manhourCostRegional: number;
+  manhourRateMissingRows: number;
+  /**
+   * Phase 4 / Option A - CURRENT, or PENDING / FAILED while the automatic recalculation after an employee's hourly-rate change has not completed for this
+   * project: its manpower figures may be out of date and every screen must say so rather than present them as current.
+   */
+  manhourRefreshStatus: "CURRENT" | "PENDING" | "FAILED";
 }
 
 export interface PaginatedProjectListDto {

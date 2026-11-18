@@ -7,15 +7,16 @@ export function findBatchByFileHash(fileHash: string) {
   return prisma.expenseImportBatch.findUnique({ where: { fileHash } });
 }
 
-export function findActiveProjectsByNormalizedPrNos(): Promise<{ id: string; prNo: string }[]> {
+export function findActiveProjectsByNormalizedPrNos(extraWhere?: Prisma.ProjectWhereInput): Promise<{ id: string; prNo: string; regionalCurrency: string | null }[]> {
   // Every active (non-deleted) project's id/prNo — normalization happens in
   // the service via the existing, already-approved normalizeProjectCode()
   // utility, not here. Small enough to load in full and match in memory
   // (same "load once per import" shape as Timesheet's own
   // buildProjectLookupMap(), rather than one query per sheet).
   return prisma.project.findMany({
-    where: { isDeleted: false },
-    select: { id: true, prNo: true },
+    // extraWhere is the country boundary (Phase 2): a project outside the importer's countries is simply not in the match set.
+    where: { isDeleted: false, ...(extraWhere ?? {}) },
+    select: { id: true, prNo: true, regionalCurrency: true },
   });
 }
 

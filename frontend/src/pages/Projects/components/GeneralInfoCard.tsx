@@ -11,10 +11,14 @@ import { Input } from "../../../components/ui/Input";
 import { Select } from "../../../components/ui/Select";
 import { ProjectCompletionModal } from "../../../components/Projects/ProjectCompletionModal";
 import { computeProjectFinancials } from "../../../utils/projectFinancials";
-import { formatIndianCurrency } from "../../../utils/formatCurrency";
+import { isNonInrRegional, regionalCurrencyOf, regionalWorkOrderValue } from "../../../utils/currencyDisplay";
+import { ldAmountText } from "../../../utils/ldDisplay";
 
 import { FieldError } from "../../../components/ui/FieldError";
 import { PROJECT_STATUS_OPTIONS, WORK_ORDER_STATUS_OPTIONS } from "../../../constants/projectStatus";
+import { categoryHint, categoryOptionState } from "../../../services/projectCountryImportService";
+import { applyRegionalCurrencyToProject } from "../../../utils/quantityCalculations";
+import type { PrCategoryCountryReference } from "../../../services/projectCountryImportService";
 
 interface Props {
   project: Project;
@@ -33,6 +37,20 @@ interface Props {
   showCoordinatorLinkHint?: boolean;
   /** Read Only assigned coordinators may not reassign the coordinator (the backend refuses it too). */
   lockPmoCoordinator?: boolean;
+  /** Add / Edit Project only: the backend's PR Category -> country reference (with the caller's own access). Absent for PR Requests. */
+  categoryCountries?: PrCategoryCountryReference | null;
+  /** Edit Project while country access is enforced: a saved project's country cannot be changed here, so other countries' categories are not offered. */
+  lockCountry?: boolean;
+  /**
+   * Add Project only: choosing the PR Category fixes the project's country and so its REGIONAL currency (Phase 3). The commercial currency
+   * becomes the regional one at rate 1 (read-only) and every quantity line is repriced. Off for Edit and for PR Requests.
+   */
+  applyRegionalCurrency?: boolean;
+  /**
+   * The PR Category -> country reference used ONLY to find the regional currency (PR Request form). Unlike `categoryCountries` it never
+   * disables or hints any category, so who may request what is unchanged.
+   */
+  currencyReference?: PrCategoryCountryReference | null;
 }
 
 import { PR_CATEGORIES as prCategories, PR_NUMBER_PREFIX_MAP as prNumberPrefixMap, applyPrCategoryToPrNo } from "../../../utils/createEmptyProject";
@@ -77,7 +95,7 @@ const Field = ({ label, children, required, error }: { label: string; children: 
   </div>
 );
 
-const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCustomerMasterWarning = true, showCoordinatorLinkHint = true, lockPmoCoordinator = false }: Props) => {
+const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCustomerMasterWarning = true, showCoordinatorLinkHint = true, lockPmoCoordinator = false, categoryCountries = null, lockCountry = false, applyRegionalCurrency = false, currencyReference = null }: Props) => {
   const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false);
   // Project Remarks — collapsed by default in both Add and Edit; whether
   // remarks already exist only changes the toggle's own label/icon below
@@ -193,10 +211,22 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCus
               onChange={(e) => {
                 const newCategory = e.target.value;
 
+                // Phase 3 (Add Project): the category decides the country, so it also decides the regional currency. Read from the
+                // backend's reference, never derived here from the PR prefix.
+                const currencySource = categoryCountries ?? currencyReference;
+                const regionalFields =
+                  applyRegionalCurrency && currencySource
+                    ? applyRegionalCurrencyToProject(
+                        project,
+                        currencySource.items.find((i) => i.prCategory === newCategory)?.country?.defaultCurrency ?? null
+                      )
+                    : {};
+
                 setProject({
                   ...project,
                   prCategory: newCategory,
                   prNo: applyPrCategoryToPrNo(project.prCategory, project.prNo, newCategory),
+                  ...regionalFields,
                 });
                 clearError?.("prCategory");
               }}
@@ -204,12 +234,20 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCus
             >
               <option value="">Select PR Category</option>
 
-              {prCategories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
+              {prCategories.map((category) => {
+                const state = categoryOptionState(categoryCountries, category, { currentCategory: project.prCategory, lockCountry });
+                return (
+                  <option key={category} value={category} disabled={state.disabled}>
+                    {state.label}
+                  </option>
+                );
+              })}
             </Select>
+            {categoryHint(categoryCountries, project.prCategory, { lockCountry }) && (
+              <p className="text-[11.5px] text-[var(--nu-text-secondary)] mt-1" data-testid="pr-category-country-hint">
+                {categoryHint(categoryCountries, project.prCategory, { lockCountry })}
+              </p>
+            )}
           </Field>
 
           <Field label="PR Number" required={true} error={errors["prNo"]}>
@@ -572,7 +610,7 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCus
                 <FormLabel>Liquidated Damages (LD)</FormLabel>
                 {project.ldApplicable === true || project.ldApplicable === false ? (
                   <p className="text-[var(--nu-text)] mt-1">
-                    <strong>{project.ldApplicable ? `Yes — ${formatIndianCurrency(project.ldAmountINR ?? 0)}` : "No"}</strong>
+                    <strong>{project.ldApplicable ? `Yes — ${ldAmountText(project)}` : "No"}</strong>
                     {project.ldRemarks ? <span className="text-[var(--nu-text-muted)]"> · Ref: {project.ldRemarks}</span> : null}
                     <span className="block text-[10px] text-[var(--nu-text-muted)] mt-1">Recorded at completion; it cannot be edited here.</span>
                   </p>
@@ -787,14 +825,19 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCus
         isOpen={isCompletionModalOpen}
         projectTitle={project.projectTitle || "Untitled Project"}
         prNo={project.prNo || "—"}
-        recordedLd={{ ldApplicable: project.ldApplicable ?? null, ldAmountINR: project.ldAmountINR ?? null }}
-        workOrderValueINR={project.workOrderValueINR ?? null}
+        recordedLd={{ ldApplicable: project.ldApplicable ?? null, ldAmountINR: project.ldAmountINR ?? null, ldAmountRegional: project.ldAmountRegional ?? null, ldCurrency: project.ldCurrency ?? null }}
+        workOrderValueINR={isNonInrRegional(project) ? regionalWorkOrderValue(project) : (project.workOrderValueINR ?? null)}
+        projectCurrency={regionalCurrencyOf(project)}
         profitBeforeLd={
           computeProjectFinancials({
-            workOrderValueINR: project.workOrderValueINR ?? 0,
-            manhourCosts: (project.resources ?? []).map((r) => r.manhourCost ?? 0),
+            // A project in another country: its profit is in its own currency (regional work order value, converted man-hour cost), never the INR-named zero.
+            workOrderValueINR: isNonInrRegional(project) ? regionalWorkOrderValue(project) : (project.workOrderValueINR ?? 0),
+            manhourCosts: (project.resources ?? []).map((r) =>
+              isNonInrRegional(project) ? (r.costingStatus === "CONVERTED" && typeof r.manhourCostRegional === "number" ? r.manhourCostRegional : 0) : (r.manhourCost ?? 0)
+            ),
             nonManhourRows: project.nonManhourExpenses ?? [],
             invoiceLines: [],
+            currency: regionalCurrencyOf(project),
           }).profitBeforeLd
         }
         onConfirm={(data) => {
@@ -809,7 +852,15 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCus
             completionRemarks: data.completionRemarks,
             completedBy: data.completedBy,
             completedTimestamp: new Date().toISOString(),
-            ...(data.ld ? { ldApplicable: data.ld.ldApplicable, ldAmountINR: data.ld.ldAmountINR, ldRemarks: data.ld.ldRemarks } : {}),
+            ...(data.ld
+              ? {
+                  ldApplicable: data.ld.ldApplicable,
+                  ldAmountINR: data.ld.ldAmountINR,
+                  ldAmountRegional: data.ld.ldAmountRegional,
+                  ldCurrency: data.ld.ldCurrency,
+                  ldRemarks: data.ld.ldRemarks,
+                }
+              : {}),
           }));
           clearError?.("projectStatus");
           setIsCompletionModalOpen(false);

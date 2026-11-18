@@ -1,4 +1,5 @@
 import type { Project } from "../../../types/Project";
+import { formatMoney, regionalCurrencyOf, regionalWorkOrderValue } from "../../../utils/currencyDisplay";
 import InfoField from "./InfoField";
 import InfoSection from "./InfoSection";
 
@@ -18,6 +19,10 @@ const BusinessSection = ({ project }: Props) => {
         label="Payment Terms"
         value={project.paymentTerms}
       />
+
+      {project.regionalCurrency && project.regionalCurrency !== project.currency && (
+        <InfoField label="Regional Currency" value={project.regionalCurrency} />
+      )}
 
       <InfoField
         label="Currency"
@@ -43,11 +48,8 @@ const BusinessSection = ({ project }: Props) => {
       />
 
       <InfoField
-        label="Work Order Value (INR)"
-        value={`₹ ${project.workOrderValueINR.toLocaleString("en-IN", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}`}
+        label={`Work Order Value (${regionalCurrencyOf(project)})`}
+        value={formatMoney(regionalWorkOrderValue(project), regionalCurrencyOf(project))}
       />
     </InfoSection>
   );

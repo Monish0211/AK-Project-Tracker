@@ -23,6 +23,7 @@ import { Badge } from "../../../../components/ui/Badge";
 import { Toggle } from "../../../../components/ui/Toggle";
 import { CreatableCombobox } from "../../../../components/ui/CreatableCombobox";
 import { usePmoToast } from "../../../../components/ui/usePmoToast";
+import { useAuth } from "../../../../auth/authContext";
 
 interface UserDrawerProps {
   isOpen: boolean;
@@ -126,6 +127,10 @@ const PROJECT_MANAGER_ROLE: SystemRole = "Project Manager";
 
 export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestResetPassword, existingUsers, lookups }: UserDrawerProps) => {
   const { showToast } = usePmoToast();
+  // Country access (Global Multi-Country Phase 1): only an Administrator may change it, and nobody may change their own. The
+  // backend enforces both; this only hides what the server would refuse.
+  const { user: signedInUser } = useAuth();
+  const canEditCountryAccess = signedInUser?.role === "Administrator" && !(mode === "edit" && user?.id === signedInUser.id);
   const [animateShow, setAnimateShow] = useState(false);
 
   const [employeeName, setEmployeeName] = useState("");
@@ -152,6 +157,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
   // grants if the role you actually submit isn't Project Manager, so no
   // frontend-side clearing is required for rule D to hold.
   const [scopedUserIds, setScopedUserIds] = useState<string[]>([]);
+  const [allCountriesAccess, setAllCountriesAccess] = useState(false);
 
   const [forcePasswordChange, setForcePasswordChange] = useState(true);
   const [accountLocked, setAccountLocked] = useState(false);
@@ -188,6 +194,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
         setProjectRegionAccess(user.projectRegionAccess);
         setApprovalRights(user.approvalRights);
         setScopedUserIds(user.scopedUserIds);
+        setAllCountriesAccess(user.allCountriesAccess === true);
         setForcePasswordChange(user.accountSecurity.forcePasswordChangeOnFirstLogin);
         setAccountLocked(user.accountSecurity.accountLocked);
         setLastPasswordResetAt(user.accountSecurity.lastPasswordResetAt);
@@ -207,6 +214,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
         setProjectRegionAccess(ROLE_REGION_DEFAULTS[DEFAULT_ROLE]);
         setApprovalRights(ROLE_APPROVAL_DEFAULTS[DEFAULT_ROLE]);
         setScopedUserIds([]);
+        setAllCountriesAccess(false);
         setForcePasswordChange(true);
         setAccountLocked(false);
         setLastPasswordResetAt(null);
@@ -243,8 +251,12 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
   };
 
   const handleToggleRegion = (key: keyof UserProjectRegionAccess) => {
+    if (!canEditCountryAccess) return;
     setProjectRegionAccess((prev) => ({ ...prev, [key]: !prev[key] }));
   };
+
+  /** Shows the configured display name (FZE) while grants keep matching on the stored region name (FZI): see resolveSelectedIds. */
+  const regionDisplayLabel = (label: string): string => lookups?.regions.find((r) => r.name === label)?.displayName ?? label;
 
   const handleToggleApproval = (key: keyof UserApprovalRights) => {
     setApprovalRights((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -317,6 +329,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
           regionIds,
           approvalIds,
           scopedUserIds,
+          ...(canEditCountryAccess ? { allCountriesAccess } : {}),
         });
 
         onSaved(
@@ -377,7 +390,8 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
           isActive: status === "Active",
           roleId,
           moduleIds,
-          regionIds,
+          // Country access is sent only by an Administrator editing someone else; otherwise it is left untouched.
+          ...(canEditCountryAccess ? { regionIds, allCountriesAccess } : {}),
           approvalIds,
           scopedUserIds,
           forcePasswordChange,
@@ -712,6 +726,13 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
               <p className="text-[11px] text-[var(--nu-text-muted)] -mt-1.5">
                 This user will only see projects belonging to the regions selected below.
               </p>
+              {!canEditCountryAccess && (
+                <p data-testid="country-access-readonly-note" className="text-[11px] font-medium text-[var(--nu-warning,#b4540a)]">
+                  {mode === "edit" && user?.id === signedInUser?.id
+                    ? "You cannot change your own country access. Ask another Administrator."
+                    : "Only an Administrator can change country access."}
+                </p>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                 {REGION_FIELDS.map(({ key, label }) => {
                   const isAssigned = projectRegionAccess[key];
@@ -720,13 +741,14 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
                       key={key}
                       type="button"
                       onClick={() => handleToggleRegion(key)}
-                      className={`flex items-center justify-between p-2.5 rounded-[var(--nu-radius-md)] border text-left transition-all cursor-pointer ${
+                      disabled={!canEditCountryAccess}
+                      className={`flex items-center justify-between p-2.5 rounded-[var(--nu-radius-md)] border text-left transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${
                         isAssigned
                           ? "border-[var(--nu-accent)]/40 bg-[var(--nu-surface-alt)] text-[var(--nu-text)]"
                           : "border-[var(--nu-border)] bg-[var(--nu-surface)] text-[var(--nu-text-muted)]"
                       }`}
                     >
-                      <span className="text-[12px] font-medium">{label}</span>
+                      <span className="text-[12px] font-medium">{regionDisplayLabel(label)}</span>
                       <span
                         className={`w-4 h-4 rounded-sm border flex items-center justify-center transition-colors ${
                           isAssigned ? "bg-[var(--nu-accent)] border-[var(--nu-accent)] text-white" : "border-[var(--nu-border)] bg-transparent"
@@ -738,6 +760,17 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
                   );
                 })}
               </div>
+              {canEditCountryAccess && (
+                <div data-testid="all-countries-block" className="mt-1 flex items-center justify-between gap-3 rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] p-3">
+                  <div>
+                    <p className="text-[12px] font-semibold text-[var(--nu-text)]">All Countries access</p>
+                    <p className="text-[11px] text-[var(--nu-text-muted)]">
+                      Lets this user see every country together. It is never given by role or job title; only an Administrator can grant it.
+                    </p>
+                  </div>
+                  <Toggle checked={allCountriesAccess} onChange={setAllCountriesAccess} label="All Countries access" />
+                </div>
+              )}
             </div>
 
             {/* SECTION 5B: Project Manager Scope — only shown for the Project Manager role */}

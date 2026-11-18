@@ -10,6 +10,8 @@
  * hourlyRateSnapshot exists specifically so a row's historical cost survives
  * independently of Employee Master's current state.
  */
+import type { Prisma } from "../../../generated/prisma/client.js";
+
 export interface ProjectResourceData {
   employeeNo: string;
 
@@ -23,6 +25,14 @@ export interface ProjectResourceData {
   totalHours: number;
 
   manhourCost: number;
+
+  // Phase 4 - regional costing columns (see schema.prisma, ProjectResource). Set only by manhourSnapshot.ts; the INR fields above are unchanged.
+  costCurrency?: string | null;
+  costingStatus?: string | null;
+  fxRateVersion?: number | null;
+  fxRateInrPerRegional?: Prisma.Decimal | null;
+  manhourCostRegional?: Prisma.Decimal | null;
+  rateSetAt?: Date | null;
 
   lastSyncedAt?: Date | null;
 }

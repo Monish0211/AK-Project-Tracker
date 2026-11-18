@@ -47,6 +47,14 @@ export interface RegistryRow {
 type RegistryProject = Pick<Project, "id" | "prNo" | "client" | "projectTitle" | "department" | "projectStatus" | "workOrderValueINR"> &
   Partial<Pick<Project, "workOrderValue" | "resources" | "nonManhourExpenses" | "invoiceItems" | "ldApplicable" | "ldAmountINR">>;
 
+/** Removes floating-point noise (1223.9270000000001) from an amount without rounding any real digit: OMR keeps its 3 decimals, INR its 2. */
+function clean(value: number): number {
+  return Math.round(value * 1e6) / 1e6;
+}
+function cleanOrNull(value: number | null): number | null {
+  return value === null ? null : clean(value);
+}
+
 export function buildRegistryRow(p: RegistryProject, invoiceDataAvailable: boolean): RegistryRow {
   const items = Array.isArray(p.invoiceItems) ? p.invoiceItems : [];
   const lines: FinancialInvoiceLine[] = items.flatMap((item) => (Array.isArray(item.invoices) ? item.invoices : []));
@@ -65,16 +73,16 @@ export function buildRegistryRow(p: RegistryProject, invoiceDataAvailable: boole
     projectTitle: p.projectTitle || "-",
     department: p.department || "-",
     status: p.projectStatus || "Active",
-    woValue: f.workOrderValue,
-    raised: f.invoice ? f.invoice.raised : null,
-    received: f.invoice ? f.invoice.received : null,
-    outstanding: f.invoice ? f.invoice.outstanding : null,
-    expenses: f.expenses,
-    profit: f.profit,
+    woValue: clean(f.workOrderValue),
+    raised: f.invoice ? clean(f.invoice.raised) : null,
+    received: f.invoice ? clean(f.invoice.received) : null,
+    outstanding: f.invoice ? clean(f.invoice.outstanding) : null,
+    expenses: clean(f.expenses),
+    profit: clean(f.profit),
     profitPct: f.profitPercent,
     ldStatus: f.ldStatus === "Not recorded" ? null : f.ldStatus,
-    ldAmount: f.ldDeduction,
-    finalProfit: f.finalProfit,
+    ldAmount: cleanOrNull(f.ldDeduction),
+    finalProfit: clean(f.finalProfit),
     finalProfitPct: f.finalProfitPercent,
   };
 }

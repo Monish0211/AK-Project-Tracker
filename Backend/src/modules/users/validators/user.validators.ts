@@ -26,6 +26,10 @@ export const createUserSchema = z.object({
   // a client that always sends [] regardless of the currently-selected role
   // isn't treated as an error.
   scopedUserIds: z.array(z.string().uuid("Each scopedUserId must be a valid UUID.")).default([]),
+
+  // The explicit All Countries right (Global Multi-Country Phase 1). Omitted = not granted. Only an Administrator may set it true;
+  // the service refuses anyone else (see countryAccessAdmin.ts).
+  allCountriesAccess: z.boolean().optional(),
 });
 
 /**
@@ -75,6 +79,9 @@ export const updateUserSchema = z.object({
   // additional role-changed-away-from-Project-Manager clearing rule, which
   // fires independently of whatever this field was set to.
   scopedUserIds: z.array(z.string().uuid("Each scopedUserId must be a valid UUID.")).optional(),
+
+  // Omitted = leave the All Countries right untouched. Only an Administrator may change it, and never on their own account.
+  allCountriesAccess: z.boolean().optional(),
 
   forcePasswordChange: z.boolean().optional(),
   accountLocked: z.boolean().optional(),

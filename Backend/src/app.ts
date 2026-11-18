@@ -13,6 +13,8 @@ import { expenseBulkRoutes, expenseRoutes, expenseImportRoutes } from "./modules
 import { employeeRoutes } from "./modules/employees/index.js";
 import { customerRoutes } from "./modules/customers/index.js";
 import { resourceRoutes } from "./modules/resources/index.js";
+import { manhourRateRoutes } from "./modules/manhourRates/index.js";
+import { manhourCostingRoutes } from "./modules/manhourCosting/index.js";
 import { timesheetRoutes } from "./modules/timesheets/index.js";
 import { mailIngestionRoutes } from "./modules/mailIngestion/index.js";
 import { pdfImportRoutes } from "./modules/pdfImport/index.js";
@@ -62,6 +64,10 @@ app.use("/users", userRoutes);
 // exact literal routes like GET /projects/resources match resourceRoutes
 // instead of getting swallowed by projectRoutes' /:id handler.
 app.use(resourceRoutes);
+// Phase 4 - per-project manpower conversion rate ("1 regional currency unit = X INR"); two-segment paths, so no collision with /projects/:id.
+app.use(manhourRateRoutes);
+// Phase 4 / Option A - the central manpower costing read model and the recalculation recovery endpoints.
+app.use(manhourCostingRoutes);
 // Reports data consistency (Oct 2026) — the literal GET /projects/expenses
 // and GET /projects/quantity bulk reads, mounted before /projects for the
 // same /:id-collision reason as resourceRoutes above.

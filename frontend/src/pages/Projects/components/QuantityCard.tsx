@@ -1,7 +1,17 @@
 import { Clock, Package, Plus, Trash2, Wallet, Layers } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import type { ChangeEvent, Dispatch, SetStateAction } from "react";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import {
+  formatCurrencyNumber,
+  formatMoney,
+  formatMoneyCompact,
+  isNonInrRegional,
+  lineRegionalUnitRate,
+  lineRegionalValue,
+  rateDirectionLabel,
+  regionalCurrencyOf,
+  regionalWorkOrderValue,
+} from "../../../utils/currencyDisplay";
 import type { Project } from "../../../types/Project";
 import type { QuantityItem } from "../../../types/QuantityItem";
 import type { Employee } from "../../../types/EmployeeModel";
@@ -10,7 +20,6 @@ import {
   calculateQuantity,
   canRemoveQuantityItem,
   createEmptyQuantityItem,
-  formatIndianCurrency,
   formatIndianNumber,
   parseNumericInput,
   recalcQuantityItem,
@@ -360,10 +369,10 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
           } else if (field === "assignedTo") {
             updatedItem.assignedTo = String(value);
           }
-          return recalcQuantityItem(updatedItem, prev.currency, prev.currentExchangeRate);
+          return recalcQuantityItem(updatedItem, prev.currency, prev.currentExchangeRate, prev.regionalCurrency);
         });
 
-        const totals = calculateQuantity(updatedItems, prev.currency, prev.currentExchangeRate, prev.gstApplicable);
+        const totals = calculateQuantity(updatedItems, prev.currency, prev.currentExchangeRate, prev.gstApplicable, prev.regionalCurrency);
 
         return {
           ...prev,
@@ -381,11 +390,14 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
   const handleProjectCurrencyChange = useCallback(
     (currency: string) => {
       setProject((prev) => {
-        const nextExchangeRate = currency === DEFAULT_CURRENCY ? 1 : prev.currentExchangeRate;
+        const regional = prev.regionalCurrency || DEFAULT_CURRENCY;
+        // The regional currency is always rate 1 (read-only). Any other currency starts with NO rate, so a rate typed for the previous
+        // currency can never carry over: the user enters it as "1 <currency> = X <regional currency>".
+        const nextExchangeRate = currency === regional ? 1 : currency === prev.currency ? prev.currentExchangeRate : 0;
         const updatedItems = prev.quantityItems.map((item) =>
-          recalcQuantityItem(item, currency, nextExchangeRate)
+          recalcQuantityItem(item, currency, nextExchangeRate, prev.regionalCurrency)
         );
-        const totals = calculateQuantity(updatedItems, currency, nextExchangeRate, prev.gstApplicable);
+        const totals = calculateQuantity(updatedItems, currency, nextExchangeRate, prev.gstApplicable, prev.regionalCurrency);
 
         return {
           ...prev,
@@ -405,9 +417,9 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
     (exchangeRate: number) => {
       setProject((prev) => {
         const updatedItems = prev.quantityItems.map((item) =>
-          recalcQuantityItem(item, prev.currency, exchangeRate)
+          recalcQuantityItem(item, prev.currency, exchangeRate, prev.regionalCurrency)
         );
-        const totals = calculateQuantity(updatedItems, prev.currency, exchangeRate, prev.gstApplicable);
+        const totals = calculateQuantity(updatedItems, prev.currency, exchangeRate, prev.gstApplicable, prev.regionalCurrency);
 
         return {
           ...prev,
@@ -426,11 +438,12 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
     setProject((prev) => {
       const newItem: QuantityItem = createEmptyQuantityItem(
         prev.currency,
-        prev.currentExchangeRate
+        prev.currentExchangeRate,
+        prev.regionalCurrency
       );
 
       const updatedItems = [...prev.quantityItems, newItem];
-      const totals = calculateQuantity(updatedItems, prev.currency, prev.currentExchangeRate);
+      const totals = calculateQuantity(updatedItems, prev.currency, prev.currentExchangeRate, false, prev.regionalCurrency);
 
       return {
         ...prev,
@@ -449,7 +462,7 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
         }
 
         const updatedItems = prev.quantityItems.filter((_, i) => i !== index);
-        const totals = calculateQuantity(updatedItems, prev.currency, prev.currentExchangeRate, prev.gstApplicable);
+        const totals = calculateQuantity(updatedItems, prev.currency, prev.currentExchangeRate, prev.gstApplicable, prev.regionalCurrency);
 
         return {
           ...prev,
@@ -469,7 +482,8 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
           prev.quantityItems,
           prev.currency,
           prev.currentExchangeRate,
-          gstApplicable
+          gstApplicable,
+          prev.regionalCurrency
         );
 
         return {
@@ -483,7 +497,10 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
     [setProject]
   );
 
-  const isCurrencyINR = project.currency === DEFAULT_CURRENCY;
+  // Phase 3: the project's regional currency (INR for a legacy project) and whether the chosen currency IS the regional one (rate 1, read-only).
+  const regionalCurrency = regionalCurrencyOf(project);
+  const nonInrRegional = isNonInrRegional(project);
+  const isRegionalCurrency = (project.currency || DEFAULT_CURRENCY) === regionalCurrency;
   const projectDuration = calculateProjectDuration(
     project.projectStartDate,
     project.projectEndDate
@@ -541,14 +558,14 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
         <StatTile
           emphasis="secondary"
           label="Total WO Value"
-          value={formatBusinessINR(project.workOrderValueINR || 0)}
+          value={formatMoneyCompact(regionalWorkOrderValue(project), regionalCurrency)}
           icon={<Wallet size={14} />}
           tint="success"
         />
         <StatTile
           emphasis="secondary"
           label="Currency"
-          value={project.currency || DEFAULT_CURRENCY}
+          value={isRegionalCurrency ? project.currency || DEFAULT_CURRENCY : `${project.currency} → ${regionalCurrency}`}
           icon={<Layers size={14} />}
           tint="info"
         />
@@ -584,7 +601,8 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
           }
         />
         <CardBody className="space-y-4">
-          <div className="flex flex-wrap items-end gap-3">
+          {/* Top-aligned: the Exchange Rate column is taller (a helper line under the field), and bottom-aligning dropped the Currency label below the Exchange Rate label. */}
+          <div className="flex flex-wrap items-start gap-3">
             <div className="w-32">
               <FormLabel required={true} className="mb-1 !text-[11px] uppercase">
                 Currency
@@ -608,15 +626,15 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
               <FieldError error={errors["currency"]} />
             </div>
 
-            <div className="w-36">
-              <FormLabel required={!isCurrencyINR} className="mb-1 !text-[11px] uppercase">
+            <div className="w-56">
+              <FormLabel required={!isRegionalCurrency} className="mb-1 !text-[11px] uppercase">
                 Exchange Rate
               </FormLabel>
               <div data-field="exchangeRate">
                 <NumericInput
                   value={project.currentExchangeRate}
                   ariaLabel="Project Exchange Rate"
-                  disabled={isCurrencyINR}
+                  disabled={isRegionalCurrency}
                   onChange={(value) => {
                     handleProjectExchangeRateChange(value);
                     clearError?.("exchangeRate");
@@ -624,6 +642,16 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
                   className={errors["exchangeRate"] ? "!border-[var(--nu-danger)]" : ""}
                 />
               </div>
+              <p className="mt-1 text-[11px] text-[var(--nu-text-muted)]" data-testid="exchange-rate-direction">
+                {isRegionalCurrency
+                  ? `Regional currency (${regionalCurrency}): rate fixed at 1`
+                  : rateDirectionLabel(project.currency, regionalCurrency, project.currentExchangeRate)}
+              </p>
+              {!isRegionalCurrency && project.currentExchangeRate === 1 && (
+                <p className="mt-0.5 text-[11px] text-[var(--nu-warning)]" data-testid="exchange-rate-one-warning">
+                  A rate of exactly 1 is unusual for {project.currency} to {regionalCurrency}. Please confirm it.
+                </p>
+              )}
               <FieldError error={errors["exchangeRate"]} />
             </div>
           </div>
@@ -648,7 +676,7 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
                     Unit Rate <RequiredAsterisk />
                   </th>
                   <th className="nu-table-th w-28 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
-                    Rate (INR)
+                    Rate ({regionalCurrency})
                   </th>
                   <th className="nu-table-th w-32 border-b border-[var(--nu-border)] px-2 py-2 text-right font-medium">
                     WO Value
@@ -751,12 +779,12 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
 
                         <td className="px-2 py-2 text-right">
                           <span className="inline-flex rounded-full bg-[var(--nu-surface-alt)] px-2 py-0.5 text-[11.5px] font-medium text-[var(--nu-text-secondary)]">
-                            {formatIndianNumber(item.unitRateINR)}
+                            {nonInrRegional ? formatCurrencyNumber(lineRegionalUnitRate(item, project), regionalCurrency) : formatIndianNumber(item.unitRateINR)}
                           </span>
                         </td>
 
                         <td className="px-2 py-2 text-right font-bold text-[var(--nu-success)]">
-                          {formatIndianCurrency(item.woValue || 0)}
+                          {formatMoney(lineRegionalValue(item, project), regionalCurrency)}
                         </td>
 
                         <td className="px-2 py-2">
@@ -804,6 +832,9 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
       <CommercialSummaryCard
         currency={project.currency}
         workOrderValueINR={project.workOrderValueINR}
+        regionalCurrency={project.regionalCurrency}
+        workOrderValueRegional={project.workOrderValueRegional}
+        grandTotalRegional={project.grandTotalRegional}
         gstApplicable={project.gstApplicable}
         gstRate={project.gstRate}
         gstAmount={project.gstAmount}

@@ -14,6 +14,10 @@ import { recordProjectInvoiceDeletionEvents, type InvoiceAuditContext } from "..
 export interface ProjectGeneralInfoData {
   poMonth: string;
   prCategory: string;
+  /** Global Multi-Country Phase 1: the project's country, kept in step with prCategory (see regionIdForPrCategory). */
+  regionId?: string | null;
+  /** Global Multi-Country Phase 3: the project's regional currency, copied once from its country at creation and never changed afterwards. */
+  regionalCurrency?: string | null;
   prNo: string;
   rfqNo?: string | null;
   client: string;
@@ -84,7 +88,9 @@ export function runProjectTransaction<T>(fn: (tx: Prisma.TransactionClient) => P
 
 export interface LdRecordData {
   ldApplicable: boolean;
+  ldCurrency: string | null;
   ldAmountINR: number | null;
+  ldAmountRegional: number | null;
   ldRemarks: string | null;
   ldRecordedByUserId: string;
   ldRecordedAt: Date;
@@ -101,7 +107,11 @@ export interface LdRecordData {
 export async function claimLdRecording(client: DbClient, id: string, data: LdRecordData): Promise<boolean> {
   const result = await client.project.updateMany({
     where: { id, ldApplicable: null },
-    data: { ...data, ldAmountINR: data.ldAmountINR === null ? null : data.ldAmountINR.toFixed(2) },
+    data: {
+      ...data,
+      ldAmountINR: data.ldAmountINR === null ? null : data.ldAmountINR.toFixed(2),
+      ldAmountRegional: data.ldAmountRegional === null ? null : data.ldAmountRegional.toFixed(3),
+    },
   });
   return result.count === 1;
 }
@@ -132,14 +142,25 @@ export function findProjectByIdIn(client: DbClient, id: string) {
  * Two batched groupBy queries for any number of projects, never one per project.
  */
 export async function sumExpenseTotalsByProjectIds(projectIds: string[]) {
-  if (projectIds.length === 0) return { manhour: new Map<string, number>(), nonManhour: new Map<string, number>() };
-  const [manhour, nonManhour] = await Promise.all([
+  if (projectIds.length === 0) {
+    return { manhour: new Map<string, number>(), nonManhour: new Map<string, number>(), manhourRegional: new Map<string, number>(), manhourNotConverted: new Map<string, number>() };
+  }
+  const [manhour, nonManhour, manhourRegional, manhourNotConverted] = await Promise.all([
     prisma.projectResource.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds } }, _sum: { manhourCost: true } }),
     prisma.projectExpense.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, isActive: true }, _sum: { totalCost: true } }),
+    // Phase 4: the regional man-hour cost of the rows converted with a rate, and how many rows are not (used only for non-INR projects).
+    prisma.projectResource.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, costingStatus: "CONVERTED" }, _sum: { manhourCostRegional: true } }),
+    prisma.projectResource.groupBy({
+      by: ["projectId"],
+      where: { projectId: { in: projectIds }, OR: [{ costingStatus: null }, { costingStatus: { not: "CONVERTED" } }] },
+      _count: { _all: true },
+    }),
   ]);
   return {
     manhour: new Map(manhour.map((row) => [row.projectId, row._sum.manhourCost ?? 0])),
     nonManhour: new Map(nonManhour.map((row) => [row.projectId, row._sum.totalCost ?? 0])),
+    manhourRegional: new Map(manhourRegional.map((row) => [row.projectId, row._sum.manhourCostRegional ? Number(row._sum.manhourCostRegional.toFixed(3)) : 0])),
+    manhourNotConverted: new Map(manhourNotConverted.map((row) => [row.projectId, row._count._all])),
   };
 }
 
@@ -352,4 +373,15 @@ export async function countProjectsByStatus(callerUserId: string | undefined): P
     }
   }
   return counts;
+}
+
+/** Phase 3: how many Quantity lines a project has. Any line means the project is already priced in its regional currency. */
+export function countQuantityLinesForProject(projectId: string): Promise<number> {
+  return prisma.quantityItem.count({ where: { projectId } });
+}
+
+/** Phase 3: each project's stored regional currency (null = legacy, treated as INR), for the batched commercial totals. */
+export async function findRegionalCurrenciesByProjectIds(projectIds: string[]): Promise<Map<string, string | null>> {
+  const rows = await prisma.project.findMany({ where: { id: { in: projectIds } }, select: { id: true, regionalCurrency: true } });
+  return new Map(rows.map((r) => [r.id, r.regionalCurrency]));
 }

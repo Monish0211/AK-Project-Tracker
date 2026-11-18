@@ -6,7 +6,7 @@ import { formatMonthDisplay } from "../../../services/timesheetService";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import InfoField from "./InfoField";
 import { ldStatusLabel } from "../../../utils/liquidatedDamages";
-import { formatIndianCurrency } from "../../../utils/formatCurrency";
+import { ldAmountLabel, ldAmountText } from "../../../utils/ldDisplay";
 
 interface Props {
   project: Project;
@@ -75,8 +75,8 @@ const GeneralView = ({ project }: Props) => {
             <>
               <InfoField label="LD Applicable" value={ldStatusLabel(project.ldApplicable)} />
               <InfoField
-                label="LD Amount"
-                value={project.ldApplicable === true ? formatIndianCurrency(project.ldAmountINR ?? 0) : project.ldApplicable === false ? formatIndianCurrency(0) : "—"}
+                label={ldAmountLabel(project)}
+                value={project.ldApplicable === true || project.ldApplicable === false ? ldAmountText(project) : "—"}
               />
               {project.ldRemarks && (
                 <div className="sm:col-span-2">

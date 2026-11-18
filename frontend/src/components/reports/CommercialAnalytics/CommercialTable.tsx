@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search } from "lucide-react";
-import { formatBusinessINR } from "../../../utils/formatCurrency";
+import { useReportMoney } from "../reportCurrencyContext";
 import { ReportExportButtons } from "../Shared/ReportExportButtons";
 import { EmptyState } from "../Shared/EmptyState";
 import { INVOICE_NOT_AVAILABLE, useInvoiceDataAvailable } from "../Shared/invoiceAccess";
@@ -10,6 +10,7 @@ interface Props {
 }
 
 export function CommercialTable({ projects }: Props) {
+  const money = useReportMoney();
   const [search, setSearch] = useState("");
   const invoiceDataAvailable = useInvoiceDataAvailable();
 
@@ -109,7 +110,7 @@ export function CommercialTable({ projects }: Props) {
                   <td className="p-2.5 font-medium text-[var(--nu-text)]">{row.category}</td>
                   <td className="p-2.5 text-[var(--nu-text-muted)]">{row.paymentTerms}</td>
                   <td className="p-2.5 text-center font-extrabold text-[var(--nu-text-muted)]">{row.region}</td>
-                  <td className="p-2.5 text-right font-mono font-bold">{formatBusinessINR(row.woVal)}</td>
+                  <td className="p-2.5 text-right font-mono font-bold">{money.compact(row.woVal)}</td>
                   {row.raised === null || row.balanceBilling === null || row.completionPct === null ? (
                     <td colSpan={3} className="p-2.5 text-center text-[11px] italic text-[var(--nu-text-muted)]" title="Your account has no invoice access">
                       {INVOICE_NOT_AVAILABLE}
@@ -117,10 +118,10 @@ export function CommercialTable({ projects }: Props) {
                   ) : (
                   <>
                   <td className="p-2.5 text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                    {formatBusinessINR(row.raised)}
+                    {money.compact(row.raised)}
                   </td>
                   <td className="p-2.5 text-right font-mono text-amber-600 dark:text-amber-400 font-bold">
-                    {formatBusinessINR(row.balanceBilling)}
+                    {money.compact(row.balanceBilling)}
                   </td>
                   <td className="p-2.5 text-right font-mono font-extrabold">
                     <span
