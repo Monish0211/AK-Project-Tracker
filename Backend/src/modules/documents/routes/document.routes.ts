@@ -1,10 +1,12 @@
 import { Router } from "express";
+import type { RequestHandler } from "express";
 import multer from "multer";
 import { authenticate } from "../../../shared/middleware/authenticate.js";
 import { denyReadOnlyWrites, denyReadOnlyWritesExceptAssignedCoordinator } from "../../../shared/middleware/denyReadOnlyWrites.js";
 import { requireModuleAccess } from "../../../shared/middleware/requireModuleAccess.js";
 import { authorize } from "../../../shared/middleware/authorize.js";
 import { env } from "../../../shared/utils/env.js";
+import { AppError } from "../../../shared/utils/AppError.js";
 import {
   uploadProjectDocument,
   uploadPRRequestDocument,
@@ -19,15 +21,39 @@ const router = Router();
 
 // memoryStorage — same convention as PDF Import/Timesheet import (buffer
 // passed straight to documentStorage.ts's writeDocumentFile(), never a temp
-// file on disk). fileSize is set to the confirmed Nginx client_max_body_size
-// ceiling (64M, see env.ts's own comment) purely to fail with a clean
-// application error instead of Nginx's raw 413 — this is NOT a business
-// file-size restriction, which the confirmed requirement explicitly rules
-// out.
+// file on disk). Project / PR Request documents: DOCUMENT_UPLOAD_MAX_FILE_SIZE_MB
+// (100 MB per file, Nov 2026 — see env.ts). The Customer GST document keeps its
+// own, unchanged 64 MB ceiling (its form allows 10 MB anyway).
+// +1 byte: multer (busboy) reports a file whose size EQUALS fileSize as over the limit, so a file of exactly 100 MB would be refused.
+// With one extra byte, exactly 100 MB is accepted and 100 MB + 1 byte is refused (both proven in documentUploadLimit.http.test.ts).
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: env.DOCUMENT_UPLOAD_MAX_FILE_SIZE_MB * 1024 * 1024 },
+  limits: { fileSize: env.DOCUMENT_UPLOAD_MAX_FILE_SIZE_MB * 1024 * 1024 + 1 },
 });
+const GST_DOCUMENT_MAX_FILE_SIZE_MB = 64;
+const gstUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: GST_DOCUMENT_MAX_FILE_SIZE_MB * 1024 * 1024 },
+});
+
+/**
+ * One file from the "file" field, with multer's own errors turned into clear client errors instead of a raw 500: a file over the
+ * limit is a 413 naming the limit (nothing is written, multer stops reading at the limit), any other multipart problem a 400.
+ */
+function singleFile(instance: multer.Multer, limitMb: number): RequestHandler {
+  const handler = instance.single("file");
+  return (req, res, next) => {
+    handler(req, res, (err?: unknown) => {
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") return next(new AppError(`The file is larger than the ${limitMb} MB limit. Upload a file of ${limitMb} MB or less.`, 413));
+        return next(new AppError(`The upload could not be read (${err.message}).`, 400));
+      }
+      next(err as Error | undefined);
+    });
+  };
+}
+const documentFile = singleFile(upload, env.DOCUMENT_UPLOAD_MAX_FILE_SIZE_MB);
+const gstDocumentFile = singleFile(gstUpload, GST_DOCUMENT_MAX_FILE_SIZE_MB);
 
 // Documents is a Project/PR-Request sub-resource, not its own nav module —
 // same precedent as Reminders (see reminder.routes.ts's own comment): gated
@@ -42,7 +68,7 @@ router.post(
   authenticate,
   denyReadOnlyWritesExceptAssignedCoordinator({ param: "projectId" }),
   requireModuleAccess("Projects"),
-  upload.single("file"),
+  documentFile,
   uploadProjectDocument
 );
 router.get("/projects/:projectId/documents", authenticate, requireModuleAccess("Projects"), listProjectDocuments);
@@ -52,7 +78,7 @@ router.post(
   authenticate,
   denyReadOnlyWrites,
   requireModuleAccess("PR Request", "Approvals"),
-  upload.single("file"),
+  documentFile,
   uploadPRRequestDocument
 );
 router.get("/pr-requests/:prRequestId/documents", authenticate, requireModuleAccess("PR Request", "Approvals"), listPRRequestDocuments);
@@ -67,7 +93,7 @@ router.post(
   authenticate,
   denyReadOnlyWrites,
   requireModuleAccess("Customer Master"),
-  upload.single("file"),
+  gstDocumentFile,
   uploadCustomerGstDocument
 );
 

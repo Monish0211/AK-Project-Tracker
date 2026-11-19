@@ -26,7 +26,11 @@ export interface CountryRate {
   /** India: fixed at 1, never editable, never converted. */
   fixed: boolean;
   current: CountryRateVersion | null;
+  /** Projects this rate converts (stored regional currency = the country's currency). */
   projects: number;
+  /** The country's projects in another currency (e.g. a legacy INR project): never converted, never counted. Absent from an older backend. */
+  otherCurrencyProjects?: number;
+  /** Manpower records of the eligible projects only. */
   rows: { total: number; onLatest: number; behind: number; missing: number };
   openRun: { runId: string; status: string; targetVersion: number } | null;
 }

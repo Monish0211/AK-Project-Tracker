@@ -1,4 +1,5 @@
 import { AppError } from "../../../shared/utils/AppError.js";
+import { activeSingleCountryCurrency } from "../../../shared/utils/countryAccess.js";
 import { effectiveRegionalCurrency, usesRegionalRules } from "../../quantity/quantityCurrency.rules.js";
 import { openTaskStatusesByProject } from "../../manhourCosting/manhourCosting.repository.js";
 import { projectRefreshStatus } from "../../manhourCosting/manhourCosting.rules.js";
@@ -263,8 +264,10 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
 
   // The headline currency: INR whenever INR or legacy projects are in view (the India dashboard is exactly as before); otherwise the
   // currency with the most projects. Every other currency is listed separately, never added in.
+  // No project in view: the selected country's configured currency when exactly one country is enforced (Qatar shows "QAR 0", not "₹0");
+  // INR otherwise (All Countries, several countries, shadow / off), exactly as before. Display only: no amount exists to convert.
   const currencyOrder = [...totalsByCurrency.entries()].sort((a, b) => b[1].projects - a[1].projects || a[0].localeCompare(b[0]));
-  const kpiCurrency = totalsByCurrency.has("INR") || currencyOrder.length === 0 ? "INR" : currencyOrder[0]![0];
+  const kpiCurrency = totalsByCurrency.has("INR") ? "INR" : currencyOrder.length > 0 ? currencyOrder[0]![0] : (activeSingleCountryCurrency() ?? "INR");
   const kpis = kpisOf(totalsByCurrency.get(kpiCurrency) ?? totalsFor(kpiCurrency), projects.length);
   const otherCurrencies = currencyOrder
     .filter(([currency]) => currency !== kpiCurrency)

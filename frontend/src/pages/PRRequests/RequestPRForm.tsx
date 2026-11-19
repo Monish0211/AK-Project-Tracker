@@ -111,9 +111,11 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
     setPendingDocuments((prev) => prev.filter((doc) => doc.localId !== localId));
   };
   const uploadOnePendingDocument = async (prRequestId: string, doc: PendingDocument): Promise<boolean> => {
-    setPendingDocuments((prev) => prev.map((d) => (d.localId === doc.localId ? { ...d, status: "uploading", error: undefined } : d)));
+    setPendingDocuments((prev) => prev.map((d) => (d.localId === doc.localId ? { ...d, status: "uploading", error: undefined, progress: 0 } : d)));
     try {
-      await uploadPRRequestDocument(prRequestId, doc.file);
+      await uploadPRRequestDocument(prRequestId, doc.file, ({ percent }) =>
+        setPendingDocuments((prev) => prev.map((d) => (d.localId === doc.localId && d.status === "uploading" ? { ...d, progress: percent } : d)))
+      );
       setPendingDocuments((prev) => prev.filter((d) => d.localId !== doc.localId));
       return true;
     } catch (err) {

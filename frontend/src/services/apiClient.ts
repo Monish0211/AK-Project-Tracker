@@ -269,6 +269,61 @@ async function requestBlob(path: string, requestOptions: ApiRequestOptions = {})
   return response.blob();
 }
 
+/** Upload progress of one multipart request: bytes of the request body sent so far, out of `total`. */
+export interface UploadProgress {
+  loaded: number;
+  total: number;
+  /** 0-100, rounded down; 100 only once the whole body has been handed to the network. */
+  percent: number;
+}
+
+/**
+ * Multipart upload WITH progress (Document upload, Nov 2026). fetch() cannot report request-body progress, so this one helper uses
+ * XMLHttpRequest. Everything else mirrors requestFormData() exactly: the same Bearer token and X-Active-Country headers, the
+ * browser's own multipart Content-Type, the same 401 / country-rejection callbacks, the same ApiEnvelope error message. Two
+ * additions: a progress callback, and a readable message when a proxy refuses the body with a non-JSON 413.
+ */
+function requestFormDataWithProgress<T>(
+  path: string,
+  formData: FormData,
+  onProgress?: (progress: UploadProgress) => void,
+  requestOptions: ApiRequestOptions = {}
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE_URL}${path}`);
+    if (accessToken) xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+    if (activeCountry) xhr.setRequestHeader("X-Active-Country", activeCountry);
+    xhr.timeout = requestOptions.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    if (onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable || event.total <= 0) return;
+        onProgress({ loaded: event.loaded, total: event.total, percent: Math.min(100, Math.floor((event.loaded / event.total) * 100)) });
+      };
+    }
+    xhr.ontimeout = () => reject(new ApiError(0, "Upload timed out. Please try again.", true));
+    xhr.onerror = () => reject(new ApiError(0, "Network error. Please check your connection and try again."));
+    xhr.onabort = () => reject(new ApiError(0, "Upload cancelled."));
+    xhr.onload = () => {
+      let body: ApiEnvelope<T> | null;
+      try {
+        body = JSON.parse(xhr.responseText) as ApiEnvelope<T>;
+      } catch {
+        body = null; // e.g. a proxy's HTML 413 page
+      }
+      if (xhr.status === 401) onUnauthorized?.();
+      if (isCountryContextRejection(xhr.status, body?.message ?? "")) onCountryContextRejected?.();
+      if (xhr.status < 200 || xhr.status >= 300 || !body?.success) {
+        const fallback = xhr.status === 413 ? "The file is larger than the server accepts." : "Something went wrong. Please try again.";
+        reject(new ApiError(xhr.status, body?.message ?? fallback, false, body?.details));
+        return;
+      }
+      resolve(body.data);
+    };
+    xhr.send(formData);
+  });
+}
+
 export const apiClient = {
   // `options` is optional on every method — every existing call site (none
   // of which pass it) is unaffected and automatically gets DEFAULT_TIMEOUT_MS.
@@ -288,5 +343,7 @@ export const apiClient = {
     request<T>(path, { method: "DELETE", body: data !== undefined ? JSON.stringify(data) : undefined }, options),
   postFormData: <T>(path: string, formData: FormData, options?: ApiRequestOptions): Promise<T> =>
     requestFormData<T>(path, formData, options),
+  postFormDataWithProgress: <T>(path: string, formData: FormData, onProgress?: (progress: UploadProgress) => void, options?: ApiRequestOptions): Promise<T> =>
+    requestFormDataWithProgress<T>(path, formData, onProgress, options),
   getBlob: (path: string, options?: ApiRequestOptions): Promise<Blob> => requestBlob(path, options),
 };

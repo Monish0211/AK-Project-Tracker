@@ -168,15 +168,12 @@ const envSchema = z.object({
   // under it — confirmed outside every Nginx location/root/alias mapping).
   DOCUMENT_STORAGE_PATH: z.string().default("./storage/documents"),
 
-  // Deliberately NOT a business file-size restriction — the business
-  // requirement is "no arbitrary limit" (invoices/drawings can legitimately
-  // be large). This exists only to fail fast with a clean application error
-  // instead of letting the request hang until Nginx's own
-  // client_max_body_size (64M, set globally in nginx.conf, confirmed via a
-  // read-only production check) rejects it with a raw 413. Keep this at or
-  // below that production ceiling; raising it without also raising Nginx's
-  // setting would just move the failure point, not remove it.
-  DOCUMENT_UPLOAD_MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(64),
+  // Per-file limit for Project / PR Request documents: 100 MB (business decision, Nov 2026; the frontend's
+  // DOCUMENT_MAX_FILE_SIZE_MB in utils/documentUpload.ts must match). A larger file is refused with a clean 413
+  // (document.routes.ts). Production's Nginx allows a slightly larger request body for the PMO /api/ location
+  // (client_max_body_size 105M, multipart overhead included) so this application check is the one users see;
+  // the global nginx.conf default (64M) for other sites is unchanged.
+  DOCUMENT_UPLOAD_MAX_FILE_SIZE_MB: z.coerce.number().int().positive().default(100),
 
   // Request Invoice attachments (Oct 2026) — the largest whole email (after MIME/base64 encoding, which grows files by ~37%)
   // this app will hand to the SMTP server when a request carries attachments. NOT a verified provider limit: no SMTP provider or

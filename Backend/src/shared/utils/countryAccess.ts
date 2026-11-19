@@ -192,6 +192,27 @@ function scopeToApply(ctx: CountryContext | undefined): ResolvedCountryScope | u
   return resolveCountryScope(ctx);
 }
 
+/**
+ * The configured default currency of the ONE country the caller is filtered to, or null. Only in enforce mode (shadow / off never filter, so a selection
+ * there describes nothing) and only when the scope is exactly one country: All Countries and a several-country union return null. Display only: the
+ * dashboard uses it to label empty figures ("QAR 0" for a country with no projects); it never decides a project's own currency or any stored amount.
+ */
+export function activeSingleCountryCurrency(user?: Pick<AccessTokenPayload, "country">): string | null {
+  const ctx = currentContext(user);
+  if (!ctx || ctx.mode !== "enforce") return null;
+  let scope: ResolvedCountryScope;
+  try {
+    scope = resolveCountryScope(ctx);
+  } catch {
+    return null;
+  }
+  if (scope.unrestricted || scope.regionIds.length !== 1) return null;
+  const id = scope.regionIds[0];
+  const region = ctx.selectable.find((r) => r.id === id) ?? ctx.assigned.find((r) => r.id === id);
+  const currency = region?.defaultCurrency?.trim();
+  return currency ? currency : null;
+}
+
 /** Prisma where fragment limiting projects to the active countries; undefined when no restriction applies. */
 export function projectCountryWhere(user?: Pick<AccessTokenPayload, "country">): Prisma.ProjectWhereInput | undefined {
   const scope = scopeToApply(currentContext(user));

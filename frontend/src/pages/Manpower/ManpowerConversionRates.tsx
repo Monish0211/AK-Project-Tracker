@@ -266,6 +266,15 @@ export default function ManpowerConversionRates() {
                               <span className="text-[11.5px]">
                                 {country.projects} project{country.projects === 1 ? "" : "s"}
                                 {pending > 0 && current ? <Badge tone="warning" className="ml-1.5">{pending} to apply</Badge> : null}
+                                {(country.otherCurrencyProjects ?? 0) > 0 ? (
+                                  <span
+                                    className="block text-[10.5px] text-[var(--nu-text-muted)]"
+                                    data-testid={`country-other-currency-${country.name}`}
+                                    title={`These projects keep their own currency and are never converted with the ${country.currency} rate.`}
+                                  >
+                                    +{country.otherCurrencyProjects} in another currency (not converted)
+                                  </span>
+                                ) : null}
                                 {country.openRun ? <Badge tone="danger" className="ml-1.5">Incomplete</Badge> : null}
                               </span>
                             )}

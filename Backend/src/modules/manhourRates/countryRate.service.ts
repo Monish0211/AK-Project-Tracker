@@ -122,7 +122,11 @@ export interface CountryRateDto {
   /** India: fixed at 1, never editable, never converted. */
   fixed: boolean;
   current: CountryRateVersionDto | null;
+  /** Projects this country's rate converts: the country's live projects whose stored regional currency is the country's currency (the same set the apply uses). */
   projects: number;
+  /** The country's live projects in ANOTHER currency (e.g. a legacy INR project): never converted by this rate and never counted in `projects` or `rows`. */
+  otherCurrencyProjects: number;
+  /** Manpower records of the eligible projects only. */
   rows: {
     total: number;
     /** Converted with the latest country version. */
@@ -144,7 +148,10 @@ export interface CountryRateListDto {
 async function buildCountry(region: Awaited<ReturnType<typeof findRegion>> & object, latest: RateRow | undefined): Promise<CountryRateDto> {
   const currency = effectiveRegionalCurrency(region.defaultCurrency);
   const fixed = isFixedInr(region.defaultCurrency);
-  const projects = await listCountryProjects(region.id);
+  const allProjects = await listCountryProjects(region.id);
+  // Exactly the projects the preview and the apply convert (same currency rule): a project in another currency (e.g. a legacy INR project of this
+  // country) is never converted by this rate, so neither it nor its manpower records may be counted as eligible or "to apply".
+  const projects = fixed ? allProjects : allProjects.filter((p) => effectiveRegionalCurrency(p.regionalCurrency) === currency);
   const rows = fixed || projects.length === 0 ? [] : await listResourcesForProjects(projects.map((p) => p.id));
   const latestVersion = latest?.version ?? null;
   const open = await prisma.countryRateApplyRun.findFirst({ where: { regionId: region.id, status: { not: REFRESH_RUN_STATUS.SUCCEEDED } }, orderBy: { createdAt: "desc" }, select: { id: true, status: true, targetVersion: true } });
@@ -156,6 +163,7 @@ async function buildCountry(region: Awaited<ReturnType<typeof findRegion>> & obj
     fixed,
     current: latest ? toVersionDto(latest) : null,
     projects: projects.length,
+    otherCurrencyProjects: allProjects.length - projects.length,
     rows: {
       total: rows.length,
       onLatest: latestVersion === null ? 0 : rows.filter((r) => !needsCountryApply(r, latestVersion)).length,

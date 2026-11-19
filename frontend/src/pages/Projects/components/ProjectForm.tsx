@@ -184,9 +184,11 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
   // own list fetch the next time ownerId is non-null), never leaving a
   // stale "succeeded" placeholder that a later flush/retry could re-send.
   const uploadOnePendingDocument = async (projectId: string, doc: PendingDocument): Promise<boolean> => {
-    setPendingDocuments((prev) => prev.map((d) => (d.localId === doc.localId ? { ...d, status: "uploading", error: undefined } : d)));
+    setPendingDocuments((prev) => prev.map((d) => (d.localId === doc.localId ? { ...d, status: "uploading", error: undefined, progress: 0 } : d)));
     try {
-      await uploadProjectDocument(projectId, doc.file);
+      await uploadProjectDocument(projectId, doc.file, ({ percent }) =>
+        setPendingDocuments((prev) => prev.map((d) => (d.localId === doc.localId && d.status === "uploading" ? { ...d, progress: percent } : d)))
+      );
       setPendingDocuments((prev) => prev.filter((d) => d.localId !== doc.localId));
       return true;
     } catch (err) {

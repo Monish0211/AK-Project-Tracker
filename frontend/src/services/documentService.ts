@@ -1,5 +1,7 @@
 import { apiClient } from "./apiClient";
+import type { UploadProgress } from "./apiClient";
 import type { ProjectDocument } from "../types/Document";
+import { DOCUMENT_TRANSFER_TIMEOUT_MS } from "../utils/documentUpload";
 
 export function listProjectDocuments(projectId: string): Promise<ProjectDocument[]> {
   return apiClient.get<ProjectDocument[]>(`/projects/${projectId}/documents`);
@@ -15,12 +17,17 @@ function buildUploadFormData(file: File): FormData {
   return formData;
 }
 
-export function uploadProjectDocument(projectId: string, file: File): Promise<ProjectDocument> {
-  return apiClient.postFormData<ProjectDocument>(`/projects/${projectId}/documents`, buildUploadFormData(file));
+/** One file per request (unchanged API). Reports upload progress; allows a large file time to travel (see DOCUMENT_TRANSFER_TIMEOUT_MS). */
+export function uploadProjectDocument(projectId: string, file: File, onProgress?: (progress: UploadProgress) => void): Promise<ProjectDocument> {
+  return apiClient.postFormDataWithProgress<ProjectDocument>(`/projects/${projectId}/documents`, buildUploadFormData(file), onProgress, {
+    timeoutMs: DOCUMENT_TRANSFER_TIMEOUT_MS,
+  });
 }
 
-export function uploadPRRequestDocument(prRequestId: string, file: File): Promise<ProjectDocument> {
-  return apiClient.postFormData<ProjectDocument>(`/pr-requests/${prRequestId}/documents`, buildUploadFormData(file));
+export function uploadPRRequestDocument(prRequestId: string, file: File, onProgress?: (progress: UploadProgress) => void): Promise<ProjectDocument> {
+  return apiClient.postFormDataWithProgress<ProjectDocument>(`/pr-requests/${prRequestId}/documents`, buildUploadFormData(file), onProgress, {
+    timeoutMs: DOCUMENT_TRANSFER_TIMEOUT_MS,
+  });
 }
 
 export function deleteDocument(documentId: string): Promise<null> {
@@ -33,10 +40,10 @@ export function deleteDocument(documentId: string): Promise<null> {
  * apiClient.ts's own comment on getBlob()), so this fetches the file as a
  * Blob first, then uses the same createObjectURL + synthetic <a> + revoke
  * pattern already used by ReportExportButtons.tsx for its (client-generated,
- * unauthenticated) CSV export.
+ * unauthenticated) CSV export. A large document (up to 100 MB) gets the same long transfer timeout as its upload.
  */
 export async function downloadDocument(documentId: string, fileName: string): Promise<void> {
-  const blob = await apiClient.getBlob(`/documents/${documentId}/download`);
+  const blob = await apiClient.getBlob(`/documents/${documentId}/download`, { timeoutMs: DOCUMENT_TRANSFER_TIMEOUT_MS });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
