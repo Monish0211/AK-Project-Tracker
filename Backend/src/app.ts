@@ -15,6 +15,7 @@ import { customerRoutes } from "./modules/customers/index.js";
 import { resourceRoutes } from "./modules/resources/index.js";
 import { manhourRateRoutes } from "./modules/manhourRates/index.js";
 import { manhourCostingRoutes } from "./modules/manhourCosting/index.js";
+import { countryReminderRoutes } from "./modules/countryReminders/index.js";
 import { timesheetRoutes } from "./modules/timesheets/index.js";
 import { mailIngestionRoutes } from "./modules/mailIngestion/index.js";
 import { pdfImportRoutes } from "./modules/pdfImport/index.js";
@@ -68,6 +69,7 @@ app.use(resourceRoutes);
 app.use(manhourRateRoutes);
 // Phase 4 / Option A - the central manpower costing read model and the recalculation recovery endpoints.
 app.use(manhourCostingRoutes);
+app.use(countryReminderRoutes);
 // Reports data consistency (Oct 2026) — the literal GET /projects/expenses
 // and GET /projects/quantity bulk reads, mounted before /projects for the
 // same /:id-collision reason as resourceRoutes above.

@@ -63,4 +63,13 @@ export interface ProjectReminder {
   /** ISO timestamp of when notificationGenerated was set. */
   triggeredAt?: string;
   metadata?: any;
+  /** The project's stored country (from the reminders API). Used only to show each country's reminders in its own section; the server already limits which are returned. */
+  regionId?: string | null;
+  country?: string | null;
+  /**
+   * Project-country time zones: reminderDate + reminderTime are the PROJECT's local time in this IANA zone (from the project's country, chosen by the server), and dueAt
+   * is that moment as an exact UTC instant. Absent on a reminder saved before this change: it keeps its old behaviour (read in the viewer's clock) and is never shifted.
+   */
+  dueAt?: string | null;
+  timeZone?: string | null;
 }

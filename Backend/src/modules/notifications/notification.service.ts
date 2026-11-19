@@ -1,3 +1,4 @@
+import { getCountryAccessMode } from "../../shared/utils/countryAccess.js";
 import { AppError } from "../../shared/utils/AppError.js";
 import * as repo from "./notification.repository.js";
 import { getPublicVapidKey, isWebPushConfigured, sendPushNotification } from "./webPush.service.js";
@@ -211,8 +212,20 @@ export async function resolveModuleRecipients(moduleName: string): Promise<strin
 /** Project-scoped event recipient rule, approved Phase 3B: the project's real creator (a genuine PortalUser FK) if one is recorded, otherwise every active user holding the given fallback module's access. */
 export async function resolveProjectEventRecipients(
   createdByUserId: string | null,
-  fallbackModuleName: string
+  fallbackModuleName: string,
+  /**
+   * The project's stored country (Project.regionId; null = not classified yet). When given (project events), only users who currently hold that country are recipients: the creator
+   * and the module-wide fallback are both filtered, so no project name or PR number reaches someone without access. Omitted (the invoice events, outside this release's scope) =
+   * the previous behaviour.
+   */
+  regionId?: string | null
 ): Promise<string[]> {
-  if (createdByUserId) return [createdByUserId];
-  return repo.findUserIdsWithModuleAccess(fallbackModuleName);
+  const candidates = createdByUserId ? [createdByUserId] : await repo.findUserIdsWithModuleAccess(fallbackModuleName);
+  // Only while country access is enforced, exactly like every other project rule: with it off (or shadow) recipients are unchanged.
+  if (regionId === undefined || getCountryAccessMode() !== "enforce") return candidates;
+  const eligible = await repo.filterUserIdsHoldingCountry(candidates, regionId);
+  if (eligible.length === 0) {
+    console.warn(`[Notifications] Project event not sent: none of ${candidates.length} candidate recipient(s) currently holds the project's country. Recorded without project details.`);
+  }
+  return eligible;
 }

@@ -42,9 +42,11 @@ export async function findRowLogsByImportId(
   importId: string,
   outcome: string | undefined,
   page: number,
-  pageSize: number
+  pageSize: number,
+  /** The caller's countries: only rows for a project in them. A row with no matched project needs the All Countries right (no scope). */
+  scope?: Prisma.ProjectWhereInput
 ) {
-  const where = { importId, ...(outcome && { outcome }) };
+  const where = { importId, ...(outcome && { outcome }), ...(scope ? { entry: { project: scope } } : {}) };
   const skip = (page - 1) * pageSize;
   const [items, total] = await Promise.all([
     prisma.timesheetImportRowLog.findMany({

@@ -3,6 +3,7 @@ import { asyncHandler } from "../../../shared/utils/asyncHandler.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { requireUser } from "../../../shared/utils/requireUser.js";
 import { assertProjectAccess, assertProjectReadAccess, resolveProjectReadScope } from "../../../shared/utils/projectAccess.js";
+import { projectCountryWhere } from "../../../shared/utils/countryAccess.js";
 import { parseTimesheetWorkbook, validateAttachment } from "../services/excelParser.service.js";
 import {
   clearHistoricalTimesheetEntries,
@@ -72,20 +73,53 @@ export const importTimesheet = asyncHandler(async (req: Request, res: Response) 
   res.status(201).json({ success: true, data: result, message: "Timesheet import completed." });
 });
 
+type ImportRecord = NonNullable<Awaited<ReturnType<typeof importRepo.findImportById>>>;
+
+/** An import as a country-limited caller may see it: counts recomputed from their rows only, no error summary. One grouped query per page. */
+async function maskImportsToScope(records: ImportRecord[], scope: NonNullable<ReturnType<typeof projectCountryWhere>>) {
+  const counts = await importRepo.scopedOutcomeCounts(records.map((r) => r.id), scope);
+  return records.map((r) => {
+    const c = counts.get(r.id) ?? {};
+    const n = (k: string) => c[k] ?? 0;
+    return {
+      ...r,
+      totalRows: Object.values(c).reduce((a, b) => a + b, 0),
+      createdCount: n("Created"),
+      updatedCount: n("Updated"),
+      unchangedCount: n("Unchanged"),
+      removedCount: n("Removed"),
+      failedCount: n("Failed"),
+      errorSummary: null,
+      countryScoped: true,
+    };
+  });
+}
+
 export const getImports = asyncHandler(async (req: Request, res: Response) => {
   const parsed = listImportsQuerySchema.safeParse(req.query);
   if (!parsed.success) throw new AppError("Invalid query parameters.", 400);
   const { page, pageSize, status } = parsed.data;
 
-  const [items, total] = await importRepo.listImports(status, page, pageSize);
-  res.status(200).json({ success: true, data: { items, total, page, pageSize } });
+  // Multi-country: an import mixes every country's rows. A caller limited to some countries sees only imports that hold their rows, with the counts of THEIR rows and no
+  // free-text error summary (which can name other projects). No country scope (country access off, or All Countries) = exactly as before.
+  const scope = projectCountryWhere(requireUser(req));
+  const [items, total] = await importRepo.listImports(status, page, pageSize, scope);
+  const visible = scope ? await maskImportsToScope(items, scope) : items;
+  res.status(200).json({ success: true, data: { items: visible, total, page, pageSize } });
 });
 
 export const getImportById = asyncHandler(async (req: Request, res: Response) => {
   const id = parseImportIdParam(req);
   const record = await importRepo.findImportById(id);
   if (!record) throw new AppError("Timesheet import not found.", 404);
-  res.status(200).json({ success: true, data: record });
+  const scope = projectCountryWhere(requireUser(req));
+  if (!scope) {
+    res.status(200).json({ success: true, data: record });
+    return;
+  }
+  // Same answer as an unknown id when the import holds none of the caller's rows: nothing about it is revealed.
+  if (!(await importRepo.importHasRowsInScope(id, scope))) throw new AppError("Timesheet import not found.", 404);
+  res.status(200).json({ success: true, data: (await maskImportsToScope([record], scope))[0] });
 });
 
 export const getImportRows = asyncHandler(async (req: Request, res: Response) => {
@@ -95,9 +129,12 @@ export const getImportRows = asyncHandler(async (req: Request, res: Response) =>
 
   const record = await importRepo.findImportById(id);
   if (!record) throw new AppError("Timesheet import not found.", 404);
+  const scope = projectCountryWhere(requireUser(req));
+  if (scope && !(await importRepo.importHasRowsInScope(id, scope))) throw new AppError("Timesheet import not found.", 404);
 
   const { status, page, pageSize } = parsedQuery.data;
-  const { items, total } = await rowLogRepo.findRowLogsByImportId(id, status, page, pageSize);
+  // Only the caller's countries' rows (employee number, project code, date, task, hours): never another country's.
+  const { items, total } = await rowLogRepo.findRowLogsByImportId(id, status, page, pageSize, scope);
   res.status(200).json({ success: true, data: { items, total, page, pageSize } });
 });
 

@@ -19,6 +19,12 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/authContext";
+import { useCountry } from "../../auth/countryContextValue";
+import { countryReminderService, groupRemindersByCountry, type CountryReminder } from "../../services/countryReminderService";
+import { sectionRemindersByCountry } from "./reminderCountrySections";
+
+/** How many reminders each country section shows before "Show all" (they are sorted most urgent first, so the next due are always visible). */
+const REMINDERS_SHOWN_PER_SECTION = 20;
 import { hasModuleAccess } from "../../auth/permissions";
 import { getEmployees, loadEmployeesForApp } from "../../services/employeeService";
 import { getCustomers, loadCustomersForApp } from "../../services/customerService";
@@ -27,7 +33,7 @@ import { getAllTimesheetImports, waitForTimesheetHydration } from "../../service
 import { reminderService } from "../../services/reminders/ReminderService";
 import type { SnoozeOption } from "../../services/reminders/ReminderService";
 import type { ProjectReminder } from "../../types/ProjectReminder";
-import { formatHumanDateString, formatHumanTime, getReminderDueDateTime, getReminderStatusDisplay, reminderStatusTone } from "../../utils/reminderDisplay";
+import { formatHumanDateString, formatReminderTime, getReminderStatusDisplay, reminderDueInstant, reminderStatusTone } from "../../utils/reminderDisplay";
 import { Badge } from "../ui/Badge";
 import { ReminderSoundControl } from "./ReminderSoundControl";
 import { usePmoToast } from "../ui/usePmoToast";
@@ -107,6 +113,16 @@ export const PmoAssistant: React.FC = () => {
   const [openSnoozeId, setOpenSnoozeId] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
+  // Country context (multi-country): the Assistant works on the SELECTED country's data only. Its project, timesheet and reminder data come from country-scoped APIs and caches
+  // that are cleared on every switch (the app remounts, so nothing here survives from the previous country). People and clients are company-wide records, so while country
+  // access is on they are shown only when they appear on one of the active country's projects.
+  const country = useCountry();
+  const countryScoped = country.enabled;
+  const countryEmployeeNos = useMemo(() => new Set(projects.flatMap((p) => (Array.isArray(p.resources) ? p.resources : []).map((r) => r.employeeNo))), [projects]);
+  const countryClients = useMemo(() => new Set(projects.map((p) => (p.client ?? "").trim().toLowerCase()).filter(Boolean)), [projects]);
+  const [countryReminders, setCountryReminders] = useState<CountryReminder[]>([]);
+  // Large lists: each country section first shows its most urgent reminders only (measured: drawing ~1,700 cards at once took ~2.4 s); "Show all" reveals the rest.
+  const [expandedReminderSections, setExpandedReminderSections] = useState<Set<string>>(() => new Set());
   const { showToast } = usePmoToast();
 
   const handleOpenView = (view: ViewMode) => {
@@ -191,7 +207,9 @@ export const PmoAssistant: React.FC = () => {
   // not the Projects page's own paginated fetchProjectsFromApi(), since
   // the assistant needs to search everything, not one filtered page.
   useEffect(() => {
-    if (!isOpen || activeView !== "project" || !canAccessProjects || isPanelDataFresh("projects")) return;
+    // While country access is on, people and clients are matched against the active country's projects, so those views need them too.
+    const needsProjects = activeView === "project" || (countryScoped && (activeView === "employee" || activeView === "customer"));
+    if (!isOpen || !needsProjects || !canAccessProjects || isPanelDataFresh("projects")) return;
     let isMounted = true;
     fetchAllProjectsFromApi()
       .then((items) => {
@@ -205,7 +223,7 @@ export const PmoAssistant: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [isOpen, activeView, canAccessProjects]);
+  }, [isOpen, activeView, canAccessProjects, countryScoped]);
 
   // getAllTimesheetImports() self-triggers its own IndexedDB hydration and
   // doesn't require visiting Timesheets first (unlike Employees/Projects
@@ -362,21 +380,20 @@ export const PmoAssistant: React.FC = () => {
     const q = searchQuery.trim().toLowerCase();
     return employees.filter(
       (emp) =>
-        emp.employeeNo?.toLowerCase().includes(q) ||
-        emp.employeeName?.toLowerCase().includes(q)
+        (!countryScoped || countryEmployeeNos.has(emp.employeeNo)) &&
+        (emp.employeeNo?.toLowerCase().includes(q) || emp.employeeName?.toLowerCase().includes(q))
     );
-  }, [searchQuery, canAccessManpower, employees]);
+  }, [searchQuery, canAccessManpower, employees, countryScoped, countryEmployeeNos]);
 
   const customerResults = useMemo(() => {
     if (!searchQuery.trim() || !canAccessCustomerMaster) return [];
     const q = searchQuery.trim().toLowerCase();
     return customers.filter(
       (c) =>
-        c.customerName?.toLowerCase().includes(q) ||
-        c.customerId?.toLowerCase().includes(q) ||
-        c.companyName?.toLowerCase().includes(q)
+        (!countryScoped || countryClients.has((c.customerName ?? "").trim().toLowerCase()) || countryClients.has((c.companyName ?? "").trim().toLowerCase())) &&
+        (c.customerName?.toLowerCase().includes(q) || c.customerId?.toLowerCase().includes(q) || c.companyName?.toLowerCase().includes(q))
     );
-  }, [searchQuery, canAccessCustomerMaster, customers]);
+  }, [searchQuery, canAccessCustomerMaster, customers, countryScoped, countryClients]);
 
   const projectResults = useMemo(() => {
     if (!searchQuery.trim() || !canAccessProjects) return [];
@@ -452,17 +469,35 @@ export const PmoAssistant: React.FC = () => {
   // satisfies "overdue first, then nearest upcoming, then later" without a
   // second explicit tier, since an overdue reminder's due instant is
   // necessarily earlier than "now", which is earlier than any upcoming one.
+  // Important reminders of the selected country (or of each of the user's countries, in separate sections). Fetched fresh whenever the reminders view opens; the server
+  // limits them to the countries the user holds and the one selected.
+  useEffect(() => {
+    if (!isOpen || activeView !== "reminders" || !canAccessProjects) return;
+    let cancelled = false;
+    countryReminderService
+      .listReminders()
+      .then((r) => {
+        if (!cancelled) setCountryReminders(r.items);
+      })
+      .catch(() => {
+        if (!cancelled) setCountryReminders([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, activeView, canAccessProjects]);
+  const countryReminderGroups = useMemo(() => groupRemindersByCountry(countryReminders), [countryReminders]);
+
   const activeReminderResults = useMemo(() => {
     if (!canAccessProjects) return [];
     return reminders
       .filter((r) => r.status === "Pending")
-      .map((r) => ({ reminder: r, project: projectsById.get(r.projectId) }))
-      .sort(
-        (a, b) =>
-          getReminderDueDateTime(a.reminder.reminderDate, a.reminder.reminderTime).getTime() -
-          getReminderDueDateTime(b.reminder.reminderDate, b.reminder.reminderTime).getTime()
-      );
+      // The due instant is computed once per reminder, not on every comparison of the sort.
+      .map((r) => ({ reminder: r, project: projectsById.get(r.projectId), dueMs: reminderDueInstant(r).getTime() }))
+      .sort((a, b) => a.dueMs - b.dueMs);
   }, [reminders, canAccessProjects, projectsById]);
+  // One section per project country (multi-country users never get one merged list). A single country keeps the plain list, as before.
+  const reminderSections = useMemo(() => sectionRemindersByCountry(activeReminderResults), [activeReminderResults]);
 
   const [anchorPos, setAnchorPos] = useState<{ left: number; top: number }>({ left: 24, top: 120 });
 
@@ -568,7 +603,9 @@ export const PmoAssistant: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-xs font-bold leading-none text-white">PMO Assistant</h3>
-                <p className="text-[10px] text-blue-200/70 mt-0.5 font-medium">System Helper</p>
+                <p className="text-[10px] text-blue-200/70 mt-0.5 font-medium" data-testid="assistant-country">
+                  {countryScoped ? `Country: ${country.activeLabel ?? "none available"}` : "System Helper"}
+                </p>
               </div>
             </div>
             <button
@@ -974,6 +1011,24 @@ export const PmoAssistant: React.FC = () => {
 
                 {canAccessProjects && <ReminderSoundControl />}
 
+                {canAccessProjects && countryReminderGroups.length > 0 && (
+                  <div className="space-y-2" data-testid="assistant-country-reminders">
+                    {countryReminderGroups.map((group) => (
+                      <div key={group.regionId} className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/70 dark:bg-amber-950/30 p-2.5" data-country-group={group.regionId}>
+                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 dark:text-amber-300">Important · {group.country}</p>
+                        <ul className="mt-1.5 space-y-1">
+                          {group.items.map((r) => (
+                            <li key={r.id} className="text-[11.5px] text-slate-700 dark:text-slate-200">
+                              <span className="font-bold">{r.title}</span>
+                              <span className="text-slate-500 dark:text-slate-400"> · {r.reminderDate}{r.reminderTime ? ` ${r.reminderTime}` : ""} · {r.priority}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {!canAccessProjects ? (
                   <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-200 text-xs font-semibold flex items-center gap-2.5">
                     <ShieldAlert size={18} className="shrink-0 text-amber-600" />
@@ -984,8 +1039,13 @@ export const PmoAssistant: React.FC = () => {
                     No active reminders
                   </p>
                 ) : (
-                  <div className="space-y-2">
-                    {activeReminderResults.map(({ reminder, project }) => {
+                  <div className="space-y-3" data-testid="assistant-project-reminders">
+                    {reminderSections.map((section) => (
+                    <div key={section.key} className="space-y-2" data-reminder-country={section.country}>
+                    {reminderSections.length > 1 && (
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">{section.country}</p>
+                    )}
+                    {(expandedReminderSections.has(section.key) ? section.rows : section.rows.slice(0, REMINDERS_SHOWN_PER_SECTION)).map(({ reminder, project }) => {
                       const trigger = getReminderStatusDisplay(reminder);
                       const prNo = project?.prNo || reminder.projectCode;
                       // Complete/Snooze are only offered once a reminder is
@@ -1018,7 +1078,7 @@ export const PmoAssistant: React.FC = () => {
                             {reminder.title}
                           </h5>
                           <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                            {formatHumanDateString(reminder.reminderDate)} · {formatHumanTime(reminder.reminderTime)}
+                            {formatHumanDateString(reminder.reminderDate, reminder.timeZone)} · {formatReminderTime(reminder)}
                           </p>
 
                           <div className="flex items-center gap-3 pt-1.5 border-t border-slate-100 dark:border-slate-800 flex-wrap">
@@ -1075,6 +1135,18 @@ export const PmoAssistant: React.FC = () => {
                         </div>
                       );
                     })}
+                    {!expandedReminderSections.has(section.key) && section.rows.length > REMINDERS_SHOWN_PER_SECTION && (
+                      <button
+                        type="button"
+                        data-testid="assistant-show-all-reminders"
+                        onClick={() => setExpandedReminderSections((prev) => new Set(prev).add(section.key))}
+                        className="w-full rounded-lg border border-dashed border-slate-300 dark:border-slate-700 py-1.5 text-[11px] font-bold text-blue-700 dark:text-blue-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                      >
+                        Show all {section.rows.length} reminders{reminderSections.length > 1 ? ` for ${section.country}` : ""}
+                      </button>
+                    )}
+                    </div>
+                    ))}
                   </div>
                 )}
               </div>

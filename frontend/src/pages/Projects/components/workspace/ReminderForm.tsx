@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, Save, Bell } from "lucide-react";
+import { X, Save, Bell, Globe2 } from "lucide-react";
 import type {
   ProjectReminder,
   ReminderPriority,
@@ -9,6 +9,7 @@ import type {
 } from "../../../../types/ProjectReminder";
 import { NOTIFY_OFFSET_OPTIONS } from "../../../../types/ProjectReminder";
 import { getReminderPreview } from "../../../../utils/reminderDisplay";
+import { localTimeIssue, zonedToday, zoneLabel } from "../../../../utils/projectTimeZone";
 import { Button } from "../../../../components/ui/Button";
 import { Input } from "../../../../components/ui/Input";
 import { Select } from "../../../../components/ui/Select";
@@ -20,6 +21,9 @@ interface Props {
   reminder?: ProjectReminder | null;
   projectId: string;
   projectCode: string;
+  /** The project country's IANA zone (from the server); null = the project has no country; undefined = not known yet. Dates and times are entered in it. */
+  timeZone?: string | null;
+  country?: string | null;
   onSave: (reminderData: Partial<ProjectReminder>) => void;
   onCancel: () => void;
 }
@@ -32,14 +36,18 @@ const REMINDER_TYPES = [
 const PRIORITIES: ReminderPriority[] = ["Critical", "High", "Medium", "Low"];
 const REPEATS: ReminderRepeat[] = ["None", "Daily", "Weekly", "Monthly", "Yearly"];
 
-export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode, onSave, onCancel }) => {
+export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode, timeZone, country, onSave, onCancel }) => {
+  // An existing reminder keeps the zone it was saved in; a new one uses the project's.
+  const zone = reminder ? (reminder.timeZone ?? (reminder.dueAt ? null : timeZone ?? null)) : (timeZone ?? null);
+  const zoneCountry = reminder?.country ?? country ?? null;
   const [formData, setFormData] = useState({
     title: "",
     description: "",
     reminderType: "Invoice",
     priority: "Medium" as ReminderPriority,
     status: "Pending" as ReminderStatus,
-    reminderDate: new Date().toISOString().split("T")[0],
+    // Today in the PROJECT's calendar (not the viewer's, and not UTC).
+    reminderDate: timeZone ? zonedToday(timeZone) : new Date().toISOString().split("T")[0],
     reminderTime: "09:00",
     notifyOffset: "10 Minutes Before" as ReminderNotifyOffset,
     repeat: "None" as ReminderRepeat,
@@ -71,6 +79,11 @@ export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode
       setDateError(reminderDateError);
       return;
     }
+    // Same daylight-saving policy as the server: a local time skipped by a clock change is refused, never silently moved.
+    if (zone && localTimeIssue(formData.reminderDate, formData.reminderTime, zone) === "nonexistent") {
+      setDateError(`${formData.reminderTime} does not exist on this date in ${zoneLabel(zone, zoneCountry)} (daylight-saving change). Choose another time.`);
+      return;
+    }
 
     onSave({
       ...formData,
@@ -80,7 +93,16 @@ export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode
     });
   };
 
-  const preview = getReminderPreview(formData.reminderDate, formData.reminderTime, formData.notifyOffset);
+  const preview = getReminderPreview(formData.reminderDate, formData.reminderTime, formData.notifyOffset, zone);
+  const legacyReminder = !!reminder && !reminder.timeZone && !reminder.dueAt;
+  // One short line above the date and time saying which clock they are in (nothing when it is not known yet).
+  const zoneNote = zone
+    ? `Times are in ${zoneLabel(zone, zoneCountry)} (${zone}), the project's country.`
+    : legacyReminder && timeZone
+      ? `Saved before project time zones: keeps its original time. A new date or time is saved in ${zoneLabel(timeZone, country)}.`
+      : timeZone === null
+        ? "This project has no country: times use your device's time zone."
+        : "";
 
   return (
     <div className="flex flex-col h-auto max-h-full min-h-0 relative overflow-hidden bg-slate-50 dark:bg-[#0F172A]">
@@ -133,6 +155,16 @@ export const ReminderForm: React.FC<Props> = ({ reminder, projectId, projectCode
               </Select>
             </div>
           </div>
+
+          {zoneNote && (
+            <div
+              className="flex items-start gap-2 rounded-lg border border-blue-100 dark:border-blue-900/50 bg-blue-50/70 dark:bg-blue-950/20 px-3 py-2 text-[11.5px] leading-snug text-slate-600 dark:text-slate-300"
+              data-testid="reminder-time-zone"
+            >
+              <Globe2 size={14} className="mt-px shrink-0 text-blue-600 dark:text-blue-400" />
+              <span>{zoneNote}</span>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>

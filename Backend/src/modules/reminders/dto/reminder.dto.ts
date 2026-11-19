@@ -58,9 +58,27 @@ export interface ReminderDto {
   metadata: unknown;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * The country of the reminder's project: its stored Region (never inferred from a PR number, creator or client). Present on the list responses
+   * (GET /reminders, GET /projects/:projectId/reminders); null for a project with no country. Lets the PMO Assistant show each country's reminders in its own section.
+   */
+  regionId?: string | null;
+  country?: string | null;
+  /**
+   * Project-country time zones: reminderDate + reminderTime are the project's local wall-clock time; dueAt is that moment in UTC and timeZone the project country's IANA
+   * zone used for it. Both null on a reminder saved before this change (it keeps its previous behaviour; nothing was converted).
+   */
+  dueAt: Date | null;
+  timeZone: string | null;
 }
 
 /** GET /projects/:projectId/reminders and GET /reminders responses — every reminder belonging to that project, or every reminder the caller may see, respectively. */
 export interface ReminderListDto {
   items: ReminderDto[];
+}
+
+/** GET /projects/:projectId/reminders also says which zone a NEW reminder for this project uses (null when the project has no country). */
+export interface ProjectReminderListDto extends ReminderListDto {
+  timeZone: string | null;
+  country: string | null;
 }

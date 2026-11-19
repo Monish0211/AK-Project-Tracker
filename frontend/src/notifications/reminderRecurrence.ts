@@ -1,5 +1,6 @@
 import type { ProjectReminder, ReminderRepeat } from "../types/ProjectReminder";
 import { getNotifyOffsetMinutes } from "../types/ProjectReminder";
+import { zonedWallClockToUtc } from "../utils/projectTimeZone";
 
 /**
  * Recurring reminders (Oct 2026). A reminder's `repeat` setting (Daily / Weekly / Monthly / Yearly) used to be saved and
@@ -71,8 +72,9 @@ const readMeta = (reminder: Pick<ProjectReminder, "reminderDate" | "metadata">):
   return { anchor, index };
 };
 
-const triggerTime = (date: string, time: string, notifyOffset: string): number => {
-  const at = new Date(`${date}T${time || "00:00"}:00`).getTime();
+const triggerTime = (date: string, time: string, notifyOffset: string, timeZone?: string | null): number => {
+  // The project's local date + time in its zone (calendar arithmetic above stays on dates, so "09:00 every day" stays 09:00 project time, across daylight saving too).
+  const at = (timeZone ? zonedWallClockToUtc(date, time || "00:00", timeZone) : new Date(`${date}T${time || "00:00"}:00`)).getTime();
   return at - getNotifyOffsetMinutes(notifyOffset) * 60_000;
 };
 
@@ -81,7 +83,7 @@ const triggerTime = (date: string, time: string, notifyOffset: string): number =
  * the future relative to `now`. Returns null for a one-time reminder or an unparseable date. Never loops unbounded.
  */
 export function nextOccurrence(
-  reminder: Pick<ProjectReminder, "reminderDate" | "reminderTime" | "notifyOffset" | "repeat" | "metadata">,
+  reminder: Pick<ProjectReminder, "reminderDate" | "reminderTime" | "notifyOffset" | "repeat" | "metadata" | "timeZone">,
   now: Date
 ): { reminderDate: string; reminderTime: string; recurrenceAnchorDate: string; recurrenceIndex: number } | null {
   if (!isRecurring(reminder.repeat)) return null;
@@ -90,7 +92,7 @@ export function nextOccurrence(
   for (let k = index + 1; k <= index + 4000; k++) {
     const date = occurrenceDate(anchor, reminder.repeat, k);
     if (!date) return null;
-    if (triggerTime(date, reminder.reminderTime, reminder.notifyOffset) > now.getTime()) {
+    if (triggerTime(date, reminder.reminderTime, reminder.notifyOffset, reminder.timeZone) > now.getTime()) {
       return { reminderDate: date, reminderTime: reminder.reminderTime, recurrenceAnchorDate: anchor, recurrenceIndex: k };
     }
   }

@@ -199,6 +199,19 @@ export function projectCountryWhere(user?: Pick<AccessTokenPayload, "country">):
   return { regionId: { in: scope.regionIds } };
 }
 
+/**
+ * Of these project ids, the ones inside the caller's country scope. null means no country scope applies (country access off, or the explicit All Countries right), so
+ * nothing is to be filtered. Used to keep another country's projects out of a list that is built elsewhere (the Weekly Emails previews, the recalculation retry).
+ */
+export async function projectIdsInCountryScope(ids: readonly string[], user?: Pick<AccessTokenPayload, "country">): Promise<Set<string> | null> {
+  const where = projectCountryWhere(user);
+  if (!where) return null;
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Set();
+  const rows = await prisma.project.findMany({ where: { id: { in: unique }, ...where }, select: { id: true } });
+  return new Set(rows.map((row) => row.id));
+}
+
 /** Whether a set of grants permits a project country. An unclassified project (null) needs the explicit All Countries right. */
 export function grantsAllowRegion(grants: { allCountries: boolean; assigned: readonly Pick<CountryRegionInfo, "id">[] }, regionId: string | null | undefined): boolean {
   if (grants.allCountries) return true;

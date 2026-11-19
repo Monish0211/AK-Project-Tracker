@@ -27,6 +27,6 @@ export const getOpenRuns = asyncHandler(async (req: Request, res: Response) => {
 
 export const retry = asyncHandler(async (req: Request, res: Response) => {
   const { runId } = parse(runIdParam, req.params, "Run ID is required.");
-  const data = await retryRun(runId);
+  const data = await retryRun(runId, requireUser(req));
   res.status(200).json({ success: true, data, message: data.status === "SUCCEEDED" ? "Recalculation completed for every project." : "Recalculation retried; some projects are still not current." });
 });

@@ -2,6 +2,7 @@ import type { ProjectReminder } from "../types/ProjectReminder";
 import { getNotifyOffsetMinutes } from "../types/ProjectReminder";
 import { reminderOccurrenceKey, type ReminderLedger } from "./reminderLedger";
 import { isRecurring, nextOccurrence } from "./reminderRecurrence";
+import { reminderDueInstant } from "../utils/reminderDisplay";
 
 /**
  * The Reminder Scheduler's logic, free of any app wiring so it can be tested with fake timers and fake collaborators
@@ -57,10 +58,13 @@ export interface SchedulerDeps {
 export const POLL_INTERVAL_MS = 15_000;
 const RECENT_FIRE_WINDOW_MS = 120_000;
 
-export const parseDueDateTime = (reminder: Pick<ProjectReminder, "reminderDate" | "reminderTime">): Date =>
-  new Date(`${reminder.reminderDate}T${reminder.reminderTime || "00:00"}:00`);
+/**
+ * The reminder's due instant: the server's UTC dueAt (the project's local time in the project country's zone), so it fires at the same moment in every browser, wherever
+ * the viewer is. A reminder saved before project time zones keeps the old reading in the viewer's clock.
+ */
+export const parseDueDateTime = (reminder: Pick<ProjectReminder, "reminderDate" | "reminderTime" | "dueAt" | "timeZone">): Date => reminderDueInstant(reminder);
 
-export const computeTriggerTime = (reminder: Pick<ProjectReminder, "reminderDate" | "reminderTime" | "notifyOffset">): Date => {
+export const computeTriggerTime = (reminder: Pick<ProjectReminder, "reminderDate" | "reminderTime" | "notifyOffset" | "dueAt" | "timeZone">): Date => {
   const due = parseDueDateTime(reminder);
   return new Date(due.getTime() - getNotifyOffsetMinutes(reminder.notifyOffset) * 60_000);
 };

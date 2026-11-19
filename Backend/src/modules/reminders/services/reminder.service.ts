@@ -1,6 +1,6 @@
 import type { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
-import { assertProjectAccess, assertProjectAccessById, projectOwnershipWhereOr, assertProjectReadAccessById, resolveProjectReadScope } from "../../../shared/utils/projectAccess.js";
+import { assertProjectAccess, assertProjectReadAccess, projectOwnershipWhereOr, resolveProjectReadScope, PROJECT_ACCESS_SELECT } from "../../../shared/utils/projectAccess.js";
 import { getUserDisplayName } from "../../../shared/utils/userDisplayName.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
@@ -14,7 +14,39 @@ import {
   updateReminder,
 } from "../repository/reminder.repository.js";
 import type { CreateReminderInput, UpdateReminderInput } from "../validators/reminder.validators.js";
-import type { ReminderDto } from "../dto/reminder.dto.js";
+import type { ProjectReminderListDto, ReminderDto } from "../dto/reminder.dto.js";
+import { localTimeIssue, timeZoneForCountry, zonedWallClockToUtc } from "../../../shared/utils/projectTimeZone.js";
+
+/** "YYYY-MM-DD" of a reminderDate (stored as that calendar date at 00:00 UTC). */
+const dateKey = (d: Date): string => d.toISOString().slice(0, 10);
+
+/**
+ * The exact UTC instant of a reminder's local date + time in its project country's zone. No zone (a project without a country) or an unparseable time: no instant,
+ * and the reminder keeps the previous behaviour; nothing is guessed.
+ */
+function dueInstant(zone: string | null, reminderDate: Date, reminderTime: string): { dueAt: Date | null; timeZone: string | null } {
+  if (!zone) return { dueAt: null, timeZone: null };
+  // Daylight-saving policy (see localTimeIssue): a local time that does not exist in the zone is refused, never silently moved.
+  if (localTimeIssue(dateKey(reminderDate), reminderTime, zone) === "nonexistent") {
+    throw new AppError(`${dateKey(reminderDate)} ${reminderTime} does not exist in ${zone} (a daylight-saving change skips it). Choose another time.`, 400);
+  }
+  try {
+    return { dueAt: zonedWallClockToUtc(dateKey(reminderDate), reminderTime, zone), timeZone: zone };
+  } catch {
+    return { dueAt: null, timeZone: null };
+  }
+}
+
+/**
+ * ONE read of the project for both the access check and its country's zone (the access fields plus the stored country), instead of two separate lookups.
+ * 404 when the project does not exist, exactly as the access helpers did.
+ */
+async function loadProjectForReminders(projectId: string) {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { ...PROJECT_ACCESS_SELECT, region: { select: { code: true, name: true, displayName: true } } } });
+  if (!project) throw new AppError("Project not found.", 404);
+  const region = project.region;
+  return { project, zone: { timeZone: timeZoneForCountry(region), country: region ? region.displayName?.trim() || region.name : null } };
+}
 
 function toReminderDto(reminder: {
   id: string;
@@ -37,8 +69,16 @@ function toReminderDto(reminder: {
   metadata: unknown;
   createdAt: Date;
   updatedAt: Date;
+  dueAt?: Date | null;
+  timeZone?: string | null;
+  project?: { regionId: string | null; region?: { name: string; displayName?: string | null } | null };
 }): ReminderDto {
+  // The project's own stored country, only when the caller read it (the list endpoints). A single create/update response omits it.
+  const country = reminder.project && "region" in reminder.project
+    ? { regionId: reminder.project.regionId, country: reminder.project.region ? reminder.project.region.displayName?.trim() || reminder.project.region.name : null }
+    : {};
   return {
+    ...country,
     id: reminder.id,
     projectId: reminder.projectId,
     projectCode: reminder.projectCode,
@@ -59,13 +99,16 @@ function toReminderDto(reminder: {
     metadata: reminder.metadata,
     createdAt: reminder.createdAt,
     updatedAt: reminder.updatedAt,
+    dueAt: reminder.dueAt ?? null,
+    timeZone: reminder.timeZone ?? null,
   };
 }
 
-export async function listRemindersForProject(projectId: string, user: AccessTokenPayload) {
-  await assertProjectReadAccessById(projectId, user);
+export async function listRemindersForProject(projectId: string, user: AccessTokenPayload): Promise<ProjectReminderListDto> {
+  const { project, zone } = await loadProjectForReminders(projectId);
+  await assertProjectReadAccess(user, project);
   const reminders = await getRemindersByProjectId(projectId);
-  return { items: reminders.map(toReminderDto) };
+  return { items: reminders.map(toReminderDto), ...zone };
 }
 
 /**
@@ -80,7 +123,9 @@ export async function listRemindersForProject(projectId: string, user: AccessTok
 export async function listAllRemindersForCaller(user: AccessTokenPayload) {
   const callerUserId = await resolveProjectReadScope(user);
   const whereOr = await projectOwnershipWhereOr(callerUserId);
-  const reminders = await getAllRemindersForCaller(whereOr);
+  // Settings → Country Reminders: a country whose project reminder alerts are switched off delivers none (no setting = on, exactly as before).
+  const muted = (await prisma.countryReminderSetting.findMany({ where: { reminderType: "PROJECT_REMINDERS", enabled: false }, select: { regionId: true } })).map((r) => r.regionId);
+  const reminders = await getAllRemindersForCaller(whereOr, muted);
   return { items: reminders.map(toReminderDto) };
 }
 
@@ -127,7 +172,8 @@ export async function createReminderForProject(
   input: CreateReminderInput,
   user: AccessTokenPayload
 ) {
-  await assertProjectAccessById(projectId, user);
+  const { project, zone } = await loadProjectForReminders(projectId);
+  await assertProjectAccess(user, project);
 
   // Never trusts a client-supplied name — always the current fullName for
   // the authenticated caller, same convention as Project Notes. No DB write
@@ -150,7 +196,8 @@ export async function createReminderForProject(
     );
     if (existing) return existing;
 
-    return createReminder(projectId, { ...input, description: input.description ?? null }, createdBy, tx);
+    // The project's local date + time, converted in the project country's zone (never the creator's location, browser or server zone).
+    return createReminder(projectId, { ...input, description: input.description ?? null, ...dueInstant(zone.timeZone, input.reminderDate, input.reminderTime) }, createdBy, tx);
   });
 
   return toReminderDto(reminder);
@@ -171,8 +218,15 @@ async function loadReminderOrThrow(id: string, user: AccessTokenPayload) {
 // `T | undefined` instead of "present or absent", which Prisma's generated
 // input types reject. Same pattern as milestone.service.ts's updateMilestoneItem().
 export async function updateReminderItem(id: string, input: UpdateReminderInput, user: AccessTokenPayload) {
-  await loadReminderOrThrow(id, user);
+  const existing = await loadReminderOrThrow(id, user);
+  // Re-compute the UTC instant only when the date or time really changes (or the reminder already has one). A reminder saved before project time zones keeps
+  // NULL on any other edit (title, completion, the scheduler's "notification sent" flag ...), so it is never shifted silently.
+  const nextDate = input.reminderDate ?? existing.reminderDate;
+  const nextTime = input.reminderTime ?? existing.reminderTime;
+  const timeChanged = dateKey(nextDate) !== dateKey(existing.reminderDate) || nextTime !== existing.reminderTime;
+  const due = timeChanged || existing.dueAt !== null ? dueInstant(timeZoneForCountry(existing.project.region), nextDate, nextTime) : null;
   const updated = await updateReminder(id, {
+    ...(due && { dueAt: due.dueAt, timeZone: due.timeZone }),
     ...(input.projectCode !== undefined && { projectCode: input.projectCode }),
     ...(input.title !== undefined && { title: input.title }),
     ...(input.description !== undefined && { description: input.description }),

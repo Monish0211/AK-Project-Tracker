@@ -1,6 +1,6 @@
 import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "./authContext";
-import { clearCachedProjectDataForCountrySwitch } from "./authService";
+import { bindCachesToCountry, clearCachedProjectDataForCountrySwitch } from "./authService";
 import { setActiveCountry, setCountryContextRejectedHandler } from "../services/apiClient";
 import { buildCountryChoices, countryStorageKey, effectiveActiveCountry, headerValueFor, resolveActiveCountry } from "./countryContextLogic";
 import type { CountryLock } from "./countryContextLogic";
@@ -59,6 +59,8 @@ export const CountryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Set synchronously during render, not in an effect: child effects run before a parent's, and the first requests of
   // a freshly mounted screen must already carry the header.
   setActiveCountry(headerValueFor(active, enabled));
+  // Same moment, same reason: before any child reads a cache, make sure it was filled for THIS user and THIS country (cleared otherwise).
+  bindCachesToCountry(user?.id ?? null, enabled ? active : null);
 
   const selectCountry = useCallback(
     (value: string) => {

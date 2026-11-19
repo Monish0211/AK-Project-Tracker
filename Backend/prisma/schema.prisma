@@ -294,6 +294,9 @@ model Region {
   isActive Boolean @default(true)
 
   manhourFxRates CountryManhourFxRate[]
+  reminderSettings CountryReminderSetting[]
+  reminderAudits   CountryReminderSettingAudit[]
+  countryReminders CountryReminder[]
 
   // Country configuration (Global Multi-Country Phase 1) — all nullable and data-driven, so adding a country is a row, not code.
   // `name` stays the stored key that grants and Project.prCategory depend on (still "FZI" for FZE until the audited rename);
@@ -1534,6 +1537,10 @@ model ProjectReminder {
   // display/combination label, never queries or sorts by directly.
   reminderDate DateTime
   reminderTime String
+  // Project-country time zones (Nov 2026): reminderDate + reminderTime are the PROJECT local wall-clock time; dueAt is that moment in UTC, computed by the
+  // server in the zone of the project country (timeZone, an IANA name). NULL on reminders saved before this change: they are never converted silently.
+  dueAt        DateTime?
+  timeZone     String?
   notifyOffset String
   repeat       String
 
@@ -2428,4 +2435,55 @@ model ManhourCostChangeAudit {
   @@index([runId])
   @@index([projectId])
   @@index([employeeNo])
+}
+
+// ── Country-wise reminders (migration 20261124100000_add_country_reminders) ─────────────────────────────────────────────────
+// One row per (country, reminder type): currently only the project reminder alerts switch. Nothing here is inferred from a PR number, an employee or a client.
+// The Weekly Emails (missing Other Project Expenses, unpaid invoices) stay global and are not configured per country.
+model CountryReminderSetting {
+  id              String   @id @default(dbgenerated("gen_random_uuid()"))
+  regionId        String
+  region          Region   @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  reminderType    String   // PROJECT_REMINDERS (database CHECK). The Weekly Emails are global and have no per-country row.
+  enabled         Boolean  @default(true)
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([regionId, reminderType])
+  @@index([reminderType, enabled])
+}
+
+model CountryReminderSettingAudit {
+  id            String   @id @default(dbgenerated("gen_random_uuid()"))
+  regionId      String
+  region        Region   @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  reminderType  String
+  actorUserId   String?
+  actorName     String
+  previousValue Json?
+  newValue      Json
+  createdAt     DateTime @default(now())
+
+  @@index([regionId, createdAt])
+}
+
+// An important reminder that belongs to exactly one country, independent of any project.
+model CountryReminder {
+  id              String    @id @default(dbgenerated("gen_random_uuid()"))
+  regionId        String
+  region          Region    @relation(fields: [regionId], references: [id], onDelete: Restrict)
+  title           String
+  description     String?
+  reminderDate    DateTime  @db.Date
+  reminderTime    String?   // HH:mm
+  priority        String    @default("Normal") // Low | Normal | High | Critical (CHECK)
+  isCompleted     Boolean   @default(false)
+  completedAt     DateTime?
+  createdByUserId String?
+  createdByName   String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([regionId, reminderDate])
 }

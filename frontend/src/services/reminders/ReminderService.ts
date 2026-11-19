@@ -1,3 +1,4 @@
+import { snoozeTarget, type SnoozeOption } from "../../utils/reminderSnooze";
 import type {
   ProjectReminder,
   ReminderNotifyOffset,
@@ -30,21 +31,7 @@ import { dispatchPmoDataChanged } from "../../utils/pmoDataChanged";
 // reminder's id.
 const repository = new ClientReminderRepository();
 
-export type SnoozeOption = "5m" | "10m" | "30m" | "1h" | "tomorrow";
-
-const SNOOZE_MINUTES: Record<Exclude<SnoozeOption, "tomorrow">, number> = {
-  "5m": 5,
-  "10m": 10,
-  "30m": 30,
-  "1h": 60,
-};
-
-const pad2 = (n: number): string => String(n).padStart(2, "0");
-
-const toDateTimeParts = (d: Date): { date: string; time: string } => ({
-  date: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
-  time: `${pad2(d.getHours())}:${pad2(d.getMinutes())}`,
-});
+export type { SnoozeOption } from "../../utils/reminderSnooze";
 
 // If an edit touches any of these, the reminder's schedule (when/whether it
 // should fire, or how it should read when it does) has materially changed,
@@ -82,10 +69,17 @@ interface BackendReminderDto {
   metadata: unknown;
   createdAt: string;
   updatedAt: string;
+  regionId?: string | null;
+  country?: string | null;
+  dueAt?: string | null;
+  timeZone?: string | null;
 }
 
 interface BackendReminderListDto {
   items: BackendReminderDto[];
+  /** GET /projects/:projectId/reminders only: the zone (and country) a new reminder for that project uses. */
+  timeZone?: string | null;
+  country?: string | null;
 }
 
 /** What the backend's Create Reminder endpoint accepts. */
@@ -143,6 +137,10 @@ function toProjectReminder(dto: BackendReminderDto): ProjectReminder {
     notificationGenerated: dto.notificationGenerated,
     triggeredAt: dto.triggeredAt ?? undefined,
     metadata: dto.metadata,
+    ...(dto.regionId !== undefined && { regionId: dto.regionId }),
+    ...(dto.country !== undefined && { country: dto.country }),
+    ...(dto.dueAt !== undefined && { dueAt: dto.dueAt }),
+    ...(dto.timeZone !== undefined && { timeZone: dto.timeZone }),
   };
 }
 
@@ -214,6 +212,14 @@ class ReminderServiceFacade {
   // second row either way.
   private inFlightLoadsByProjectId = new Map<string, Promise<ProjectReminder[]>>();
 
+  /** Each project's reminder zone, as the server reported it with the project's reminders (null = the project has no country). */
+  private projectZones = new Map<string, { timeZone: string | null; country: string | null }>();
+
+  /** The zone a new reminder for this project is entered in (known once the project's reminders were loaded). */
+  getProjectTimeZone(projectId: string): { timeZone: string | null; country: string | null } | undefined {
+    return this.projectZones.get(projectId);
+  }
+
   getAllReminders(): ProjectReminder[] {
     return repository.getAll();
   }
@@ -258,6 +264,7 @@ class ReminderServiceFacade {
     const legacyLocalItems = this.getRemindersByProject(projectId);
 
     const result = await apiClient.get<BackendReminderListDto>(`/projects/${projectId}/reminders`);
+    if (result.timeZone !== undefined) this.projectZones.set(projectId, { timeZone: result.timeZone ?? null, country: result.country ?? null });
     const backendItems = result.items.map(toProjectReminder);
 
     if (backendItems.length > 0) {
@@ -405,20 +412,26 @@ class ReminderServiceFacade {
    * as history and won't fire again. The new occurrence always uses "At Due
    * Time" so it fires exactly when the snooze period elapses.
    */
-  async snoozeReminder(reminder: ProjectReminder, option: SnoozeOption): Promise<ProjectReminder> {
-    const now = new Date();
-    let target: Date;
-
-    if (option === "tomorrow") {
-      const [h, m] = reminder.reminderTime.split(":").map(Number);
-      target = new Date(now);
-      target.setDate(target.getDate() + 1);
-      target.setHours(h || 0, m || 0, 0, 0);
-    } else {
-      target = new Date(now.getTime() + SNOOZE_MINUTES[option] * 60_000);
+  /**
+   * The zone a project's reminders are stored in: known from the project's reminder list (loaded with the Workspace); otherwise asked once from the server.
+   * Needed by snooze even for a reminder saved before project time zones, because the snoozed copy is a NEW reminder that the server stores in the project's zone.
+   */
+  private async resolveProjectZone(projectId: string): Promise<string | null> {
+    const known = this.projectZones.get(projectId);
+    if (known) return known.timeZone;
+    try {
+      const result = await apiClient.get<BackendReminderListDto>(`/projects/${projectId}/reminders`);
+      const zone = { timeZone: result.timeZone ?? null, country: result.country ?? null };
+      this.projectZones.set(projectId, zone);
+      return zone.timeZone;
+    } catch {
+      return null;
     }
+  }
 
-    const { date, time } = toDateTimeParts(target);
+  async snoozeReminder(reminder: ProjectReminder, option: SnoozeOption): Promise<ProjectReminder> {
+    const zone = reminder.timeZone ?? (await this.resolveProjectZone(reminder.projectId));
+    const { date, time } = snoozeTarget(reminder.reminderTime, option, new Date(), zone);
 
     return this.addReminder({
       projectId: reminder.projectId,

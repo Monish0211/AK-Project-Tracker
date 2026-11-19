@@ -1,3 +1,4 @@
+import { userMayUseCountry } from "../../../shared/utils/countryAccess.js";
 import { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import * as repo from "../repository/pmoCoordinator.repository.js";
@@ -206,7 +207,9 @@ export async function listPmoCoordinatorOptions(): Promise<PmoCoordinatorOptionD
 export async function resolveCoordinatorAssignment(
   tx: Parameters<typeof repo.findEntryWithAccountsForAssignment>[0],
   entryId: string,
-  currentAccountId: string | null
+  currentAccountId: string | null,
+  /** The project's country (null = not classified). Given: a NEW assignment needs a coordinator account that holds this country (when country access is enforced). */
+  regionId?: string | null
 ): Promise<{ accountId: string; displayName: string }> {
   const found = await repo.findEntryWithAccountsForAssignment(tx, entryId);
   if (!found) {
@@ -222,6 +225,9 @@ export async function resolveCoordinatorAssignment(
       `"${found.entry.displayName}" cannot be assigned as PMO Coordinator: ${PMO_COORDINATOR_STATUS_MESSAGES[eligibility.status]}`,
       400
     );
+  }
+  if (regionId !== undefined && !(await userMayUseCountry(accountId, regionId))) {
+    throw new AppError(`"${found.entry.displayName}" cannot be assigned as PMO Coordinator: they do not have access to this project's country.`, 400);
   }
   return { accountId, displayName: found.entry.displayName };
 }

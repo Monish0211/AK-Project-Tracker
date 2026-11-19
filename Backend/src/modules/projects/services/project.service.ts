@@ -510,7 +510,7 @@ export async function createProject(input: CreateProjectRequestInput, creatorUse
               if (completion.recordLd) await claimCompletion(tx, row.id, { isCompletion: false, recordLd: completion.recordLd }, creatorUserId);
               return writeCompletionNote(tx, row.id, completedByName, completion.recordLd !== null);
             }
-            const coordinator = await resolveCoordinatorAssignment(tx, entryId, null);
+            const coordinator = await resolveCoordinatorAssignment(tx, entryId, null, projectRegionId ?? null);
             const row = await createProjectInRepository(
               {
                 ...data,
@@ -855,7 +855,7 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
             const currentAccountId = await lockProjectCoordinatorForUpdate(tx, id);
             // Revalidated here regardless of what the picker showed; eligibility
             // is only re-checked when the assigned account actually changes.
-            const coordinator = await resolveCoordinatorAssignment(tx, entryId, currentAccountId);
+            const coordinator = await resolveCoordinatorAssignment(tx, entryId, currentAccountId, updateData.regionId !== undefined ? (updateData.regionId as string | null) : (existing.regionId ?? null));
             const changed = coordinator.accountId !== currentAccountId;
             if (changed && isReadOnly) throw readOnlyCannotChangeCoordinator();
             const row = await updateProjectInRepository(
@@ -936,7 +936,7 @@ export async function archiveProject(id: string, user: AccessTokenPayload): Prom
   // a second archive attempt on an already-archived project 404s before
   // ever reaching this line — this can only ever fire once per real
   // archive transition. Fire-and-forget; never affects this response.
-  const recipients = await resolveProjectEventRecipients(existing.createdByUserId, "Projects");
+  const recipients = await resolveProjectEventRecipients(existing.createdByUserId, "Projects", existing.regionId ?? null);
   await notify(recipients, {
     title: "Project Archived",
     message: `Project ${existing.prNo} (${existing.projectTitle}) was archived.`,
@@ -972,7 +972,7 @@ export async function restoreProject(id: string, user: AccessTokenPayload): Prom
   // same way as archive: the 409 guard just above already refuses a second
   // restore attempt on a project that isn't currently archived, so this can
   // only ever fire once per real restore transition.
-  const recipients = await resolveProjectEventRecipients(existing.createdByUserId, "Projects");
+  const recipients = await resolveProjectEventRecipients(existing.createdByUserId, "Projects", existing.regionId ?? null);
   await notify(recipients, {
     title: "Project Restored",
     message: `Project ${existing.prNo} (${existing.projectTitle}) was restored.`,
@@ -1054,7 +1054,7 @@ export async function permanentlyDeleteProject(id: string, user: AccessTokenPayl
   // buildActionUrl treats them as one), which is the smallest change that
   // satisfies both "keep the historical id" and "never a dead link" without
   // modifying notify()'s existing behavior.
-  const recipients = await resolveProjectEventRecipients(existing.createdByUserId, "Projects");
+  const recipients = await resolveProjectEventRecipients(existing.createdByUserId, "Projects", existing.regionId ?? null);
   await notify(recipients, {
     title: "Project Permanently Deleted",
     message: `Project ${existing.prNo} (${existing.projectTitle}) was permanently deleted.`,

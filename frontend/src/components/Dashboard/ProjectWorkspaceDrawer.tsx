@@ -272,6 +272,8 @@ export const ProjectWorkspaceDrawer = ({ isOpen, onClose, project, setProject, r
               reminder={editingReminder} 
               projectId={project.id}
               projectCode={project.prNo || "PR-XXXXX"}
+              timeZone={reminderService.getProjectTimeZone(project.id)?.timeZone}
+              country={reminderService.getProjectTimeZone(project.id)?.country}
               onSave={handleSaveReminder}
               onCancel={() => { setIsEditingReminder(false); setEditingReminder(null); }}
             />

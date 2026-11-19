@@ -25,7 +25,7 @@ import {
 import { REFRESH_RUN_STATUS, REFRESH_TASK_STATUS, inrManpowerCost, runStatusFromTasks } from "./manhourCosting.rules.js";
 import type { RateChangeSource, RefreshRunStatus } from "./manhourCosting.rules.js";
 import { AppError } from "../../shared/utils/AppError.js";
-import { projectCountryWhere } from "../../shared/utils/countryAccess.js";
+import { projectCountryWhere, projectIdsInCountryScope } from "../../shared/utils/countryAccess.js";
 
 /**
  * Phase 4 / Option A - automatic manpower recalculation when an employee's hourly rate changes.
@@ -186,12 +186,13 @@ async function syncRunStatus(runId: string): Promise<void> {
 }
 
 /** Processes every task of a run that has not succeeded, then sets the run's overall status. Safe to call again (retry) and never throws. */
-export async function processRun(runId: string): Promise<RefreshSummary | null> {
+export async function processRun(runId: string, onlyProjectIds?: ReadonlySet<string> | null): Promise<RefreshSummary | null> {
   const run = await findRun(runId);
   if (!run) return null;
   await setRunStatus(runId, REFRESH_RUN_STATUS.PROCESSING);
   for (const task of run.tasks) {
     if (task.status === REFRESH_TASK_STATUS.SUCCEEDED) continue;
+    if (onlyProjectIds && !onlyProjectIds.has(task.projectId)) continue; // another country's project: not this caller's to recalculate
     await processTask(task.id);
   }
   const after = await findRun(runId);
@@ -215,10 +216,20 @@ export async function processRunSafely(runId: string): Promise<RefreshSummary | 
 }
 
 /** Retry of a run from the visible failed / pending state. Uses the latest saved employee rate, not the queued one. */
-export async function retryRun(runId: string): Promise<RefreshSummary> {
-  const summary = await processRun(runId);
+export async function retryRun(runId: string, user?: AccessTokenPayload): Promise<RefreshSummary> {
+  // Multi-country: a retry recalculates, so it may only touch projects of the countries the caller holds; the others stay exactly as they were (still pending / failed for
+  // someone who holds them). A run with none of the caller's projects reads as not found, the same answer as an unknown id. With country access off, or for the explicit
+  // All Countries right, nothing is limited and this is exactly what it was.
+  const allowed = user ? await projectIdsInCountryScope((await findRun(runId))?.tasks.map((t) => t.projectId) ?? [], user) : null;
+  if (allowed && allowed.size === 0) throw new AppError("Recalculation run not found.", 404);
+  const summary = await processRun(runId, allowed);
   if (!summary) throw new AppError("Recalculation run not found.", 404);
-  return summary;
+  if (!allowed) return summary;
+  // The answer covers only the caller's own projects (counts of another country's projects are not theirs to see).
+  const after = await findRun(runId);
+  const mine = (after?.tasks ?? []).filter((t) => allowed.has(t.projectId));
+  const succeeded = mine.filter((t) => t.status === REFRESH_TASK_STATUS.SUCCEEDED).length;
+  return { runId, status: runStatusFromTasks(mine.map((t) => t.status)), projectCount: mine.length, succeededCount: succeeded, failedCount: mine.filter((t) => t.status === REFRESH_TASK_STATUS.FAILED).length };
 }
 
 export interface OpenRunDto {

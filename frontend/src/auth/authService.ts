@@ -145,6 +145,7 @@ function clearCachedBusinessDataOnLogout(): void {
     "timesheets_imports", // timesheetService.ts
     "pmo_notifications", // notifications/notificationRepository.ts (also read by the legacy services/NotificationService.ts)
     "pmo_reminders", // services/reminders/ClientReminderRepository.ts
+    "pmo_cache_owner", // bindCachesToCountry() below: whose (user + country) the cached project data is
   ];
   for (const key of localStorageKeysToClear) {
     localStorage.removeItem(key);
@@ -178,6 +179,23 @@ export function clearCachedProjectDataForCountrySwitch(): void {
   clearTimesheetCache();
   for (const key of ["view-project-tab", "view-project-notes"]) {
     sessionStorage.removeItem(key);
+  }
+}
+
+/**
+ * The browser caches of project-scoped data belong to ONE user and ONE selected country. This marker records whose they are; when the current user or country differs (another
+ * login on the same browser, a country switch, a stale or hand-edited cache) they are cleared before any screen reads them. The server still decides what each request may see:
+ * this only guarantees a screen never shows a previous country's cached rows.
+ */
+export const CACHE_OWNER_KEY = "pmo_cache_owner";
+export function bindCachesToCountry(userId: string | null, activeCountry: string | null): void {
+  const owner = `${userId ?? ""}|${activeCountry ?? ""}`;
+  try {
+    if (localStorage.getItem(CACHE_OWNER_KEY) === owner) return;
+    clearCachedProjectDataForCountrySwitch();
+    localStorage.setItem(CACHE_OWNER_KEY, owner);
+  } catch {
+    // Storage unavailable: there is no cache to protect either.
   }
 }
 

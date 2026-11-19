@@ -1,3 +1,4 @@
+import { userMayUseCountry } from "../../../shared/utils/countryAccess.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 import { booleanFromEnv, env } from "../../../shared/utils/env.js";
 import { sendEmail } from "../../../shared/email/email.service.js";
@@ -57,7 +58,7 @@ export async function sendPmoCoordinatorAllocationEmail(change: AllocationChange
   const [project, account] = await Promise.all([
     prisma.project.findUnique({
       where: { id: change.projectId },
-      select: { id: true, prNo: true, projectTitle: true, client: true },
+      select: { id: true, prNo: true, projectTitle: true, client: true, regionId: true },
     }),
     prisma.portalUser.findUnique({
       where: { id: change.coordinatorUserId },
@@ -66,6 +67,11 @@ export async function sendPmoCoordinatorAllocationEmail(change: AllocationChange
   ]);
   if (!project || !account || !account.isActive || !account.email.trim()) {
     console.warn(`[pmoCoordinators] Allocation email skipped for project ${change.projectId}: coordinator account unavailable.`);
+    return "no_recipient";
+  }
+  // The email names the project: never send it to an account that does not (or no longer) hold the project's country.
+  if (!(await userMayUseCountry(change.coordinatorUserId, project.regionId))) {
+    console.warn(`[pmoCoordinators] Allocation email skipped for project ${change.projectId}: the coordinator does not hold the project's country.`);
     return "no_recipient";
   }
 

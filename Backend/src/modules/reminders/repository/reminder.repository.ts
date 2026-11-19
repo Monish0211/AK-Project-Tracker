@@ -16,6 +16,8 @@ export function createReminder(
     notifyOffset: string;
     repeat: string;
     metadata?: unknown;
+    dueAt?: Date | null;
+    timeZone?: string | null;
   },
   createdBy: string,
   tx?: Prisma.TransactionClient
@@ -35,6 +37,8 @@ export function createReminder(
       notifyOffset: data.notifyOffset,
       repeat: data.repeat,
       createdBy,
+      dueAt: data.dueAt ?? null,
+      timeZone: data.timeZone ?? null,
       ...(data.metadata !== undefined && { metadata: data.metadata as Prisma.InputJsonValue }),
     },
   });
@@ -69,9 +73,13 @@ export function findMatchingReminder(
   });
 }
 
+/** The project's stored country, read with each listed reminder (one join, no extra query per row). */
+export const REMINDER_PROJECT_COUNTRY = { project: { select: { regionId: true, region: { select: { name: true, displayName: true } } } } } as const;
+
 export function getRemindersByProjectId(projectId: string) {
   return prisma.projectReminder.findMany({
     where: { projectId },
+    include: REMINDER_PROJECT_COUNTRY,
     orderBy: { createdAt: "desc" },
   });
 }
@@ -80,7 +88,7 @@ export function getRemindersByProjectId(projectId: string) {
 export function getReminderById(id: string) {
   return prisma.projectReminder.findUnique({
     where: { id },
-    include: { project: { select: { createdByUserId: true, pmoCoordinatorUserId: true, regionId: true } } },
+    include: { project: { select: { createdByUserId: true, pmoCoordinatorUserId: true, regionId: true, region: { select: { code: true, name: true } } } } },
   });
 }
 
@@ -93,9 +101,13 @@ export function deleteReminder(id: string) {
 }
 
 /** Every reminder belonging to a project matching `whereOr` (see projectAccess.ts's projectOwnershipWhereOr) — powers the global GET /reminders the frontend's ReminderScheduler polls, since it must evaluate reminders across every project the caller can see, not just one. `undefined` (Administrator/PMO Manager) means no restriction. */
-export function getAllRemindersForCaller(whereOr: Awaited<ReturnType<typeof projectOwnershipWhereOr>>) {
+/** `mutedRegionIds`: countries whose "Project reminder alerts" are switched off in Settings → Country Reminders; their projects' reminders are not delivered. */
+export function getAllRemindersForCaller(whereOr: Awaited<ReturnType<typeof projectOwnershipWhereOr>>, mutedRegionIds: string[] = []) {
+  const muted = mutedRegionIds.length > 0 ? { OR: [{ regionId: null }, { regionId: { notIn: mutedRegionIds } }] } : undefined;
+  const project = whereOr && muted ? { AND: [{ OR: whereOr }, muted] } : whereOr ? { OR: whereOr } : muted;
   return prisma.projectReminder.findMany({
-    ...(whereOr && { where: { project: { OR: whereOr } } }),
+    ...(project && { where: { project } }),
+    include: REMINDER_PROJECT_COUNTRY,
     orderBy: { createdAt: "desc" },
   });
 }

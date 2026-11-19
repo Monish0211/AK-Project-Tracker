@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Users, Shield, UserCheck, Mail } from "lucide-react";
+import { Users, Shield, UserCheck, Mail, Globe2 } from "lucide-react";
 import { UserManagementSection } from "./components/userManagement/UserManagementSection";
 import { SecurityAuditSection } from "./components/audit/SecurityAuditSection";
 import { PmoCoordinatorsSection } from "./components/pmoCoordinators/PmoCoordinatorsSection";
 import { WeeklyEmailsSection } from "./components/weeklyEmails/WeeklyEmailsSection";
+import { CountryRemindersSection } from "./components/countryReminders/CountryRemindersSection";
 import { useAuth } from "../../auth/authContext";
 import "./settings-theme.css";
 
-type SettingsTab = "users" | "coordinators" | "weeklyEmails" | "audit";
+type SettingsTab = "users" | "coordinators" | "weeklyEmails" | "countryReminders" | "audit";
 
 // "system" (System Preferences) and "notifications" (Notification Alert
 // Rules) were removed — both were unimplemented placeholder cards with no
@@ -16,7 +17,7 @@ type SettingsTab = "users" | "coordinators" | "weeklyEmails" | "audit";
 // legacy tab values is redirected to the audit tab rather than left to
 // render nothing.
 const LEGACY_REMOVED_TABS = new Set(["system", "notifications"]);
-const VALID_TABS: SettingsTab[] = ["users", "coordinators", "weeklyEmails", "audit"];
+const VALID_TABS: SettingsTab[] = ["users", "coordinators", "weeklyEmails", "countryReminders", "audit"];
 
 const Settings = () => {
   const { user } = useAuth();
@@ -94,6 +95,22 @@ const Settings = () => {
           </button>
         )}
 
+        {/* Country Reminders (Nov 2026): per-country schedule, recipients and important reminders. Same two roles; the server also limits it to the countries the user holds. */}
+        {canManageCoordinators && (
+          <button
+            type="button"
+            onClick={() => handleTabChange("countryReminders")}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
+              activeTab === "countryReminders"
+                ? "bg-[var(--nu-accent)] text-white shadow-[var(--nu-shadow-sm)]"
+                : "text-[var(--nu-text-secondary)] hover:bg-[var(--nu-surface-alt)] hover:text-[var(--nu-text)]"
+            }`}
+          >
+            <Globe2 size={15} />
+            Country Reminders
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => handleTabChange("audit")}
@@ -112,6 +129,7 @@ const Settings = () => {
       {activeTab === "users" && <UserManagementSection />}
       {activeTab === "coordinators" && canManageCoordinators && <PmoCoordinatorsSection />}
       {activeTab === "weeklyEmails" && canManageCoordinators && <WeeklyEmailsSection />}
+      {activeTab === "countryReminders" && canManageCoordinators && <CountryRemindersSection />}
       {activeTab === "audit" && <SecurityAuditSection />}
     </div>
   );

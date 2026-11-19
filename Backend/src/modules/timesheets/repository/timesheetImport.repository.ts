@@ -1,3 +1,4 @@
+import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 
 /** All Prisma access for TimesheetImport (the audit header record) lives here. */
@@ -95,6 +96,24 @@ export function findImportById(id: string) {
   return prisma.timesheetImport.findUnique({ where: { id } });
 }
 
+/** Whether an import holds at least one row for a project in the scope (an import with none is not the caller's to see). */
+export async function importHasRowsInScope(importId: string, scope: Prisma.ProjectWhereInput): Promise<boolean> {
+  return (await prisma.timesheetImportRowLog.count({ where: { importId, entry: { project: scope } }, take: 1 })) > 0;
+}
+
+/** Row outcomes per import, counting only rows for projects in the scope. One grouped query for a whole page of imports. */
+export async function scopedOutcomeCounts(importIds: string[], scope: Prisma.ProjectWhereInput): Promise<Map<string, Record<string, number>>> {
+  const map = new Map<string, Record<string, number>>();
+  if (importIds.length === 0) return map;
+  const rows = await prisma.timesheetImportRowLog.groupBy({ by: ["importId", "outcome"], where: { importId: { in: importIds }, entry: { project: scope } }, _count: { _all: true } });
+  for (const row of rows) {
+    const counts = map.get(row.importId) ?? {};
+    counts[row.outcome] = row._count._all;
+    map.set(row.importId, counts);
+  }
+  return map;
+}
+
 export interface TimesheetImportFinalizeData {
   status: string;
   totalRows: number;
@@ -113,8 +132,11 @@ export function finalizeImport(id: string, data: TimesheetImportFinalizeData) {
   });
 }
 
-export function listImports(status: string | undefined, page: number, pageSize: number) {
-  const where = status ? { status } : {};
+/**
+ * `scope` (the caller's countries) limits the list to imports with at least one row for a project in those countries. Without a scope it is every import, as before.
+ */
+export function listImports(status: string | undefined, page: number, pageSize: number, scope?: Prisma.ProjectWhereInput) {
+  const where = { ...(status ? { status } : {}), ...(scope ? { rowLogs: { some: { entry: { project: scope } } } } : {}) };
   return Promise.all([
     prisma.timesheetImport.findMany({
       where,

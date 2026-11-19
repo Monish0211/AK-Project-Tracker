@@ -9,7 +9,7 @@ import { Badge } from "../ui/Badge";
 import { ReminderTypeIcon } from "../ui/ReminderTypeIcon";
 import {
   formatHumanDateString,
-  formatHumanTime,
+  formatReminderTime,
   getReminderStatusDisplay,
   reminderPriorityTone,
   reminderStatusTone,
@@ -127,12 +127,12 @@ export const ReminderCard: React.FC<Props> = ({ reminder, onEdit, readOnly }) =>
           <div className="flex items-center gap-4 mt-3 text-[11px] font-semibold text-[var(--nu-text-secondary)] flex-wrap">
             <div className="flex items-center gap-1.5">
               <Calendar size={13} />
-              {formatHumanDateString(reminder.reminderDate)}
+              {formatHumanDateString(reminder.reminderDate, reminder.timeZone)}
             </div>
             {reminder.reminderTime && (
               <div className="flex items-center gap-1.5">
                 <Clock size={13} />
-                {formatHumanTime(reminder.reminderTime)}
+                {formatReminderTime(reminder)}
               </div>
             )}
             {reminder.notifyOffset !== "At Due Time" && (

@@ -124,6 +124,19 @@ export function revokeSubscription(id: string) {
  * plain read, no business logic (matches this file's own "no business
  * logic" rule stated at the top).
  */
+/**
+ * Of these users, the active ones who currently hold the country (or the explicit All Countries right). `regionId` null = a project with no country yet: only the All Countries
+ * right reaches it. One query, never one per user.
+ */
+export async function filterUserIdsHoldingCountry(userIds: readonly string[], regionId: string | null): Promise<string[]> {
+  if (userIds.length === 0) return [];
+  const rows = await prisma.portalUser.findMany({
+    where: { id: { in: [...userIds] }, isActive: true, OR: [{ allCountriesAccess: true }, ...(regionId ? [{ regionAccess: { some: { regionId } } }] : [])] },
+    select: { id: true },
+  });
+  return rows.map((row) => row.id);
+}
+
 export async function findUserIdsWithModuleAccess(moduleName: string): Promise<string[]> {
   const rows = await prisma.userModuleAccess.findMany({
     where: { module: { name: moduleName }, user: { isActive: true } },

@@ -8,7 +8,7 @@ import type { SnoozeOption } from "../services/reminders/ReminderService";
 import { reminderSoundService } from "../services/audio/ReminderSoundService";
 import { ReminderTypeIcon } from "../components/ui/ReminderTypeIcon";
 import { Button } from "../components/ui/Button";
-import { formatHumanDateString, formatHumanTime, getReminderStatusDisplay } from "../utils/reminderDisplay";
+import { formatHumanDateString, formatReminderTime, getReminderStatusDisplay } from "../utils/reminderDisplay";
 import type { ReminderTriggerStatus } from "../utils/reminderDisplay";
 
 interface Props {
@@ -45,9 +45,9 @@ export const ReminderToast: React.FC<Props> = ({ toast, onDismiss }) => {
   const trigger = getReminderStatusDisplay(reminder, now);
   const isUrgent = trigger.status === "due-now" || trigger.status === "overdue" || reminder.priority === "Critical";
   const scheduledLabel =
-    formatHumanDateString(reminder.reminderDate) === "Today"
-      ? formatHumanTime(reminder.reminderTime)
-      : `${formatHumanDateString(reminder.reminderDate)} · ${formatHumanTime(reminder.reminderTime)}`;
+    formatHumanDateString(reminder.reminderDate, reminder.timeZone) === "Today"
+      ? formatReminderTime(reminder)
+      : `${formatHumanDateString(reminder.reminderDate, reminder.timeZone)} · ${formatReminderTime(reminder)}`;
 
   const startExit = (after: () => void) => {
     setPhase("exiting");
