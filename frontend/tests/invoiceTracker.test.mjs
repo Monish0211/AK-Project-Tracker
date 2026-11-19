@@ -1069,10 +1069,16 @@ test("responsive: the summary cards follow the width the content column actually
   assert.doesNotMatch(grid, /(^|\s)(sm|md|lg|xl|2xl):grid-cols/, "no window (viewport) breakpoint: a 1536px window with a 288px sidebar has only ~1190px for the cards");
   assert.match(page, /className=\{SUMMARY_GRID\} data-summary/);
   assert.match(page, /className="@container space-y-3\.5 nu-fade-in" data-page="invoice-tracker"/, "the page root is the container the grid measures");
-  // every tier gives each card at least ~200px (card width = (container - gaps) / columns, gap-3 = 12px)
+  // Two tiers: the money cards (one figure per currency) are wide, the count cards compact. Every tier gives each card at least ~200px
+  // (a card spanning n of c columns is n * (container - gaps) / c + (n - 1) gaps wide, gap-3 = 12px).
   const tiers = [...grid.matchAll(/@min-\[(\d+)px\]:grid-cols-(\d+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
-  assert.deepEqual(tiers.map((t) => t[1]), [2, 4, 7], "2 → 4 → 7 columns as the content widens");
-  for (const [width, cols] of tiers) assert.ok((width - (cols - 1) * 12) / cols >= 200, `${cols} columns from ${width}px content width leave each card ≥ 200px`);
+  assert.deepEqual(tiers.map((t) => t[1]), [2, 12], "1 -> 2 -> 12 columns as the content widens");
+  const spans = { 560: [2, 1, 1], 1000: [4, 3] };
+  for (const [width, cols] of tiers) {
+    for (const span of spans[width]) assert.ok(((width - (cols - 1) * 12) / cols) * span + (span - 1) * 12 >= 200, `a card spanning ${span} of ${cols} columns from ${width}px leaves it >= 200px`);
+  }
+  assert.match(page, /const MONEY_CARD = "@min-\[1000px\]:col-span-4"/);
+  assert.match(page, /const COUNT_CARD = "@min-\[1000px\]:col-span-3"/);
   assert.ok(tiers.every((t, i) => i === 0 || t[0] > tiers[i - 1][0]), "thresholds increase with the column count");
 });
 

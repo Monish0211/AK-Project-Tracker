@@ -273,8 +273,8 @@ test("the card: an ordinary card is untouched; with an action it is ONE button w
   assert.match(renderToStaticMarkup(h(StatCard, { ...props, onActivate() {}, actionLabel: "View breakdown", expanded: true })), /aria-expanded="true"/);
   // the other cards keep exactly the card classes
   const strip = (s) => s.replace(/<[^>]+class="([^"]*)"[^>]*data-stat[^>]*>[^]*/, "$1");
-  assert.ok(strip(plain).includes("rounded-xl p-4 flex items-center gap-3 shadow-sm"));
-  assert.ok(strip(actionable).includes("rounded-xl p-4 flex items-center gap-3 shadow-sm"), "same card chrome");
+  assert.ok(strip(plain).includes("rounded-xl p-4 flex items-start gap-3 shadow-sm"));
+  assert.ok(strip(actionable).includes("rounded-xl p-4 flex items-start gap-3 shadow-sm"), "same card chrome");
 });
 
 test("the summary cards: the Raised invoice amount card opens the breakdown when the page supplies the list's query; without it nothing is clickable", async () => {

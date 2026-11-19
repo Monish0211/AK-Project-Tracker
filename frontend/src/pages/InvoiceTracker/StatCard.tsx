@@ -28,6 +28,7 @@ export function StatCard({
   onActivate,
   actionLabel,
   expanded,
+  className,
 }: {
   label: string;
   value: string;
@@ -39,9 +40,11 @@ export function StatCard({
   onActivate?: () => void;
   actionLabel?: string;
   expanded?: boolean;
+  /** Extra classes for the card itself (the tracker uses it for the grid span). */
+  className?: string | undefined;
 }) {
   const c = ACCENT[accent];
-  const card = "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 relative overflow-hidden rounded-xl p-4 flex items-center gap-3 shadow-sm min-w-0";
+  const card = `bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 relative overflow-hidden rounded-xl p-4 flex items-start gap-3 shadow-sm min-w-0 ${className ?? ""}`;
   // Spans (display:block) rather than divs so the same content is valid inside a <button>.
   const body = (
     <>

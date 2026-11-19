@@ -36,7 +36,11 @@ const HERO_CSS = `
 // window: a viewport breakpoint at 1536px put seven ~160px cards in a 1248px content area and clipped their amounts. Each card keeps
 // at least ~200px: 2 columns by default, 4 from 880px, 7 from 1472px of content width (1 column on a very narrow container).
 // The page root is the `@container` (see the root element below).
-const SUMMARY_GRID = "grid gap-3 grid-cols-1 @min-[420px]:grid-cols-2 @min-[880px]:grid-cols-4 @min-[1472px]:grid-cols-7";
+const SUMMARY_GRID = "grid gap-3 grid-cols-1 @min-[560px]:grid-cols-2 @min-[1000px]:grid-cols-12";
+// Two tiers: the three money cards get the width, the four count cards are compact beneath them.
+// 12 columns from 1000px of content width: a money card spans 4 (>= 325px), a count card spans 3 (>= 241px).
+const MONEY_CARD = "@min-[1000px]:col-span-4";
+const COUNT_CARD = "@min-[1000px]:col-span-3";
 
 const fmt = (n: number) => n.toLocaleString("en-IN");
 const plural = (n: number, one: string, many = `${one}s`) => `${fmt(n)} ${n === 1 ? one : many}`;
@@ -51,15 +55,13 @@ export function TrackerSummaryCards({ data, query, refreshKey = 0, onRefresh }: 
   const scope = data.month === ALL_MONTHS ? "all months" : formatMonthLabel(data.month);
   return (
     <div className={SUMMARY_GRID} data-summary data-scope={data.month}>
-      <StatCard label="Workflow records" value={fmt(s.recordCount)} accent="blue" icon={FolderKanban} hint={`${plural(s.invoiceCount, "invoice")} · ${plural(s.requestCount, "request")} · ${plural(s.projectCount, "project")}`} />
-      <StatCard label="Raised invoices" value={fmt(s.invoicesRaised)} accent="emerald" icon={ReceiptText} hint="Raised, Partially Paid and Paid — never Draft, Cancelled or requests" />
       {query ? (
-        <RaisedAmountCard value={formatIndianCurrency(s.raisedAmountINR)} totalINR={s.raisedAmountINR} hint={`Invoices dated in ${scope}`} query={query} refreshKey={refreshKey} onRefresh={onRefresh} />
+        <RaisedAmountCard className={`${MONEY_CARD} @min-[560px]:col-span-2`} value={formatIndianCurrency(s.raisedAmountINR)} totalINR={s.raisedAmountINR} hint={`Invoices dated in ${scope}`} query={query} refreshKey={refreshKey} onRefresh={onRefresh} />
       ) : (
-        <StatCard label="Raised invoice amount" value={formatIndianCurrency(s.raisedAmountINR)} accent="emerald" icon={IndianRupee} hint={`Invoices dated in ${scope}`} />
+        <StatCard className={`${MONEY_CARD} @min-[560px]:col-span-2`} label="Raised invoice amount" value={formatIndianCurrency(s.raisedAmountINR)} accent="emerald" icon={IndianRupee} hint={`Invoices dated in ${scope}`} />
       )}
-      <StatCard label="Pending approval amount" value="Not recorded" muted accent="rose" icon={BellRing} hint={`${plural(s.pendingApproval.count, "open invoice request")} · requests carry no amount`} />
       <StatCard
+        className={MONEY_CARD}
         label="Amount collected"
         value={formatIndianCurrency(s.collected.amountINR)}
         accent="indigo"
@@ -67,6 +69,7 @@ export function TrackerSummaryCards({ data, query, refreshKey = 0, onRefresh }: 
         hint={`Inferred from Paid status — no payments are recorded: ${plural(s.collected.paidInvoiceCount, "Paid invoice")} at full amount${s.collected.partiallyPaidExcludedCount > 0 ? ` · ${fmt(s.collected.partiallyPaidExcludedCount)} Partially Paid not included (amount not recorded)` : ""}${s.collected.needsReviewCount > 0 ? ` · ${fmt(s.collected.needsReviewCount)} Paid need review` : ""}`}
       />
       <StatCard
+        className={MONEY_CARD}
         label={`Outstanding · invoices dated in ${data.month === ALL_MONTHS ? "all months" : "this month"}`}
         value={formatIndianCurrency(s.outstanding.knownAmountINR)}
         accent="amber"
@@ -74,7 +77,11 @@ export function TrackerSummaryCards({ data, query, refreshKey = 0, onRefresh }: 
         warn={s.outstanding.knownAmountINR > 0}
         hint={`${plural(s.outstanding.invoiceCount, "invoice")} · ${fmt(s.outstanding.balanceNotRecordedCount)} with balance not recorded · every month: Outstanding tab`}
       />
+      <StatCard className={COUNT_CARD} label="Workflow records" value={fmt(s.recordCount)} accent="blue" icon={FolderKanban} hint={`${plural(s.invoiceCount, "invoice")} · ${plural(s.requestCount, "request")} · ${plural(s.projectCount, "project")}`} />
+      <StatCard className={COUNT_CARD} label="Raised invoices" value={fmt(s.invoicesRaised)} accent="emerald" icon={ReceiptText} hint="Raised, Partially Paid and Paid — never Draft, Cancelled or requests" />
+      <StatCard className={COUNT_CARD} label="Pending approval amount" value="Not recorded" muted accent="rose" icon={BellRing} hint={`${plural(s.pendingApproval.count, "open invoice request")} · requests carry no amount`} />
       <StatCard
+        className={COUNT_CARD}
         label="Invoice status"
         value={`${fmt(s.byStatus.raised)} · ${fmt(s.byStatus.partiallyPaid)} · ${fmt(s.byStatus.paid)}`}
         accent="slate"

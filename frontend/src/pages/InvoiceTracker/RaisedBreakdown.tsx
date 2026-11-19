@@ -323,7 +323,7 @@ export function RaisedBreakdownDialog({ open, titleId, onClose, children }: { op
  * The "Raised invoice amount" card. Same look as its neighbours, plus a quiet "View breakdown" line and chevron; one click opens the breakdown
  * of exactly this figure (same month, same filters). `refreshKey` changes whenever the page reloads its data, so a reopened breakdown is current.
  */
-export function RaisedAmountCard({ value, totalINR, hint, query, refreshKey, onRefresh }: { value: string; totalINR: number; hint: string; query: BreakdownQuery; refreshKey: number; onRefresh?: (() => void) | undefined }) {
+export function RaisedAmountCard({ className, value, totalINR, hint, query, refreshKey, onRefresh }: { className?: string | undefined; value: string; totalINR: number; hint: string; query: BreakdownQuery; refreshKey: number; onRefresh?: (() => void) | undefined }) {
   const titleId = useId();
   const [open, setOpen] = useState(false);
   const [overrides, setOverrides] = useState<ExpansionOverrides>(() => new Map());
@@ -338,7 +338,7 @@ export function RaisedAmountCard({ value, totalINR, hint, query, refreshKey, onR
 
   return (
     <>
-      <StatCard label="Raised invoice amount" value={value} accent="emerald" icon={IndianRupee} hint={hint} onActivate={() => setOpen(true)} actionLabel="View breakdown" expanded={open} />
+      <StatCard className={className} label="Raised invoice amount" value={value} accent="emerald" icon={IndianRupee} hint={hint} onActivate={() => setOpen(true)} actionLabel="View breakdown" expanded={open} />
       <RaisedBreakdownDialog open={open} titleId={titleId} onClose={close}>
         <RaisedBreakdownPanel
           titleId={titleId}
