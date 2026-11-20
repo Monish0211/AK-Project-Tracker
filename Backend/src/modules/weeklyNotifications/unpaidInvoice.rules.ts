@@ -35,7 +35,10 @@ export interface InvoiceLineCandidate {
   invoiceNo: string;
   invoiceDate: Date; // stored as a date-only value (UTC midnight)
   status: string;
+  /** The amount in the invoice's PROJECT currency (rupees for India / legacy). */
   invoiceAmountINR: number;
+  /** The project's own currency; absent / INR for India and legacy. */
+  projectCurrency?: string;
   currency: string;
   invoiceAmountOriginal: number | null;
 }
@@ -51,6 +54,8 @@ export interface OverdueInvoiceRow {
   invoiceLineId: string;
   invoiceDate: string; // YYYY-MM-DD
   daysSinceRaised: number;
+  /** The project's own currency (INR for India / legacy): invoiceAmountINR, amountPaidINR and outstandingINR are in it. */
+  currency: string;
   invoiceAmountINR: number;
   /** 0 for Raised / Submitted; null for Partially Paid (amount paid is not recorded). */
   amountPaidINR: number | null;
@@ -94,8 +99,11 @@ export function daysFrom(invoiceDate: Date, today: string): number {
   return Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${invoiceDay}T00:00:00Z`)) / 86_400_000);
 }
 
-function formatOriginal(currency: string, amount: number): string {
-  return `${currency} ${amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function formatOriginal(currency: string, amount: number, projectCurrency = "INR"): string {
+  // India / legacy: exactly the long-standing note. Another country: the invoice currency's own decimals (OMR: 3).
+  if (projectCurrency === "INR") return `${currency} ${amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const digits = currency === "OMR" ? 3 : 2;
+  return `${currency} ${amount.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 }
 
 /**
@@ -121,9 +129,12 @@ export function buildUnpaidInvoiceReport(lines: InvoiceLineCandidate[], now: Dat
     const earliest = g.reduce((a, b) => (b.invoiceDate < a.invoiceDate ? b : a));
     const days = daysFrom(earliest.invoiceDate, today);
     if (days < OVERDUE_DAYS) continue;
-    const amount = Math.round(g.reduce((s, l) => s + l.invoiceAmountINR, 0) * 100) / 100;
+    const projectCurrency = first.projectCurrency ?? "INR";
+    const scale = projectCurrency === "OMR" ? 1000 : 100;
+    const amount = Math.round(g.reduce((s, l) => s + l.invoiceAmountINR, 0) * scale) / scale;
     const partial = g.some((l) => l.status === "PartiallyPaid");
-    const foreign = g.filter((l) => l.currency && l.currency !== "INR" && l.invoiceAmountOriginal !== null);
+    // "Foreign" = an invoice currency other than the project's own (INR for India / legacy, so India's note is unchanged).
+    const foreign = g.filter((l) => l.currency && l.currency !== projectCurrency && l.invoiceAmountOriginal !== null);
     const sameCurrency = foreign.length > 0 && foreign.length === g.length && foreign.every((l) => l.currency === foreign[0]!.currency);
     overdue.push({
       projectId: first.projectId,
@@ -135,11 +146,12 @@ export function buildUnpaidInvoiceReport(lines: InvoiceLineCandidate[], now: Dat
       invoiceLineId: earliest.id,
       invoiceDate: earliest.invoiceDate.toISOString().slice(0, 10),
       daysSinceRaised: days,
+      currency: projectCurrency,
       invoiceAmountINR: amount,
       amountPaidINR: partial ? null : 0,
       outstandingINR: partial ? null : amount,
       status: partial ? "Partially Paid" : RAISED_LABEL,
-      originalAmountNote: sameCurrency ? formatOriginal(foreign[0]!.currency, foreign.reduce((s, l) => s + (l.invoiceAmountOriginal ?? 0), 0)) : null,
+      originalAmountNote: sameCurrency ? formatOriginal(foreign[0]!.currency, foreign.reduce((s, l) => s + (l.invoiceAmountOriginal ?? 0), 0), projectCurrency) : null,
       lineCount: g.length,
     });
   }
@@ -147,7 +159,20 @@ export function buildUnpaidInvoiceReport(lines: InvoiceLineCandidate[], now: Dat
   return { eligibleCount: groups.size, overdue };
 }
 
-/** Sum of known outstanding (Raised) amounts; Partially Paid amounts are unknown and not included. */
+/**
+ * Sum of known outstanding (Raised) amounts; Partially Paid amounts are unknown and not included. This is the RUPEE part (India / legacy projects), exactly the
+ * figure it always was; the same total for every currency is totalKnownOutstandingByCurrency() - currencies are never added together.
+ */
 export function totalKnownOutstanding(rows: OverdueInvoiceRow[]): number {
-  return Math.round(rows.reduce((s, r) => s + (r.outstandingINR ?? 0), 0) * 100) / 100;
+  return Math.round(rows.filter((r) => r.currency === "INR").reduce((s, r) => s + (r.outstandingINR ?? 0), 0) * 100) / 100;
+}
+
+/** The known outstanding total per currency (INR included, first). One entry per currency that has an overdue invoice. */
+export function totalKnownOutstandingByCurrency(rows: OverdueInvoiceRow[]): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const r of rows) {
+    const scale = r.currency === "OMR" ? 1000 : 100;
+    totals[r.currency] = Math.round(((totals[r.currency] ?? 0) + (r.outstandingINR ?? 0)) * scale) / scale;
+  }
+  return totals;
 }

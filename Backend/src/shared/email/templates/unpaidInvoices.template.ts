@@ -10,6 +10,8 @@ export interface UnpaidInvoiceEmailRow {
   invoiceNo: string;
   invoiceDate: string; // YYYY-MM-DD
   daysSinceRaised: number;
+  /** The project's own currency (INR for India / legacy): the amounts below are in it. */
+  currency?: string;
   invoiceAmountINR: number;
   amountPaidINR: number | null;
   outstandingINR: number | null;
@@ -25,6 +27,8 @@ export interface UnpaidInvoiceEmailData {
   eligibleCount: number;
   overdueDays: number;
   knownOutstandingINR: number;
+  /** The same total per currency. When it holds only INR (or nothing) the email reads exactly as it always did; otherwise one line per currency, never a sum across them. */
+  knownOutstandingByCurrency?: Record<string, number>;
   partiallyPaidCount: number;
   rows: UnpaidInvoiceEmailRow[];
 }
@@ -38,6 +42,22 @@ const INR_FORMAT = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, ma
 
 export function formatINR(value: number): string {
   return `₹ ${INR_FORMAT.format(value)}`;
+}
+
+/** An amount in a currency: INR keeps the established "₹ 1,23,456.00"; every other currency is code first with its own decimals (OMR: 3). */
+export function formatAmount(value: number, currency = "INR"): string {
+  if (currency === "INR") return formatINR(value);
+  const digits = currency === "OMR" ? 3 : 2;
+  return `${currency} ${value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+}
+
+/** The currencies of the known-outstanding line(s): INR first, then the rest alphabetically. Empty or INR-only means the single, original line. */
+function outstandingLines(data: UnpaidInvoiceEmailData): { label: string; value: string }[] {
+  const base = "Outstanding on fully unpaid (Raised / Submitted) invoices";
+  const by = data.knownOutstandingByCurrency ?? {};
+  const currencies = Object.keys(by).sort((a, b) => (a === "INR" ? -1 : b === "INR" ? 1 : a.localeCompare(b)));
+  if (currencies.length === 0 || (currencies.length === 1 && currencies[0] === "INR")) return [{ label: base, value: formatINR(data.knownOutstandingINR) }];
+  return currencies.map((c) => ({ label: `${base} (${c})`, value: formatAmount(by[c]!, c) }));
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -70,11 +90,11 @@ export function buildUnpaidInvoicesEmail(data: UnpaidInvoiceEmailData): { subjec
     <table role="presentation" cellpadding="0" cellspacing="0" style="margin:12px 0 16px; border:1px solid #E2E8F0; border-radius:8px; width:100%;">
       ${summaryRow("Raised / Submitted and Partially Paid invoices checked", String(data.eligibleCount), "#0F172A", false)}
       ${summaryRow(`Invoices unpaid for ${data.overdueDays}+ days`, String(count), "#B91C1C")}
-      ${summaryRow("Outstanding on fully unpaid (Raised / Submitted) invoices", escapeHtml(formatINR(data.knownOutstandingINR)))}
+      ${outstandingLines(data).map((l) => summaryRow(l.label, escapeHtml(l.value))).join("")}
       ${data.partiallyPaidCount > 0 ? summaryRow("Partially Paid invoices (outstanding not recorded)", String(data.partiallyPaidCount), "#B45309") : ""}
     </table>`;
 
-  const money = (v: number | null) => (v === null ? `<span style="color:#94A3B8;">${NOT_RECORDED}</span>` : escapeHtml(formatINR(v)));
+  const money = (v: number | null, currency = "INR") => (v === null ? `<span style="color:#94A3B8;">${NOT_RECORDED}</span>` : escapeHtml(formatAmount(v, currency)));
   const tableHtml =
     count === 0
       ? `<p style="margin:16px 0; padding:12px 14px; background-color:#F0FDF4; border:1px solid #BBF7D0; border-radius:8px; color:#166534;">
@@ -105,9 +125,9 @@ export function buildUnpaidInvoicesEmail(data: UnpaidInvoiceEmailData): { subjec
              <td style="${cell} white-space:nowrap;">${escapeHtml(r.invoiceNo)}</td>
              <td style="${cell} white-space:nowrap;">${escapeHtml(formatDate(r.invoiceDate))}</td>
              <td style="${cell} text-align:right; font-weight:700;">${r.daysSinceRaised}</td>
-             <td style="${cell} text-align:right; white-space:nowrap;">${escapeHtml(formatINR(r.invoiceAmountINR))}${r.originalAmountNote ? `<br><span style="color:#64748B; font-size:11px;">${escapeHtml(r.originalAmountNote)}</span>` : ""}</td>
-             <td style="${cell} text-align:right; white-space:nowrap;">${money(r.amountPaidINR)}</td>
-             <td style="${cell} text-align:right; white-space:nowrap; font-weight:700;">${money(r.outstandingINR)}</td>
+             <td style="${cell} text-align:right; white-space:nowrap;">${escapeHtml(formatAmount(r.invoiceAmountINR, r.currency))}${r.originalAmountNote ? `<br><span style="color:#64748B; font-size:11px;">${escapeHtml(r.originalAmountNote)}</span>` : ""}</td>
+             <td style="${cell} text-align:right; white-space:nowrap;">${money(r.amountPaidINR, r.currency)}</td>
+             <td style="${cell} text-align:right; white-space:nowrap; font-weight:700;">${money(r.outstandingINR, r.currency)}</td>
              <td style="${cell} white-space:nowrap; color:${r.status === "Partially Paid" ? "#B45309" : "#B91C1C"};">${escapeHtml(r.status)}</td>
              <td style="${cell}">${escapeHtml(r.projectManager || "—")}</td>
              <td style="${cell} white-space:nowrap;"><a href="${escapeHtml(r.projectUrl)}" target="_blank" style="color:#2563EB; font-weight:600;">Open</a></td>
@@ -123,14 +143,14 @@ export function buildUnpaidInvoicesEmail(data: UnpaidInvoiceEmailData): { subjec
     <p style="margin:16px 0 0; font-size:12px; color:#64748B;">${escapeHtml(scope)}</p>
   `;
 
-  const textMoney = (v: number | null) => (v === null ? NOT_RECORDED : formatINR(v));
+  const textMoney = (v: number | null, currency = "INR") => (v === null ? NOT_RECORDED : formatAmount(v, currency));
   const text = [
     `Invoices Unpaid for ${data.overdueDays}+ Days`,
     "",
     `Generated: ${data.generatedAt}`,
     `Raised / Submitted and Partially Paid invoices checked: ${data.eligibleCount}`,
     `Invoices unpaid for ${data.overdueDays}+ days: ${count}`,
-    `Outstanding on fully unpaid (Raised / Submitted) invoices: ${formatINR(data.knownOutstandingINR)}`,
+    ...outstandingLines(data).map((l) => `${l.label}: ${l.value}`),
     ...(data.partiallyPaidCount > 0 ? [`Partially Paid invoices (outstanding not recorded): ${data.partiallyPaidCount}`] : []),
     "",
     ...(count === 0
@@ -138,7 +158,7 @@ export function buildUnpaidInvoicesEmail(data: UnpaidInvoiceEmailData): { subjec
       : data.rows.map(
           (r) =>
             `- ${r.prNo} | ${r.client} | ${r.projectTitle} | Invoice ${r.invoiceNo} dated ${formatDate(r.invoiceDate)} (${r.daysSinceRaised} days) | ` +
-            `Amount ${formatINR(r.invoiceAmountINR)}${r.originalAmountNote ? ` (${r.originalAmountNote})` : ""} | Paid ${textMoney(r.amountPaidINR)} | Outstanding ${textMoney(r.outstandingINR)} | ` +
+            `Amount ${formatAmount(r.invoiceAmountINR, r.currency)}${r.originalAmountNote ? ` (${r.originalAmountNote})` : ""} | Paid ${textMoney(r.amountPaidINR, r.currency)} | Outstanding ${textMoney(r.outstandingINR, r.currency)} | ` +
             `${r.status} | PM: ${r.projectManager || "—"} | ${r.projectUrl}`
         )),
     "",

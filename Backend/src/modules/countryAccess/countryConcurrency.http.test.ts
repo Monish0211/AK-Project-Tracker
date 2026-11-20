@@ -188,3 +188,47 @@ describe("simultaneous users of different countries never see each other's scope
     assert.equal(await prisma.invoiceLine.count({ where: { quantityItemId: india.itemId } }), 0, "nothing was written");
   });
 });
+
+describe("concurrent regional invoice writes keep their invariants", () => {
+  test("eight users raise the SAME invoice number at once: exactly one wins, the rest get a clear conflict", async () => {
+    const oman = projectsOf.get("Oman")![0]!;
+    const no = nextNo();
+    const statuses = await Promise.all(Array.from({ length: 8 }, () => post(tokens.get("Oman")!, `/quantity/${oman.itemId}/invoice-lines`, line({ invoiceNo: no, invoiceIntent: "new", invoiceAmountOriginal: 10 })).then((r) => r.status)));
+    assert.equal(statuses.filter((s) => s === 201).length, 1, `statuses ${statuses.join(",")}`);
+    assert.ok(statuses.filter((s) => s !== 201).every((s) => s === 409), `the others are conflicts, got ${statuses.join(",")}`);
+    assert.equal(await prisma.invoiceLine.count({ where: { quantityItemId: oman.itemId, invoiceNo: no } }), 1);
+  });
+
+  test("the Work Order ceiling is never exceeded by overlapping raises (OMR 1,000: five requests of OMR 400 -> two succeed)", async () => {
+    const project = await makeProject("Oman", "OMR", 1000);
+    const statuses = await Promise.all(Array.from({ length: 5 }, () => post(tokens.get("Oman")!, `/quantity/${project.itemId}/invoice-lines`, line({ invoiceNo: nextNo(), invoiceAmountOriginal: 400 })).then((r) => r.status)));
+    assert.equal(statuses.filter((s) => s === 201).length, 2, `statuses ${statuses.join(",")}`);
+    assert.ok(statuses.filter((s) => s !== 201).every((s) => s === 400), `the rest are refused for the ceiling, got ${statuses.join(",")}`);
+    const sum = await prisma.invoiceLine.aggregate({ where: { quantityItemId: project.itemId }, _sum: { invoiceAmountProject: true } });
+    assert.ok(Number(sum._sum.invoiceAmountProject) <= 1000, `total ${sum._sum.invoiceAmountProject} within the work order value`);
+  });
+
+  test("the ceiling holds for a foreign-currency regional invoice too (QAR 1,000: USD 200 at 3.64 = QAR 728, three at once -> one succeeds)", async () => {
+    const project = await makeProject("Qatar", "QAR", 1000);
+    const statuses = await Promise.all(Array.from({ length: 3 }, () => post(tokens.get("Qatar")!, `/quantity/${project.itemId}/invoice-lines`, line({ invoiceNo: nextNo(), currency: "USD", exchangeRateToProject: "3.64", invoiceAmountOriginal: 200 })).then((r) => r.status)));
+    assert.equal(statuses.filter((s) => s === 201).length, 1, `statuses ${statuses.join(",")}`);
+    const rows = await prisma.invoiceLine.findMany({ where: { quantityItemId: project.itemId } });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.invoiceAmountProject!.toFixed(2), "728.00");
+  });
+
+  test("simultaneous edits of one invoice line never tear it: the project-currency amount always equals the saved original at the saved rate", async () => {
+    const project = await makeProject("Oman", "OMR", 100_000);
+    const created1 = await json(await post(tokens.get("Oman")!, `/quantity/${project.itemId}/invoice-lines`, line({ invoiceNo: nextNo(), status: "Draft", currency: "USD", exchangeRateToProject: "0.385", invoiceAmountOriginal: 100 })));
+    const id = created1.data.id as string;
+    const amounts = [110, 120, 130, 140, 150, 160, 170, 180];
+    const results = await Promise.all(amounts.map((a) => patch(tokens.get("Oman")!, `/invoice-lines/${id}`, { invoiceAmountOriginal: a }).then((r) => r.status)));
+    assert.ok(results.every((s) => s === 200), `no failures or 5xx, got ${results.join(",")}`);
+    const row = await prisma.invoiceLine.findUniqueOrThrow({ where: { id } });
+    const original = row.invoiceAmountOriginal!;
+    assert.ok(amounts.includes(original), `the final original ${original} is one of the values sent`);
+    assert.equal(row.invoiceAmountProject!.toFixed(3), (Math.round(original * 0.385 * 1000) / 1000).toFixed(3), "project amount = original x 0.385, never a mix of two edits");
+    assert.equal(row.exchangeRateToProject!.toFixed(3), "0.385");
+    assert.equal(row.invoiceAmountINR, 0);
+  });
+});

@@ -535,9 +535,9 @@ model InvoiceRequest {
   //   pending | sent | sent_with_attachments | sent_without_attachments | failed | unconfirmed
   // "unconfirmed" = the mail server's answer was lost (timeout/connection drop): the message may or may not have been
   // delivered, so it is NEVER retried automatically (a retry could notify the same person twice).
-  emailStatus String?
+  emailStatus    String?
   // Short human-readable reason for any non-"sent*" status (never contains secrets or recipient lists).
-  emailDetail String?
+  emailDetail    String?
   emailUpdatedAt DateTime?
 
   createdAt DateTime @default(now())
@@ -1186,9 +1186,28 @@ model InvoiceLine {
   // always, explicitly, raised in INR; never left ambiguous. Nullable like
   // its siblings above (unitPriceINR/calculatedAmountINR/
   // commercialAdjustmentINR) rather than NOT NULL, for the same reason.
-  currency              String  @default("INR")
-  exchangeRateToINR     Float   @default(1)
+  currency              String @default("INR")
+  exchangeRateToINR     Float  @default(1)
   invoiceAmountOriginal Float?
+
+  // Multi-country invoice currency (Phase 5) - ADDITIVE, all NULL for an INR or legacy project, whose rows are exactly what they always were
+  // (invoiceAmountINR IS its project-currency amount and exchangeRateToINR its rate; 1 USD = INR 95 is the same direction).
+  //
+  // For a project whose regional currency is not INR (MYR, OMR, AED, QAR) these hold the project-currency side, and the INR-named columns above stay
+  // 0 / 1 / NULL (a CHECK enforces it), so a regional amount can never sit in an INR-named column:
+  //   invoiceAmountOriginal (+ currency) = the ORIGINAL amount, in the invoice's own currency: authoritative for the actual invoice and for payments;
+  //   invoiceAmountProject               = its equivalent in the PROJECT currency: authoritative for billing (previously invoiced, balance, the
+  //                                        Work Order ceiling). Derived by the server from the original amount and the rate below, never trusted
+  //                                        from the client;
+  //   exchangeRateToProject              = project currency per ONE unit of invoice currency (1 USD = OMR 0.385), entered per invoice, saved with it
+  //                                        and frozen like the invoice's currency; exactly 1 when the invoice is in the project currency.
+  // unitPriceProject / calculatedAmountProject / commercialAdjustmentProject are the project-currency counterparts of the three INR-named figures.
+  projectCurrency             String?
+  exchangeRateToProject       Decimal? @db.Decimal(18, 8)
+  invoiceAmountProject        Decimal? @db.Decimal(18, 3)
+  unitPriceProject            Decimal? @db.Decimal(18, 6)
+  calculatedAmountProject     Decimal? @db.Decimal(18, 3)
+  commercialAdjustmentProject Decimal? @db.Decimal(18, 3)
 
   clientReference String?
   remarks         String?
@@ -1235,7 +1254,7 @@ model InvoiceLine {
 /// eventType: CREATED (fromStatus null) | STATUS_CHANGED | DELETED (toStatus
 /// null) | IMPORTED (ingest, fromStatus null — earlier history unknown).
 model InvoiceStatusEvent {
-  id String @id @default(dbgenerated("gen_random_uuid()"))
+  id  String @id @default(dbgenerated("gen_random_uuid()"))
   seq BigInt @default(autoincrement())
 
   projectId     String
@@ -1324,8 +1343,8 @@ model InvoicePaymentReceipt {
 
   paymentDate    DateTime? @db.Date
   currency       String
-  amountReceived Decimal  @db.Decimal(18, 3)
-  gstReceived    Decimal  @default(0) @db.Decimal(18, 3)
+  amountReceived Decimal   @db.Decimal(18, 3)
+  gstReceived    Decimal   @default(0) @db.Decimal(18, 3)
   reference      String
   notes          String?
 

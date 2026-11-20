@@ -254,7 +254,7 @@ test("5-10: exact October totals — a Draft qualifies but is not raised; raised
   assert.deepEqual([s.collected.amountINR, s.collected.basis, s.collected.paidInvoiceCount, s.collected.partiallyPaidExcludedCount, s.collected.needsReviewCount], [3000, "inferred_from_paid_status", 1, 1, 0],
     "Amount collected = the Paid invoice (PAIDOCT) at its full amount, inferred from its status; PART (Partially Paid) is excluded, not guessed");
   assert.match(s.collected.note, /inferred from the Paid status/);
-  assert.deepEqual(s.outstanding, { scope: "selected_month", knownAmountINR: 3480, invoiceCount: 10, balanceNotRecordedCount: 1 });
+  assert.deepEqual(s.outstanding, { scope: "selected_month", knownAmountINR: 3480, knownByCurrency: { INR: 3480 }, invoiceCount: 10, balanceNotRecordedCount: 1 });
   const draft = (await chain("admin", "P1")).data.invoices.find((i: any) => i.invoiceNo === `${TAG}-DRAFT`);
   assert.deepEqual([draft.status, draft.invoiceDate, draft.raisedAt, draft.financials.balance], ["Draft", "2026-10-25", null, "not_applicable"], "5: an October Draft qualifies, is not raised and is not owed");
   // the "Show" filter narrows the cards to exactly the listed projects, and the halves add up
@@ -870,7 +870,7 @@ test("Amount paid / outstanding / invoice amount stay consistent for every statu
   await dec("RAISEDX", "Raised", 50, "2026-12-07");
   const r = (await list("admin", `month=${month}`)).data;
   assert.deepEqual(r.summary.byStatus, { raised: 1, partiallyPaid: 1, paid: 3, draft: 0, cancelled: 0 });
-  assert.deepEqual(r.summary.collected, { amountINR: 700, basis: "inferred_from_paid_status", paidInvoiceCount: 3, partiallyPaidExcludedCount: 1, needsReviewCount: 0, note: r.summary.collected.note },
+  assert.deepEqual(r.summary.collected, { amountINR: 700, byCurrency: { INR: 700 }, basis: "inferred_from_paid_status", paidInvoiceCount: 3, partiallyPaidExcludedCount: 1, needsReviewCount: 0, note: r.summary.collected.note },
     "400 (PAIDOK) + 300 (MULTIPAID counted once) + 0 (PAIDZERO, settled at 0) — PARTX is excluded");
   const invoices = (await chain("admin", "P5", month)).data.invoices;
   const by = (n: string) => invoices.find((i: any) => i.invoiceNo === `${TAG}-${n}`).financials;

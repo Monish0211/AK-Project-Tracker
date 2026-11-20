@@ -3,7 +3,7 @@ import type { InvoiceCurrency, InvoiceLineStatus } from "../../../../types/Invoi
 import { CURRENCY_MINOR_UNITS, isSupportedCurrency } from "../../../../constants/currencies";
 import type { FieldErrorDto, PaymentSubmissionPayload } from "../../../../services/invoicePaymentService";
 import { getInvoiceCycleStatus } from "./InvoiceCalculations";
-import { getInvoiceCycleCurrency, getLineOriginalAmount, isForeignCurrency } from "./invoiceCurrency";
+import { getInvoiceCycleCurrency, getLineOriginalAmount, isForeignCurrency, projectCurrencyOf } from "./invoiceCurrency";
 
 /**
  * Invoice Payment popup — pure logic: types, deduction categories, currency-aware input rules, the live settlement summary,
@@ -548,6 +548,11 @@ export interface InvoicePaymentContext {
   /** Sum of the non-Cancelled lines' invoice amounts, in INR — the figure Invoice Summary already shows. Display only. */
   valueInr: number;
   currency: InvoiceCurrency;
+  /**
+   * The project's own currency (INR for India and legacy). For a project in another country, valueInr is an amount in THIS currency and the popup shows no INR
+   * reference figures at all: the invoice's rate is to the project currency, so a rupee figure derived from it would be wrong.
+   */
+  projectCurrency: InvoiceCurrency;
   /** Only for a foreign-currency invoice: billed total in that currency and the rate recorded on the invoice. */
   foreign: { total: number; rate: number | null } | null;
 }
@@ -560,7 +565,7 @@ export function buildInvoicePaymentContext(project: Project, invoiceNo: string):
   const currency: InvoiceCurrency = cycleCurrency?.currency ?? "INR";
   const firstLine = lines[0];
   const foreign =
-    firstLine && isForeignCurrency(currency)
+    firstLine && isForeignCurrency(currency, projectCurrencyOf(project))
       ? { total: lines.reduce((sum, line) => sum + getLineOriginalAmount(line), 0), rate: cycleCurrency?.exchangeRateToINR ?? null }
       : null;
   const dates = Array.from(new Set(lines.map((line) => line.invoiceDate).filter((date) => Boolean(date)))).sort();
@@ -574,6 +579,7 @@ export function buildInvoicePaymentContext(project: Project, invoiceNo: string):
     lineCount: lines.length,
     valueInr,
     currency,
+    projectCurrency: projectCurrencyOf(project),
     foreign,
   };
 }

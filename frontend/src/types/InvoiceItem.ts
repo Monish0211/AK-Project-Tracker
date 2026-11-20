@@ -141,6 +141,15 @@ export interface InvoiceLine {
   exchangeRateToINR?: number;
   invoiceAmountOriginal?: number;
 
+  /**
+   * Multi-country invoice currency. Set ONLY on a line of a project whose own currency is not INR (Oman OMR, Malaysia MYR, UAE AED, Qatar QAR). For such a line
+   * the server stores the amounts in the PROJECT currency (invoiceAmountProject, exchangeRateToProject = project currency per 1 invoice currency) and keeps its
+   * INR-named columns at zero. In memory the service layer (services/invoiceService.ts toInvoiceLine()) puts that project-currency amount, rate and cash into
+   * the same fields every workspace already reads (invoiceAmountINR / exchangeRateToINR / recordedCashINR / settledINR), so for a regional line those four
+   * names mean "in the PROJECT currency" - projectCurrency says which. Absent for India and legacy lines, where they mean INR exactly as before.
+   */
+  projectCurrency?: string;
+
   clientReference?: string;
   remarks?: string;
 

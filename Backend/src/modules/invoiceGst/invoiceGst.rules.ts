@@ -73,8 +73,11 @@ const paise = (rupees: number): bigint => BigInt(Math.round(rupees * 100));
  * GST is INR-only (the portal's existing rule: a foreign invoice never carries GST). It is chosen on the INVOICE itself, when it is raised:
  * the project's own GST switch / rate in the Quantity section (Project.gstApplicable) is deliberately NOT consulted - the two are independent.
  */
-export function isGstEligible(input: { invoiceCurrency: string }): boolean {
-  return input.invoiceCurrency === "INR";
+export function isGstEligible(input: { invoiceCurrency: string; projectCurrency?: string | null | undefined }): boolean {
+  // Multi-country (Phase 5): Indian GST is an India rule. An INR invoice raised on a project whose regional currency is not INR (an Abu Dhabi project billed in
+  // INR, say) is NOT eligible: nothing establishes that GST applies there. India and legacy projects (projectCurrency null/INR) are unchanged.
+  const projectIsIndia = input.projectCurrency === undefined || input.projectCurrency === null || input.projectCurrency === "INR";
+  return input.invoiceCurrency === "INR" && projectIsIndia;
 }
 
 /** A rate is 0..100 with at most 4 decimals (the column is Decimal(7,4)). Returns the stored decimal string. */

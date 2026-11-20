@@ -31,9 +31,15 @@ const exchangeRateSchema = z
   .pipe(z.number().finite().positive("Exchange rate must be greater than 0."));
 
 /** Invoice Currency feature (Oct 2026) — shared by the create and update schemas below. */
+// Phase 5: the rate of an invoice on ANY project, in the direction "1 unit of invoice currency = X units of PROJECT currency". It is kept as typed (number or
+// text) and parsed once, exactly, by invoiceProjectCurrency.rules.ts, so a rate such as 0.385 is never turned into a binary float on the way in. For an INR
+// or legacy project it is the same figure as exchangeRateToINR (1 USD = INR 95), which every existing caller keeps sending.
+const exchangeRateToProjectSchema = z.union([z.number().finite(), z.string().trim().max(40)]);
+
 const invoiceCurrencyFields = {
   currency: z.enum(INVOICE_CURRENCIES).optional(),
   exchangeRateToINR: exchangeRateSchema.optional(),
+  exchangeRateToProject: exchangeRateToProjectSchema.optional(),
   invoiceAmountOriginal: z.coerce.number().min(0, "Invoice Amount cannot be negative.").optional(),
 };
 

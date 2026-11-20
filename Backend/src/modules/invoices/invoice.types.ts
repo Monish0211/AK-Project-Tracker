@@ -27,6 +27,16 @@ export interface InvoiceLineData {
   currency?: string;
   exchangeRateToINR?: number;
   invoiceAmountOriginal?: number | null;
+  /**
+   * Multi-country invoice currency (Phase 5): the project-currency side of a line on a non-INR project (all undefined for an INR / legacy project, whose
+   * invoiceAmountINR is its project amount). Decimals are passed as exact decimal text. The INR-named fields above hold 0 / 1 for such a line.
+   */
+  projectCurrency?: string | null;
+  exchangeRateToProject?: string | null;
+  invoiceAmountProject?: string | null;
+  unitPriceProject?: string | null;
+  calculatedAmountProject?: string | null;
+  commercialAdjustmentProject?: string | null;
 
   clientReference?: string | null;
   remarks?: string | null;

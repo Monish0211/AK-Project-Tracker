@@ -40,7 +40,7 @@ export async function findSnapshotsForInvoices(invoices: ReadonlyArray<{ project
 export function findInvoiceLinesForSnapshot(projectId: string, invoiceNo: string, client: Client = prisma) {
   return client.invoiceLine.findMany({
     where: { quantityItem: { projectId }, invoiceNo: { equals: invoiceNo.trim(), mode: "insensitive" } },
-    select: { id: true, status: true, currency: true, invoiceAmountINR: true, invoiceAmountOriginal: true },
+    select: { id: true, status: true, currency: true, invoiceAmountINR: true, invoiceAmountOriginal: true, projectCurrency: true },
   });
 }
 

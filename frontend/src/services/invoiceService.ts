@@ -24,7 +24,7 @@ import { computeGstTax } from "../pages/Projects/components/Invoice/InvoiceCalcu
 // tested by every item's invoices[] being empty (see loadInvoiceForProject).
 
 /** Raw shape one row of GET/POST/PATCH/Ingest .../invoice-lines or .../invoice-items returns — see Backend's InvoiceLineDto. */
-interface BackendInvoiceLineDto {
+export interface BackendInvoiceLineDto {
   id: string;
   quantityItemId: string;
   invoiceNo: string;
@@ -43,6 +43,15 @@ interface BackendInvoiceLineDto {
   currency?: string;
   exchangeRateToINR?: number;
   invoiceAmountOriginal?: number | null;
+  // Multi-country invoice currency - present (non-null projectCurrency) only for a line of a non-INR project; its INR-named amounts are 0 and these carry the money.
+  projectCurrency?: string | null;
+  exchangeRateToProject?: string | number | null;
+  invoiceAmountProject?: number | null;
+  unitPriceProject?: number | null;
+  calculatedAmountProject?: number | null;
+  commercialAdjustmentProject?: number | null;
+  recordedCashProject?: number;
+  settledProject?: number;
   // Invoice Payment workflow (Nov 2026) — present only for a line whose invoice has a recorded payment.
   recordedCashINR?: number;
   settledINR?: number;
@@ -82,7 +91,7 @@ interface IngestInvoiceLinesResultDto {
  * QuantityItem's current rate (and the referenced Milestone's percentage, if
  * any) — see invoice.service.ts's createInvoiceLineForQuantityItem().
  */
-interface InvoiceLinePayload {
+export interface InvoiceLinePayload {
   invoiceNo: string;
   invoiceDate: string;
   milestoneId: string | null;
@@ -90,7 +99,8 @@ interface InvoiceLinePayload {
   setIndex: number | null;
   description: string | null;
   quantityBilled: number;
-  invoiceAmountINR: number;
+  /** Omitted for a line of a non-INR project: the server derives its project-currency amount and refuses an INR-named one. */
+  invoiceAmountINR?: number;
   clientReference: string | null;
   remarks: string | null;
   status: InvoiceLineStatus;
@@ -101,6 +111,8 @@ interface InvoiceLinePayload {
   currency?: InvoiceCurrency;
   exchangeRateToINR?: number;
   invoiceAmountOriginal?: number;
+  /** Multi-country: the invoice's own rate, project currency per 1 invoice currency, as typed text (never rounded). Sent only for a non-INR project. */
+  exchangeRateToProject?: string;
   /** Invoice-level GST snapshot (Nov 2026) — the rate / tax type chosen for this invoice, sent only with the write that FIRST raises it. */
   gst?: GstDeclarationPayload;
 }
@@ -130,7 +142,40 @@ function toDateOnly(iso: string | null): string {
   return iso ? iso.slice(0, 10) : "";
 }
 
-function toInvoiceLinePayload(line: InvoiceLine): InvoiceLinePayload {
+/** True for a line of a project whose own currency is not INR (see InvoiceLine.projectCurrency). */
+function isRegionalLine(line: Pick<InvoiceLine, "projectCurrency">): boolean {
+  return line.projectCurrency !== undefined && line.projectCurrency !== "INR";
+}
+
+/** The rate exactly as the server stores it, as text: 0.385 stays "0.385", 1e-7 is written out in full - never a rounded or exponent form. */
+function rateText(rate: number | undefined): string {
+  const value = rate ?? 1;
+  const plain = String(value);
+  if (!/e/i.test(plain)) return plain;
+  return value.toFixed(8).replace(/0+$/, "").replace(/[.]$/, "");
+}
+
+/** Exported for tests only: the exact body sent to the server for a line. */
+export function toInvoiceLinePayload(line: InvoiceLine): InvoiceLinePayload {
+  if (isRegionalLine(line)) {
+    // A non-INR project: the invoice currency, its own rate and the amount in that currency. The project-currency equivalent is the server's to calculate.
+    return {
+      currency: line.currency ?? (line.projectCurrency as InvoiceCurrency),
+      exchangeRateToProject: rateText(line.exchangeRateToINR),
+      invoiceAmountOriginal: line.invoiceAmountOriginal ?? line.invoiceAmountINR,
+      invoiceNo: line.invoiceNo,
+      invoiceDate: line.invoiceDate,
+      milestoneId: line.milestoneId ?? null,
+      milestoneName: line.milestoneName ?? null,
+      setIndex: line.setIndex ?? null,
+      description: line.description ?? null,
+      quantityBilled: line.quantityBilled,
+      clientReference: line.clientReference ?? null,
+      remarks: line.remarks ?? null,
+      status: line.status,
+      createdBy: line.createdBy,
+    };
+  }
   const currencyFields: Pick<InvoiceLinePayload, "currency" | "exchangeRateToINR" | "invoiceAmountOriginal"> =
     line.currency !== undefined && line.currency !== "INR"
       ? {
@@ -156,7 +201,10 @@ function toInvoiceLinePayload(line: InvoiceLine): InvoiceLinePayload {
   };
 }
 
-function toInvoiceLine(dto: BackendInvoiceLineDto): InvoiceLine {
+/** Exported for tests only: a server line read into the in-memory shape the screens use. */
+export function toInvoiceLine(dto: BackendInvoiceLineDto): InvoiceLine {
+  const regional = typeof dto.projectCurrency === "string" && dto.projectCurrency !== "" && dto.projectCurrency !== "INR";
+  if (regional) return toRegionalInvoiceLine(dto, dto.projectCurrency as string);
   return {
     id: dto.id,
     invoiceNo: dto.invoiceNo,
@@ -179,6 +227,40 @@ function toInvoiceLine(dto: BackendInvoiceLineDto): InvoiceLine {
     status: dto.status as InvoiceLineStatus,
     createdBy: dto.createdBy,
     ...(typeof dto.recordedCashINR === "number" && typeof dto.settledINR === "number" && { recordedCashINR: dto.recordedCashINR, settledINR: dto.settledINR }),
+    ...(dto.gstSnapshot && { gstSnapshot: dto.gstSnapshot }),
+  };
+}
+
+/**
+ * A line of a non-INR project. The server holds its money in the project currency; the workspaces read the four historic field names, so the project-currency
+ * amount, rate and cash are carried under them here (InvoiceLine.projectCurrency says they are NOT rupees). invoiceAmountOriginal stays the amount in the
+ * invoice currency. Nothing converts a regional amount to INR.
+ */
+function toRegionalInvoiceLine(dto: BackendInvoiceLineDto, projectCurrency: string): InvoiceLine {
+  const projectAmount = typeof dto.invoiceAmountProject === "number" ? dto.invoiceAmountProject : 0;
+  const rate = Number(dto.exchangeRateToProject);
+  return {
+    id: dto.id,
+    invoiceNo: dto.invoiceNo,
+    invoiceDate: toDateOnly(dto.invoiceDate),
+    milestoneId: dto.milestoneId ?? undefined,
+    milestoneName: dto.milestoneName ?? undefined,
+    setIndex: dto.setIndex ?? undefined,
+    description: dto.description ?? undefined,
+    quantityBilled: dto.quantityBilled,
+    unitPriceINR: dto.unitPriceProject ?? undefined,
+    calculatedAmountINR: dto.calculatedAmountProject ?? undefined,
+    invoiceAmountINR: projectAmount,
+    commercialAdjustmentINR: dto.commercialAdjustmentProject ?? undefined,
+    currency: isSupportedCurrency(dto.currency) ? dto.currency : (projectCurrency as InvoiceCurrency),
+    exchangeRateToINR: Number.isFinite(rate) && rate > 0 ? rate : 1,
+    invoiceAmountOriginal: typeof dto.invoiceAmountOriginal === "number" ? dto.invoiceAmountOriginal : projectAmount,
+    projectCurrency,
+    clientReference: dto.clientReference ?? undefined,
+    remarks: dto.remarks ?? undefined,
+    status: dto.status as InvoiceLineStatus,
+    createdBy: dto.createdBy,
+    ...(typeof dto.recordedCashProject === "number" && typeof dto.settledProject === "number" && { recordedCashINR: dto.recordedCashProject, settledINR: dto.settledProject }),
     ...(dto.gstSnapshot && { gstSnapshot: dto.gstSnapshot }),
   };
 }
@@ -239,6 +321,12 @@ export interface ReportInvoiceLine {
   /** Invoice Payment workflow (Nov 2026) — present only for a line whose invoice has a recorded payment (see utils/invoiceCash.ts). */
   recordedCashINR?: number;
   settledINR?: number;
+  /** Multi-country: set only for a line of a project whose own currency is not INR; its INR-named amounts are 0 and these carry the money. */
+  projectCurrency?: string | null;
+  exchangeRateToProject?: string | number | null;
+  invoiceAmountProject?: number | null;
+  recordedCashProject?: number;
+  settledProject?: number;
 }
 
 interface ReportInvoiceLineListDto {
@@ -262,7 +350,9 @@ interface ReportInvoiceLineListDto {
  */
 export async function fetchAllInvoiceLinesForCaller(): Promise<ReportInvoiceLine[]> {
   const result = await apiClient.get<ReportInvoiceLineListDto>("/invoice-items");
-  return result.items;
+  // This feed drives the cross-project, INR-denominated report analytics. A line of a project whose own currency is not INR carries its money in that currency
+  // (its INR-named amount is 0), so it is left out here rather than read as a rupee zero or added to rupee totals; per-project views read it in project currency.
+  return result.items.filter((line) => !line.projectCurrency || line.projectCurrency === "INR");
 }
 
 /**

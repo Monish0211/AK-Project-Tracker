@@ -1,5 +1,6 @@
 import type { InvoiceCurrency, InvoiceGstSelection, InvoiceGstTaxType, InvoiceLineStatus } from "../../../../types/InvoiceItem";
 import type { Project } from "../../../../types/Project";
+import { regionalCurrencyOf } from "../../../../utils/currencyDisplay";
 import {
   findInvoiceGstSnapshot,
   getSavedBuyerState,
@@ -59,12 +60,12 @@ export function suggestedGstTaxType(project: Project, invoiceNo: string): Invoic
  * invoice whose Draft already carries its GST choice is not asked again.
  */
 export function isGstChoiceNeeded(project: Project, invoiceNo: string, invoiceCurrency: InvoiceCurrency): boolean {
-  return isGstSelectableForInvoice(invoiceCurrency) && !findInvoiceGstSnapshot(project, invoiceNo) && !invoiceHasRaisedLine(project, invoiceNo);
+  return isGstSelectableForInvoice(invoiceCurrency, regionalCurrencyOf(project)) && !findInvoiceGstSnapshot(project, invoiceNo) && !invoiceHasRaisedLine(project, invoiceNo);
 }
 
 /** True while the invoice's GST can still be chosen or changed: an INR invoice that has not been raised yet (with or without a saved choice). */
 export function isGstChoiceEditable(project: Project, invoiceNo: string, invoiceCurrency: InvoiceCurrency): boolean {
-  return isGstSelectableForInvoice(invoiceCurrency) && !invoiceHasRaisedLine(project, invoiceNo);
+  return isGstSelectableForInvoice(invoiceCurrency, regionalCurrencyOf(project)) && !invoiceHasRaisedLine(project, invoiceNo);
 }
 
 /**
@@ -72,7 +73,7 @@ export function isGstChoiceEditable(project: Project, invoiceNo: string, invoice
  * details are recorded for it. (The switch only decides whether the explanatory note is worth showing; it never decides any amount.)
  */
 export function isLegacyGstInvoice(project: Project, invoiceNo: string, invoiceCurrency: InvoiceCurrency): boolean {
-  return Boolean(project.gstApplicable) && isGstSelectableForInvoice(invoiceCurrency) && !findInvoiceGstSnapshot(project, invoiceNo) && invoiceHasRaisedLine(project, invoiceNo);
+  return Boolean(project.gstApplicable) && isGstSelectableForInvoice(invoiceCurrency, regionalCurrencyOf(project)) && !findInvoiceGstSnapshot(project, invoiceNo) && invoiceHasRaisedLine(project, invoiceNo);
 }
 
 /** A complete choice, or null while it is incomplete: "No GST", or a valid rate AND an explicit tax type. */
@@ -114,7 +115,7 @@ export function findInvoiceMissingGstChoice(project: Project, updatedProject: Pr
     if (findInvoiceGstSnapshot(project, line.invoiceNo)) continue; // its Draft already carries the GST choice
     const before = previousLineById.get(line.id);
     if (before && (previouslyRaised.has(keyOf(before.invoiceNo)) || findInvoiceGstSnapshot(project, before.invoiceNo))) continue;
-    if (!isGstSelectableForInvoice(line.currency ?? "INR")) continue;
+    if (!isGstSelectableForInvoice(line.currency ?? "INR", line.projectCurrency ?? "INR")) continue;
     return line.invoiceNo;
   }
   return null;

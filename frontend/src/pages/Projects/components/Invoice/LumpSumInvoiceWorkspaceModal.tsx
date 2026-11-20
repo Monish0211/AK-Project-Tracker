@@ -10,7 +10,7 @@ import { dateInputError, isValidDateInput } from "../../../../utils/dateInputVal
 import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
 import { Portal } from "../../../../components/ui/Portal";
-import { formatIndianCurrency } from "../../../../utils/formatCurrency";
+import { projectMoney } from "../../../../utils/currencyDisplay";
 import {
   getInvoiceCyclesForProject,
   getProjectLumpSumMilestoneRows,
@@ -27,7 +27,7 @@ import { InvoiceNumberField } from "./InvoiceNumberField";
 import { useInvoiceNumberField } from "./useInvoiceNumberField";
 import { useInvoiceGstChoice } from "./useInvoiceGstChoice";
 import { InvoiceGstSelector } from "./InvoiceGstSelector";
-import { amountsFromInr, formatInvoiceMoney, isForeignCurrency, sumAmountsFromInr } from "./invoiceCurrency";
+import { amountsFromInr, formatInvoiceMoney, isForeignCurrency, roundForProject, sumAmountsFromInr } from "./invoiceCurrency";
 import { InrReferenceNote, InvoiceTotalBoxes } from "./InvoiceTotalBoxes";
 
 interface Props {
@@ -101,7 +101,10 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
   const { currency: invoiceCurrency, selection: currencySelection } = currencyState;
   // Invoice-level GST snapshot (Nov 2026): the GST rate / tax type — frozen from the saved snapshot, or chosen here for a first raise.
   const gstChoice = useInvoiceGstChoice(project, invoiceNo, invoiceCurrency);
-  const isForeign = isForeignCurrency(invoiceCurrency);
+  // Multi-country: the project's own currency (INR for India) - the amounts below are in it, shown with its symbol and decimals.
+  const projectCurrency = currencyState.projectCurrency;
+  const money = projectMoney(project);
+  const isForeign = isForeignCurrency(invoiceCurrency, projectCurrency);
 
   const [selectedMilestoneIds, setSelectedMilestoneIds] = useState<Set<string>>(() => {
     const initial = new Set<string>();
@@ -124,7 +127,7 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
 
   const selectedRows = milestoneRows.filter((row) => selectedMilestoneIds.has(row.id));
   const totalPercent = round(selectedRows.reduce((sum, row) => sum + row.percent, 0));
-  const invoiceAmount = round(selectedRows.reduce((sum, row) => sum + row.invoiceAmount, 0));
+  const invoiceAmount = roundForProject(selectedRows.reduce((sum, row) => sum + row.invoiceAmount, 0), projectCurrency);
   const gst = getGstBreakdown(project, invoiceAmount, invoiceCurrency, invoiceNo, gstChoice.selection);
 
   const canSave = selectedRows.length > 0 && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking && !gstChoice.blockerFor(invoiceStatus);
@@ -137,7 +140,7 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
     if (!isForeign || !currencySelection) return null;
     const lineAmountsINR: number[] = [];
     (project.invoiceItems ?? []).forEach((item) => {
-      selectedRows.forEach((row) => lineAmountsINR.push(round((item.totalPrice || 0) * (row.percent / 100))));
+      selectedRows.forEach((row) => lineAmountsINR.push(roundForProject((item.totalPrice || 0) * (row.percent / 100), projectCurrency)));
     });
     return sumAmountsFromInr(lineAmountsINR, currencySelection);
   })();
@@ -164,7 +167,7 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
         const isSelected = selectedMilestoneIds.has(row.id);
 
         if (isSelected) {
-          const amount = round((item.totalPrice || 0) * (row.percent / 100));
+          const amount = roundForProject((item.totalPrice || 0) * (row.percent / 100), projectCurrency);
           const updatedLine: InvoiceLine = {
             id: existingLine?.id ?? crypto.randomUUID(),
             invoiceNo: savedInvoiceNo,
@@ -209,8 +212,8 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
         "",
         `Total: ${totalPercent}%`,
         totalOriginalAmount !== null
-          ? `Invoice Amount: ${formatInvoiceMoney(totalOriginalAmount, invoiceCurrency)} (${formatIndianCurrency(foreignTotals?.inr ?? invoiceAmount)} @ ${currencySelection.exchangeRateToINR})`
-          : `Invoice Amount: ${formatIndianCurrency(invoiceAmount)}`,
+          ? `Invoice Amount: ${formatInvoiceMoney(totalOriginalAmount, invoiceCurrency)} (${money.exact(foreignTotals?.inr ?? invoiceAmount)} @ ${currencySelection.exchangeRateToINR})`
+          : `Invoice Amount: ${money.exact(invoiceAmount)}`,
       ];
       if (remarks.trim()) {
         noteLines.push("", "Remarks", remarks.trim());
@@ -357,7 +360,7 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
                         </span>
 
                         <span className="text-right font-semibold text-[13px] text-[var(--nu-text)] tabular-nums w-32 shrink-0">
-                          {formatIndianCurrency(row.invoiceAmount)}
+                          {money.exact(row.invoiceAmount)}
                         </span>
 
                         <span className="w-44 shrink-0 text-right">
@@ -413,15 +416,16 @@ export function LumpSumInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSa
                 <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Invoice Amount</p>
                   <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums">
-                    {totalOriginalAmount !== null ? formatInvoiceMoney(totalOriginalAmount, invoiceCurrency) : formatIndianCurrency(invoiceAmount)}
+                    {totalOriginalAmount !== null ? formatInvoiceMoney(totalOriginalAmount, invoiceCurrency) : money.exact(invoiceAmount)}
                   </p>
-                  {foreignTotals && <InrReferenceNote inr={foreignTotals.inr} />}
+                  {foreignTotals && <InrReferenceNote inr={foreignTotals.inr} projectCurrency={projectCurrency} />}
                 </div>
                 <InvoiceTotalBoxes
                   gst={gst}
                   currency={invoiceCurrency}
                   originalTotal={totalOriginalAmount}
                   inrTotal={foreignTotals?.inr ?? invoiceAmount}
+                  projectCurrency={projectCurrency}
                 />
               </div>
             </div>

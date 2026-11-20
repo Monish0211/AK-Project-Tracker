@@ -162,7 +162,7 @@ test("month summary: Draft and Cancelled never count as raised, requests are cou
     [3000, "inferred_from_paid_status", 1, 1, 0],
     "only the Paid invoice (at its full amount); the Partially Paid one is excluded, not guessed"
   );
-  assert.deepEqual(summary.outstanding, { scope: "selected_month", knownAmountINR: 1400, invoiceCount: 3, balanceNotRecordedCount: 1 });
+  assert.deepEqual(summary.outstanding, { scope: "selected_month", knownAmountINR: 1400, knownByCurrency: { INR: 1400 }, invoiceCount: 3, balanceNotRecordedCount: 1 });
   assert.equal(summary.projectCount, 4, "p1, p2, p3 (invoices) and p4 (a request only)");
   assert.equal(summary.projectsRaised, 2);
   assert.equal(summary.projectsAwaitingApproval, 1);
@@ -190,8 +190,8 @@ test("outstanding totals: known balance only for Raised; Partially Paid is count
     { status: "PartiallyPaid", amountINR: 2000, daysOutstanding: 90 },
     { status: "Raised", amountINR: 50, daysOutstanding: null },
   ]);
-  assert.deepEqual(t, { invoiceCount: 4, knownOutstandingINR: 1450, partiallyPaidCount: 1, partiallyPaidInvoiceAmountINR: 2000, overdue30PlusCount: 2, oldestDays: 90 });
-  assert.deepEqual(summarizeOutstanding([]), { invoiceCount: 0, knownOutstandingINR: 0, partiallyPaidCount: 0, partiallyPaidInvoiceAmountINR: 0, overdue30PlusCount: 0, oldestDays: null });
+  assert.deepEqual(t, { invoiceCount: 4, knownOutstandingINR: 1450, knownOutstandingByCurrency: { INR: 1450 }, partiallyPaidCount: 1, partiallyPaidInvoiceAmountINR: 2000, partiallyPaidInvoiceAmountByCurrency: { INR: 2000 }, overdue30PlusCount: 2, oldestDays: 90 });
+  assert.deepEqual(summarizeOutstanding([]), { invoiceCount: 0, knownOutstandingINR: 0, knownOutstandingByCurrency: {}, partiallyPaidCount: 0, partiallyPaidInvoiceAmountINR: 0, partiallyPaidInvoiceAmountByCurrency: {}, overdue30PlusCount: 0, oldestDays: null });
 });
 
 const ev = (n: number, from: string | null, to: string | null, iso: string, actor = "Asha", id = "u1", type = "STATUS_CHANGED", lineId = "l1"): StoredEvent => ({
@@ -307,7 +307,7 @@ test("Amount collected: one defined rule, each invoice once — Paid at full amo
   ]);
   const { summary } = summarizeRecords(groups, []);
   assert.deepEqual(summary.collected, {
-    amountINR: 760, basis: "inferred_from_paid_status", paidInvoiceCount: 4, partiallyPaidExcludedCount: 1, needsReviewCount: 0, note: summary.collected.note,
+    amountINR: 760, byCurrency: { INR: 760 }, basis: "inferred_from_paid_status", paidInvoiceCount: 4, partiallyPaidExcludedCount: 1, needsReviewCount: 0, note: summary.collected.note,
   }, "400 + 300 (multi-line invoice once) + 0 (zero invoice) + 60 (cancelled line excluded) = 760 over 4 Paid invoices");
   const bad = summarizeRecords(groupInvoices([line("b1", "p9", "NEG", "Paid", -5, "2026-12-01T00:00:00Z"), line("b2", "p9", "OK2", "Paid", 10, "2026-12-01T00:00:00Z")]), []).summary.collected;
   assert.deepEqual([bad.amountINR, bad.paidInvoiceCount, bad.needsReviewCount], [10, 1, 1], "a Paid invoice the data contradicts (negative amount) is not summed — it is counted for review");

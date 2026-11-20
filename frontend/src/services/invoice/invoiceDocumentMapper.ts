@@ -15,9 +15,11 @@ import {
   getInvoiceCycleCurrency,
   getLineOriginalAmount,
   isForeignCurrency,
+  projectCurrencyOf,
   roundToMinorUnit,
 } from "../../pages/Projects/components/Invoice/invoiceCurrency";
 import type { InvoiceCurrency } from "../../types/InvoiceItem";
+import { regionalCurrencyOf } from "../../utils/currencyDisplay";
 import { numberToIndianWords } from "./numberToWords";
 import { amountToCurrencyWords } from "./currencyWords";
 
@@ -29,13 +31,63 @@ import { amountToCurrencyWords } from "./currencyWords";
  */
 interface PrintCurrency {
   currency: InvoiceCurrency;
+  /** The rate to the PROJECT currency (INR for India and legacy projects, so its original meaning is unchanged). */
   exchangeRateToINR: number;
+  /** The project's own currency; INR for India and legacy projects. */
+  projectCurrency: InvoiceCurrency;
 }
 
 function getPrintCurrency(project: Project, invoiceNo: string): PrintCurrency {
+  const projectCurrency = projectCurrencyOf(project);
   const saved = getInvoiceCycleCurrency(project, invoiceNo);
-  if (!saved || !isForeignCurrency(saved.currency)) return { currency: "INR", exchangeRateToINR: 1 };
-  return { currency: saved.currency, exchangeRateToINR: saved.exchangeRateToINR };
+  // Multi-country: a project in another country prints in its own currency by default (rate 1), or in the invoice's saved currency at its saved rate.
+  if (!saved) return { currency: projectCurrency, exchangeRateToINR: 1, projectCurrency };
+  if (!isForeignCurrency(saved.currency, projectCurrency)) return { currency: saved.currency, exchangeRateToINR: 1, projectCurrency };
+  return { currency: saved.currency, exchangeRateToINR: saved.exchangeRateToINR, projectCurrency };
+}
+
+/** True for the long-standing INR document (an INR invoice of an India / legacy project): its figures, wording and layout are exactly what they always were. */
+function isInrDocument(pc: PrintCurrency): boolean {
+  return pc.currency === "INR" && pc.projectCurrency === "INR";
+}
+
+/**
+ * The issuing company's printed identity and bank. India and legacy projects: exactly the long-standing details (unchanged). A project in any other country has
+ * NO approved issuer details yet (legal entity, address, tax registration, bank), so nothing Indian is ever printed for it: those fields stay blank unless the user
+ * typed them into this invoice's own document details, and the address line says the details still need configuring.
+ */
+function issuerFor(project: Project, details: InvoiceDocumentDetails) {
+  if (regionalCurrencyOf(project) === "INR") {
+    return {
+      companyName: "iFluids Engineering",
+      companyAddress: "VP BUSINESS CENTRE, No. 20(42), 7th Cross Street, West Shenoy Nagar, Chennai, Pin Code - 600030",
+      companyGstin: "33AAFFI1423E1Z1",
+      companyState: "Tamil Nadu",
+      companyStateCode: "33",
+      companyEmail: "info@ifluids.com",
+      companyPan: details.companyPan || "AAFFI1423E",
+      bankName: details.bankName || "Union Bank of India",
+      accountNo: details.accountNo || "530601010038789",
+      branchAndIfsc: `${details.branch || "Anna Nagar"} & ${details.ifscCode || "UBIN0553069"}`,
+      companySignatureText: details.companySignatureText || "for iFluids Engineering",
+      authorisedSignatoryText: details.authorisedSignatoryText || "AUTHORISED SIGNATORY",
+    };
+  }
+  const country = project.prCategory || "this country";
+  return {
+    companyName: "",
+    companyAddress: `Issuer details for ${country} are not configured yet - complete them before issuing this invoice.`,
+    companyGstin: "",
+    companyState: "",
+    companyStateCode: "",
+    companyEmail: "",
+    companyPan: details.companyPan || "",
+    bankName: details.bankName || "",
+    accountNo: details.accountNo || "",
+    branchAndIfsc: [details.branch, details.ifscCode].filter(Boolean).join(" & "),
+    companySignatureText: details.companySignatureText || "",
+    authorisedSignatoryText: details.authorisedSignatoryText || "AUTHORISED SIGNATORY",
+  };
 }
 
 const NO_GST: GstTaxSplit = { cgst: 0, sgst: 0, igst: 0, totalTax: 0 };
@@ -46,7 +98,7 @@ const NO_GST: GstTaxSplit = { cgst: 0, sgst: 0, igst: 0, totalTax: 0 };
  * amounts — never INR converted back — and no GST (isGstApplicableForInvoice()).
  */
 function getCurrencyTotals(pc: PrintCurrency, subtotalINR: number, subtotalOriginal: number, grandTotalINR: number) {
-  if (!isForeignCurrency(pc.currency)) {
+  if (isInrDocument(pc)) {
     return { subtotalOriginal: subtotalINR, grandTotalOriginal: grandTotalINR, amountInWords: numberToIndianWords(grandTotalINR) };
   }
   const subtotal = roundToMinorUnit(subtotalOriginal, pc.currency);
@@ -59,12 +111,12 @@ function getCurrencyTotals(pc: PrintCurrency, subtotalINR: number, subtotalOrigi
  * original amount, to that currency's precision.
  */
 function lineAmountInInvoiceCurrency(line: Parameters<typeof getLineOriginalAmount>[0], amountINR: number, pc: PrintCurrency): number {
-  return isForeignCurrency(pc.currency) ? roundToMinorUnit(getLineOriginalAmount(line), pc.currency) : amountINR;
+  return !isInrDocument(pc) ? roundToMinorUnit(getLineOriginalAmount(line), pc.currency) : amountINR;
 }
 
 /** A unit rate (INR) expressed in the invoice currency, to that currency's precision. INR unchanged. */
 function unitRateInInvoiceCurrency(unitRateINR: number, pc: PrintCurrency): number {
-  return isForeignCurrency(pc.currency) ? roundToMinorUnit(unitRateINR / pc.exchangeRateToINR, pc.currency) : unitRateINR;
+  return !isInrDocument(pc) ? roundToMinorUnit(unitRateINR / pc.exchangeRateToINR, pc.currency) : unitRateINR;
 }
 
 /**
@@ -114,8 +166,9 @@ export function mapProjectToInvoiceDocumentDTO(
           slNo: slNo++,
           activityName: item.description,
           descriptionNotes: line.milestoneName || line.description || "",
-          hsnSac: "998399", // Standard Engineering & Consulting HSN/SAC Code
-          gstRatePercent: getInvoicePrintGst(project, invoiceNo, printCurrency.currency).ratePercent,
+          // India's HSN/SAC code and GST rate are Indian tax details: a project in another country prints neither.
+          hsnSac: printCurrency.projectCurrency !== "INR" ? "" : "998399", // Standard Engineering & Consulting HSN/SAC Code
+          gstRatePercent: printCurrency.projectCurrency !== "INR" ? 0 : getInvoicePrintGst(project, invoiceNo, printCurrency.currency).ratePercent,
           basicUnitRateINR: unitRate,
           uom: item.uom || "MAN-HOUR",
           quantity: line.quantityBilled,
@@ -171,13 +224,7 @@ export function mapProjectToInvoiceDocumentDTO(
     billingMethod: "invoice_line_items",
 
     // Header Company Info
-    companyName: "iFluids Engineering",
-    companyAddress: "VP BUSINESS CENTRE, No. 20(42), 7th Cross Street, West Shenoy Nagar, Chennai, Pin Code - 600030",
-    companyGstin: "33AAFFI1423E1Z1",
-    companyState: "Tamil Nadu",
-    companyStateCode: "33",
-    companyEmail: "info@ifluids.com",
-    companyPan: details.companyPan || "AAFFI1423E",
+    ...issuerFor(project, details),
 
     // Reference Info
     invoiceNoCustom: details.invoiceNoCustom || invoiceNo,
@@ -213,6 +260,7 @@ export function mapProjectToInvoiceDocumentDTO(
     grandTotalINR: grandTotal,
     invoiceCurrency: printCurrency.currency,
     exchangeRateToINR: printCurrency.exchangeRateToINR,
+    ...(printCurrency.projectCurrency !== "INR" && { projectCurrency: printCurrency.projectCurrency }),
     subtotalOriginal: currencyTotals.subtotalOriginal,
     grandTotalOriginal: currencyTotals.grandTotalOriginal,
 
@@ -221,13 +269,8 @@ export function mapProjectToInvoiceDocumentDTO(
     taxAmountInWords: isGstApplicable ? numberToIndianWords(totalTax) : "NIL",
 
     // Bank Info
-    bankName: details.bankName || "Union Bank of India",
-    accountNo: details.accountNo || "530601010038789",
-    branchAndIfsc: `${details.branch || "Anna Nagar"} & ${details.ifscCode || "UBIN0553069"}`,
 
     // Signature Block
-    companySignatureText: details.companySignatureText || "for iFluids Engineering",
-    authorisedSignatoryText: details.authorisedSignatoryText || "AUTHORISED SIGNATORY",
   };
 }
 
@@ -272,7 +315,7 @@ export function mapProjectToLumpSumInvoiceDocumentDTO(
         line.milestoneId,
         round((amountByMilestoneId.get(line.milestoneId) || 0) + line.invoiceAmountINR)
       );
-      if (isForeignCurrency(printCurrency.currency)) {
+      if (!isInrDocument(printCurrency)) {
         originalByMilestoneId.set(
           line.milestoneId,
           roundToMinorUnit((originalByMilestoneId.get(line.milestoneId) || 0) + getLineOriginalAmount(line), printCurrency.currency)
@@ -344,13 +387,7 @@ export function mapProjectToLumpSumInvoiceDocumentDTO(
     billingMethod: "lump_sum",
 
     // Header Company Info
-    companyName: "iFluids Engineering",
-    companyAddress: "VP BUSINESS CENTRE, No. 20(42), 7th Cross Street, West Shenoy Nagar, Chennai, Pin Code - 600030",
-    companyGstin: "33AAFFI1423E1Z1",
-    companyState: "Tamil Nadu",
-    companyStateCode: "33",
-    companyEmail: "info@ifluids.com",
-    companyPan: details.companyPan || "AAFFI1423E",
+    ...issuerFor(project, details),
 
     // Reference Info
     invoiceNoCustom: details.invoiceNoCustom || invoiceNo,
@@ -386,6 +423,7 @@ export function mapProjectToLumpSumInvoiceDocumentDTO(
     grandTotalINR: grandTotal,
     invoiceCurrency: printCurrency.currency,
     exchangeRateToINR: printCurrency.exchangeRateToINR,
+    ...(printCurrency.projectCurrency !== "INR" && { projectCurrency: printCurrency.projectCurrency }),
     subtotalOriginal: currencyTotals.subtotalOriginal,
     grandTotalOriginal: currencyTotals.grandTotalOriginal,
 
@@ -394,13 +432,8 @@ export function mapProjectToLumpSumInvoiceDocumentDTO(
     taxAmountInWords: isGstApplicable ? numberToIndianWords(totalTax) : "NIL",
 
     // Bank Info
-    bankName: details.bankName || "Union Bank of India",
-    accountNo: details.accountNo || "530601010038789",
-    branchAndIfsc: `${details.branch || "Anna Nagar"} & ${details.ifscCode || "UBIN0553069"}`,
 
     // Signature Block
-    companySignatureText: details.companySignatureText || "for iFluids Engineering",
-    authorisedSignatoryText: details.authorisedSignatoryText || "AUTHORISED SIGNATORY",
   };
 }
 
@@ -500,13 +533,7 @@ export function mapProjectToMlmpInvoiceDocumentDTO(
     billingMethod: "mlmp",
 
     // Header Company Info
-    companyName: "iFluids Engineering",
-    companyAddress: "VP BUSINESS CENTRE, No. 20(42), 7th Cross Street, West Shenoy Nagar, Chennai, Pin Code - 600030",
-    companyGstin: "33AAFFI1423E1Z1",
-    companyState: "Tamil Nadu",
-    companyStateCode: "33",
-    companyEmail: "info@ifluids.com",
-    companyPan: details.companyPan || "AAFFI1423E",
+    ...issuerFor(project, details),
 
     // Reference Info
     invoiceNoCustom: details.invoiceNoCustom || invoiceNo,
@@ -542,6 +569,7 @@ export function mapProjectToMlmpInvoiceDocumentDTO(
     grandTotalINR: grandTotal,
     invoiceCurrency: printCurrency.currency,
     exchangeRateToINR: printCurrency.exchangeRateToINR,
+    ...(printCurrency.projectCurrency !== "INR" && { projectCurrency: printCurrency.projectCurrency }),
     subtotalOriginal: currencyTotals.subtotalOriginal,
     grandTotalOriginal: currencyTotals.grandTotalOriginal,
 
@@ -550,13 +578,8 @@ export function mapProjectToMlmpInvoiceDocumentDTO(
     taxAmountInWords: isGstApplicable ? numberToIndianWords(totalTax) : "NIL",
 
     // Bank Info
-    bankName: details.bankName || "Union Bank of India",
-    accountNo: details.accountNo || "530601010038789",
-    branchAndIfsc: `${details.branch || "Anna Nagar"} & ${details.ifscCode || "UBIN0553069"}`,
 
     // Signature Block
-    companySignatureText: details.companySignatureText || "for iFluids Engineering",
-    authorisedSignatoryText: details.authorisedSignatoryText || "AUTHORISED SIGNATORY",
   };
 }
 
@@ -647,13 +670,7 @@ export function mapProjectToAmountBasedInvoiceDocumentDTO(
     billingMethod: "amount_based",
 
     // Header Company Info
-    companyName: "iFluids Engineering",
-    companyAddress: "VP BUSINESS CENTRE, No. 20(42), 7th Cross Street, West Shenoy Nagar, Chennai, Pin Code - 600030",
-    companyGstin: "33AAFFI1423E1Z1",
-    companyState: "Tamil Nadu",
-    companyStateCode: "33",
-    companyEmail: "info@ifluids.com",
-    companyPan: details.companyPan || "AAFFI1423E",
+    ...issuerFor(project, details),
 
     // Reference Info
     invoiceNoCustom: details.invoiceNoCustom || invoiceNo,
@@ -689,6 +706,7 @@ export function mapProjectToAmountBasedInvoiceDocumentDTO(
     grandTotalINR: grandTotal,
     invoiceCurrency: printCurrency.currency,
     exchangeRateToINR: printCurrency.exchangeRateToINR,
+    ...(printCurrency.projectCurrency !== "INR" && { projectCurrency: printCurrency.projectCurrency }),
     subtotalOriginal: currencyTotals.subtotalOriginal,
     grandTotalOriginal: currencyTotals.grandTotalOriginal,
 
@@ -697,12 +715,7 @@ export function mapProjectToAmountBasedInvoiceDocumentDTO(
     taxAmountInWords: isGstApplicable ? numberToIndianWords(totalTax) : "NIL",
 
     // Bank Info
-    bankName: details.bankName || "Union Bank of India",
-    accountNo: details.accountNo || "530601010038789",
-    branchAndIfsc: `${details.branch || "Anna Nagar"} & ${details.ifscCode || "UBIN0553069"}`,
 
     // Signature Block
-    companySignatureText: details.companySignatureText || "for iFluids Engineering",
-    authorisedSignatoryText: details.authorisedSignatoryText || "AUTHORISED SIGNATORY",
   };
 }

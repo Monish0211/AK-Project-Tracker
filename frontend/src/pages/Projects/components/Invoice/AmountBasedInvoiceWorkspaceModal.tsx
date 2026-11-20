@@ -10,7 +10,7 @@ import { dateInputError, isValidDateInput } from "../../../../utils/dateInputVal
 import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
 import { Portal } from "../../../../components/ui/Portal";
-import { formatIndianCurrency } from "../../../../utils/formatCurrency";
+import { projectMoney } from "../../../../utils/currencyDisplay";
 import {
   getInvoiceCyclesForProject,
   getActivityRaisedAmountExcludingCycle,
@@ -19,7 +19,6 @@ import {
   getInvoiceCycleStatus,
   RAISE_INVOICE_STATUS_OPTIONS,
   INVOICE_LINE_STATUS_LABEL,
-  round,
 } from "./InvoiceCalculations";
 import { InvoiceCurrencyFields } from "./InvoiceCurrencyFields";
 import { useInvoiceCurrencyState } from "./useInvoiceCurrencyState";
@@ -27,7 +26,7 @@ import { InvoiceNumberField } from "./InvoiceNumberField";
 import { useInvoiceNumberField } from "./useInvoiceNumberField";
 import { useInvoiceGstChoice } from "./useInvoiceGstChoice";
 import { InvoiceGstSelector } from "./InvoiceGstSelector";
-import { amountsFromOriginal, formatInvoiceMoney, getLineOriginalAmount, isForeignCurrency, roundToMinorUnit } from "./invoiceCurrency";
+import { amountsFromOriginal, formatInvoiceMoney, getLineOriginalAmount, isForeignCurrency, roundForProject, roundToMinorUnit } from "./invoiceCurrency";
 import { InrReferenceNote, InvoiceTotalBoxes } from "./InvoiceTotalBoxes";
 
 interface Props {
@@ -179,8 +178,14 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
   const { currency: invoiceCurrency, selection: currencySelection } = currencyState;
   // Invoice-level GST snapshot (Nov 2026): the GST rate / tax type — frozen from the saved snapshot, or chosen here for a first raise.
   const gstChoice = useInvoiceGstChoice(project, invoiceNo, invoiceCurrency);
-  const isForeign = isForeignCurrency(invoiceCurrency);
+  // Multi-country: the project's own currency (INR for India). Contract value, previously invoiced and balance are in it; the Invoice Amount is entered in the
+  // invoice currency and its converted equivalent in the project currency is what is checked against the balance.
+  const projectCurrency = currencyState.projectCurrency;
+  const money = projectMoney(project);
+  const unit = projectCurrency === "INR" ? "" : ` (${projectCurrency})`;
+  const isForeign = isForeignCurrency(invoiceCurrency, projectCurrency);
   const selectionRate = currencySelection?.exchangeRateToINR ?? null;
+  const selectionText = currencySelection?.exchangeRateText;
 
   const [amountInputs, setAmountInputs] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
@@ -213,10 +218,10 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
           existingLine: existingLines.get(item.id),
           contractValue,
           previouslyInvoiced,
-          balanceAvailable: Math.max(round(contractValue - previouslyInvoiced), 0),
+          balanceAvailable: Math.max(roundForProject(contractValue - previouslyInvoiced, projectCurrency), 0),
         };
       }),
-    [items, existingLines, invoiceNo]
+    [items, existingLines, invoiceNo, projectCurrency]
   );
 
   // No checkbox — entering an amount > 0 is itself what includes an activity
@@ -230,7 +235,11 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
         const invoiceAmountINR =
           selectionRate === null
             ? 0
-            : amountsFromOriginal(invoiceAmount, { currency: invoiceCurrency, exchangeRateToINR: selectionRate }).invoiceAmountINR;
+            : amountsFromOriginal(invoiceAmount, {
+                currency: invoiceCurrency,
+                exchangeRateToINR: selectionRate,
+                ...(projectCurrency !== "INR" && { projectCurrency, ...(selectionText !== undefined && { exchangeRateText: selectionText }) }),
+              }).invoiceAmountINR;
 
         let error: string | null = null;
         if (invoiceAmount < 0) error = "Cannot be negative.";
@@ -238,12 +247,12 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
 
         return { ...base, invoiceAmount, invoiceAmountINR, error };
       }),
-    [baseRows, amountInputs, invoiceCurrency, selectionRate]
+    [baseRows, amountInputs, invoiceCurrency, selectionRate, projectCurrency, selectionText]
   );
 
   const selectedRows = rows.filter((row) => row.invoiceAmount > 0);
   // INR equivalent — unchanged meaning for an INR invoice (it IS the entered total).
-  const totalInvoiceAmount = round(selectedRows.reduce((sum, row) => sum + row.invoiceAmountINR, 0));
+  const totalInvoiceAmount = roundForProject(selectedRows.reduce((sum, row) => sum + row.invoiceAmountINR, 0), projectCurrency);
   const totalOriginalAmount = roundToMinorUnit(selectedRows.reduce((sum, row) => sum + row.invoiceAmount, 0), invoiceCurrency);
   const gst = getGstBreakdown(project, totalInvoiceAmount, invoiceCurrency, invoiceNo, gstChoice.selection);
   const hasRowError = rows.some((row) => row.error);
@@ -307,8 +316,8 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
         ...selectedRows.map((row) => `• ${row.item.description} — ${formatInvoiceMoney(row.invoiceAmount, invoiceCurrency)}`),
         "",
         isForeign
-          ? `Total: ${formatInvoiceMoney(totalOriginalAmount, invoiceCurrency)} (${formatIndianCurrency(totalInvoiceAmount)} @ ${currencySelection.exchangeRateToINR})`
-          : `Total: ${formatIndianCurrency(totalInvoiceAmount)}`,
+          ? `Total: ${formatInvoiceMoney(totalOriginalAmount, invoiceCurrency)} (${money.exact(totalInvoiceAmount)} @ ${currencySelection.exchangeRateToINR})`
+          : `Total: ${money.exact(totalInvoiceAmount)}`,
       ];
       if (remarks.trim()) {
         noteLines.push("", "Remarks", remarks.trim());
@@ -425,9 +434,9 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
                     <thead>
                       <tr className="bg-slate-50/80 dark:bg-slate-800/50 border-b border-[var(--nu-border)]">
                         <th className="nu-table-th px-3 py-2.5 text-left font-bold text-slate-700 dark:text-slate-200">Activity</th>
-                        <th className="nu-table-th px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-200">Contract Value</th>
-                        <th className="nu-table-th px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-200">Previously Invoiced</th>
-                        <th className="nu-table-th px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-200">Balance Available</th>
+                        <th className="nu-table-th px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-200">Contract Value{unit}</th>
+                        <th className="nu-table-th px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-200">Previously Invoiced{unit}</th>
+                        <th className="nu-table-th px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-200">Balance Available{unit}</th>
                         <th className="nu-table-th px-3 py-2.5 text-center w-36 font-bold text-slate-700 dark:text-slate-200">Invoice Amount ({invoiceCurrency})</th>
                       </tr>
                     </thead>
@@ -437,12 +446,14 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
                           key={row.item.id}
                           itemId={row.item.id}
                           description={row.item.description}
-                          contractValueLabel={formatIndianCurrency(row.contractValue)}
-                          previouslyInvoicedLabel={formatIndianCurrency(row.previouslyInvoiced)}
-                          balanceAvailableLabel={formatIndianCurrency(row.balanceAvailable)}
+                          contractValueLabel={money.exact(row.contractValue)}
+                          previouslyInvoicedLabel={money.exact(row.previouslyInvoiced)}
+                          balanceAvailableLabel={money.exact(row.balanceAvailable)}
                           amountValue={amountInputs[row.item.id] ?? ""}
                           inrEquivalentLabel={
-                            isForeign && row.invoiceAmount > 0 && selectionRate !== null ? formatIndianCurrency(row.invoiceAmountINR) : undefined
+                            isForeign && row.invoiceAmount > 0 && selectionRate !== null
+                              ? `${money.exact(row.invoiceAmountINR)}${projectCurrency !== "INR" ? " - counted against the balance" : ""}`
+                              : undefined
                           }
                           error={row.error}
                           onAmountChange={handleAmountChange}
@@ -489,13 +500,14 @@ export function AmountBasedInvoiceWorkspaceModal({ project, invoiceNo, onClose, 
                   <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums">
                     {formatInvoiceMoney(isForeign ? totalOriginalAmount : totalInvoiceAmount, invoiceCurrency)}
                   </p>
-                  {isForeign && <InrReferenceNote inr={totalInvoiceAmount} />}
+                  {isForeign && <InrReferenceNote inr={totalInvoiceAmount} projectCurrency={projectCurrency} />}
                 </div>
                 <InvoiceTotalBoxes
                   gst={gst}
                   currency={invoiceCurrency}
                   originalTotal={isForeign ? totalOriginalAmount : null}
                   inrTotal={totalInvoiceAmount}
+                  projectCurrency={projectCurrency}
                 />
               </div>
             </div>

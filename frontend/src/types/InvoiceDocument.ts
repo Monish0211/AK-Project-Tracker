@@ -139,7 +139,10 @@ export interface InvoiceDocumentDTO {
    * as a reference (foreign invoices never carry GST).
    */
   invoiceCurrency: InvoiceCurrency;
+  /** The rate to the PROJECT currency: INR per unit for India and legacy documents, project-currency per unit for a project in another country. */
   exchangeRateToINR: number;
+  /** Set only for a project whose own currency is not INR; the *INR-named amounts of such a document are in this currency. Absent = INR. */
+  projectCurrency?: InvoiceCurrency;
   subtotalOriginal: number;
   grandTotalOriginal: number;
 

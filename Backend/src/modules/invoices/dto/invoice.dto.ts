@@ -22,6 +22,8 @@ export interface CreateInvoiceLineDto {
   /** Invoice Currency feature (Oct 2026) — optional, Phase 1 plumbing only; see invoice.validators.ts. */
   currency?: string;
   exchangeRateToINR?: number;
+  /** Phase 5: 1 invoice currency = X project currency (number or text). The same figure as exchangeRateToINR for an INR / legacy project. */
+  exchangeRateToProject?: number | string;
   invoiceAmountOriginal?: number;
 
   clientReference?: string | null;
@@ -75,6 +77,20 @@ export interface InvoiceLineDto {
   currency: string;
   exchangeRateToINR: number;
   invoiceAmountOriginal: number | null;
+  /**
+   * Multi-country invoice currency (Phase 5). projectCurrency is null for an INR / legacy project (invoiceAmountINR IS its project amount). For a line on a
+   * non-INR project: the project currency, the rate (project currency per 1 invoice currency, as exact text), and the project-currency equivalents that are
+   * authoritative for billing. Its INR-named figures above are 0.
+   */
+  projectCurrency: string | null;
+  exchangeRateToProject: string | null;
+  invoiceAmountProject: number | null;
+  unitPriceProject: number | null;
+  calculatedAmountProject: number | null;
+  commercialAdjustmentProject: number | null;
+  /** Regional counterparts of recordedCashINR / settledINR: the same figures in the PROJECT currency, present only on a non-INR project's line. */
+  recordedCashProject?: number;
+  settledProject?: number;
 
   clientReference: string | null;
   remarks: string | null;
@@ -139,9 +155,15 @@ export interface ReportInvoiceLineDto {
   currency: string;
   exchangeRateToINR: number;
   invoiceAmountOriginal: number | null;
+  /** Phase 5: see InvoiceLineDto. Reports sum invoiceAmountProject (not invoiceAmountINR, which is 0) when projectCurrency is set. */
+  projectCurrency: string | null;
+  exchangeRateToProject: string | null;
+  invoiceAmountProject: number | null;
   /** Invoice Payment workflow (Nov 2026) — see InvoiceLineDto. Absent for a line whose invoice has no recorded payment. */
   recordedCashINR?: number;
   settledINR?: number;
+  recordedCashProject?: number;
+  settledProject?: number;
 }
 
 /** GET /invoice-items response. */

@@ -12,7 +12,11 @@ export function InvoiceDocumentView({ document }: Props) {
   // Invoice Currency (Oct 2026) — the document is printed in the invoice's
   // own currency. INR keeps exactly the existing ₹ format; a foreign
   // currency is code-prefixed with its own decimals (OMR: 3).
-  const isForeign = d.invoiceCurrency !== "INR";
+  // Multi-country: the document of a project in another country (projectCurrency set) is printed in the invoice's own currency, never with a rupee symbol, and
+  // states its rate and equivalent in the PROJECT currency. An India / legacy document is the long-standing one.
+  const projectCurrency = d.projectCurrency ?? "INR";
+  const isForeign = d.invoiceCurrency !== "INR" || projectCurrency !== "INR";
+  const showsRate = d.invoiceCurrency !== projectCurrency;
   const money = (value: number) => (isForeign ? formatInvoiceMoney(value, d.invoiceCurrency) : formatFullINR(value));
   const isLumpSumDocument = d.billingMethod === "lump_sum";
   const isMlmpDocument = d.billingMethod === "mlmp";
@@ -260,16 +264,23 @@ export function InvoiceDocumentView({ document }: Props) {
         <div className="border-x border-b border-black p-1.5 px-2 text-[10.5px] space-y-0.5">
           <p>
             <span className="font-semibold">Invoice Currency :</span> <span className="font-extrabold">{d.invoiceCurrency}</span>
-            <span className="mx-2 text-gray-400">|</span>
-            <span className="font-semibold">Exchange Rate :</span>{" "}
-            <span className="font-mono font-bold">1 {d.invoiceCurrency} = INR {d.exchangeRateToINR}</span>
+            {showsRate && (
+              <>
+                <span className="mx-2 text-gray-400">|</span>
+                <span className="font-semibold">Exchange Rate :</span>{" "}
+                <span className="font-mono font-bold">1 {d.invoiceCurrency} = {projectCurrency} {d.exchangeRateToINR}</span>
+              </>
+            )}
           </p>
-          <p className="text-[9.5px] text-gray-700">
-            INR equivalent (for reference only): <span className="font-mono font-semibold">{formatFullINR(d.grandTotalINR)}</span>
-          </p>
-          {!isMilestoneDocument && !isAmountBasedDocument && (
+          {showsRate && (
             <p className="text-[9.5px] text-gray-700">
-              Basic unit rates are converted from INR at this exchange rate and rounded for display; each line amount is the
+              {projectCurrency === "INR" ? "INR equivalent (for reference only)" : `Equivalent in ${projectCurrency}`}:{" "}
+              <span className="font-mono font-semibold">{projectCurrency === "INR" ? formatFullINR(d.grandTotalINR) : formatInvoiceMoney(d.grandTotalINR, projectCurrency)}</span>
+            </p>
+          )}
+          {showsRate && !isMilestoneDocument && !isAmountBasedDocument && (
+            <p className="text-[9.5px] text-gray-700">
+              Basic unit rates are converted from {projectCurrency} at this exchange rate and rounded for display; each line amount is the
               exact invoiced amount and the total is the sum of those amounts.
             </p>
           )}

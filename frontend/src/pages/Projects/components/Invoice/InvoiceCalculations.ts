@@ -1,6 +1,7 @@
 import type { InvoiceCurrency, InvoiceGstSelection, InvoiceGstSnapshot, InvoiceGstTaxType, InvoiceItem, InvoiceLine, InvoiceLineStatus, InvoiceMethod } from "../../../../types/InvoiceItem";
 import type { Project } from "../../../../types/Project";
 import type { Tone } from "../../../../components/ui/Badge";
+import { regionalCurrencyOf } from "../../../../utils/currencyDisplay";
 import {
   getInvoiceRaisedAmount,
   getInvoiceStatus,
@@ -466,8 +467,9 @@ export function getMlmpSetRows(project: Project, item: InvoiceItem): MlmpSetGrou
 export type GstSource = "snapshot" | "selection" | "none";
 
 /** GST can be chosen only for an INR invoice (a foreign-currency invoice never carries GST). The project's GST switch is not consulted. */
-export function isGstSelectableForInvoice(invoiceCurrency: InvoiceCurrency): boolean {
-  return invoiceCurrency === "INR";
+export function isGstSelectableForInvoice(invoiceCurrency: InvoiceCurrency, projectCurrency: string = "INR"): boolean {
+  // Multi-country: Indian GST is an India rule, so a project whose own currency is not INR (an Abu Dhabi project billed in INR, say) never offers it either.
+  return invoiceCurrency === "INR" && projectCurrency === "INR";
 }
 
 export interface GstBreakdown {
@@ -516,7 +518,7 @@ export function getSavedBuyerState(project: Project, invoiceNo: string): string 
  * and print figure only — no invoice line ever stores a GST amount.
  */
 export function isGstApplicableForInvoice(project: Project, invoiceCurrency: InvoiceCurrency): boolean {
-  return Boolean(project.gstApplicable) && (project.currency || "INR") === "INR" && invoiceCurrency === "INR";
+  return Boolean(project.gstApplicable) && (project.currency || "INR") === "INR" && invoiceCurrency === "INR" && regionalCurrencyOf(project) === "INR";
 }
 
 export interface GstTaxSplit {
@@ -595,7 +597,7 @@ export function getGstBreakdown(
   if (snapshot && invoiceHasRaisedLine(project, invoiceNo)) return fromSnapshot(snapshot);
 
   const buyerStateKnown = getSavedBuyerState(project, invoiceNo) !== "";
-  if (!isGstSelectableForInvoice(invoiceCurrency)) return build("none", false, 0, false, buyerStateKnown);
+  if (!isGstSelectableForInvoice(invoiceCurrency, regionalCurrencyOf(project))) return build("none", false, 0, false, buyerStateKnown);
   if (selection) {
     if (!selection.applicable) return build("selection", false, 0, false, buyerStateKnown);
     return build("selection", true, selection.ratePercent, selection.taxType === "IGST", selection.buyerStateKnown);

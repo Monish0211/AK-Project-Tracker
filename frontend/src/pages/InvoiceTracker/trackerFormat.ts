@@ -1,5 +1,6 @@
 import type { InvoiceLineStatus } from "../../types/InvoiceItem";
 import type { Tone } from "../../components/ui/Badge";
+import { formatMoney } from "../../utils/currencyDisplay";
 import { INVOICE_LINE_STATUS_LABEL, INVOICE_LINE_STATUS_TONE } from "../Projects/components/Invoice/InvoiceCalculations";
 import type { LatestRecord, SummaryStatus, TimelineEvent, TrackerFilter } from "../../services/invoiceTrackerService";
 
@@ -129,6 +130,42 @@ export function endSaving(m: SavingMap, projectId: string): SavingMap {
   return next;
 }
 export const isSaving = (m: SavingMap, projectId: string): boolean => (m.get(projectId) ?? 0) > 0;
+
+/** An amount in a currency: INR is the long-standing rupee format (unchanged); another country's currency has its own symbol and decimals. */
+export const trackerMoney = (value: number, currency: string = "INR"): string => formatMoney(value, currency);
+
+/**
+ * A total kept per currency, written as "₹ 1,00,000.00 · OMR 231.000": INR first, then the others alphabetically, never one number across currencies.
+ * With nothing to show it reads as the long-standing "₹ 0.00".
+ */
+export function formatByCurrency(byCurrency: Record<string, number> | undefined, fallbackInr = 0): string {
+  const entries = Object.entries(byCurrency ?? {}).sort(([a], [b]) => (a === "INR" ? -1 : b === "INR" ? 1 : a.localeCompare(b)));
+  if (entries.length === 0) return formatMoney(fallbackInr, "INR");
+  return entries.map(([currency, value]) => formatMoney(value, currency)).join(" · ");
+}
+
+/** One currency's figure, ready to show: `text` is the full amount with its own symbol or code ("₹ 1,00,000.00", "OMR 231.000"). */
+export interface CurrencyLine {
+  currency: string;
+  text: string;
+}
+
+/**
+ * The same per-currency figures formatByCurrency joins into one string (same order: INR first, then alphabetical; nothing at all reads as "₹ 0.00"), kept as separate lines so a
+ * card can show them one per row. Never a sum across currencies.
+ */
+export function currencyLines(byCurrency: Record<string, number> | undefined, fallbackInr = 0): CurrencyLine[] {
+  const entries = Object.entries(byCurrency ?? {}).sort(([a], [b]) => (a === "INR" ? -1 : b === "INR" ? 1 : a.localeCompare(b)));
+  if (entries.length === 0) return [{ currency: "INR", text: formatMoney(fallbackInr, "INR") }];
+  return entries.map(([currency, value]) => ({ currency, text: formatMoney(value, currency) }));
+}
+
+/** The amount without its leading symbol or code, for a row that already names the currency: "OMR 231.000" -> "231.000", "₹ 5.00" -> "5.00". Anything else is returned as is. */
+export function stripCurrencyPrefix(text: string): string {
+  return text.replace(/^(?:₹|RM|[A-Z]{3})\s+/, "");
+}
+
+export const hasAmount = (byCurrency: Record<string, number> | undefined): boolean => Object.values(byCurrency ?? {}).some((v) => v > 0);
 
 export const plural = (n: number, word: string): string => `${n.toLocaleString("en-IN")} ${word}${n === 1 ? "" : "s"}`;
 

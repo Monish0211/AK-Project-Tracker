@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { buildActivity } from "./services/dashboard.service.js";
+import { buildActivity, paidAmountLabel } from "./services/dashboard.service.js";
 import type { DashboardProjectRow, InvoiceLineRow, NoteRow } from "./repository/dashboard.repository.js";
 
 /**
  * The dashboard's recent-activity feed. buildActivity() was optimized (rank cheap numeric timestamps first, build the text only for the ten that are returned);
  * this test pins that the result is IDENTICAL to the original algorithm, copied below as the reference, on randomized data that includes tied timestamps, unreadable
- * dates, Cancelled / Paid / Draft lines, notes of unknown projects, India (INR) lines on India and on other countries' projects.
+ * dates, Cancelled / Paid / Draft lines, notes of unknown projects, India (INR) and another country's (OMR) lines.
  */
 type ActivityEvent = { id: string; category: string; title: string; description: string; projectRef: string; timestamp: string };
 
@@ -27,7 +27,7 @@ function referenceBuildActivity(projects: DashboardProjectRow[], notes: NoteRow[
       if (line.status === "Cancelled") continue;
       events.push({ id: `invoice-${line.id}`, category: "Invoice", title: "Invoice Raised", description: `${line.invoiceNo} raised for ${project.client || project.prNo}.`, projectRef: project.prNo, timestamp: isoOrEmpty(line.invoiceDate) });
       if (line.status === "Paid") {
-        events.push({ id: `payment-${line.id}`, category: "Payment", title: "Payment Received", description: `${project.client || project.prNo} paid ₹ ${line.invoiceAmountINR.toLocaleString("en-IN")} against ${line.invoiceNo}.`, projectRef: project.prNo, timestamp: isoOrEmpty(line.invoiceDate) });
+        events.push({ id: `payment-${line.id}`, category: "Payment", title: "Payment Received", description: `${project.client || project.prNo} paid ${paidAmountLabel(line)} against ${line.invoiceNo}.`, projectRef: project.prNo, timestamp: isoOrEmpty(line.invoiceDate) });
       }
     }
   }
@@ -86,16 +86,17 @@ function dataset(seed: number) {
       lines.push({
         id: `l${i}-${k}`,
         status: pick(["Raised", "Paid", "Paid", "Draft", "Cancelled", "PartiallyPaid"]),
-        invoiceAmountINR: Math.round(r() * 1_000_000) / 100,
+        invoiceAmountINR: regional ? 0 : Math.round(r() * 1_000_000) / 100,
         invoiceDate: date(),
         invoiceNo: `INV-${i}-${k}`,
         milestoneId: null,
         projectId: p.id,
         quantityItemId: `q${i}`,
         quantityBilled: 0,
-        currency: "INR",
+        currency: regional ? "OMR" : "INR",
         exchangeRateToINR: 1,
         invoiceAmountOriginal: null,
+        ...(regional ? { projectCurrency: "OMR", invoiceAmountProject: Math.round(r() * 100_000) / 1000 } : {}),
       } as InvoiceLineRow);
     }
     invoiceByProject.set(p.id, lines);
@@ -131,7 +132,7 @@ describe("dashboard recent activity: the optimized builder equals the original",
     void invoiceByProject;
   });
 
-  test("an unreadable invoice date is dropped, never thrown", () => {
+  test("an unreadable invoice date is dropped, never thrown; a Paid line's text names its own project currency", () => {
     const { projects } = dataset(11);
     const p = projects[0]!;
     const lines = new Map<string, InvoiceLineRow[]>([
@@ -139,10 +140,14 @@ describe("dashboard recent activity: the optimized builder equals the original",
         p.id,
         [
           { id: "bad", status: "Paid", invoiceAmountINR: 100, invoiceDate: new Date(Number.NaN), invoiceNo: "BAD", milestoneId: null, projectId: p.id, quantityItemId: "q", quantityBilled: 0, currency: "INR", exchangeRateToINR: 1, invoiceAmountOriginal: null } as InvoiceLineRow,
+          { id: "omr", status: "Paid", invoiceAmountINR: 0, invoiceDate: new Date(Date.UTC(2030, 0, 1)), invoiceNo: "OM-1", milestoneId: null, projectId: p.id, quantityItemId: "q", quantityBilled: 0, currency: "OMR", exchangeRateToINR: 1, invoiceAmountOriginal: null, projectCurrency: "OMR", invoiceAmountProject: 231 } as InvoiceLineRow,
         ],
       ],
     ]);
     const out = buildActivity([p], [], lines);
     assert.ok(out.every((e) => e.id !== "invoice-bad" && e.id !== "payment-bad"));
+    const payment = out.find((e) => e.id === "payment-omr")!;
+    assert.match(payment.description, /paid OMR 231\.000 against OM-1\./);
+    assert.ok(!payment.description.includes("₹"));
   });
 });

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Play } from "lucide-react";
 import { Badge } from "../../../../components/ui/Badge";
 import { Button } from "../../../../components/ui/Button";
+import { formatMoney } from "../../../../utils/currencyDisplay";
 import {
   deliveryOutcome,
   RUN_STATUS_LABELS,
@@ -23,6 +24,14 @@ import { formatInvoiceDate, formatWhen, runTypeLabel, type WeeklyEmailNotificati
 const th = "px-3 py-2 whitespace-nowrap";
 const td = "px-3 py-2 align-top";
 const inr = (v: number) => `₹ ${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** An amount in the invoice's project currency: INR is the long-standing rupee format; another country's currency has its own symbol and decimals. */
+const money = (v: number, currency = "INR") => (currency === "INR" ? inr(v) : formatMoney(v, currency));
+/** Known outstanding per currency, "₹ 50,000.00 · OMR 231.000"; an India-only report reads as the single rupee figure it always was. */
+function outstandingText(summary: { knownOutstandingINR: number; knownOutstandingByCurrency?: Record<string, number> | undefined }): string {
+  const entries = Object.entries(summary.knownOutstandingByCurrency ?? {}).sort(([a], [b]) => (a === "INR" ? -1 : b === "INR" ? 1 : a.localeCompare(b)));
+  if (entries.length === 0 || (entries.length === 1 && entries[0]![0] === "INR")) return inr(summary.knownOutstandingINR);
+  return entries.map(([currency, value]) => money(value, currency)).join(" · ");
+}
 const NotRecorded = () => <span className="text-[var(--nu-text-muted)]">Not recorded</span>;
 
 function PrLink({ href, children }: { href: string; children: ReactNode }) {
@@ -92,11 +101,11 @@ export function UnpaidInvoicePreviewTable({ rows }: { rows: UnpaidInvoicePreview
             <td className={`${td} whitespace-nowrap`}>{formatInvoiceDate(x.invoiceDate)}</td>
             <td className={`${td} text-right font-semibold`}>{x.daysSinceRaised}</td>
             <td className={`${td} text-right whitespace-nowrap`}>
-              {inr(x.invoiceAmountINR)}
+              {money(x.invoiceAmountINR, x.currency)}
               {x.originalAmountNote && <span className="block text-[11px] text-[var(--nu-text-muted)]">{x.originalAmountNote}</span>}
             </td>
-            <td className={`${td} text-right whitespace-nowrap`}>{x.amountPaidINR === null ? <NotRecorded /> : inr(x.amountPaidINR)}</td>
-            <td className={`${td} text-right whitespace-nowrap font-semibold`}>{x.outstandingINR === null ? <NotRecorded /> : inr(x.outstandingINR)}</td>
+            <td className={`${td} text-right whitespace-nowrap`}>{x.amountPaidINR === null ? <NotRecorded /> : money(x.amountPaidINR, x.currency)}</td>
+            <td className={`${td} text-right whitespace-nowrap font-semibold`}>{x.outstandingINR === null ? <NotRecorded /> : money(x.outstandingINR, x.currency)}</td>
             <td className={`${td} whitespace-nowrap ${x.status === "Partially Paid" ? "text-[var(--nu-warning)]" : "text-[var(--nu-danger)]"}`}>{x.status}</td>
             <td className={td}>{x.projectManager || "—"}</td>
           </tr>
@@ -128,7 +137,7 @@ export function PreviewSummary({ config, data }: { config: WeeklyEmailNotificati
         <Stat label="Generated" value={<span className="text-[12.5px]">{data.generatedAtLabel}</span>} />
         <Stat label={config.eligibleLabel} value={fmt(data.eligibleCount)} />
         <Stat label={config.matchLabel} value={fmt(data.matchCount)} tone={data.matchCount > 0 ? "danger" : undefined} />
-        {summary && <Stat label="Outstanding on fully unpaid (Raised / Submitted)" value={inr(summary.knownOutstandingINR)} />}
+        {summary && <Stat label="Outstanding on fully unpaid (Raised / Submitted)" value={outstandingText(summary)} />}
         {summary && summary.partiallyPaidCount > 0 && <Stat label="Partially Paid (outstanding not recorded)" value={fmt(summary.partiallyPaidCount)} tone="warning" />}
       </div>
       <p className="text-[11.5px] text-[var(--nu-text-muted)]" data-send-line>

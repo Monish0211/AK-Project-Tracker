@@ -6,6 +6,7 @@ import {
   buildUnpaidInvoiceReport,
   OVERDUE_DAYS,
   totalKnownOutstanding,
+  totalKnownOutstandingByCurrency,
   UNPAID_INVOICE_JOB_NAME,
   UNPAID_INVOICE_SETTING_KEY,
   UNPAID_INVOICE_SUBJECT,
@@ -109,6 +110,7 @@ export function renderReportEmail(report: UnpaidInvoiceReport, now: Date) {
     eligibleCount: report.eligibleCount,
     overdueDays: OVERDUE_DAYS,
     knownOutstandingINR: totalKnownOutstanding(report.overdue),
+    knownOutstandingByCurrency: totalKnownOutstandingByCurrency(report.overdue),
     partiallyPaidCount: report.overdue.filter((r) => r.status === "Partially Paid").length,
     rows: report.overdue.map((r) => ({ ...r, projectUrl: invoiceUrl(r) })),
   });
@@ -123,6 +125,7 @@ export async function previewReport(now = new Date()) {
     eligibleCount: report.eligibleCount,
     missingCount: report.overdue.length,
     knownOutstandingINR: totalKnownOutstanding(report.overdue),
+    knownOutstandingByCurrency: totalKnownOutstandingByCurrency(report.overdue),
     invoices: report.overdue.map((r) => ({ ...r, projectUrl: invoiceUrl(r) })),
     subject: email.subject,
     html: email.html,
@@ -150,6 +153,7 @@ export async function previewPage(request: PageRequest, now = new Date()) {
     summary: {
       overdueDays: OVERDUE_DAYS,
       knownOutstandingINR: totalKnownOutstanding(report.overdue),
+      knownOutstandingByCurrency: totalKnownOutstandingByCurrency(report.overdue),
       partiallyPaidCount: report.overdue.filter((r) => r.status === "Partially Paid").length,
     },
     ...page,

@@ -5,7 +5,7 @@ import { Badge } from "../../components/ui/Badge";
 import { fetchOutstanding, type OutstandingPage, type OutstandingRow } from "../../services/invoiceTrackerService";
 import { INVOICE_LINE_STATUS_TONE } from "../Projects/components/Invoice/InvoiceCalculations";
 import type { InvoiceLineStatus } from "../../types/InvoiceItem";
-import { formatIndianCurrency } from "../../utils/formatCurrency";
+import { currencyLines, formatByCurrency, hasAmount, trackerMoney } from "./trackerFormat";
 import { PaginationBar, StateMessage } from "../Settings/components/weeklyEmails/WeeklyEmailPaging";
 import { usePagedRequest } from "../Settings/components/weeklyEmails/useWeeklyEmailPaging";
 import { LineActions, type TrackerAction } from "./InvoiceChain";
@@ -21,8 +21,8 @@ export function OutstandingTotalsCards({ data }: { data: OutstandingPage }) {
   return (
     <div className="grid gap-3 grid-cols-2 lg:grid-cols-5" data-summary="outstanding">
       <StatCard label="Outstanding invoices" value={fmt(t.invoiceCount)} accent="blue" icon={ListChecks} hint="Raised and Partially Paid, from every month" />
-      <StatCard label="Known outstanding" value={formatIndianCurrency(t.knownOutstandingINR)} accent="amber" icon={IndianRupee} warn={t.knownOutstandingINR > 0} hint="Raised invoices at their full amount" />
-      <StatCard label="Partially Paid" value={fmt(t.partiallyPaidCount)} accent="rose" icon={TimerReset} hint={`Balance not recorded · invoice total ${formatIndianCurrency(t.partiallyPaidInvoiceAmountINR)} (not an outstanding figure)`} />
+      <StatCard label="Known outstanding" value={formatByCurrency(t.knownOutstandingByCurrency, t.knownOutstandingINR)} lines={currencyLines(t.knownOutstandingByCurrency, t.knownOutstandingINR)} accent="amber" icon={IndianRupee} warn={hasAmount(t.knownOutstandingByCurrency) || t.knownOutstandingINR > 0} hint="Raised invoices at their full amount" />
+      <StatCard label="Partially Paid" value={fmt(t.partiallyPaidCount)} accent="rose" icon={TimerReset} hint={`Balance not recorded · invoice total ${formatByCurrency(t.partiallyPaidInvoiceAmountByCurrency, t.partiallyPaidInvoiceAmountINR)} (not an outstanding figure)`} />
       <StatCard label="30+ days" value={fmt(t.overdue30PlusCount)} accent="rose" icon={AlarmClock} warn={t.overdue30PlusCount > 0} hint="Counted from the invoice date" />
       <StatCard label="Oldest" value={t.oldestDays === null ? "—" : `${fmt(t.oldestDays)} days`} accent="slate" icon={Hourglass} hint="Days since the invoice date" />
     </div>
@@ -75,12 +75,12 @@ export function OutstandingTable({ data, canEdit, canDelete, onAction }: { data:
                 {statusLabel(r.status)}
               </Badge>
             </td>
-            <td className="p-3 text-right whitespace-nowrap font-semibold">{formatIndianCurrency(r.amountINR)}</td>
+            <td className="p-3 text-right whitespace-nowrap font-semibold">{trackerMoney(r.amountINR, r.currency ?? "INR")}</td>
             <td className={`p-3 text-right whitespace-nowrap ${r.amountPaidINR === null ? "italic text-[var(--nu-text-muted)]" : ""}`} data-cell="paid">
-              {amountOrNotRecorded(r.amountPaidINR, formatIndianCurrency)}
+              {amountOrNotRecorded(r.amountPaidINR, (n) => trackerMoney(n, r.currency ?? "INR"))}
             </td>
             <td className={`p-3 text-right whitespace-nowrap ${r.outstandingINR === null ? "italic text-[var(--nu-text-muted)]" : "font-semibold"}`} data-cell="outstanding">
-              {amountOrNotRecorded(r.outstandingINR, formatIndianCurrency)}
+              {amountOrNotRecorded(r.outstandingINR, (n) => trackerMoney(n, r.currency ?? "INR"))}
             </td>
             <td className={`p-3 text-right whitespace-nowrap ${ageClass(r.daysOutstanding)}`} data-cell="days">
               {r.daysOutstanding === null ? "—" : r.daysOutstanding}

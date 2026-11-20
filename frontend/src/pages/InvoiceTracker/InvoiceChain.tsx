@@ -4,7 +4,7 @@ import { Badge } from "../../components/ui/Badge";
 import { ALL_MONTHS, fetchTrackerChain, type TrackerChain, type TrackerInvoice, type TrackerInvoiceLine, type TrackerRequest } from "../../services/invoiceTrackerService";
 import { INVOICE_LINE_STATUS_TONE } from "../Projects/components/Invoice/InvoiceCalculations";
 import type { InvoiceLineStatus } from "../../types/InvoiceItem";
-import { formatIndianCurrency } from "../../utils/formatCurrency";
+import { trackerMoney } from "./trackerFormat";
 import { StateMessage } from "../Settings/components/weeklyEmails/WeeklyEmailPaging";
 import { usePagedRequest } from "../Settings/components/weeklyEmails/useWeeklyEmailPaging";
 import { InvoiceTimeline } from "./InvoiceTimeline";
@@ -87,7 +87,7 @@ function HistoryToggle({ inv }: { inv: TrackerInvoice }) {
 }
 
 const amountText = (inv: TrackerInvoice) =>
-  `${formatIndianCurrency(inv.amountINR)}${inv.originalAmount !== null ? ` (${inv.currency} ${inv.originalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : ""}`;
+  `${trackerMoney(inv.amountINR, inv.projectCurrency ?? "INR")}${inv.originalAmount !== null ? ` (${inv.currency} ${inv.originalAmount.toLocaleString((inv.projectCurrency ?? "INR") === "INR" ? "en-IN" : "en-US", { minimumFractionDigits: inv.currency === "OMR" ? 3 : 2, maximumFractionDigits: inv.currency === "OMR" ? 3 : 2 })})` : ""}`;
 
 function LinesTable({ inv, projectId, canEdit, canDelete, onAction }: { inv: TrackerInvoice; projectId: string; canEdit: boolean; canDelete: boolean; onAction: (a: TrackerAction) => void }) {
   return (
@@ -96,7 +96,7 @@ function LinesTable({ inv, projectId, canEdit, canDelete, onAction }: { inv: Tra
         {inv.lines.map((l: TrackerInvoiceLine) => (
           <tr key={l.id} className="border-t border-[var(--nu-border)]">
             <td className="py-1 pr-3 text-[var(--nu-text-secondary)]">{l.activity}</td>
-            <td className="py-1 pr-3 text-right whitespace-nowrap">{formatIndianCurrency(l.amountINR)}</td>
+            <td className="py-1 pr-3 text-right whitespace-nowrap">{trackerMoney(l.amountINR, inv.projectCurrency ?? "INR")}</td>
             <td className="py-1 pr-3 whitespace-nowrap">{statusLabel(l.status)}</td>
             <td className="py-1 text-right">
               <LineActions projectId={projectId} invoiceNo={inv.invoiceNo} line={l} canEdit={canEdit} canDelete={canDelete} onAction={onAction} />
@@ -110,8 +110,9 @@ function LinesTable({ inv, projectId, canEdit, canDelete, onAction }: { inv: Tra
 
 function InvoiceRecord({ inv, projectId, canEdit, canDelete, onAction, showCreatedMonth, latest = false, olderOutstanding = false }: { inv: TrackerInvoice; projectId: string; canEdit: boolean; canDelete: boolean; onAction: (a: TrackerAction) => void; showCreatedMonth: boolean; latest?: boolean; olderOutstanding?: boolean }) {
   const f = inv.financials;
-  const paid = amountOrNotRecorded(f.amountPaidINR, formatIndianCurrency);
-  const owing = f.balance === "not_applicable" ? "—" : amountOrNotRecorded(f.outstandingINR, formatIndianCurrency);
+  const money = (n: number) => trackerMoney(n, inv.projectCurrency ?? "INR");
+  const paid = amountOrNotRecorded(f.amountPaidINR, money);
+  const owing = f.balance === "not_applicable" ? "—" : amountOrNotRecorded(f.outstandingINR, money);
   return (
     <li
       className={`rounded-xl border border-slate-200 dark:border-slate-800 ${latest ? "border-l-4 border-l-[var(--nu-accent)]" : ""} bg-white dark:bg-slate-900 shadow-sm px-4 py-3 space-y-2`}
@@ -182,7 +183,7 @@ function showOlderRecords(listId: string) {
 }
 
 function OlderOutstandingBanner({ data, listId }: { data: TrackerChain; listId: string }) {
-  const lines = olderOutstandingLines(data.olderOutstanding, formatIndianCurrency);
+  const lines = olderOutstandingLines(data.olderOutstanding, (n) => trackerMoney(n, data.project.currency ?? "INR"));
   if (lines.length === 0) return null;
   return (
     <div className="rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1" role="status" data-older-outstanding>

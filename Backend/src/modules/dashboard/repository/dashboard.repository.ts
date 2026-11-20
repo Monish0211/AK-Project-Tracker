@@ -48,6 +48,13 @@ export interface InvoiceLineRow {
   // Invoice Payment workflow (Nov 2026) — present only for a line whose invoice has a recorded payment; see paymentCash.rules.ts.
   recordedCashINR?: number | undefined;
   settledINR?: number | undefined;
+  // Multi-country invoice currency (Phase 5): set only for a line of a NON-INR project. Its INR-named figures are 0; every consumer reads these instead,
+  // through projectAmountOf() in the dashboard formulas, so a regional amount is never mixed into an INR total.
+  projectCurrency?: string | null | undefined;
+  exchangeRateToProject?: string | null | undefined;
+  invoiceAmountProject?: number | null | undefined;
+  recordedCashProject?: number | undefined;
+  settledProject?: number | undefined;
 }
 
 /** Raw per-item rows needed to derive invoiceQty/pendingQty at the project level — see dashboard.service.ts. Kept separate from groupQuantityTotals() because the LUMP SUM pending-quantity ceiling (see shared/utils/quantityProgress.ts) must be applied per item before summing, not on an already-summed project total. */
@@ -208,6 +215,9 @@ export async function findInvoiceLinesForProjects(projectIds: string[]): Promise
           currency: true,
           exchangeRateToINR: true,
           invoiceAmountOriginal: true,
+          projectCurrency: true,
+          exchangeRateToProject: true,
+          invoiceAmountProject: true,
         },
       },
     },
@@ -226,6 +236,9 @@ export async function findInvoiceLinesForProjects(projectIds: string[]): Promise
       currency: line.currency,
       exchangeRateToINR: line.exchangeRateToINR,
       invoiceAmountOriginal: line.invoiceAmountOriginal,
+      projectCurrency: line.projectCurrency,
+      exchangeRateToProject: line.exchangeRateToProject === null ? null : line.exchangeRateToProject.toString(),
+      invoiceAmountProject: line.invoiceAmountProject === null ? null : Number(line.invoiceAmountProject),
     }))
   );
 }

@@ -83,6 +83,8 @@ export interface UnpaidInvoicePreviewRow {
   invoiceNo: string;
   invoiceDate: string;
   daysSinceRaised: number;
+  /** The project's own currency (INR for India / legacy): the three amounts below are in it. */
+  currency?: string;
   invoiceAmountINR: number;
   amountPaidINR: number | null;
   outstandingINR: number | null;
@@ -95,6 +97,8 @@ export interface UnpaidInvoicePreview {
   eligibleCount: number;
   missingCount: number;
   knownOutstandingINR: number;
+  /** The same total per currency; never one number across currencies. */
+  knownOutstandingByCurrency?: Record<string, number>;
   invoices: UnpaidInvoicePreviewRow[];
   subject: string;
   html: string;
@@ -133,6 +137,7 @@ export type MissingExpensePreviewRow = WeeklyEmailPreview["projects"][number];
 export interface UnpaidInvoiceSummary {
   overdueDays: number;
   knownOutstandingINR: number;
+  knownOutstandingByCurrency?: Record<string, number>;
   partiallyPaidCount: number;
 }
 export type MissingExpensePreviewPage = WeeklyEmailPreviewPage<MissingExpensePreviewRow>;

@@ -29,11 +29,33 @@ export function isReceivedInvoiceLineStatus(status: string): boolean {
   return status === "Paid";
 }
 
+/**
+ * Multi-country invoice currency (Phase 5). A line of a project whose own currency is not INR carries its money in the PROJECT currency
+ * (invoiceAmountProject, recordedCashProject, settledProject) and keeps its INR-named figures at 0; every figure below is then read from those, so a regional amount
+ * is never lost to an INR total and never added to one. A line without projectCurrency (India, legacy) is read exactly as before. Totals are only ever built per
+ * project (one currency each), then grouped per currency by the caller.
+ */
+export interface ProjectCurrencyFigures {
+  projectCurrency?: string | null | undefined;
+  invoiceAmountProject?: number | null | undefined;
+  recordedCashProject?: number | null | undefined;
+  settledProject?: number | null | undefined;
+}
+
+export function isProjectCurrencyLine(line: ProjectCurrencyFigures): boolean {
+  return typeof line.projectCurrency === "string" && line.projectCurrency !== "" && line.projectCurrency !== "INR";
+}
+
+/** The invoice amount of a line in its PROJECT's own currency: the INR amount for India / legacy, the project-currency amount for any other region. */
+export function lineInvoiceAmount(line: { invoiceAmountINR: number } & ProjectCurrencyFigures): number {
+  return isProjectCurrencyLine(line) ? (line.invoiceAmountProject ?? 0) : line.invoiceAmountINR;
+}
+
 /** Invoice Raised: every non-Cancelled line, including Draft. */
-export function invoiceRaisedFromLines(lines: { status: string; invoiceAmountINR: number }[]): number {
+export function invoiceRaisedFromLines(lines: ({ status: string; invoiceAmountINR: number } & ProjectCurrencyFigures)[]): number {
   return lines
     .filter((line) => line.status !== "Cancelled")
-    .reduce((sum, line) => sum + line.invoiceAmountINR, 0);
+    .reduce((sum, line) => sum + lineInvoiceAmount(line), 0);
 }
 
 /**
@@ -51,7 +73,7 @@ export function allActiveInvoiceLinesPaid(lines: { status: string }[]): boolean 
  * (Invoice Payment workflow, Nov 2026 — see invoicePayments/paymentCash.rules.ts); every other line has none and keeps the
  * long-standing status-based figure below.
  */
-export interface LineAmounts {
+export interface LineAmounts extends ProjectCurrencyFigures {
   status: string;
   invoiceAmountINR: number;
   recordedCashINR?: number | null | undefined;
@@ -65,6 +87,10 @@ export interface LineAmounts {
  */
 export function lineCashINR(line: LineAmounts): number {
   if (line.status === "Cancelled") return 0;
+  if (isProjectCurrencyLine(line)) {
+    if (line.recordedCashProject !== undefined && line.recordedCashProject !== null) return line.recordedCashProject;
+    return isReceivedInvoiceLineStatus(line.status) ? lineInvoiceAmount(line) : 0;
+  }
   if (line.recordedCashINR !== undefined && line.recordedCashINR !== null) return line.recordedCashINR;
   return isReceivedInvoiceLineStatus(line.status) ? line.invoiceAmountINR : 0;
 }
@@ -75,6 +101,10 @@ export function lineCashINR(line: LineAmounts): number {
  */
 export function lineSettledINR(line: LineAmounts): number {
   if (line.status === "Cancelled") return 0;
+  if (isProjectCurrencyLine(line)) {
+    if (line.settledProject !== undefined && line.settledProject !== null) return line.settledProject;
+    return isReceivedInvoiceLineStatus(line.status) ? lineInvoiceAmount(line) : 0;
+  }
   if (line.settledINR !== undefined && line.settledINR !== null) return line.settledINR;
   return isReceivedInvoiceLineStatus(line.status) ? line.invoiceAmountINR : 0;
 }

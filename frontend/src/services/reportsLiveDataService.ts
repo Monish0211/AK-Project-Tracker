@@ -129,6 +129,25 @@ function groupByProject<T extends { projectId: string }>(rows: T[]): Map<string,
 }
 
 function toLiveInvoiceLine(line: ReportInvoiceLine): InvoiceLine {
+  if (line.projectCurrency && line.projectCurrency !== "INR") {
+    // A project in another currency: its money is in that currency, carried under the historic names (see InvoiceLine.projectCurrency); never converted to INR.
+    const projectAmount = typeof line.invoiceAmountProject === "number" ? line.invoiceAmountProject : 0;
+    const rate = Number(line.exchangeRateToProject);
+    return {
+      id: line.id,
+      invoiceNo: line.invoiceNo,
+      invoiceDate: typeof line.invoiceDate === "string" ? line.invoiceDate.slice(0, 10) : "",
+      quantityBilled: line.quantityBilled,
+      invoiceAmountINR: projectAmount,
+      currency: isSupportedCurrency(line.currency) ? line.currency : (line.projectCurrency as InvoiceLine["currency"]),
+      exchangeRateToINR: Number.isFinite(rate) && rate > 0 ? rate : 1,
+      invoiceAmountOriginal: typeof line.invoiceAmountOriginal === "number" ? line.invoiceAmountOriginal : projectAmount,
+      projectCurrency: line.projectCurrency,
+      status: line.status as InvoiceLineStatus,
+      createdBy: "",
+      ...(typeof line.recordedCashProject === "number" && typeof line.settledProject === "number" && { recordedCashINR: line.recordedCashProject, settledINR: line.settledProject }),
+    };
+  }
   return {
     id: line.id,
     invoiceNo: line.invoiceNo,

@@ -12,7 +12,7 @@ import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
 import { Portal } from "../../../../components/ui/Portal";
 import { Badge, type Tone } from "../../../../components/ui/Badge";
-import { formatIndianCurrency } from "../../../../utils/formatCurrency";
+import { projectMoney } from "../../../../utils/currencyDisplay";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 import {
   getInvoiceCyclesForProject,
@@ -24,7 +24,6 @@ import {
   getMlmpSetRows,
   RAISE_INVOICE_STATUS_OPTIONS,
   INVOICE_LINE_STATUS_LABEL,
-  round,
   type InvoiceStatus,
   type MlmpSetGroup,
 } from "./InvoiceCalculations";
@@ -34,7 +33,7 @@ import { InvoiceNumberField } from "./InvoiceNumberField";
 import { useInvoiceNumberField } from "./useInvoiceNumberField";
 import { useInvoiceGstChoice } from "./useInvoiceGstChoice";
 import { InvoiceGstSelector } from "./InvoiceGstSelector";
-import { amountsFromInr, formatInvoiceMoney, isForeignCurrency, sumAmountsFromInr } from "./invoiceCurrency";
+import { amountsFromInr, formatInvoiceMoney, isForeignCurrency, roundForProject, sumAmountsFromInr } from "./invoiceCurrency";
 import { InrReferenceNote, InvoiceTotalBoxes } from "./InvoiceTotalBoxes";
 
 interface Props {
@@ -202,7 +201,10 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
   const { currency: invoiceCurrency, selection: currencySelection } = currencyState;
   // Invoice-level GST snapshot (Nov 2026): the GST rate / tax type — frozen from the saved snapshot, or chosen here for a first raise.
   const gstChoice = useInvoiceGstChoice(project, invoiceNo, invoiceCurrency);
-  const isForeign = isForeignCurrency(invoiceCurrency);
+  // Multi-country: the project's own currency (INR for India) - the amounts below are in it, shown with its symbol and decimals.
+  const projectCurrency = currencyState.projectCurrency;
+  const money = projectMoney(project);
+  const isForeign = isForeignCurrency(invoiceCurrency, projectCurrency);
 
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => {
     const initial = new Set<string>();
@@ -241,9 +243,9 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
       (row) =>
         row.item.description.toLowerCase().includes(q) ||
         String(row.item.qty).includes(q) ||
-        formatIndianCurrency(row.item.totalPrice).toLowerCase().includes(q)
+        money.exact(row.item.totalPrice).toLowerCase().includes(q)
     );
-  }, [activitySummaries, search]);
+  }, [activitySummaries, search, money]);
 
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(() => {
     for (const item of items) {
@@ -314,8 +316,8 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
     return distinct.map((setIndex) => `${selectedSets[0]?.setLabel ?? "SET"} ${setIndex}`);
   }, [currentActivitySelectedRows, selectedSets]);
 
-  const currentActivityPercent = round(currentActivitySelectedRows.reduce((sum, r) => sum + r.milestone.percent, 0));
-  const currentActivityAmount = round(currentActivitySelectedRows.reduce((sum, r) => sum + r.milestone.invoiceAmount, 0));
+  const currentActivityPercent = roundForProject(currentActivitySelectedRows.reduce((sum, r) => sum + r.milestone.percent, 0));
+  const currentActivityAmount = roundForProject(currentActivitySelectedRows.reduce((sum, r) => sum + r.milestone.invoiceAmount, 0), projectCurrency);
 
   // Which OTHER activities (besides the one currently open) have at least
   // one selection — getMlmpSetRows is computed for these too, but ONLY these,
@@ -345,7 +347,7 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, selectedItemIds, selectedKeys, selectedItem, selectedSets, project]);
 
-  const totalInvoiceAmount = round(globalSelectedRows.reduce((sum, row) => sum + row.milestone.invoiceAmount, 0));
+  const totalInvoiceAmount = roundForProject(globalSelectedRows.reduce((sum, row) => sum + row.milestone.invoiceAmount, 0), projectCurrency);
   const gst = getGstBreakdown(project, totalInvoiceAmount, invoiceCurrency, invoiceNo, gstChoice.selection);
   const activitiesTouched = selectedItemIds.size;
 
@@ -442,8 +444,8 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
         "",
         `Total: ${globalSelectedRows.length} milestone(s) across ${activitiesTouched} activit${activitiesTouched !== 1 ? "ies" : "y"}`,
         totalOriginalAmount !== null
-          ? `Invoice Amount: ${formatInvoiceMoney(totalOriginalAmount, invoiceCurrency)} (${formatIndianCurrency(foreignTotals?.inr ?? totalInvoiceAmount)} @ ${currencySelection.exchangeRateToINR})`
-          : `Invoice Amount: ${formatIndianCurrency(totalInvoiceAmount)}`,
+          ? `Invoice Amount: ${formatInvoiceMoney(totalOriginalAmount, invoiceCurrency)} (${money.exact(foreignTotals?.inr ?? totalInvoiceAmount)} @ ${currencySelection.exchangeRateToINR})`
+          : `Invoice Amount: ${money.exact(totalInvoiceAmount)}`,
       ];
       if (remarks.trim()) {
         noteLines.push("", "Remarks", remarks.trim());
@@ -593,9 +595,9 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
                               description={row.item.description}
                               qty={row.item.qty}
                               uom={row.item.uom}
-                              contractValueLabel={formatIndianCurrency(row.item.totalPrice)}
-                              raisedLabel={formatIndianCurrency(row.invoiceRaised)}
-                              balanceLabel={formatIndianCurrency(row.balanceValue)}
+                              contractValueLabel={money.exact(row.item.totalPrice)}
+                              raisedLabel={money.exact(row.invoiceRaised)}
+                              balanceLabel={money.exact(row.balanceValue)}
                               status={row.status}
                               isActive={row.item.id === selectedActivityId}
                               hasSelection={selectedItemIds.has(row.item.id)}
@@ -634,18 +636,18 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
                         </div>
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--nu-text-muted)]">Contract Value</p>
-                          <p className="text-[13px] font-bold text-[var(--nu-text)] tabular-nums mt-0.5">{formatIndianCurrency(selectedItem.totalPrice)}</p>
+                          <p className="text-[13px] font-bold text-[var(--nu-text)] tabular-nums mt-0.5">{money.exact(selectedItem.totalPrice)}</p>
                         </div>
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--nu-text-muted)]">Invoice Raised</p>
                           <p className="text-[13px] font-bold text-[var(--nu-accent)] tabular-nums mt-0.5">
-                            {formatIndianCurrency(getInvoiceRaisedAmount(selectedItem))}
+                            {money.exact(getInvoiceRaisedAmount(selectedItem))}
                           </p>
                         </div>
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--nu-text-muted)]">Balance</p>
                           <p className="text-[13px] font-bold text-[var(--nu-text)] tabular-nums mt-0.5">
-                            {formatIndianCurrency(Math.max(selectedItem.totalPrice - getInvoiceRaisedAmount(selectedItem), 0))}
+                            {money.exact(Math.max(selectedItem.totalPrice - getInvoiceRaisedAmount(selectedItem), 0))}
                           </p>
                         </div>
                       </div>
@@ -693,7 +695,7 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
                                       {milestone.percent}%
                                     </span>
                                     <span className="text-right font-semibold text-[12.5px] text-[var(--nu-text)] tabular-nums w-28 shrink-0">
-                                      {formatIndianCurrency(milestone.invoiceAmount)}
+                                      {money.exact(milestone.invoiceAmount)}
                                     </span>
                                     <span className="w-40 shrink-0 text-right">
                                       {isLockedElsewhere ? (
@@ -754,15 +756,16 @@ export function MlmpInvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave 
                         <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
                           <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Invoice Amount (This Activity)</p>
                           <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums">
-                            {currentActivityForeign ? formatInvoiceMoney(currentActivityForeign.original, invoiceCurrency) : formatIndianCurrency(currentActivityAmount)}
+                            {currentActivityForeign ? formatInvoiceMoney(currentActivityForeign.original, invoiceCurrency) : money.exact(currentActivityAmount)}
                           </p>
-                          {currentActivityForeign && <InrReferenceNote inr={currentActivityForeign.inr} />}
+                          {currentActivityForeign && <InrReferenceNote inr={currentActivityForeign.inr} projectCurrency={projectCurrency} />}
                         </div>
                         <InvoiceTotalBoxes
                           gst={gst}
                           currency={invoiceCurrency}
                           originalTotal={totalOriginalAmount}
                           inrTotal={foreignTotals?.inr ?? totalInvoiceAmount}
+                          projectCurrency={projectCurrency}
                           grandTotalLabel="Grand Total (All Activities)"
                           grandTotalClassName="col-span-2 sm:col-span-1"
                         />

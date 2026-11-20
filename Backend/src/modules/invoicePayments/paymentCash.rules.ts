@@ -1,6 +1,7 @@
 import type { InvoiceCurrency } from "../invoices/invoiceCurrency.rules.js";
 import { normalizeCurrency } from "../invoices/invoiceCurrency.rules.js";
 import { decimalPlacesFor, decimalToMinor, floatToMinor } from "./money.rules.js";
+import { convertMinor, minorToNumber, parseExchangeRate } from "../invoices/invoiceProjectCurrency.rules.js";
 import { computeSettlement, isDeductionCategory } from "./paymentSettlement.rules.js";
 import type { SettlementAdjustment, SettlementReceipt, SettlementResult } from "./paymentSettlement.rules.js";
 
@@ -22,6 +23,12 @@ import type { SettlementAdjustment, SettlementReceipt, SettlementResult } from "
 export interface PaymentLineFigures {
   recordedCashINR: number;
   settledINR: number;
+  /**
+   * Multi-country invoice currency (Phase 5): for a line on a NON-INR project the same two figures in the PROJECT currency (the invoice-currency payments
+   * converted at the invoice's own saved rate). Absent for an INR / legacy project; recordedCashINR / settledINR are 0 for such a regional line.
+   */
+  recordedCashProject?: number;
+  settledProject?: number;
 }
 
 export interface LineForFigures {
@@ -31,6 +38,10 @@ export interface LineForFigures {
   invoiceAmountOriginal: number | null;
   currency: string;
   exchangeRateToINR: number;
+  /** Phase 5: set only on a line of a non-INR project. A Prisma Decimal or a number both satisfy these shapes. */
+  projectCurrency?: string | null | undefined;
+  exchangeRateToProject?: { toString(): string } | null | undefined;
+  invoiceAmountProject?: { toFixed(places: number): string } | null | undefined;
 }
 
 /** The recorded-payment data the settlement needs, in the shape Prisma returns it (Decimal columns exposed as `toFixed`). */
@@ -74,10 +85,64 @@ export function baseDueOf(lines: readonly LineForFigures[], currency: InvoiceCur
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
+/**
+ * Phase 5: per-line figures for ONE invoice of a non-INR project, in the PROJECT currency. The settlement itself is unchanged (invoice currency, exact minor
+ * units). Its cash and settled amounts are converted at the invoice's own saved rate with one half-up rounding, a fully settled invoice settles exactly its
+ * project-currency amount, and the result is shared between lines by their project amounts, the last line taking the remainder, all in integer minor units.
+ */
+function figuresForProjectCurrencyInvoice(lines: readonly LineForFigures[], active: readonly RecordedPayment[], gstMinor: bigint): Map<string, PaymentLineFigures> {
+  const result = new Map<string, PaymentLineFigures>();
+  const first = lines[0]!;
+  const currency = normalizeCurrency(first.currency);
+  const projectCurrency = normalizeCurrency(first.projectCurrency ?? "INR");
+  const rate = parseExchangeRate(String(first.exchangeRateToProject ?? "1"));
+  const toProject = (minor: bigint): bigint => (currency === projectCurrency ? minor : convertMinor(minor, currency, projectCurrency, rate));
+
+  const baseMinor = baseDueOf(lines, currency);
+  const settlement = settlementFromRecords({ currency, dueMinor: baseMinor + gstMinor, active });
+  const lineProjectMinor = lines.map((line) => decimalToMinor(line.invoiceAmountProject ?? { toFixed: (places: number) => (0).toFixed(places) }, projectCurrency));
+  const totalProjectMinor = lineProjectMinor.reduce((sum, value) => sum + value, 0n);
+
+  // Measured against the GST-inclusive target and then expressed ex-GST, exactly like the INR path (gstMinor is 0 for every regional invoice today).
+  let cashInvoiceMinor = settlement.cashMinor;
+  let settledInvoiceMinor = settlement.settledMinor;
+  let fullySettled = settlement.settled;
+  if (gstMinor > 0n) {
+    const outstandingExGst = settlement.outstandingMinor < baseMinor ? settlement.outstandingMinor : baseMinor;
+    settledInvoiceMinor = baseMinor - outstandingExGst;
+    cashInvoiceMinor = settlement.cashMinor < settledInvoiceMinor ? settlement.cashMinor : settledInvoiceMinor;
+    fullySettled = settledInvoiceMinor === baseMinor;
+  }
+  const cashProject = toProject(cashInvoiceMinor);
+  const rawSettledProject = fullySettled ? totalProjectMinor : toProject(settledInvoiceMinor);
+  const settledProject = rawSettledProject > totalProjectMinor ? totalProjectMinor : rawSettledProject;
+
+  let allocatedCash = 0n;
+  let allocatedSettled = 0n;
+  lines.forEach((line, index) => {
+    const isLast = index === lines.length - 1;
+    const own = lineProjectMinor[index]!;
+    const share = (value: bigint): bigint => (totalProjectMinor > 0n ? (value * own * 2n + totalProjectMinor) / (2n * totalProjectMinor) : value / BigInt(lines.length));
+    const cash = isLast ? cashProject - allocatedCash : share(cashProject);
+    const settled = isLast ? settledProject - allocatedSettled : share(settledProject);
+    allocatedCash += cash;
+    allocatedSettled += settled;
+    result.set(line.id, {
+      recordedCashINR: 0,
+      settledINR: 0,
+      recordedCashProject: minorToNumber(cash < 0n ? 0n : cash, projectCurrency),
+      settledProject: minorToNumber(settled < 0n ? 0n : settled, projectCurrency),
+    });
+  });
+  return result;
+}
+
 /** Per-line figures for ONE invoice that has at least one active payment. `lines` are its non-cancelled lines. */
 export function figuresForInvoice(lines: readonly LineForFigures[], active: readonly RecordedPayment[], gstMinor: bigint = 0n): Map<string, PaymentLineFigures> {
   const result = new Map<string, PaymentLineFigures>();
   if (lines.length === 0 || active.length === 0) return result;
+  // A line of a non-INR project is allocated in the PROJECT currency (exact integer maths); the INR path below is untouched.
+  if (lines[0]!.projectCurrency && lines[0]!.projectCurrency !== "INR") return figuresForProjectCurrencyInvoice(lines, active, gstMinor);
 
   const currency = normalizeCurrency(lines[0]!.currency);
   // GST (Nov 2026): an invoice with a saved GST snapshot is settled against taxable + GST, but the dashboard / report definitions stay EX-GST

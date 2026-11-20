@@ -8,6 +8,8 @@ interface Props {
   onToggle: (id: string) => void;
   /** View mode — nothing is clickable, checkboxes only reflect state. */
   disabled?: boolean;
+  /** The project's own currency (multi-country); omitted = INR. */
+  currency?: string | undefined;
 }
 
 /**
@@ -17,7 +19,7 @@ interface Props {
  * already billed for this activity is locked "Completed" and cannot be
  * selected again.
  */
-export function LumpSumMilestoneTable({ rows, selectedIds, onToggle, disabled = false }: Props) {
+export function LumpSumMilestoneTable({ rows, selectedIds, onToggle, disabled = false, currency }: Props) {
   return (
     <div className="rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] overflow-hidden bg-white dark:bg-slate-900/60 shadow-xs">
       <div className="overflow-x-auto">
@@ -54,7 +56,7 @@ export function LumpSumMilestoneTable({ rows, selectedIds, onToggle, disabled = 
                     </span>
                   </td>
                   <td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
-                    <MoneyValue value={row.invoiceAmount} />
+                    <MoneyValue value={row.invoiceAmount} currency={currency} />
                   </td>
                   <td className="px-3 py-3 text-center whitespace-nowrap">
                     {checked ? (

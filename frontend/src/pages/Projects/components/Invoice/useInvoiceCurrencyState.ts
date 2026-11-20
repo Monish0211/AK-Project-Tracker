@@ -6,8 +6,10 @@ import {
   getInitialCurrencySelection,
   getInvoiceCycleCurrency,
   getProjectInvoiceCurrencyLock,
+  getRateSuggestion,
   isForeignCurrency,
   isInvoiceCurrencySupported,
+  projectCurrencyOf,
   validateExchangeRate,
   type InvoiceCurrencySelection,
 } from "./invoiceCurrency";
@@ -26,6 +28,10 @@ export interface InvoiceCurrencyState {
   isRateFixed: boolean;
   /** Why the currency is fixed — shown under the field. */
   fixedReason: string | null;
+  /** The project's own currency (INR for India and legacy projects): the invoice currency that needs no rate. */
+  projectCurrency: InvoiceCurrency;
+  /** A labelled, optional rate suggestion (Work Order rate) for a project in another country; never applied by itself. */
+  rateSuggestion: { rate: number; basis: string } | null;
 }
 
 /**
@@ -45,6 +51,7 @@ export function useInvoiceCurrencyState(project: Project, invoiceNo: string): In
   const lock = useMemo(() => getProjectInvoiceCurrencyLock(project), [project]);
   const supported = isInvoiceCurrencySupported(project);
 
+  const projectCurrency = projectCurrencyOf(project);
   const [initial] = useState(() => getInitialCurrencySelection(project, invoiceNo));
   const [currency, setCurrencyState] = useState<InvoiceCurrency>(initial.currency);
   const [rateInput, setRateInput] = useState<string>(initial.rateInput);
@@ -61,9 +68,18 @@ export function useInvoiceCurrencyState(project: Project, invoiceNo: string): In
   else if (!supported) fixedReason = "Other invoice currencies aren't available until the server is updated.";
   const isCurrencyFixed = fixedReason !== null;
 
-  const rateError = validateExchangeRate(currency, rateInput);
+  const rateError = validateExchangeRate(currency, rateInput, projectCurrency);
+  const foreign = isForeignCurrency(currency, projectCurrency);
   const selection: InvoiceCurrencySelection | null =
-    rateError === null ? { currency, exchangeRateToINR: isForeignCurrency(currency) ? Number(rateInput) : 1 } : null;
+    rateError === null
+      ? {
+          currency,
+          exchangeRateToINR: foreign ? Number(rateInput) : 1,
+          // India and legacy projects keep the original selection shape (no project currency, no text) so nothing about them changes.
+          ...(projectCurrency !== "INR" && { projectCurrency, exchangeRateText: foreign ? rateInput.trim() : "1" }),
+        }
+      : null;
+  const rateSuggestion = isRateFixed ? null : getRateSuggestion(project, currency);
 
-  return { currency, rateInput, setCurrency, setRateInput, selection, rateError, isCurrencyFixed, isRateFixed, fixedReason };
+  return { currency, rateInput, setCurrency, setRateInput, selection, rateError, isCurrencyFixed, isRateFixed, fixedReason, projectCurrency, rateSuggestion };
 }

@@ -36,6 +36,8 @@ export interface NotRecorded {
 /** Amount collected: Paid invoices at their full amount, INFERRED from the Paid status (no payments are stored). Each invoice once. */
 export interface CollectedFigure {
   amountINR: number;
+  /** The same figure per currency (INR included): a report spanning several countries never adds one currency to another. */
+  byCurrency: Record<string, number>;
   basis: "inferred_from_paid_status";
   paidInvoiceCount: number;
   /** Partially Paid invoices left out — no amount is stored for them. */
@@ -56,12 +58,14 @@ export interface TrackerSummary {
   requestCount: number;
   invoicesRaised: number;
   raisedAmountINR: number;
+  /** The same total per currency (INR included); `raisedAmountINR` is its rupee part. */
+  raisedByCurrency: Record<string, number>;
   byStatus: InvoiceStatusCounts;
   requests: { open: number; completed: number };
   pendingApproval: { count: number } & NotRecorded;
   collected: CollectedFigure;
   /** Among invoices CREATED in the period — the all-months figure is the Outstanding view's. */
-  outstanding: { scope: "selected_month"; knownAmountINR: number; invoiceCount: number; balanceNotRecordedCount: number };
+  outstanding: { scope: "selected_month"; knownAmountINR: number; knownByCurrency: Record<string, number>; invoiceCount: number; balanceNotRecordedCount: number };
 }
 
 export interface ProjectRecordState {
@@ -99,6 +103,8 @@ export interface LatestRaisedInvoice {
   invoiceNo: string;
   invoiceDate: string;
   amountINR: number;
+  /** The project's own currency (INR for India / legacy): the amount is in it. */
+  currency: string;
   status: string;
   paymentStatus: string;
   /** Dated in the selected month; false = an older invoice shown for context; null = All history (no month). */
@@ -140,6 +146,10 @@ export interface TrackerProjectRow {
   projectStatus: string;
   workOrderValueINR: number;
   pendingDueINR: number;
+  /** The project's own currency, and its work order value and pending due in it (identical to the INR figures for India / legacy). */
+  currency: string;
+  workOrderValue: number;
+  pendingDue: number;
   hasOpenInvoiceRequest: boolean;
   /**
    * Which rule placed this row (server-side; the page never re-sorts). Month view: 1 = ordered by an approval request submitted in the month
@@ -215,6 +225,8 @@ export interface TrackerInvoice {
   /** True when that recorded raise falls in the selected month (never true for "all"). */
   raisedInPeriod: boolean;
   amountINR: number;
+  /** The project's own currency: amountINR, the financials and the line amounts are in it. */
+  projectCurrency: string;
   currency: string;
   originalAmount: number | null;
   status: string;
@@ -250,7 +262,7 @@ export interface TrackerRequest {
 
 export interface TrackerChain {
   month: string;
-  project: { id: string; prNo: string; client: string; projectTitle: string; projectStatus: string };
+  project: { id: string; prNo: string; client: string; projectTitle: string; projectStatus: string; currency: string };
   /** Invoices DATED in the selected month (all invoices for "all"). */
   invoices: TrackerInvoice[];
   /** This project's EARLIER-dated invoices, newest first — billing context only, never in `invoices`, never in any total. Empty for "all". */
@@ -291,6 +303,8 @@ export interface OutstandingRow {
   status: string;
   paymentStatus: TrackerInvoice["paymentStatus"];
   amountINR: number;
+  /** The project's own currency: the amounts of this row are in it. */
+  currency: string;
   amountPaidINR: number | null;
   outstandingINR: number | null;
   balance: InvoiceFinancials["balance"];
@@ -304,8 +318,10 @@ export interface OutstandingRow {
 export interface OutstandingTotals {
   invoiceCount: number;
   knownOutstandingINR: number;
+  knownOutstandingByCurrency: Record<string, number>;
   partiallyPaidCount: number;
   partiallyPaidInvoiceAmountINR: number;
+  partiallyPaidInvoiceAmountByCurrency: Record<string, number>;
   overdue30PlusCount: number;
   oldestDays: number | null;
 }
@@ -373,6 +389,8 @@ export interface RaisedBreakdownProject {
   projectTitle: string;
   projectStatus: string;
   invoiceCount: number;
+  /** The project's own currency: totalINR and its invoices' amounts are in it. */
+  currency: string;
   totalINR: number;
   invoices: RaisedBreakdownInvoice[];
 }
@@ -385,6 +403,8 @@ export interface RaisedBreakdownProject {
 export interface RaisedBreakdownPage {
   month: string;
   totalINR: number;
+  /** The whole report's total per currency. */
+  totalByCurrency: Record<string, number>;
   invoiceCount: number;
   projectCount: number;
   projects: RaisedBreakdownProject[];

@@ -17,6 +17,8 @@ export async function findUnpaidInvoiceLines(): Promise<InvoiceLineCandidate[]> 
       invoiceDate: true,
       status: true,
       invoiceAmountINR: true,
+      projectCurrency: true,
+      invoiceAmountProject: true,
       currency: true,
       invoiceAmountOriginal: true,
       quantityItem: { select: { project: { select: { id: true, prNo: true, client: true, projectTitle: true, primaryProjectManager: true } } } },
@@ -32,7 +34,10 @@ export async function findUnpaidInvoiceLines(): Promise<InvoiceLineCandidate[]> 
     invoiceNo: r.invoiceNo,
     invoiceDate: r.invoiceDate,
     status: r.status,
-    invoiceAmountINR: r.invoiceAmountINR,
+    // Multi-country: the amount in the invoice's PROJECT currency - rupees for India / legacy (unchanged), the project's own currency for another country (its
+    // INR-named amount is 0 by design). The line says which currency, so no amount is ever read as the wrong one.
+    invoiceAmountINR: r.projectCurrency && r.projectCurrency !== "INR" ? Number(r.invoiceAmountProject?.toString() ?? 0) : r.invoiceAmountINR,
+    projectCurrency: r.projectCurrency && r.projectCurrency !== "INR" ? r.projectCurrency : "INR",
     currency: r.currency,
     invoiceAmountOriginal: r.invoiceAmountOriginal,
   }));

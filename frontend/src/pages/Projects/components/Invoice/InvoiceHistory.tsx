@@ -7,7 +7,7 @@ import { Badge, type Tone } from "../../../../components/ui/Badge";
 import { Input } from "../../../../components/ui/Input";
 import { Select } from "../../../../components/ui/Select";
 import { EmptyState } from "../../../../components/ui/EmptyState";
-import { formatBusinessINR } from "../../../../utils/formatCurrency";
+import { formatMoneyCompact, projectMoney, regionalCurrencyOf } from "../../../../utils/currencyDisplay";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 import { MoneyValue, MoneyTooltip } from "../../../../components/ui/MoneyTooltip";
 import { ConfirmDialog } from "../../../../components/ui/ConfirmDialog";
@@ -21,12 +21,11 @@ import {
   INVOICE_LINE_STATUS_TONE,
   round,
 } from "./InvoiceCalculations";
-import { formatIndianCurrency } from "../../../../utils/formatCurrency";
 import { InvoicePaymentDetailsModal } from "./InvoicePaymentDetailsModal";
 import { buildInvoicePaymentContext, invoiceHasRecordedPayment } from "./invoicePaymentDetails";
 import { InvoiceGstChoiceDialog } from "./InvoiceGstChoiceDialog";
 import { isGstChoiceNeeded } from "./invoiceGst";
-import { formatInvoiceMoney, getInvoiceCycleCurrency, getLineCurrency, getLineOriginalAmount, isForeignCurrency } from "./invoiceCurrency";
+import { formatInvoiceMoney, getInvoiceCycleCurrency, getLineCurrency, getLineOriginalAmount, isForeignLine } from "./invoiceCurrency";
 
 interface Props {
   project: Project;
@@ -104,6 +103,9 @@ export function InvoiceHistory({
   highlightLineId,
   onPaymentChanged,
 }: Props) {
+  // Multi-country: the project's own currency (INR for India and legacy) - every amount in this table is in it.
+  const projectCurrency = regionalCurrencyOf(project);
+  const money = projectMoney(project);
   const [activityFilter, setActivityFilter] = useState(initialActivityFilter ?? "all");
   const [statusFilter, setStatusFilter] = useState<InvoiceLineStatus | "all">("all");
   const [search, setSearch] = useState("");
@@ -308,11 +310,11 @@ export function InvoiceHistory({
                             {group.label} <span className="font-mono font-semibold text-[var(--nu-text-secondary)]">({group.invoiceNo})</span>{" "}
                             <span className="font-medium text-[var(--nu-text-muted)]">
                               {isLumpSum
-                                ? `— ${group.milestoneNames.join(", ") || "no milestones"} · Total ${group.milestoneTotalPercent}% · ${formatIndianCurrency(group.milestoneTotalAmount)}`
+                                ? `— ${group.milestoneNames.join(", ") || "no milestones"} · Total ${group.milestoneTotalPercent}% · ${money.exact(group.milestoneTotalAmount)}`
                                 : isMlmp
-                                ? `— ${group.activityCount} ${group.activityCount === 1 ? "activity" : "activities"} · ${group.rows.length} SET milestone(s) · ${formatIndianCurrency(group.milestoneTotalAmount)}`
+                                ? `— ${group.activityCount} ${group.activityCount === 1 ? "activity" : "activities"} · ${group.rows.length} SET milestone(s) · ${money.exact(group.milestoneTotalAmount)}`
                                 : isAmountBased
-                                ? `— ${group.activityCount} ${group.activityCount === 1 ? "activity" : "activities"} · ${formatIndianCurrency(group.milestoneTotalAmount)}`
+                                ? `— ${group.activityCount} ${group.activityCount === 1 ? "activity" : "activities"} · ${money.exact(group.milestoneTotalAmount)}`
                                 : `— ${group.activityCount} ${group.activityCount === 1 ? "activity" : "activities"}`}
                             </span>
                           </span>
@@ -407,20 +409,20 @@ export function InvoiceHistory({
                             {formatIndianNumber(row.qty)} {row.uom}
                           </td>
                           <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap text-[var(--nu-text-secondary)]">
-                            <MoneyValue value={row.unitPrice} />
+                            <MoneyValue value={row.unitPrice} currency={projectCurrency} />
                           </td>
                           <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
-                            <MoneyValue value={row.systemAmount} />
+                            <MoneyValue value={row.systemAmount} currency={projectCurrency} />
                           </td>
                         </>
                       )
                     )}
                     <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
-                      <MoneyValue value={row.amount} className="font-semibold text-[var(--nu-accent)]" />
+                      <MoneyValue value={row.amount} className="font-semibold text-[var(--nu-accent)]" currency={projectCurrency} />
                       {/* Invoice Currency feature — the amount above stays the INR equivalent (what every total sums); a foreign-currency line also shows what was actually billed. */}
-                      {isForeignCurrency(getLineCurrency(row.line)) && (
+                      {isForeignLine(row.line) && (
                         <div className="text-[10.5px] font-semibold text-[var(--nu-text-muted)]">
-                          {formatInvoiceMoney(getLineOriginalAmount(row.line), getLineCurrency(row.line))} @ {row.line.exchangeRateToINR ?? "-"}
+                          {formatInvoiceMoney(getLineOriginalAmount(row.line), getLineCurrency(row.line))} @ {row.line.exchangeRateToINR ?? "-"}{projectCurrency !== "INR" ? ` ${projectCurrency}` : ""}
                         </div>
                       )}
                     </td>
@@ -429,9 +431,10 @@ export function InvoiceHistory({
                         {row.line.commercialAdjustmentINR && Math.abs(row.line.commercialAdjustmentINR) > 0.01 ? (
                           <MoneyTooltip
                             value={row.line.commercialAdjustmentINR}
+                            currency={projectCurrency}
                             className={`font-semibold ${row.line.commercialAdjustmentINR < 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}
                           >
-                            {row.line.commercialAdjustmentINR < 0 ? "-" : "+"}{formatBusinessINR(Math.abs(row.line.commercialAdjustmentINR))}
+                            {row.line.commercialAdjustmentINR < 0 ? "-" : "+"}{formatMoneyCompact(Math.abs(row.line.commercialAdjustmentINR), projectCurrency)}
                           </MoneyTooltip>
                         ) : (
                           <span className="text-slate-400">—</span>

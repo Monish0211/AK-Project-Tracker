@@ -7,7 +7,7 @@ import { OUTSTANDING_STORED_STATUSES, type MonthWindow, type RequestLite, type T
  * authorizedProjectReadWhere() (the rule every cross-project list already uses) and applied to every query.
  */
 
-export const PROJECT_LIST_SELECT = { id: true, prNo: true, client: true, projectTitle: true, projectStatus: true } as const;
+export const PROJECT_LIST_SELECT = { id: true, prNo: true, client: true, projectTitle: true, projectStatus: true, regionalCurrency: true } as const;
 
 /** One page, stable order: PR number, then id as the tie-break. */
 export function findProjectsPage(where: Prisma.ProjectWhereInput, skip: number, take: number) {
@@ -48,6 +48,8 @@ type LineRow = {
   invoiceDate: Date;
   status: string;
   invoiceAmountINR: number;
+  projectCurrency: string | null;
+  invoiceAmountProject: { toString(): string } | null;
   createdAt: Date;
   quantityItemId: string;
   quantityItem: { projectId: string };
@@ -60,11 +62,21 @@ const toTrackerLine = (r: LineRow): TrackerLine => ({
   invoiceNo: r.invoiceNo,
   invoiceDate: r.invoiceDate,
   status: r.status,
-  invoiceAmountINR: r.invoiceAmountINR,
+  invoiceAmountINR: amountInProjectCurrency(r),
+  projectCurrency: r.projectCurrency ?? "INR",
   createdAt: r.createdAt,
 });
 
-const LIGHT_LINE_SELECT = { id: true, invoiceNo: true, invoiceDate: true, status: true, invoiceAmountINR: true, createdAt: true, quantityItemId: true, quantityItem: { select: { projectId: true } } } as const;
+/**
+ * Multi-country invoice currency (Phase 5): the tracker's per-invoice figures (amount, paid, outstanding) are in the invoice's PROJECT currency - rupees for India
+ * and legacy projects, exactly as before; a line of a project in another currency carries its money in that currency (its INR-named amount is 0 by design), so the
+ * project-currency amount is read instead and the line says which currency it is. Every rule that follows (status, outstanding, overdue, sorting) is unchanged.
+ */
+type MoneyRow = { invoiceAmountINR: number; projectCurrency: string | null; invoiceAmountProject: { toString(): string } | null };
+const isOtherCurrency = (currency: string | null): currency is string => typeof currency === "string" && currency !== "" && currency !== "INR";
+const amountInProjectCurrency = (r: MoneyRow): number => (isOtherCurrency(r.projectCurrency) ? Number(r.invoiceAmountProject?.toString() ?? 0) : r.invoiceAmountINR);
+
+const LIGHT_LINE_SELECT = { id: true, invoiceNo: true, invoiceDate: true, status: true, invoiceAmountINR: true, projectCurrency: true, invoiceAmountProject: true, createdAt: true, quantityItemId: true, quantityItem: { select: { projectId: true } } } as const;
 
 /** EVERY line of the given projects, only the fields grouping needs — an invoice's creation date needs all its lines, any month. */
 export async function findLinesForProjects(projectIds: string[]): Promise<TrackerLine[]> {
@@ -111,15 +123,16 @@ export async function findFirstRaiseTimes(lineIds: string[]): Promise<Map<string
 }
 
 /** One project's lines with everything the expanded records show (all months; the caller filters by creation month). */
-export function findProjectLinesDetailed(projectId: string) {
-  return prisma.invoiceLine.findMany({
+export async function findProjectLinesDetailed(projectId: string) {
+  const rows = await prisma.invoiceLine.findMany({
     where: { quantityItem: { projectId } },
     select: {
-      id: true, invoiceNo: true, invoiceDate: true, status: true, invoiceAmountINR: true, currency: true, invoiceAmountOriginal: true,
+      id: true, invoiceNo: true, invoiceDate: true, status: true, invoiceAmountINR: true, currency: true, invoiceAmountOriginal: true, projectCurrency: true, invoiceAmountProject: true,
       createdAt: true, createdBy: true, quantityItemId: true, quantityItem: { select: { description: true, projectId: true } },
     },
     orderBy: [{ createdAt: "asc" }, { invoiceNo: "asc" }, { id: "asc" }],
   });
+  return rows.map((r) => ({ ...r, invoiceAmountINR: amountInProjectCurrency(r), projectCurrency: r.projectCurrency ?? "INR" }));
 }
 
 /**

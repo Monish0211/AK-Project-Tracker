@@ -4,7 +4,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Portal } from "../../components/ui/Portal";
 import { ALL_MONTHS, type RaisedBreakdownProject } from "../../services/invoiceTrackerService";
-import { formatIndianCurrency } from "../../utils/formatCurrency";
+import { formatByCurrency, trackerMoney, type CurrencyLine } from "./trackerFormat";
 import { StatCard } from "./StatCard";
 import { filterNoteOf, isProjectOpen, withEveryProject, withProjectToggled, type BreakdownData, type BreakdownQuery, type ExpansionOverrides } from "./raisedBreakdownLogic";
 import { formatDateOnly, formatMonthLabel, plural, SUMMARY_STATUS_LABEL, SUMMARY_STATUS_TONE } from "./trackerFormat";
@@ -61,7 +61,7 @@ function InvoiceRows({ project }: { project: RaisedBreakdownProject }) {
             </span>
           </span>
           <span className="shrink-0 text-[12.5px] font-bold tabular-nums text-[var(--nu-text)]" data-bd-amount>
-            {formatIndianCurrency(inv.amountINR)}
+            {trackerMoney(inv.amountINR, project.currency ?? "INR")}
           </span>
         </li>
       ))}
@@ -92,7 +92,7 @@ function ProjectRow({ project, open, onToggle }: { project: RaisedBreakdownProje
           </span>
           <span className="shrink-0 text-right">
             <span className="block text-[13px] font-extrabold tabular-nums text-[var(--nu-text)]" data-bd-project-total>
-              {formatIndianCurrency(project.totalINR)}
+              {trackerMoney(project.totalINR, project.currency ?? "INR")}
             </span>
             <span className="block text-[11px] text-[var(--nu-text-muted)]" data-bd-project-count>
               {plural(project.invoiceCount, "invoice")}
@@ -116,6 +116,8 @@ export interface RaisedBreakdownPanelProps {
   filterNote: string;
   /** The card's own figure — shown at once, and compared with the loaded total so a stale card is noticed. */
   cardTotalINR: number;
+  /** The card's own figure as written on it (per currency). */
+  cardTotalLabel?: string | undefined;
   isAllMonths: boolean;
   data: BreakdownData;
   isOpen: (project: RaisedBreakdownProject) => boolean;
@@ -129,9 +131,10 @@ export interface RaisedBreakdownPanelProps {
 }
 
 /** The dialog's content: header (title, period, total, counts) → by-project list → each project's invoices. */
-export function RaisedBreakdownPanel({ titleId, monthLabel, filterNote, cardTotalINR, isAllMonths, data, isOpen, allOpen, onToggle, onToggleAll, onClose, onRetry, onLoadMore, onRefresh }: RaisedBreakdownPanelProps) {
+export function RaisedBreakdownPanel({ titleId, monthLabel, filterNote, cardTotalINR, cardTotalLabel, isAllMonths, data, isOpen, allOpen, onToggle, onToggleAll, onClose, onRetry, onLoadMore, onRefresh }: RaisedBreakdownPanelProps) {
   const ready = data.status === "ready";
-  const total = ready ? data.totalINR : cardTotalINR;
+  const total = ready ? formatByCurrency(data.totalByCurrency, data.totalINR) : formatByCurrency(undefined, cardTotalINR);
+  const cardLabel = cardTotalLabel ?? formatByCurrency(undefined, cardTotalINR);
   const stale = ready && data.totalINR !== cardTotalINR;
   return (
     <>
@@ -161,7 +164,7 @@ export function RaisedBreakdownPanel({ titleId, monthLabel, filterNote, cardTota
         </div>
         <div className="mt-3 flex items-baseline flex-wrap gap-x-3 gap-y-1">
           <span className="text-[26px] leading-none font-black tabular-nums text-emerald-600 dark:text-emerald-400" data-bd-total>
-            {formatIndianCurrency(total)}
+            {total}
           </span>
           <span className="text-[12px] text-[var(--nu-text-secondary)]" data-bd-counts>
             {ready ? `${plural(data.invoiceCount, "invoice")} · ${plural(data.projectCount, "project")}` : data.status === "error" ? "Could not load the invoices" : "Loading invoices…"}
@@ -175,7 +178,7 @@ export function RaisedBreakdownPanel({ titleId, monthLabel, filterNote, cardTota
         {stale && (
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-[11.5px] text-amber-800 dark:text-amber-300" role="status" data-bd-stale>
             <AlertTriangle size={13} aria-hidden="true" className="shrink-0" />
-            <span className="min-w-0 flex-1">The invoices changed since this page loaded — the card shows {formatIndianCurrency(cardTotalINR)}.</span>
+            <span className="min-w-0 flex-1">The invoices changed since this page loaded — the card shows {cardLabel}.</span>
             {onRefresh && (
               <button type="button" onClick={onRefresh} className="inline-flex items-center gap-1 font-semibold text-[var(--nu-accent)] hover:underline">
                 <RefreshCw size={12} aria-hidden="true" /> Refresh
@@ -323,7 +326,7 @@ export function RaisedBreakdownDialog({ open, titleId, onClose, children }: { op
  * The "Raised invoice amount" card. Same look as its neighbours, plus a quiet "View breakdown" line and chevron; one click opens the breakdown
  * of exactly this figure (same month, same filters). `refreshKey` changes whenever the page reloads its data, so a reopened breakdown is current.
  */
-export function RaisedAmountCard({ className, value, totalINR, hint, query, refreshKey, onRefresh }: { className?: string | undefined; value: string; totalINR: number; hint: string; query: BreakdownQuery; refreshKey: number; onRefresh?: (() => void) | undefined }) {
+export function RaisedAmountCard({ className, value, lines, totalINR, hint, query, refreshKey, onRefresh }: { className?: string | undefined; value: string; lines?: CurrencyLine[] | undefined; totalINR: number; hint: string; query: BreakdownQuery; refreshKey: number; onRefresh?: (() => void) | undefined }) {
   const titleId = useId();
   const [open, setOpen] = useState(false);
   const [overrides, setOverrides] = useState<ExpansionOverrides>(() => new Map());
@@ -338,13 +341,14 @@ export function RaisedAmountCard({ className, value, totalINR, hint, query, refr
 
   return (
     <>
-      <StatCard className={className} label="Raised invoice amount" value={value} accent="emerald" icon={IndianRupee} hint={hint} onActivate={() => setOpen(true)} actionLabel="View breakdown" expanded={open} />
+      <StatCard className={className} label="Raised invoice amount" value={value} lines={lines} accent="emerald" icon={IndianRupee} hint={hint} onActivate={() => setOpen(true)} actionLabel="View breakdown" expanded={open} />
       <RaisedBreakdownDialog open={open} titleId={titleId} onClose={close}>
         <RaisedBreakdownPanel
           titleId={titleId}
           monthLabel={formatMonthLabel(query.month)}
           filterNote={filterNoteOf(query)}
           cardTotalINR={totalINR}
+          cardTotalLabel={value}
           isAllMonths={query.month === ALL_MONTHS}
           data={data}
           isOpen={isOpen}

@@ -56,6 +56,13 @@ export async function withPaymentFigures<T extends LineWithInvoice>(lines: reado
   if (figures.size === 0) return [...lines];
   return lines.map((line) => {
     const f = figures.get(line.id);
-    return f ? { ...line, recordedCashINR: f.recordedCashINR, settledINR: f.settledINR } : line;
+    return f
+      ? {
+          ...line,
+          recordedCashINR: f.recordedCashINR,
+          settledINR: f.settledINR,
+          ...(f.recordedCashProject !== undefined && { recordedCashProject: f.recordedCashProject, settledProject: f.settledProject }),
+        }
+      : line;
   });
 }

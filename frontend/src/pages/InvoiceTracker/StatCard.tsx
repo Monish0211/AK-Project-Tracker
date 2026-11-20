@@ -1,4 +1,5 @@
 import { ChevronRight, type LucideIcon } from "lucide-react";
+import { stripCurrencyPrefix, type CurrencyLine } from "./trackerFormat";
 
 export type StatAccent = "blue" | "emerald" | "amber" | "indigo" | "rose" | "slate";
 
@@ -28,6 +29,7 @@ export function StatCard({
   onActivate,
   actionLabel,
   expanded,
+  lines,
   className,
 }: {
   label: string;
@@ -40,10 +42,17 @@ export function StatCard({
   onActivate?: () => void;
   actionLabel?: string;
   expanded?: boolean;
+  /**
+   * A figure kept per currency. With two or more, the first (INR when present) is the primary figure and the others are listed beneath it, one per row, so a card never
+   * holds a long joined string. With one (or none) the card is exactly as before and shows `value`.
+   */
+  lines?: CurrencyLine[] | undefined;
   /** Extra classes for the card itself (the tracker uses it for the grid span). */
   className?: string | undefined;
 }) {
   const c = ACCENT[accent];
+  const multi = lines !== undefined && lines.length > 1;
+  const primary = multi ? lines[0]!.text : value;
   const card = `bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 relative overflow-hidden rounded-xl p-4 flex items-start gap-3 shadow-sm min-w-0 ${className ?? ""}`;
   // Spans (display:block) rather than divs so the same content is valid inside a <button>.
   const body = (
@@ -54,9 +63,20 @@ export function StatCard({
       </span>
       <span className="block min-w-0 flex-1">
         <span className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider uppercase leading-tight">{label}</span>
-        <span className={muted ? "block text-sm italic font-semibold leading-none mt-1 text-slate-400 dark:text-slate-500" : `block text-lg font-black leading-none mt-1 ${warn ? "text-amber-600 dark:text-amber-400" : c.value}`} data-value>
-          {value}
+        <span className={muted ? "block text-sm italic font-semibold leading-none mt-1 text-slate-400 dark:text-slate-500" : `block ${multi ? "text-2xl" : "text-lg"} font-black leading-none mt-1 tabular-nums break-words ${warn ? "text-amber-600 dark:text-amber-400" : c.value}`} data-value>
+          {primary}
         </span>
+        {multi && (
+          <span className="grid grid-cols-2 gap-x-5 mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800" data-currency-lines>
+            {lines.slice(1).map((line) => (
+              <span key={line.currency} className="flex items-baseline justify-between gap-2 text-[11.5px] leading-6" data-currency-line={line.currency}>
+                <span className="text-[9.5px] font-bold tracking-wider text-slate-400 dark:text-slate-500">{line.currency}</span>
+                <span className="font-semibold tabular-nums whitespace-nowrap text-slate-700 dark:text-slate-200">{stripCurrencyPrefix(line.text)}</span>
+              </span>
+            ))}
+            <span className="col-span-2 block text-[9.5px] leading-snug text-slate-400 dark:text-slate-500 mt-0.5">{lines.length} currencies · shown separately, never added</span>
+          </span>
+        )}
         {hint && <span className="block text-[10.5px] text-slate-400 dark:text-slate-500 mt-1 leading-snug">{hint}</span>}
         {onActivate && actionLabel && (
           <span className="block text-[10.5px] font-semibold text-[var(--nu-accent)] mt-1 leading-snug" data-card-action>

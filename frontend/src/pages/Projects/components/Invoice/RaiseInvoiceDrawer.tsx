@@ -45,10 +45,10 @@ import {
 import { InvoiceLineTable, type InvoiceLineRow } from "./InvoiceLineTable";
 import { InvoicePaymentDetailsModal } from "./InvoicePaymentDetailsModal";
 import { buildInvoicePaymentContext, invoiceHasRecordedPayment } from "./invoicePaymentDetails";
-import { amountsFromInr, getLineCurrency, getLineOriginalAmount, isForeignCurrency, roundToMinorUnit } from "./invoiceCurrency";
+import { amountsFromInr, convertToProjectCurrency, getLineCurrency, getLineOriginalAmount, getLineProjectCurrency, isForeignCurrency, projectCurrencyOf, roundToMinorUnit } from "./invoiceCurrency";
 import { useInvoiceGstChoice } from "./useInvoiceGstChoice";
 import { InvoiceGstSelector } from "./InvoiceGstSelector";
-import { formatIndianCurrency } from "../../../../utils/formatCurrency";
+import { projectMoney } from "../../../../utils/currencyDisplay";
 import { LumpSumMilestoneTable } from "./LumpSumMilestoneTable";
 
 interface Props {
@@ -148,9 +148,18 @@ export function RaiseInvoiceDrawer({
   // (editAmountValue below) is derived with the line's own recorded rate —
   // the same round(original x rate) the backend re-derives. Currency and rate
   // themselves are never editable. INR lines are unchanged.
+  // Multi-country: a line of a project in another country is edited in its invoice currency too, and its equivalent is in the PROJECT currency (never INR),
+  // derived with the line's own saved rate by the same exact conversion the server uses.
   const lineCurrency = existingLine ? getLineCurrency(existingLine) : "INR";
-  const isForeignLine = isForeignCurrency(lineCurrency);
+  const lineProjectCurrency = existingLine ? getLineProjectCurrency(existingLine) : projectCurrencyOf(project);
+  const isForeignLine = isForeignCurrency(lineCurrency, lineProjectCurrency);
   const foreignLineRate = existingLine?.exchangeRateToINR ?? 1;
+  const money = projectMoney(project);
+  const lineSelection = {
+    currency: lineCurrency,
+    exchangeRateToINR: foreignLineRate,
+    ...(lineProjectCurrency !== "INR" && { projectCurrency: lineProjectCurrency, exchangeRateText: String(foreignLineRate) }),
+  };
   const [editAmountInput, setEditAmountInput] = useState(
     existingLine ? String(isForeignLine ? getLineOriginalAmount(existingLine) : existingLine.invoiceAmountINR) : ""
   );
@@ -367,11 +376,13 @@ export function RaiseInvoiceDrawer({
   const editOriginalAmount = isForeignLine
     ? editAmountInput !== ""
       ? roundToMinorUnit(Number(editAmountInput) || 0, lineCurrency)
-      : (amountsFromInr(editCalculatedAmount, { currency: lineCurrency, exchangeRateToINR: foreignLineRate }).invoiceAmountOriginal ?? 0)
+      : (amountsFromInr(editCalculatedAmount, lineSelection).invoiceAmountOriginal ?? 0)
     : null;
   const editAmountValue =
     editOriginalAmount !== null
-      ? round(editOriginalAmount * foreignLineRate)
+      ? lineProjectCurrency !== "INR"
+        ? convertToProjectCurrency(editOriginalAmount, lineSelection)
+        : round(editOriginalAmount * foreignLineRate)
       : editAmountInput !== ""
         ? Number(editAmountInput)
         : editCalculatedAmount;
@@ -542,7 +553,8 @@ export function RaiseInvoiceDrawer({
             unitPriceINR: existingLine.unitPriceINR ?? item.unitPrice,
             calculatedAmountINR: editCalculatedAmount,
             invoiceAmountINR: editAmountValue,
-            ...(editOriginalAmount !== null && { invoiceAmountOriginal: editOriginalAmount }),
+            // A line in the project's own currency (not INR) keeps its amount in invoiceAmountOriginal too, so the saved amount is the one edited here.
+            ...(editOriginalAmount !== null ? { invoiceAmountOriginal: editOriginalAmount } : lineProjectCurrency !== "INR" ? { invoiceAmountOriginal: editAmountValue } : {}),
             commercialAdjustmentINR: editCommercialAdjustment,
             clientReference: clientReference.trim() || undefined,
             remarks: remarks.trim() || undefined,
@@ -879,14 +891,14 @@ export function RaiseInvoiceDrawer({
                   <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-3 border border-slate-200 dark:border-slate-800">
                     <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Unit Rate</p>
                     <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
-                      <MoneyValue value={item.unitPrice} />/{item.uom}
+                      <MoneyValue value={item.unitPrice} currency={lineProjectCurrency} />/{item.uom}
                     </p>
                   </div>
 
                   <div className="bg-white/80 dark:bg-slate-900/60 rounded-xl p-3 border border-slate-200 dark:border-slate-800 col-span-2 sm:col-span-1">
                     <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Work Order Value</p>
                     <p className="text-sm font-extrabold text-cyan-600 dark:text-cyan-400 mt-0.5">
-                      <MoneyValue value={item.totalPrice} />
+                      <MoneyValue value={item.totalPrice} currency={lineProjectCurrency} />
                     </p>
                   </div>
                 </div>
@@ -1037,6 +1049,7 @@ export function RaiseInvoiceDrawer({
                     selectedIds={isCreateMode ? selectedMilestoneIds : new Set(editLumpSumRows.map((row) => row.id))}
                     onToggle={toggleLumpSumMilestone}
                     disabled={!isCreateMode}
+                    currency={lineProjectCurrency}
                   />
                 )}
               </div>
@@ -1064,6 +1077,7 @@ export function RaiseInvoiceDrawer({
                   <InvoiceLineTable
                     rows={rows}
                     uom={item.uom}
+                    currency={lineProjectCurrency}
                     onQtyToBillChange={updateLineQty}
                     onInvoiceAmountChange={updateLineAmount}
                     onDescriptionChange={updateLineDescription}
@@ -1073,6 +1087,7 @@ export function RaiseInvoiceDrawer({
                   <InvoiceLineTable
                     rows={rows}
                     uom={item.uom}
+                    currency={lineProjectCurrency}
                     disabled={isViewMode}
                     onQtyToBillChange={(_key, qty) => setEditQtyInput(qty === 0 ? "" : String(qty))}
                     onInvoiceAmountChange={(_key, amount) => setEditAmountInput(amount === 0 ? "" : String(amount))}
@@ -1082,7 +1097,7 @@ export function RaiseInvoiceDrawer({
                             value: editAmountInput,
                             onChange: setEditAmountInput,
                             currency: lineCurrency,
-                            inrEquivalentLabel: `${formatIndianCurrency(editAmountValue)} @ ${foreignLineRate}`,
+                            inrEquivalentLabel: `${money.exact(editAmountValue)} @ ${foreignLineRate}`,
                           }
                         : undefined
                     }
@@ -1115,21 +1130,21 @@ export function RaiseInvoiceDrawer({
                 <div className="bg-white/80 dark:bg-slate-900/80 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Base System Total</p>
                   <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums">
-                    <MoneyValue value={isLumpSum ? (isCreateMode ? lumpSumRows.filter(r => !r.alreadyInvoiced && selectedMilestoneIds.has(r.id)).reduce((sum, r) => sum + r.invoiceAmount, 0) : editLumpSumRows.reduce((sum, r) => sum + r.invoiceAmount, 0)) : rows.reduce((sum, r) => sum + r.calculatedAmount, 0)} />
+                    <MoneyValue value={isLumpSum ? (isCreateMode ? lumpSumRows.filter(r => !r.alreadyInvoiced && selectedMilestoneIds.has(r.id)).reduce((sum, r) => sum + r.invoiceAmount, 0) : editLumpSumRows.reduce((sum, r) => sum + r.invoiceAmount, 0)) : rows.reduce((sum, r) => sum + r.calculatedAmount, 0)} currency={lineProjectCurrency} />
                   </p>
                 </div>
 
                 <div className="bg-white/80 dark:bg-slate-900/80 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Commercial Adjustment</p>
                   <p className="text-base font-extrabold text-slate-700 dark:text-slate-300 mt-0.5 tabular-nums">
-                    <MoneyValue value={isLumpSum ? 0 : rows.reduce((sum, r) => sum + r.commercialAdjustment, 0)} />
+                    <MoneyValue value={isLumpSum ? 0 : rows.reduce((sum, r) => sum + r.commercialAdjustment, 0)} currency={lineProjectCurrency} />
                   </p>
                 </div>
 
                 <div className="bg-white/90 dark:bg-slate-900/90 p-3.5 rounded-xl border border-blue-300 dark:border-cyan-800">
                   <p className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-cyan-400">Final Invoice Amount</p>
                   <p className="text-lg font-black text-blue-700 dark:text-cyan-300 mt-0.5 tabular-nums">
-                    <MoneyValue value={isLumpSum ? (isCreateMode ? lumpSumRows.filter(r => !r.alreadyInvoiced && selectedMilestoneIds.has(r.id)).reduce((sum, r) => sum + r.invoiceAmount, 0) : editLumpSumRows.reduce((sum, r) => sum + r.invoiceAmount, 0)) : rows.reduce((sum, r) => sum + r.currentInvoiceAmount, 0)} />
+                    <MoneyValue value={isLumpSum ? (isCreateMode ? lumpSumRows.filter(r => !r.alreadyInvoiced && selectedMilestoneIds.has(r.id)).reduce((sum, r) => sum + r.invoiceAmount, 0) : editLumpSumRows.reduce((sum, r) => sum + r.invoiceAmount, 0)) : rows.reduce((sum, r) => sum + r.currentInvoiceAmount, 0)} currency={lineProjectCurrency} />
                   </p>
                 </div>
               </div>

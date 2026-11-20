@@ -228,6 +228,18 @@ export function findConflictingLineForMilestone(
  * excludeLineId lets an UPDATE re-check without double-counting its own
  * pre-update row.
  */
+/**
+ * Multi-country invoice currency (Phase 5): the same sum as below, in the PROJECT currency, for a non-INR project. Cancelled lines are excluded and the line
+ * being edited is left out, exactly like the INR sum. Returned as the exact decimal text of the column (never a float).
+ */
+export async function sumInvoicedProjectAmountForQuantityItem(quantityItemId: string, excludeLineId?: string, client: Client = prisma): Promise<{ toFixed(places: number): string }> {
+  const result = await client.invoiceLine.aggregate({
+    where: { quantityItemId, status: { not: "Cancelled" }, ...(excludeLineId ? { id: { not: excludeLineId } } : {}) },
+    _sum: { invoiceAmountProject: true },
+  });
+  return result._sum.invoiceAmountProject ?? { toFixed: (places: number) => (0).toFixed(places) };
+}
+
 export async function sumInvoicedAmountForQuantityItem(
   quantityItemId: string,
   excludeLineId?: string,
@@ -330,7 +342,7 @@ export function findFirstNonDraftLineCurrencyForProject(projectId: string, clien
 
 /** Any OTHER line of the same invoice (same project + invoiceNo) whose currency or rate differs — the per-invoice consistency rule. */
 export function findInvoiceSiblingWithDifferentCurrency(
-  params: { projectId: string; invoiceNo: string; currency: string; exchangeRateToINR: number; excludeLineId?: string | undefined },
+  params: { projectId: string; invoiceNo: string; currency: string; exchangeRateToINR: number; exchangeRateToProject?: string | undefined; excludeLineId?: string | undefined },
   client: Prisma.TransactionClient
 ) {
   return client.invoiceLine.findFirst({
@@ -338,9 +350,14 @@ export function findInvoiceSiblingWithDifferentCurrency(
       quantityItem: { projectId: params.projectId },
       invoiceNo: params.invoiceNo,
       ...(params.excludeLineId && { id: { not: params.excludeLineId } }),
-      OR: [{ currency: { not: params.currency } }, { exchangeRateToINR: { not: params.exchangeRateToINR } }],
+      OR: [
+        { currency: { not: params.currency } },
+        { exchangeRateToINR: { not: params.exchangeRateToINR } },
+        // A line of a non-INR project also has to agree on the project-currency rate (its INR-named rate is a constant 1).
+        ...(params.exchangeRateToProject !== undefined ? [{ exchangeRateToProject: { not: params.exchangeRateToProject } }] : []),
+      ],
     },
-    select: { currency: true, exchangeRateToINR: true },
+    select: { currency: true, exchangeRateToINR: true, exchangeRateToProject: true },
   });
 }
 

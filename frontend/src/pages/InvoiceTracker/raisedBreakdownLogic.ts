@@ -21,6 +21,7 @@ export interface BreakdownData {
   status: "idle" | "loading" | "error" | "ready";
   error: string | null;
   totalINR: number;
+  totalByCurrency: Record<string, number>;
   invoiceCount: number;
   projectCount: number;
   projects: RaisedBreakdownProject[];
@@ -29,7 +30,7 @@ export interface BreakdownData {
   moreError: string | null;
 }
 
-export const IDLE_BREAKDOWN: BreakdownData = { status: "idle", error: null, totalINR: 0, invoiceCount: 0, projectCount: 0, projects: [], hasMore: false, loadingMore: false, moreError: null };
+export const IDLE_BREAKDOWN: BreakdownData = { status: "idle", error: null, totalINR: 0, totalByCurrency: {}, invoiceCount: 0, projectCount: 0, projects: [], hasMore: false, loadingMore: false, moreError: null };
 
 /** The projects of every loaded page, in the server's order, each once (a project that moved between pages is not shown twice). */
 export function mergeProjectPages(pages: RaisedBreakdownPage[]): RaisedBreakdownProject[] {
@@ -61,6 +62,7 @@ export function deriveBreakdown(input: { enabled: boolean; answered: boolean; pa
     status: "ready",
     error: null,
     totalINR: head.totalINR,
+    totalByCurrency: head.totalByCurrency ?? {},
     invoiceCount: head.invoiceCount,
     projectCount: head.projectCount,
     projects: mergeProjectPages(pages),

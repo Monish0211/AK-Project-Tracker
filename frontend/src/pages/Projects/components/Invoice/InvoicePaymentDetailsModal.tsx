@@ -154,7 +154,10 @@ export function InvoicePaymentDetailsModal({ projectId, context, scopeNote, onCl
 
   // INR reference figures for a foreign invoice - DISPLAY ONLY. Settlement never sees any of it.
   const invoiceRate = invoice?.exchangeRateToINR ?? "";
-  const refRate = useMemo(() => (currency === "INR" ? null : referenceRate(invoiceRate, draft)), [currency, invoiceRate, draft]);
+  // A project in another country has no INR reference figures: the invoice's saved rate is to the PROJECT currency, so a rupee figure derived from it would be wrong.
+  const hasInrReference = context.projectCurrency === "INR";
+  const foreignRefRate = useMemo(() => (currency === "INR" ? null : referenceRate(invoiceRate, draft)), [currency, invoiceRate, draft]);
+  const refRate = hasInrReference ? foreignRefRate : null;
   const inrOf = (amount: string): string | null => {
     if (!refRate) return null;
     const value = inrEquivalent(amount, currency, refRate.rate);

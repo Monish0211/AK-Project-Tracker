@@ -5,7 +5,7 @@ import type { InvoiceMethod } from "../../../../types/InvoiceItem";
 import { Button } from "../../../../components/ui/Button";
 import { Badge } from "../../../../components/ui/Badge";
 import { Portal } from "../../../../components/ui/Portal";
-import { formatIndianCurrency } from "../../../../utils/formatCurrency";
+import { formatMoney, regionalCurrencyOf } from "../../../../utils/currencyDisplay";
 import {
   getInvoiceMethod,
   getInvoiceCycleListForRaise,
@@ -147,7 +147,7 @@ export function RaiseInvoiceCycleModal({ project, onClose, onContinue }: Props) 
                   <div className="text-right shrink-0">
                     <p className="text-[11px] text-[var(--nu-text-muted)]">{formatDate(cycle.invoiceDate)}</p>
                     <p className="text-[13px] font-bold text-[var(--nu-text)] tabular-nums">
-                      {isNew ? "—" : formatIndianCurrency(cycle.totalAmount)}
+                      {isNew ? "—" : formatMoney(cycle.totalAmount, regionalCurrencyOf(project))}
                     </p>
                   </div>
                 </button>

@@ -232,15 +232,15 @@ export async function assertProjectInvoicable(projectId: string): Promise<void> 
   const regionalCurrency = await getRegionalInvoiceProjectCurrency(projectId);
   if (regionalCurrency !== null) {
     throw new AppError(
-      `Invoicing is not available yet for a project whose currency is ${regionalCurrency}. The invoice module works in INR only, so an invoice here would produce wrong figures. India and legacy projects are not affected.`,
+      `Importing invoice lines is not available for a project whose currency is ${regionalCurrency}. Raise its invoices in the portal, where the project-currency amounts are calculated and checked.`,
       409
     );
   }
 }
 
 /**
- * The project's regional currency when it is NOT INR (MYR, OMR, AED, QAR), otherwise null. null means an INR or legacy project, whose invoices follow the original INR
- * rules untouched. Read from the project's stored regional currency, never from its PR number or the user's country.
+ * Multi-country invoice currency (Phase 5): the project's regional currency when it is NOT INR (MYR, OMR, AED, QAR), otherwise null. null means an INR or legacy
+ * project, whose invoices follow the original INR rules untouched. Read from the project's stored regional currency, never from its PR number or the user's country.
  */
 export async function getRegionalInvoiceProjectCurrency(projectId: string): Promise<string | null> {
   const regionalCurrency = await getProjectRegionalCurrency(projectId);

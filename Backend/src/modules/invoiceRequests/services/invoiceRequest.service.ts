@@ -420,6 +420,8 @@ export async function notifyInvoicePaidIfLinked(
     currency?: string | undefined;
     invoiceAmountOriginal?: number | null | undefined;
     exchangeRateToINR?: number | undefined;
+    /** Multi-country (Phase 5): the project's own currency when it is not INR; invoiceAmountINR / exchangeRateToINR are then in that currency. */
+    projectCurrency?: string | undefined;
   }
 ): Promise<void> {
   const invoiceRequest = await repo.findInvoiceRequestByFulfilledLineId(invoiceLineId);
@@ -445,6 +447,7 @@ export async function notifyInvoicePaidIfLinked(
       invoiceCurrency: invoiceLine.currency,
       invoiceAmountOriginal: invoiceLine.invoiceAmountOriginal,
       exchangeRateToINR: invoiceLine.exchangeRateToINR,
+      projectCurrency: invoiceLine.projectCurrency,
       invoicesUrl: projectInvoicesUrl(invoiceRequest.projectId),
     });
     const cc = buildInvoiceWorkflowCcList(invoiceRequest.ccMembers.map((m) => m.portalUser.email));

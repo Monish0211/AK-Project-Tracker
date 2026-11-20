@@ -192,6 +192,8 @@ export interface InvoicePaidEmailData {
   invoiceCurrency?: string | undefined;
   invoiceAmountOriginal?: number | null | undefined;
   exchangeRateToINR?: number | undefined;
+  /** Multi-country (Phase 5): the project's own currency when it is not INR; invoiceAmountINR / exchangeRateToINR are then in that currency. */
+  projectCurrency?: string | undefined;
   invoicesUrl: string;
 }
 
@@ -214,6 +216,8 @@ export interface InvoiceSharedEmailData {
   invoiceCurrency?: string | undefined;
   invoiceAmountOriginal?: number | null | undefined;
   exchangeRateToINR?: number | undefined;
+  /** Multi-country (Phase 5): the project's own currency when it is not INR; invoiceAmountINR / exchangeRateToINR are then in that currency. */
+  projectCurrency?: string | undefined;
   invoiceDateIso: string;
   invoicesUrl: string;
 }

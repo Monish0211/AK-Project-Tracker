@@ -10,7 +10,7 @@ import { dateInputError, isValidDateInput } from "../../../../utils/dateInputVal
 import { Select } from "../../../../components/ui/Select";
 import { Textarea } from "../../../../components/ui/Textarea";
 import { Portal } from "../../../../components/ui/Portal";
-import { formatIndianCurrency } from "../../../../utils/formatCurrency";
+import { projectMoney } from "../../../../utils/currencyDisplay";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 import {
   getInvoiceCyclesForProject,
@@ -29,7 +29,7 @@ import { InvoiceNumberField } from "./InvoiceNumberField";
 import { useInvoiceNumberField } from "./useInvoiceNumberField";
 import { useInvoiceGstChoice } from "./useInvoiceGstChoice";
 import { InvoiceGstSelector } from "./InvoiceGstSelector";
-import { amountsFromInr, formatInvoiceMoney, isForeignCurrency, sumAmountsFromInr } from "./invoiceCurrency";
+import { amountsFromInr, formatInvoiceMoney, isForeignCurrency, roundForProject, sumAmountsFromInr } from "./invoiceCurrency";
 
 interface Props {
   project: Project;
@@ -253,7 +253,10 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
   const { currency: invoiceCurrency, selection: currencySelection } = currencyState;
   // Invoice-level GST snapshot (Nov 2026): the GST rate / tax type — frozen from the saved snapshot, or chosen here for a first raise.
   const gstChoice = useInvoiceGstChoice(project, invoiceNo, invoiceCurrency);
-  const isForeign = isForeignCurrency(invoiceCurrency);
+  // Multi-country: the project's own currency (INR for India) - the amounts below are in it, shown with its symbol and decimals.
+  const projectCurrency = currencyState.projectCurrency;
+  const money = projectMoney(project);
+  const isForeign = isForeignCurrency(invoiceCurrency, projectCurrency);
 
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
@@ -296,7 +299,7 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
       baseRows.map((base) => {
         const currentQty = Number(qtyInputs[base.item.id]) || 0;
         const remainingQty = Math.max(round(base.orderQty - base.alreadyRaisedQty - currentQty), 0);
-        const invoiceValue = round(currentQty * base.unitRate);
+        const invoiceValue = roundForProject(currentQty * base.unitRate, projectCurrency);
 
         let error: string | null = null;
         if (currentQty < 0) {
@@ -307,10 +310,10 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
 
         return { ...base, currentQty, remainingQty, invoiceValue, error };
       }),
-    [baseRows, qtyInputs]
+    [baseRows, qtyInputs, projectCurrency]
   );
 
-  const totalInvoiceValue = round(rows.filter((row) => row.currentQty > 0).reduce((sum, row) => sum + row.invoiceValue, 0));
+  const totalInvoiceValue = roundForProject(rows.filter((row) => row.currentQty > 0).reduce((sum, row) => sum + row.invoiceValue, 0), projectCurrency);
   // Same shared rule + arithmetic as the other three workspaces and the printed
   // invoice: GST only for an INR invoice on a GST-applicable INR project.
   const gst = getGstBreakdown(project, totalInvoiceValue, invoiceCurrency, invoiceNo, gstChoice.selection);
@@ -319,10 +322,11 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
   const canSave = hasBillableRow && !hasRowError && invoiceDate.trim() !== "" && isValidDateInput(invoiceDate) && !!invoiceStatus && currencySelection !== null && numberField.hasValue && !numberField.checking && !gstChoice.blockerFor(invoiceStatus);
   // Foreign-currency invoice total — the sum of each line's own derived original amount, exactly what will be saved.
   // (OMR keeps its 3 decimals.)
-  const totalOriginalValue =
-    isForeign && currencySelection
-      ? sumAmountsFromInr(rows.filter((row) => row.currentQty > 0).map((row) => row.invoiceValue), currencySelection).original
-      : null;
+  const foreignTotals =
+    isForeign && currencySelection ? sumAmountsFromInr(rows.filter((row) => row.currentQty > 0).map((row) => row.invoiceValue), currencySelection) : null;
+  const totalOriginalValue = foreignTotals ? foreignTotals.original : null;
+  // For a project in another country, the same total converted to ITS currency: the figure that counts against the Work Order and the balance.
+  const convertedTotal = foreignTotals && projectCurrency !== "INR" ? foreignTotals.inr : null;
 
   const handleSave = async () => {
     if (!canSave || !currencySelection) return;
@@ -349,7 +353,7 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
           calculatedAmountINR: row.invoiceValue,
           // 0 for INR (unchanged); for a foreign currency, the sub-rupee rounding
           // between the INR value and the INR equivalent of its floored original.
-          commercialAdjustmentINR: round(amounts.invoiceAmountINR - row.invoiceValue),
+          commercialAdjustmentINR: roundForProject(amounts.invoiceAmountINR - row.invoiceValue, projectCurrency),
           clientReference: clientReference.trim() || undefined,
           remarks: remarks.trim() || undefined,
           status: invoiceStatus,
@@ -497,8 +501,8 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
                       <th className="nu-table-th px-3 py-2.5 text-center font-bold text-slate-700 dark:text-slate-200">Order Qty</th>
                       <th className="nu-table-th px-3 py-2.5 text-center font-bold text-slate-700 dark:text-slate-200">Already Raised Qty</th>
                       <th className="nu-table-th px-3 py-2.5 text-center w-32 font-bold text-slate-700 dark:text-slate-200">Current Invoice Qty</th>
-                      <th className="nu-table-th px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-200">Unit Rate (INR)</th>
-                      <th className="nu-table-th px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-200">Invoice Value (INR)</th>
+                      <th className="nu-table-th px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-200">Unit Rate ({projectCurrency})</th>
+                      <th className="nu-table-th px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-200">Invoice Value ({projectCurrency})</th>
                       <th className="nu-table-th px-3 py-2.5 text-center font-bold text-slate-700 dark:text-slate-200">Remaining Qty</th>
                     </tr>
                   </thead>
@@ -514,8 +518,8 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
                         uom={row.item.uom}
                         qtyValue={qtyInputs[row.item.id] ?? ""}
                         error={row.error}
-                        unitRateLabel={formatIndianCurrency(row.unitRate)}
-                        invoiceValueLabel={formatIndianCurrency(row.invoiceValue)}
+                        unitRateLabel={money.exact(row.unitRate)}
+                        invoiceValueLabel={money.exact(row.invoiceValue)}
                         remainingQtyLabel={formatIndianNumber(row.remainingQty)}
                         onQtyChange={handleQtyChange}
                       />
@@ -527,7 +531,7 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
                         Total Invoice Value
                       </td>
                       <td className="px-3 py-3 text-right font-black text-blue-700 dark:text-cyan-300 text-[14px] tabular-nums whitespace-nowrap">
-                        {formatIndianCurrency(totalInvoiceValue)}
+                        {money.exact(totalInvoiceValue)}
                       </td>
                       <td />
                     </tr>
@@ -538,7 +542,7 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
                             GST — {describeGstTreatment(gst)}
                           </td>
                           <td className="px-3 py-2 text-right font-extrabold text-[var(--nu-text)] tabular-nums whitespace-nowrap">
-                            {formatIndianCurrency(gst.gstAmount)}
+                            {money.exact(gst.gstAmount)}
                           </td>
                           <td />
                         </tr>
@@ -547,7 +551,7 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
                             Grand Total (incl. GST)
                           </td>
                           <td className="px-3 py-2 text-right font-black text-blue-700 dark:text-cyan-300 text-[14px] tabular-nums whitespace-nowrap">
-                            {formatIndianCurrency(gst.grandTotal)}
+                            {money.exact(gst.grandTotal)}
                           </td>
                           <td />
                         </tr>
@@ -556,11 +560,21 @@ export function InvoiceWorkspaceModal({ project, invoiceNo, onClose, onSave }: P
                     {totalOriginalValue !== null && (
                       <tr className="bg-slate-50/80 dark:bg-slate-800/50">
                         <td colSpan={6} className="px-3 py-2 text-right font-bold text-[var(--nu-text-muted)] uppercase text-[11px] tracking-wide">
-                          Invoice Total in {invoiceCurrency} (@ {currencySelection?.exchangeRateToINR})
+                          Invoice Total in {invoiceCurrency} (@ {currencySelection?.exchangeRateToINR}
+                          {projectCurrency !== "INR" ? ` ${projectCurrency}` : ""})
                         </td>
                         <td className="px-3 py-2 text-right font-extrabold text-[var(--nu-text)] tabular-nums whitespace-nowrap">
                           {formatInvoiceMoney(totalOriginalValue, invoiceCurrency)}
                         </td>
+                        <td />
+                      </tr>
+                    )}
+                    {convertedTotal !== null && (
+                      <tr className="bg-slate-50/80 dark:bg-slate-800/50">
+                        <td colSpan={6} className="px-3 py-2 text-right font-bold text-[var(--nu-text-muted)] uppercase text-[11px] tracking-wide">
+                          Equivalent in {projectCurrency} (counted against the Work Order)
+                        </td>
+                        <td className="px-3 py-2 text-right font-extrabold text-[var(--nu-text)] tabular-nums whitespace-nowrap">{money.exact(convertedTotal)}</td>
                         <td />
                       </tr>
                     )}

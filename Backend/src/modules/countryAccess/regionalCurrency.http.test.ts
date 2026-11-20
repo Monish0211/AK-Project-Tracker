@@ -319,19 +319,27 @@ describe("legacy and India projects are unchanged", () => {
   });
 });
 
-describe("invoicing a non-INR regional project is refused (never produces wrong INR amounts)", () => {
+describe("invoicing a non-INR regional project (never produces wrong INR amounts)", () => {
   const invoice = (itemId: string, no: string) =>
     call(admin, `/quantity/${itemId}/invoice-lines`, {
       method: "POST",
       body: { invoiceNo: no, invoiceDate: new Date("2026-11-20").toISOString(), quantityBilled: 1, invoiceAmountINR: 1000 },
     });
 
-  test("an Oman project refuses invoicing with a clear 409, so no wrong INR figure is ever created", async () => {
+  test("an Oman project refuses a rupee amount, and accepts an invoice in OMR whose INR-named columns stay 0", async () => {
     const p = await createProjectVia(admin, "Oman");
     const line = (await addLine(admin, p.id, { exchangeRate: 0.385 })).body.data;
-    const res = await invoice(line.id, `INV-${TAG}-OM`);
-    assert.equal(res.status, 409, JSON.stringify(res.body));
-    assert.match(String(res.body.message), /not available yet for a project whose currency is OMR/);
+    // Phase 5: invoicing is available for the project's own currency; what is refused is a rupee amount, which would be a wrong figure under an INR name.
+    const rupee = await invoice(line.id, `INV-${TAG}-OM`);
+    assert.equal(rupee.status, 400, JSON.stringify(rupee.body));
+    const own = await call(admin, `/quantity/${line.id}/invoice-lines`, {
+      method: "POST",
+      body: { invoiceNo: `INV-${TAG}-OM2`, invoiceDate: new Date("2026-11-20").toISOString(), quantityBilled: 0, invoiceAmountOriginal: 100 },
+    });
+    assert.equal(own.status, 201, JSON.stringify(own.body));
+    assert.equal(own.body.data.currency, "OMR");
+    assert.equal(own.body.data.invoiceAmountProject, 100);
+    assert.equal(own.body.data.invoiceAmountINR, 0);
   });
 
   test("an India project is not blocked by the guard", async () => {

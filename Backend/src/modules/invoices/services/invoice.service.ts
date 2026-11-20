@@ -12,7 +12,7 @@ import { isGenuinePaidTransition } from "../../invoiceRequests/invoiceRequestEma
 import { findProjectByIdAny } from "../../projects/repository/project.repository.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import { getMilestonePercentageById } from "../../milestones/services/milestone.service.js";
-import { assertProjectInvoicable, getQuantityItemById, listQuantityForProject } from "../../quantity/services/quantity.service.js";
+import { assertProjectInvoicable, getQuantityItemById, getRegionalInvoiceProjectCurrency, listQuantityForProject } from "../../quantity/services/quantity.service.js";
 // Sept 2026 — Reports/Dashboard Invoice Raised discrepancy fix. Reuses the
 // EXACT SAME authorized-project lookup and InvoiceLine query the
 // Dashboard's own Invoice Raised KPI already uses
@@ -48,6 +48,7 @@ import {
   getLinesByQuantityItemIds,
   setProjectInvoiceCurrencyIfUnset,
   sumInvoicedAmountForQuantityItem,
+  sumInvoicedProjectAmountForQuantityItem,
   updateLine as updateLineInRepository,
 } from "../repository/invoice.repository.js";
 import type { InvoiceAuditContext } from "../repository/invoiceStatusEvent.repository.js";
@@ -73,6 +74,14 @@ import {
   resolveUpdateAmounts,
 } from "../invoiceCurrency.rules.js";
 import { changedInvoiceContentFields } from "../invoiceEditPermission.rules.js";
+import {
+  assertWithinProjectCeiling,
+  computeProjectLineAmounts,
+  resolveProjectCurrencyCreateAmounts,
+  resolveProjectCurrencyUpdateAmounts,
+} from "../invoiceProjectCurrency.rules.js";
+import type { ResolvedProjectCurrencyAmounts } from "../invoiceProjectCurrency.rules.js";
+import { decimalToMinor, floatToMinor } from "../../invoicePayments/money.rules.js";
 
 type InvoiceLineRow = NonNullable<Awaited<ReturnType<typeof getLineById>>>;
 type IngestLineRow = IngestInvoiceLinesInput["lines"][number];
@@ -147,6 +156,67 @@ function lineMatchesPayload(existing: InvoiceLineRow, incoming: IngestLineRow): 
   );
 }
 
+function decimalOrNull(value: { toString(): string } | null | undefined): number | null {
+  return value === null || value === undefined ? null : Number(value.toString());
+}
+
+/**
+ * Multi-country invoice currency (Phase 5). For a project whose regional currency is not INR the invoice model is in the PROJECT currency, and the INR-named
+ * columns stay 0 / 1 / NULL. An INR or legacy project never reaches any of this. The rate comes in under its new name; for such a project a rupee figure or
+ * rupee rate is refused, so a stale client can never write one.
+ */
+function assertNoInrFieldsForRegionalProject(projectCurrency: string, input: { invoiceAmountINR?: number | undefined; exchangeRateToINR?: number | undefined }): void {
+  if (input.invoiceAmountINR !== undefined && input.invoiceAmountINR !== 0) {
+    throw new AppError(`This project's invoices are in ${projectCurrency}. Send the invoice amount as invoiceAmountOriginal; a rupee amount is not used.`, 400);
+  }
+  if (input.exchangeRateToINR !== undefined && input.exchangeRateToINR !== 1) {
+    throw new AppError(`This project's invoices use exchangeRateToProject (1 invoice currency = X ${projectCurrency}); an INR rate is not used.`, 400);
+  }
+}
+
+/** An INR or legacy project keeps its original rate field: a caller that sends the new name gets the same figure under the old one (1 USD = INR 95 either way). */
+/**
+ * What an invoice email states as the invoice's equivalent: for a line of a project whose own currency is not INR, its PROJECT-currency amount and rate (never the
+ * zeroed INR columns); for every other line exactly the INR figures, unchanged. The email formatter writes the former in the project currency.
+ */
+function emailAmountFigures(row: {
+  invoiceAmountINR: number;
+  exchangeRateToINR: number;
+  projectCurrency: string | null;
+  invoiceAmountProject: { toString(): string } | null;
+  exchangeRateToProject: { toString(): string } | null;
+}): { invoiceAmountINR: number; exchangeRateToINR: number; projectCurrency: string | undefined } {
+  if (row.projectCurrency && row.projectCurrency !== "INR") {
+    return { invoiceAmountINR: decimalOrNull(row.invoiceAmountProject) ?? 0, exchangeRateToINR: decimalOrNull(row.exchangeRateToProject) ?? 1, projectCurrency: row.projectCurrency };
+  }
+  return { invoiceAmountINR: row.invoiceAmountINR, exchangeRateToINR: row.exchangeRateToINR, projectCurrency: undefined };
+}
+
+function withLegacyRate<T extends { exchangeRateToINR?: number | undefined; exchangeRateToProject?: number | string | undefined }>(input: T): T {
+  if (input.exchangeRateToINR !== undefined || input.exchangeRateToProject === undefined || input.exchangeRateToProject === "") return input;
+  const rate = Number(input.exchangeRateToProject);
+  return Number.isFinite(rate) ? { ...input, exchangeRateToINR: rate } : input;
+}
+
+/** The Work Order ceiling for a non-INR project: project-currency amounts on both sides, exact integer minor units. */
+async function assertRegionalAmountWithinLimit(
+  tx: Prisma.TransactionClient,
+  quantityItemId: string,
+  workOrderValueRegional: number | null,
+  projectCurrency: string,
+  incomingMinor: bigint,
+  excludeLineId?: string
+): Promise<void> {
+  const currency = normalizeCurrency(projectCurrency);
+  const alreadyInvoiced = await sumInvoicedProjectAmountForQuantityItem(quantityItemId, excludeLineId, tx);
+  assertWithinProjectCeiling({
+    projectCurrency: currency,
+    workOrderValueMinor: floatToMinor(workOrderValueRegional ?? 0, currency),
+    alreadyInvoicedMinor: decimalToMinor(alreadyInvoiced, currency),
+    incomingMinor,
+  });
+}
+
 function toInvoiceLineDto(row: InvoiceLineRow, figures?: PaymentLineFigures, gstSnapshot?: InvoiceGstSnapshotDto): InvoiceLineDto {
   return {
     id: row.id,
@@ -165,11 +235,18 @@ function toInvoiceLineDto(row: InvoiceLineRow, figures?: PaymentLineFigures, gst
     currency: row.currency,
     exchangeRateToINR: row.exchangeRateToINR,
     invoiceAmountOriginal: row.invoiceAmountOriginal,
+    projectCurrency: row.projectCurrency,
+    exchangeRateToProject: row.exchangeRateToProject === null ? null : row.exchangeRateToProject.toString(),
+    invoiceAmountProject: decimalOrNull(row.invoiceAmountProject),
+    unitPriceProject: decimalOrNull(row.unitPriceProject),
+    calculatedAmountProject: decimalOrNull(row.calculatedAmountProject),
+    commercialAdjustmentProject: decimalOrNull(row.commercialAdjustmentProject),
     clientReference: row.clientReference,
     remarks: row.remarks,
     status: row.status,
     createdBy: row.createdBy,
     ...(figures && { recordedCashINR: figures.recordedCashINR, settledINR: figures.settledINR }),
+    ...(figures && figures.recordedCashProject !== undefined && { recordedCashProject: figures.recordedCashProject, settledProject: figures.settledProject }),
     ...(gstSnapshot && { gstSnapshot }),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -383,6 +460,7 @@ async function enforceInvoiceCurrencyRules(
     invoiceNo: string;
     currency: string;
     exchangeRateToINR: number;
+    exchangeRateToProject?: string | undefined;
     targetStatus: string;
     excludeLineId?: string | undefined;
   }
@@ -409,6 +487,7 @@ async function enforceInvoiceCurrencyRules(
       invoiceNo: params.invoiceNo,
       currency: lineCurrency,
       exchangeRateToINR: params.exchangeRateToINR,
+      ...(params.exchangeRateToProject !== undefined && { exchangeRateToProject: params.exchangeRateToProject }),
       excludeLineId: params.excludeLineId,
     },
     tx
@@ -514,8 +593,9 @@ export async function createInvoiceLineForQuantityItem(
 ): Promise<InvoiceLineDto> {
   const quantityItem = await getQuantityItemById(quantityItemId);
   await assertProjectAccessById(quantityItem.projectId, user);
-  // Multi-country: the invoice module is INR-only; refuse (409) for a project in another currency instead of producing wrong figures.
-  await assertProjectInvoicable(quantityItem.projectId);
+  // Multi-country invoice currency (Phase 5): a project whose regional currency is not INR follows the project-currency model; null (an INR or legacy project)
+  // keeps every rule below exactly as it was.
+  const regionalProjectCurrency = await getRegionalInvoiceProjectCurrency(quantityItem.projectId);
 
   // Never trusts a client-supplied name — always the current fullName for
   // the authenticated caller, so a line can never be attributed to someone
@@ -528,7 +608,19 @@ export async function createInvoiceLineForQuantityItem(
   // is taken: a request without currency fields resolves to INR with the
   // INR amount unchanged; a non-INR request has its INR equivalent derived here
   // (never trusted from the client). See invoiceCurrency.rules.ts.
-  const amounts = resolveCreateAmounts(input);
+  let regional: ResolvedProjectCurrencyAmounts | null = null;
+  if (regionalProjectCurrency !== null) {
+    assertNoInrFieldsForRegionalProject(regionalProjectCurrency, input);
+    regional = resolveProjectCurrencyCreateAmounts(regionalProjectCurrency, {
+      currency: input.currency,
+      exchangeRateToProject: input.exchangeRateToProject,
+      invoiceAmountOriginal: input.invoiceAmountOriginal,
+    });
+  }
+  // The INR-named amounts of a regional line are the constants the database CHECK requires (0 and 1): no regional figure is ever written under an INR name.
+  const amounts = regional
+    ? { currency: regional.currency, exchangeRateToINR: 1, invoiceAmountOriginal: regional.invoiceAmountOriginal, invoiceAmountINR: 0 }
+    : resolveCreateAmounts(withLegacyRate(input));
 
   // P2/P3/P13 — lock, re-check (milestone existence, financial ceiling,
   // then duplicate-milestone-billing), and write, all inside one
@@ -545,20 +637,35 @@ export async function createInvoiceLineForQuantityItem(
   const created = await prisma.$transaction(
     async (tx) => {
       await lockQuantityItemForInvoiceWrite(tx, quantityItemId);
-      await assertInvoiceAmountWithinLimit(tx, quantityItemId, quantityItem.woValue, amounts.invoiceAmountINR);
+      if (regional) {
+        await assertRegionalAmountWithinLimit(tx, quantityItemId, quantityItem.woValueRegional, regional.projectCurrency, regional.invoiceAmountProjectMinor);
+      } else {
+        await assertInvoiceAmountWithinLimit(tx, quantityItemId, quantityItem.woValue, amounts.invoiceAmountINR);
+      }
 
       if (input.milestoneId) {
         await lockProjectForMilestoneRead(tx, quantityItem.projectId);
       }
       const milestonePercent = await resolveMilestonePercent(input.milestoneId, tx);
 
-      const unitPriceINR = quantityItem.unitRateINR;
-      const { calculatedAmountINR, commercialAdjustmentINR } = computeAmounts({
-        quantityBilled: input.quantityBilled,
-        unitPriceINR,
-        milestonePercent,
-        invoiceAmountINR: amounts.invoiceAmountINR,
-      });
+      const unitPriceINR = regional ? null : quantityItem.unitRateINR;
+      const { calculatedAmountINR, commercialAdjustmentINR } = regional
+        ? { calculatedAmountINR: null, commercialAdjustmentINR: null }
+        : computeAmounts({
+            quantityBilled: input.quantityBilled,
+            unitPriceINR: quantityItem.unitRateINR,
+            milestonePercent,
+            invoiceAmountINR: amounts.invoiceAmountINR,
+          });
+      const projectAmounts = regional
+        ? computeProjectLineAmounts({
+            quantityBilled: input.quantityBilled,
+            unitRate: quantityItem.unitRateRegional,
+            milestonePercent,
+            invoiceAmountProjectMinor: regional.invoiceAmountProjectMinor,
+            projectCurrency: normalizeCurrency(regional.projectCurrency),
+          })
+        : null;
 
       if (input.milestoneId && input.quantityBilled === 0) {
         await lockMilestoneBillingForInvoiceWrite(tx, {
@@ -585,6 +692,7 @@ export async function createInvoiceLineForQuantityItem(
         invoiceNo: input.invoiceNo,
         currency: amounts.currency,
         exchangeRateToINR: amounts.exchangeRateToINR,
+        exchangeRateToProject: regional?.exchangeRateToProject,
         targetStatus: input.status,
       });
 
@@ -606,6 +714,16 @@ export async function createInvoiceLineForQuantityItem(
         currency: amounts.currency,
         exchangeRateToINR: amounts.exchangeRateToINR,
         invoiceAmountOriginal: amounts.invoiceAmountOriginal,
+        ...(regional && projectAmounts
+          ? {
+              projectCurrency: regional.projectCurrency,
+              exchangeRateToProject: regional.exchangeRateToProject,
+              invoiceAmountProject: regional.invoiceAmountProject,
+              unitPriceProject: projectAmounts.unitPriceProject,
+              calculatedAmountProject: projectAmounts.calculatedAmountProject,
+              commercialAdjustmentProject: projectAmounts.commercialAdjustmentProject,
+            }
+          : {}),
         clientReference: input.clientReference ?? null,
         remarks: input.remarks ?? null,
         status: input.status,
@@ -732,10 +850,26 @@ export async function updateInvoiceLine(
   // kept equal to it); for a non-INR line the INR equivalent is re-derived from
   // invoiceAmountOriginal x the line's own recorded rate. Throws on any
   // attempt to change the frozen currency/rate. See invoiceCurrency.rules.ts.
-  const amountChange = resolveUpdateAmounts(existing, input);
-
+  // A line is regional if IT was saved that way (its own projectCurrency), whatever the project's configuration is today: history is read as it was written.
+  const regionalLineCurrency = existing.projectCurrency;
+  const regionalChange = regionalLineCurrency
+    ? (assertNoInrFieldsForRegionalProject(regionalLineCurrency, input),
+      resolveProjectCurrencyUpdateAmounts(
+        {
+          currency: existing.currency,
+          projectCurrency: regionalLineCurrency,
+          exchangeRateToProject: existing.exchangeRateToProject?.toString() ?? "1",
+          invoiceAmountOriginal: existing.invoiceAmountOriginal,
+          invoiceAmountProject: existing.invoiceAmountProject?.toString() ?? "0",
+        },
+        { currency: input.currency, exchangeRateToProject: input.exchangeRateToProject, invoiceAmountOriginal: input.invoiceAmountOriginal }
+      ))
+    : null;
+  const amountChange = regionalChange ? {} : resolveUpdateAmounts(existing, withLegacyRate(input));
   const needsRecompute =
-    input.quantityBilled !== undefined || amountChange.invoiceAmountINR !== undefined || input.milestoneId !== undefined;
+    input.quantityBilled !== undefined ||
+    (regionalChange ? regionalChange.invoiceAmountProject !== undefined : (amountChange as { invoiceAmountINR?: number }).invoiceAmountINR !== undefined) ||
+    input.milestoneId !== undefined;
 
   // Re-check the currency lock only when this PATCH could newly conflict
   // with it: a status change (e.g. a Draft in a now-locked-out currency
@@ -774,12 +908,14 @@ export async function updateInvoiceLine(
       // Invoice-level GST snapshot: did this invoice already have a raised line before this write? (also takes the invoice-number lock)
       const hadRaisedBefore = (await countRaisedLines(tx, parentQuantityItem.projectId, existing.invoiceNo)) > 0;
 
-      if (amountChange.invoiceAmountINR !== undefined) {
+      if (regionalChange && regionalChange.invoiceAmountProjectMinor !== undefined && regionalLineCurrency) {
+        await assertRegionalAmountWithinLimit(tx, existing.quantityItemId, parentQuantityItem.woValueRegional, regionalLineCurrency, regionalChange.invoiceAmountProjectMinor, id);
+      } else if ((amountChange as { invoiceAmountINR?: number }).invoiceAmountINR !== undefined) {
         await assertInvoiceAmountWithinLimit(
           tx,
           existing.quantityItemId,
           parentQuantityItem.woValue,
-          amountChange.invoiceAmountINR,
+          (amountChange as { invoiceAmountINR: number }).invoiceAmountINR,
           id
         );
       }
@@ -788,9 +924,24 @@ export async function updateInvoiceLine(
       let calculatedAmountINR = existing.calculatedAmountINR;
       let commercialAdjustmentINR = existing.commercialAdjustmentINR;
 
-      if (needsRecompute) {
+      let projectRecompute: ReturnType<typeof computeProjectLineAmounts> | null = null;
+      if (needsRecompute && regionalChange && regionalLineCurrency) {
         const quantityBilled = input.quantityBilled ?? existing.quantityBilled;
-        const mergedInvoiceAmountINR = amountChange.invoiceAmountINR ?? existing.invoiceAmountINR;
+        if (mergedMilestoneId) {
+          await lockProjectForMilestoneRead(tx, parentQuantityItem.projectId);
+        }
+        const milestonePercent = await resolveMilestonePercent(mergedMilestoneId, tx);
+        projectRecompute = computeProjectLineAmounts({
+          quantityBilled,
+          unitRate: parentQuantityItem.unitRateRegional,
+          milestonePercent,
+          invoiceAmountProjectMinor: regionalChange.invoiceAmountProjectMinor ?? decimalToMinor(existing.invoiceAmountProject ?? { toFixed: (p: number) => (0).toFixed(p) }, normalizeCurrency(regionalLineCurrency)),
+          projectCurrency: normalizeCurrency(regionalLineCurrency),
+        });
+      }
+      if (needsRecompute && !regionalChange) {
+        const quantityBilled = input.quantityBilled ?? existing.quantityBilled;
+        const mergedInvoiceAmountINR = (amountChange as { invoiceAmountINR?: number }).invoiceAmountINR ?? existing.invoiceAmountINR;
 
         if (mergedMilestoneId) {
           await lockProjectForMilestoneRead(tx, parentQuantityItem.projectId);
@@ -842,6 +993,7 @@ export async function updateInvoiceLine(
           invoiceNo: nextInvoiceNo,
           currency: existing.currency,
           exchangeRateToINR: existing.exchangeRateToINR,
+          ...(existing.exchangeRateToProject !== null && { exchangeRateToProject: existing.exchangeRateToProject.toString() }),
           targetStatus: nextStatus,
           excludeLineId: id,
         });
@@ -858,10 +1010,19 @@ export async function updateInvoiceLine(
           ...(input.description !== undefined && { description: input.description }),
           ...(input.quantityBilled !== undefined && { quantityBilled: input.quantityBilled }),
           ...amountChange,
+          ...(regionalChange && regionalChange.invoiceAmountProject !== undefined && {
+            invoiceAmountOriginal: regionalChange.invoiceAmountOriginal,
+            invoiceAmountProject: regionalChange.invoiceAmountProject,
+          }),
           ...(input.clientReference !== undefined && { clientReference: input.clientReference }),
           ...(input.remarks !== undefined && { remarks: input.remarks }),
           ...(input.status !== undefined && { status: input.status }),
-          ...(needsRecompute && { unitPriceINR, calculatedAmountINR, commercialAdjustmentINR }),
+          ...(needsRecompute && !regionalChange && { unitPriceINR, calculatedAmountINR, commercialAdjustmentINR }),
+          ...(projectRecompute && {
+            unitPriceProject: projectRecompute.unitPriceProject,
+            calculatedAmountProject: projectRecompute.calculatedAmountProject,
+            commercialAdjustmentProject: projectRecompute.commercialAdjustmentProject,
+          }),
         },
         audit,
         tx
@@ -962,12 +1123,14 @@ export async function updateInvoiceLine(
 
     if (isGenuinePaidNow) {
       try {
+        const emailFigures = emailAmountFigures(updated);
         await notifyInvoicePaidIfLinked(updated.id, {
           invoiceNo: updated.invoiceNo,
-          invoiceAmountINR: updated.invoiceAmountINR,
+          invoiceAmountINR: emailFigures.invoiceAmountINR,
           currency: updated.currency,
           invoiceAmountOriginal: updated.invoiceAmountOriginal,
-          exchangeRateToINR: updated.exchangeRateToINR,
+          exchangeRateToINR: emailFigures.exchangeRateToINR,
+          projectCurrency: emailFigures.projectCurrency,
         });
       } catch (error) {
         console.error("[invoices] notifyInvoicePaidIfLinked failed:", error instanceof Error ? error.message : error);
@@ -1143,10 +1306,11 @@ async function notifyAndEmailSharedRecipients(
           projectTitle: project.projectTitle,
           client: project.client,
           invoiceNo: line.invoiceNo,
-          invoiceAmountINR: line.invoiceAmountINR,
+          invoiceAmountINR: emailAmountFigures(line).invoiceAmountINR,
           invoiceCurrency: line.currency,
           invoiceAmountOriginal: line.invoiceAmountOriginal,
-          exchangeRateToINR: line.exchangeRateToINR,
+          exchangeRateToINR: emailAmountFigures(line).exchangeRateToINR,
+          projectCurrency: emailAmountFigures(line).projectCurrency,
           invoiceDateIso: line.invoiceDate.toISOString(),
           invoicesUrl,
         });
@@ -1180,7 +1344,23 @@ export async function listInvoiceItemsForProject(
 
   const lines = await getLinesByQuantityItemIds(quantityItems.map((q) => q.id));
   // Invoice Payment workflow (Nov 2026) — recorded cash / settled amounts for lines whose invoice has a recorded payment.
-  const paymentFigures = await loadPaymentFigures(lines.map((row) => ({ id: row.id, projectId, invoiceNo: row.invoiceNo, status: row.status, invoiceAmountINR: row.invoiceAmountINR, invoiceAmountOriginal: row.invoiceAmountOriginal, currency: row.currency, exchangeRateToINR: row.exchangeRateToINR })));
+  // Contract value in the project's own currency: the INR columns for an INR / legacy project (exactly as before), the regional ones for any other.
+  const regionalProjectCurrency = await getRegionalInvoiceProjectCurrency(projectId);
+  const paymentFigures = await loadPaymentFigures(
+    lines.map((row) => ({
+      id: row.id,
+      projectId,
+      invoiceNo: row.invoiceNo,
+      status: row.status,
+      invoiceAmountINR: row.invoiceAmountINR,
+      invoiceAmountOriginal: row.invoiceAmountOriginal,
+      currency: row.currency,
+      exchangeRateToINR: row.exchangeRateToINR,
+      projectCurrency: row.projectCurrency,
+      exchangeRateToProject: row.exchangeRateToProject,
+      invoiceAmountProject: row.invoiceAmountProject,
+    }))
+  );
   // Invoice-level GST snapshot (Nov 2026): one batched read for every invoice of the project.
   const gstSnapshots = await findSnapshotsForInvoices(lines.map((row) => ({ projectId, invoiceNo: row.invoiceNo })));
   const linesByQuantityItemId = new Map<string, InvoiceLineRow[]>();
@@ -1198,8 +1378,8 @@ export async function listInvoiceItemsForProject(
     description: quantityItem.description,
     qty: quantityItem.woQty,
     uom: quantityItem.uom || "DAY",
-    unitPrice: quantityItem.unitRateINR,
-    totalPrice: quantityItem.woValue,
+    unitPrice: regionalProjectCurrency === null ? quantityItem.unitRateINR : (quantityItem.unitRateRegional ?? 0),
+    totalPrice: regionalProjectCurrency === null ? quantityItem.woValue : (quantityItem.woValueRegional ?? 0),
     invoices: (linesByQuantityItemId.get(quantityItem.id) ?? []).map((row) => {
       const snapshot = gstSnapshots.get(`${projectId}\u0000${normalizeInvoiceNo(row.invoiceNo)}`);
       return toInvoiceLineDto(row, paymentFigures.get(row.id), snapshot ? toSnapshotDto(snapshot) : undefined);
@@ -1380,7 +1560,11 @@ function toReportInvoiceLineDto(row: DashboardInvoiceLineRow, figures?: PaymentL
     currency: row.currency,
     exchangeRateToINR: row.exchangeRateToINR,
     invoiceAmountOriginal: row.invoiceAmountOriginal,
+    projectCurrency: row.projectCurrency ?? null,
+    exchangeRateToProject: row.exchangeRateToProject ?? null,
+    invoiceAmountProject: row.invoiceAmountProject ?? null,
     ...(figures && { recordedCashINR: figures.recordedCashINR, settledINR: figures.settledINR }),
+    ...(figures && figures.recordedCashProject !== undefined && { recordedCashProject: figures.recordedCashProject, settledProject: figures.settledProject }),
   };
 }
 

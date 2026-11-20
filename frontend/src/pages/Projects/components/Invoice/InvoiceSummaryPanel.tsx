@@ -8,8 +8,8 @@ import { Button } from "../../../../components/ui/Button";
 import { Badge, type Tone } from "../../../../components/ui/Badge";
 import { EmptyState } from "../../../../components/ui/EmptyState";
 import { MoneyValue, MoneyTooltip } from "../../../../components/ui/MoneyTooltip";
-import { formatBusinessINR } from "../../../../utils/formatCurrency";
-import { formatInvoiceMoney, getLineCurrency, getLineOriginalAmount, isForeignCurrency } from "./invoiceCurrency";
+import { currencySymbol, formatMoneyCompact, regionalCurrencyOf } from "../../../../utils/currencyDisplay";
+import { formatInvoiceMoney, getLineCurrency, getLineOriginalAmount, isForeignLine } from "./invoiceCurrency";
 import {
   NEW_INVOICE_CYCLE,
   getInvoiceCyclesForProject,
@@ -52,6 +52,8 @@ const formatDate = (value: string): string => {
  * Summarizes ONLY the selected invoice cycle with tight spacing and clean alignment.
  */
 export function InvoiceSummaryPanel({ project, isProjectLevelCycle, selectedCycle, onSelectCycle, onCreateNewCycle, onPrintInvoice }: Props) {
+  // Multi-country: the project's own currency (INR for India and legacy) - the totals below are in it.
+  const projectCurrency = regionalCurrencyOf(project);
   const cycleOptions = useMemo(() => {
     return getInvoiceCyclesForProject(project).filter((opt) => !opt.isNew);
   }, [project]);
@@ -137,7 +139,7 @@ export function InvoiceSummaryPanel({ project, isProjectLevelCycle, selectedCycl
   // figures above stay the INR equivalent, unchanged.
   const foreignInvoice = useMemo(() => {
     const first = activeLines[0]?.line;
-    if (!first || !isForeignCurrency(getLineCurrency(first))) return null;
+    if (!first || !isForeignLine(first)) return null;
     return {
       currency: getLineCurrency(first),
       total: activeLines.reduce((sum, l) => sum + getLineOriginalAmount(l.line), 0),
@@ -248,7 +250,7 @@ export function InvoiceSummaryPanel({ project, isProjectLevelCycle, selectedCycl
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Invoice Total</span>
             <span className="font-extrabold text-slate-900 dark:text-white tabular-nums">
-              <MoneyValue value={invoiceTotal} />
+              <MoneyValue value={invoiceTotal} currency={projectCurrency} />
             </span>
           </div>
 
@@ -262,10 +264,10 @@ export function InvoiceSummaryPanel({ project, isProjectLevelCycle, selectedCycl
                 : "text-slate-700 dark:text-slate-300"
             }`}>
               {commercialAdjustment === 0 ? (
-                "₹0"
+                `${currencySymbol(projectCurrency)}0`
               ) : (
-                <MoneyTooltip value={commercialAdjustment}>
-                  {commercialAdjustment < 0 ? "-" : "+"}{formatBusinessINR(Math.abs(commercialAdjustment))}
+                <MoneyTooltip value={commercialAdjustment} currency={projectCurrency}>
+                  {commercialAdjustment < 0 ? "-" : "+"}{formatMoneyCompact(Math.abs(commercialAdjustment), projectCurrency)}
                 </MoneyTooltip>
               )}
             </span>
@@ -276,7 +278,7 @@ export function InvoiceSummaryPanel({ project, isProjectLevelCycle, selectedCycl
               Final Invoice Amount
             </span>
             <span className="text-sm font-black text-blue-700 dark:text-cyan-300 tabular-nums">
-              <MoneyValue value={finalInvoiceAmount} />
+              <MoneyValue value={finalInvoiceAmount} currency={projectCurrency} />
             </span>
           </div>
           {foreignInvoice && (

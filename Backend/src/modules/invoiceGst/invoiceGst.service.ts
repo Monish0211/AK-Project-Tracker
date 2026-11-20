@@ -99,6 +99,8 @@ export async function syncInvoiceGstSnapshot(tx: Prisma.TransactionClient, param
   const currencies = new Set(lines.map((line) => normalizeCurrency(line.currency)));
   if (currencies.size !== 1) throw new AppError("This invoice has lines in more than one currency, so its GST cannot be calculated.", 409);
   const currency = [...currencies][0]!;
+  // The project's regional currency as the lines carry it (null for an INR / legacy project); it decides GST eligibility together with the invoice currency.
+  const projectCurrency = lines.map((line) => line.projectCurrency).find((value) => value !== null && value !== undefined) ?? null;
   let taxableMinor = 0n;
   for (const line of lines) taxableMinor += floatToMinor(line.invoiceAmountOriginal ?? line.invoiceAmountINR, currency);
 
@@ -109,7 +111,7 @@ export async function syncInvoiceGstSnapshot(tx: Prisma.TransactionClient, param
     let settings = settingsOf(existing);
     let amounts = computeSnapshotAmounts(taxableMinor, settings);
     if (!hadRaisedBefore && declaration) {
-      settings = settingsForNewSnapshot({ eligible: isGstEligible({ invoiceCurrency: currency }), declaration });
+      settings = settingsForNewSnapshot({ eligible: isGstEligible({ invoiceCurrency: currency, projectCurrency }), declaration });
       amounts = computeSnapshotAmounts(taxableMinor, settings);
       assertDeclaredGstMatches(declaration, amounts);
     }
@@ -131,7 +133,7 @@ export async function syncInvoiceGstSnapshot(tx: Prisma.TransactionClient, param
   // as the user declares its GST on a Draft (the choice is kept, so it is never asked for again at the raise).
   if (hadRaisedBefore || (!raisedNow && declaration === undefined)) return;
 
-  const eligible = isGstEligible({ invoiceCurrency: currency });
+  const eligible = isGstEligible({ invoiceCurrency: currency, projectCurrency });
   const settings = settingsForNewSnapshot({ eligible, declaration });
   const amounts = computeSnapshotAmounts(taxableMinor, settings);
   assertDeclaredGstMatches(declaration, amounts);

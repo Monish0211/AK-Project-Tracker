@@ -1,7 +1,7 @@
 import type { ChangeEvent } from "react";
 import { AlertTriangle, Trash2 } from "lucide-react";
 import { Input } from "../../../../components/ui/Input";
-import { formatBusinessINR } from "../../../../utils/formatCurrency";
+import { currencySymbol, formatMoneyCompact } from "../../../../utils/currencyDisplay";
 import { formatIndianNumber } from "../../../../utils/quantityCalculations";
 import { MoneyValue, MoneyTooltip } from "../../../../components/ui/MoneyTooltip";
 import type { CommercialLineBillingStatus } from "./InvoiceCalculations";
@@ -47,6 +47,8 @@ interface Props {
    * other column). Omitted — every existing caller — the table is unchanged.
    */
   foreignAmount?: { value: string; currency: string; onChange: (raw: string) => void; inrEquivalentLabel: string } | undefined;
+  /** The project's own currency (multi-country); omitted = INR, so India and legacy projects read exactly as before. */
+  currency?: string | undefined;
 }
 
 const STATUS_BADGE_STYLE: Record<CommercialLineBillingStatus, string> = {
@@ -74,7 +76,9 @@ export function InvoiceLineTable({
   onRemoveRow,
   disabled = false,
   foreignAmount,
+  currency,
 }: Props) {
+  const projectCurrency = currency ?? "INR";
   const handleQtyInput = (key: string) => (e: ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
     if (raw !== "" && !/^\d*\.?\d*$/.test(raw)) return;
@@ -179,15 +183,15 @@ export function InvoiceLineTable({
 
                   {/* Unit Rate */}
                   <td className="px-3 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                    <MoneyValue value={row.unitPrice} /> / {uom}
+                    <MoneyValue value={row.unitPrice} currency={projectCurrency} /> / {uom}
                   </td>
 
                   {/* System Amount = Qty to Invoice × Unit Rate */}
                   <td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                     {row.calculatedAmount > 0 ? (
-                      <MoneyValue value={row.calculatedAmount} />
+                      <MoneyValue value={row.calculatedAmount} currency={projectCurrency} />
                     ) : (
-                      <span className="text-slate-400 font-normal">₹0</span>
+                      <span className="text-slate-400 font-normal">{currencySymbol(projectCurrency)}0</span>
                     )}
                   </td>
 
@@ -208,7 +212,7 @@ export function InvoiceLineTable({
                             : handleAmountInput(row.key)
                         }
                         disabled={isRowDisabled || row.qtyToBill <= 0}
-                        placeholder={isRowDisabled ? "Disabled" : foreignAmount ? `${foreignAmount.currency} 0` : "₹ 0"}
+                        placeholder={isRowDisabled ? "Disabled" : foreignAmount ? `${foreignAmount.currency} 0` : `${currencySymbol(projectCurrency)} 0`}
                         invalid={!!row.error}
                         className={`text-right font-bold text-cyan-600 dark:text-cyan-400 disabled:bg-slate-100/60 dark:disabled:bg-slate-800/40 disabled:opacity-60 disabled:cursor-not-allowed ${
                           row.error ? "!border-red-500 !ring-red-500/20" : ""
@@ -223,8 +227,8 @@ export function InvoiceLineTable({
                     {hasCommercialAdjustment && (
                       <p className="mt-1 flex items-center justify-end gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400">
                         Commercial Adjustment{" "}
-                        <MoneyTooltip value={row.commercialAdjustment}>
-                          {row.commercialAdjustment < 0 ? "-" : "+"}{formatBusinessINR(Math.abs(row.commercialAdjustment))}
+                        <MoneyTooltip value={row.commercialAdjustment} currency={projectCurrency}>
+                          {row.commercialAdjustment < 0 ? "-" : "+"}{formatMoneyCompact(Math.abs(row.commercialAdjustment), projectCurrency)}
                         </MoneyTooltip>
                       </p>
                     )}

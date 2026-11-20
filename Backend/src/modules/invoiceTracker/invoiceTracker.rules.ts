@@ -167,7 +167,10 @@ export interface TrackerLine {
   invoiceNo: string;
   invoiceDate?: Date;
   status: string;
+  /** The invoice's amount in its PROJECT currency - rupees for India / legacy (the long-standing meaning), the project's own currency for any other country. */
   invoiceAmountINR: number;
+  /** The project's own currency ("INR" for India / legacy). */
+  projectCurrency?: string;
   createdAt?: Date;
 }
 
@@ -178,8 +181,10 @@ export interface InvoiceGroup<L extends TrackerLine = TrackerLine> {
   /** the number as first stored (display) */
   invoiceNo: string;
   status: string;
-  /** Sum of the invoice's non-cancelled lines. */
+  /** Sum of the invoice's non-cancelled lines, in the project currency (see TrackerLine.invoiceAmountINR). */
   amountINR: number;
+  /** The project's own currency; one project has one, so one invoice has one. */
+  projectCurrency: string;
   /** Earliest line `createdAt` — the invoice's workflow creation date (null only for lines without one). */
   createdAt: Date | null;
   /** Earliest USABLE line invoice date — null when no line has one (see the header). */
@@ -205,7 +210,7 @@ export function groupInvoices<L extends TrackerLine>(lines: L[]): InvoiceGroup<L
     const mapKey = `${line.projectId}\u0000${key}`;
     let g = groups.get(mapKey);
     if (!g) {
-      g = { projectId: line.projectId, key, invoiceNo: line.invoiceNo, status: "Draft", amountINR: 0, createdAt: null, invoiceDate: null, raisedAt: null, lines: [] };
+      g = { projectId: line.projectId, key, invoiceNo: line.invoiceNo, status: "Draft", amountINR: 0, projectCurrency: line.projectCurrency ?? "INR", createdAt: null, invoiceDate: null, raisedAt: null, lines: [] };
       groups.set(mapKey, g);
     }
     g.lines.push(line);
@@ -704,11 +709,22 @@ export interface NotRecorded {
  */
 export interface CollectedFigure {
   amountINR: number;
+  byCurrency: AmountsByCurrency;
   basis: "inferred_from_paid_status";
   paidInvoiceCount: number;
   partiallyPaidExcludedCount: number;
   needsReviewCount: number;
   note: string;
+}
+
+/**
+ * Money per currency. A report that spans several countries never adds one currency to another: every total is kept per currency, and the single-number
+ * fields beside them (the ...INR ones) are the rupee (India / legacy) part only - exactly what they were before other countries could invoice.
+ */
+export type AmountsByCurrency = Record<string, number>;
+
+export function addByCurrency(map: AmountsByCurrency, currency: string, amount: number): void {
+  map[currency] = round2((map[currency] ?? 0) + amount);
 }
 
 export interface MonthSummary {
@@ -722,13 +738,15 @@ export interface MonthSummary {
   requestCount: number;
   invoicesRaised: number;
   raisedAmountINR: number;
+  /** The same total per currency (INR included). */
+  raisedByCurrency: AmountsByCurrency;
   byStatus: InvoiceStatusCounts;
   requests: { open: number; completed: number };
   /** Open requests created in the period. They carry no amount, so none is invented. */
   pendingApproval: { count: number } & NotRecorded;
   collected: CollectedFigure;
   /** Outstanding among invoices CREATED in the period (the all-months figure is the Outstanding view's). */
-  outstanding: { scope: "selected_month"; knownAmountINR: number; invoiceCount: number; balanceNotRecordedCount: number };
+  outstanding: { scope: "selected_month"; knownAmountINR: number; knownByCurrency: AmountsByCurrency; invoiceCount: number; balanceNotRecordedCount: number };
 }
 
 export const PENDING_APPROVAL_NOTE = "Invoice requests carry only a free-text amount note, so no amount is recorded.";
@@ -752,6 +770,9 @@ export function summarizeRecords(invoices: InvoiceGroup[], requests: RequestLite
   const byStatus = emptyCounts();
   let invoicesRaised = 0;
   let raisedAmountINR = 0;
+  const raisedByCurrency: AmountsByCurrency = {};
+  const collectedByCurrency: AmountsByCurrency = {};
+  const outstandingByCurrency: AmountsByCurrency = {};
   let outstandingKnown = 0;
   let outstandingCount = 0;
   let notRecorded = 0;
@@ -770,15 +791,18 @@ export function summarizeRecords(invoices: InvoiceGroup[], requests: RequestLite
       if (invoiceTier(g, window) === 1) st.raisedInPeriodCount++;
       st.raisedAmountINR = round2(st.raisedAmountINR + g.amountINR);
       invoicesRaised++;
-      raisedAmountINR = round2(raisedAmountINR + g.amountINR);
+      if (g.projectCurrency === "INR") raisedAmountINR = round2(raisedAmountINR + g.amountINR);
+      addByCurrency(raisedByCurrency, g.projectCurrency, g.amountINR);
       const fin = financialsOf(g.status, g.amountINR, false, hasMixedLiveStatuses(g.lines));
       if (fin.paidBasis === "inferred_from_status") {
-        collectedAmount = round2(collectedAmount + (fin.amountPaidINR ?? 0));
+        if (g.projectCurrency === "INR") collectedAmount = round2(collectedAmount + (fin.amountPaidINR ?? 0));
+        addByCurrency(collectedByCurrency, g.projectCurrency, fin.amountPaidINR ?? 0);
         paidCount++;
       } else if (normalizeStatus(g.status) === "PartiallyPaid") partialExcluded++;
       else if (normalizeStatus(g.status) === "Paid") needsReview++;
       if (fin.balance === "full") {
-        outstandingKnown = round2(outstandingKnown + g.amountINR);
+        if (g.projectCurrency === "INR") outstandingKnown = round2(outstandingKnown + g.amountINR);
+        addByCurrency(outstandingByCurrency, g.projectCurrency, g.amountINR);
         outstandingCount++;
       } else if (fin.balance === "not_recorded") {
         notRecorded++;
@@ -811,11 +835,12 @@ export function summarizeRecords(invoices: InvoiceGroup[], requests: RequestLite
       requestCount: requests.length,
       invoicesRaised,
       raisedAmountINR,
+      raisedByCurrency,
       byStatus,
       requests: { open, completed },
       pendingApproval: { count: open, amountINR: null, note: PENDING_APPROVAL_NOTE },
-      collected: { amountINR: collectedAmount, basis: "inferred_from_paid_status", paidInvoiceCount: paidCount, partiallyPaidExcludedCount: partialExcluded, needsReviewCount: needsReview, note: COLLECTED_NOTE },
-      outstanding: { scope: "selected_month", knownAmountINR: outstandingKnown, invoiceCount: outstandingCount, balanceNotRecordedCount: notRecorded },
+      collected: { amountINR: collectedAmount, byCurrency: collectedByCurrency, basis: "inferred_from_paid_status", paidInvoiceCount: paidCount, partiallyPaidExcludedCount: partialExcluded, needsReviewCount: needsReview, note: COLLECTED_NOTE },
+      outstanding: { scope: "selected_month", knownAmountINR: outstandingKnown, knownByCurrency: outstandingByCurrency, invoiceCount: outstandingCount, balanceNotRecordedCount: notRecorded },
     },
     byProject,
   };
@@ -830,8 +855,10 @@ export interface OutstandingGroupInput extends InvoiceGroup {
 
 export interface OutstandingTotals {
   invoiceCount: number;
-  /** Sum of Raised invoices' amounts (known balances only). */
+  /** Sum of Raised invoices amounts (known balances only) - the rupee (India / legacy) part; see AmountsByCurrency. */
   knownOutstandingINR: number;
+  knownOutstandingByCurrency: AmountsByCurrency;
+  partiallyPaidInvoiceAmountByCurrency: AmountsByCurrency;
   partiallyPaidCount: number;
   /** Their invoice amounts — an upper bound reference, NOT an outstanding figure. */
   partiallyPaidInvoiceAmountINR: number;
@@ -839,24 +866,30 @@ export interface OutstandingTotals {
   oldestDays: number | null;
 }
 
-export function summarizeOutstanding(rows: { status: string; amountINR: number; daysOutstanding: number | null }[]): OutstandingTotals {
+export function summarizeOutstanding(rows: { status: string; amountINR: number; daysOutstanding: number | null; projectCurrency?: string }[]): OutstandingTotals {
   let known = 0;
   let partial = 0;
   let partialAmount = 0;
+  const knownByCurrency: AmountsByCurrency = {};
+  const partialByCurrency: AmountsByCurrency = {};
   let overdue = 0;
   let oldest: number | null = null;
   for (const r of rows) {
-    if (normalizeStatus(r.status) === "Raised") known = round2(known + r.amountINR);
-    else {
+    const currency = r.projectCurrency ?? "INR";
+    if (normalizeStatus(r.status) === "Raised") {
+      if (currency === "INR") known = round2(known + r.amountINR);
+      addByCurrency(knownByCurrency, currency, r.amountINR);
+    } else {
       partial++;
-      partialAmount = round2(partialAmount + r.amountINR);
+      if (currency === "INR") partialAmount = round2(partialAmount + r.amountINR);
+      addByCurrency(partialByCurrency, currency, r.amountINR);
     }
     if (r.daysOutstanding !== null) {
       if (r.daysOutstanding >= 30) overdue++;
       if (oldest === null || r.daysOutstanding > oldest) oldest = r.daysOutstanding;
     }
   }
-  return { invoiceCount: rows.length, knownOutstandingINR: known, partiallyPaidCount: partial, partiallyPaidInvoiceAmountINR: partialAmount, overdue30PlusCount: overdue, oldestDays: oldest };
+  return { invoiceCount: rows.length, knownOutstandingINR: known, knownOutstandingByCurrency: knownByCurrency, partiallyPaidCount: partial, partiallyPaidInvoiceAmountINR: partialAmount, partiallyPaidInvoiceAmountByCurrency: partialByCurrency, overdue30PlusCount: overdue, oldestDays: oldest };
 }
 
 // ── History presentation ────────────────────────────────────────────────────

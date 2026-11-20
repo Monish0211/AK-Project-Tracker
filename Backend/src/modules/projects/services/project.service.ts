@@ -143,10 +143,10 @@ export async function computeCommercialTotalsByProjectId(projectIds: string[]): 
 
   const woValueByProject = new Map(quantityTotals.map((row) => [row.projectId, row.woValue]));
   const woValueRegionalByProject = new Map(quantityTotals.map((row) => [row.projectId, row.woValueRegional]));
-  const linesByProject = new Map<string, { status: string; invoiceAmountINR: number }[]>();
+  const linesByProject = new Map<string, { status: string; invoiceAmountINR: number; projectCurrency?: string | null | undefined; invoiceAmountProject?: number | null | undefined }[]>();
   for (const line of invoiceLines) {
     const list = linesByProject.get(line.projectId) ?? [];
-    list.push({ status: line.status, invoiceAmountINR: line.invoiceAmountINR });
+    list.push({ status: line.status, invoiceAmountINR: line.invoiceAmountINR, projectCurrency: line.projectCurrency, invoiceAmountProject: line.invoiceAmountProject });
     linesByProject.set(line.projectId, list);
   }
   const openRequestProjectIdSet = new Set(openInvoiceRequestProjectIds.map((row) => row.projectId));

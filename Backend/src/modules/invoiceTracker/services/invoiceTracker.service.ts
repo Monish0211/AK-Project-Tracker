@@ -4,6 +4,7 @@ import { AppError } from "../../../shared/utils/AppError.js";
 import { env } from "../../../shared/utils/env.js";
 import { assertProjectReadAccessById, authorizedProjectReadWhere } from "../../../shared/utils/projectAccess.js";
 import { computeCommercialTotalsByProjectId } from "../../projects/services/project.service.js";
+import { effectiveRegionalCurrency } from "../../quantity/quantityCurrency.rules.js";
 import { findEventsForLines } from "../../invoices/repository/invoiceStatusEvent.repository.js";
 import { prNoCollator } from "../../weeklyNotifications/missingExpense.rules.js";
 import { daysFrom, zonedToday } from "../../weeklyNotifications/unpaidInvoice.rules.js";
@@ -11,6 +12,8 @@ import { totalPagesFor } from "../../weeklyNotifications/weeklyPaging.js";
 import * as repo from "../repository/invoiceTracker.repository.js";
 import {
   ALL_MONTHS,
+  addByCurrency,
+  type AmountsByCurrency,
   financialsOf,
   firstRaisedAt,
   groupInvoices,
@@ -224,7 +227,7 @@ export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerLi
        */
       latestRecord: latestOf.get(projectId) ?? null,
       latestRaised: latest
-        ? { invoiceNo: latest.invoiceNo, invoiceDate: dateOnly(latest.invoiceDate!), amountINR: latest.amountINR, status: latest.status, paymentStatus: paymentLabel(latest.status), inMonth: window ? inInvoiceMonth(latest.invoiceDate, window) : null }
+        ? { invoiceNo: latest.invoiceNo, invoiceDate: dateOnly(latest.invoiceDate!), amountINR: latest.amountINR, currency: latest.projectCurrency, status: latest.status, paymentStatus: paymentLabel(latest.status), inMonth: window ? inInvoiceMonth(latest.invoiceDate, window) : null }
         : null,
       olderOutstanding: { count: older.count, amountINR: older.amountINR, knownAmountINR: older.knownAmountINR, unknownCount: older.unknownCount, undatedCount: older.undatedCount },
     };
@@ -243,6 +246,10 @@ export async function getTrackerMonth(user: AccessTokenPayload, query: TrackerLi
         projectStatus: p.projectStatus,
         workOrderValueINR: c?.workOrderValueINR ?? 0,
         pendingDueINR: c?.pendingDueINR ?? 0,
+        /** The project's own currency, and its work order value and pending due in it (the INR figures above for India / legacy: identical). */
+        currency: effectiveRegionalCurrency(p.regionalCurrency),
+        workOrderValue: c?.workOrderValueRegional ?? 0,
+        pendingDue: c?.pendingDueRegional ?? 0,
         hasOpenInvoiceRequest: c?.hasOpenInvoiceRequest ?? false,
         /**
          * Which rule placed this row (the rules' ORDER OF PROJECTS). Month view: 1 = its displayed record belongs to an approval request
@@ -298,6 +305,8 @@ export async function getRaisedBreakdown(user: AccessTokenPayload, query: Tracke
         projectTitle: p.projectTitle,
         projectStatus: p.projectStatus,
         invoiceCount: sorted.length,
+        /** One project, one currency: this total is in it (rupees for India / legacy). */
+        currency: effectiveRegionalCurrency(p.regionalCurrency),
         totalINR: round2(sorted.reduce((sum, g) => sum + g.amountINR, 0)),
         invoices: sorted.map((g) => ({
           key: g.key,
@@ -313,11 +322,15 @@ export async function getRaisedBreakdown(user: AccessTokenPayload, query: Tracke
     })
     .sort((a, b) => b.totalINR - a.totalINR || prNoCollator.compare(a.prNo, b.prNo) || (a.projectId < b.projectId ? -1 : 1));
 
-  const totalINR = round2(all.reduce((sum, p) => sum + p.totalINR, 0));
+  // Never one number across currencies: the rupee part (India / legacy, as before) and the same total per currency.
+  const totalINR = round2(all.filter((p) => p.currency === "INR").reduce((sum, p) => sum + p.totalINR, 0));
+  const totalByCurrency: AmountsByCurrency = {};
+  for (const p of all) addByCurrency(totalByCurrency, p.currency, p.totalINR);
   const invoiceCount = all.reduce((sum, p) => sum + p.invoiceCount, 0);
   return {
     month: query.month,
     totalINR,
+    totalByCurrency,
     invoiceCount,
     projectCount: all.length,
     projects: all.slice((query.page - 1) * query.pageSize, query.page * query.pageSize),
@@ -397,7 +410,7 @@ export async function getProjectRecords(user: AccessTokenPayload, projectId: str
     const request = g.lines.map((l) => requestByLine.get(l.id)).find((r) => r !== undefined);
     const currencies = [...new Set(g.lines.map((l) => l.currency))];
     const statuses = [...new Set(g.lines.map((l) => normalizeStatus(l.status)))];
-    const foreign = currencies.length === 1 && currencies[0] !== "INR";
+    const foreign = currencies.length === 1 && currencies[0] !== g.projectCurrency;
     const first = g.lines[0]!;
     const mixed = statuses.length > 1;
     return {
@@ -413,6 +426,8 @@ export async function getProjectRecords(user: AccessTokenPayload, projectId: str
       /** Only an invoice dated in the selected month can be "raised this month"; a previous invoice never is. */
       raisedInPeriod: current && tier === 1,
       amountINR: g.amountINR,
+      /** The project's own currency: amountINR, the financials and the line amounts below are in it. */
+      projectCurrency: g.projectCurrency,
       currency: currencies.length === 1 ? currencies[0]! : "Mixed",
       originalAmount: foreign
         ? round2(g.lines.filter((l) => normalizeStatus(l.status) !== "Cancelled").reduce((s, l) => s + (l.invoiceAmountOriginal ?? l.invoiceAmountINR), 0))
@@ -455,7 +470,7 @@ export async function getProjectRecords(user: AccessTokenPayload, projectId: str
 
   return {
     month,
-    project,
+    project: { ...project, currency: effectiveRegionalCurrency(project.regionalCurrency) },
     invoices,
     /** Earlier-dated invoices of this project, newest first — shown for billing context, never counted in the month (see above). */
     previousInvoices,
@@ -529,6 +544,7 @@ export async function getOutstanding(user: AccessTokenPayload, query: Outstandin
         status: g.status,
         paymentStatus: paymentLabel(g.status),
         amountINR: g.amountINR,
+        currency: g.projectCurrency,
         amountPaidINR: fin.amountPaidINR,
         outstandingINR: fin.outstandingINR,
         balance: fin.balance,
@@ -542,7 +558,7 @@ export async function getOutstanding(user: AccessTokenPayload, query: Outstandin
     });
   rows.sort((a, b) => (b.daysOutstanding ?? -1) - (a.daysOutstanding ?? -1) || prNoCollator.compare(a.prNo, b.prNo) || (a.invoiceNo < b.invoiceNo ? -1 : a.invoiceNo > b.invoiceNo ? 1 : 0));
 
-  const totals = summarizeOutstanding(rows);
+  const totals = summarizeOutstanding(rows.map((r) => ({ status: r.status, amountINR: r.amountINR, daysOutstanding: r.daysOutstanding, projectCurrency: r.currency })));
   const items = rows.slice((query.page - 1) * query.pageSize, query.page * query.pageSize);
   return {
     asOf: now.toISOString(),

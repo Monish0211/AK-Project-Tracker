@@ -28,7 +28,9 @@ import {
   formatCurrencyCompact,
   formatHoursOverrun,
   grossProfit,
+  isProjectCurrencyLine,
   isUsableManagerName,
+  lineInvoiceAmount,
   pendingInvoicePercentage,
   projectCommercialTotals,
   projectDisplayName,
@@ -40,6 +42,14 @@ import {
 import type { DashboardProjectRow, InvoiceLineRow } from "../repository/dashboard.repository.js";
 import * as dashboardRepo from "../repository/dashboard.repository.js";
 import { withPaymentFigures } from "../../invoicePayments/services/paymentFigures.service.js";
+import { decimalPlacesFor } from "../../invoicePayments/money.rules.js";
+
+/** "paid ₹ 1,00,000" for an India / legacy line (unchanged); "paid OMR 231.000" for a line of a project in another currency - never a rupee sign on a regional amount. */
+export function paidAmountLabel(line: InvoiceLineRow): string {
+  if (!isProjectCurrencyLine(line)) return `₹ ${line.invoiceAmountINR.toLocaleString("en-IN")}`;
+  const digits = decimalPlacesFor(line.projectCurrency as string);
+  return `${line.projectCurrency} ${lineInvoiceAmount(line).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+}
 
 function linesByProject(lines: InvoiceLineRow[]): Map<string, InvoiceLineRow[]> {
   const map = new Map<string, InvoiceLineRow[]>();
@@ -625,7 +635,7 @@ export function buildActivity(
           id: `payment-${line.id}`,
           category: "Payment",
           title: "Payment Received",
-          description: `${project.client || project.prNo} paid ₹ ${line.invoiceAmountINR.toLocaleString("en-IN")} against ${line.invoiceNo}.`,
+          description: `${project.client || project.prNo} paid ${paidAmountLabel(line)} against ${line.invoiceNo}.`,
           projectRef: project.prNo,
           timestamp: isoTimestampOrEmpty(line.invoiceDate),
         }));

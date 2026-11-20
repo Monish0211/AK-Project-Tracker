@@ -3,7 +3,7 @@ import { AlertTriangle, Lock } from "lucide-react";
 import { Input } from "../../../../components/ui/Input";
 import { Select } from "../../../../components/ui/Select";
 import { CURRENCY_NAMES } from "../../../../constants/currencies";
-import { INVOICE_CURRENCY_OPTIONS, isForeignCurrency, normalizeInvoiceCurrency } from "./invoiceCurrency";
+import { INVOICE_CURRENCY_OPTIONS, exchangeRateLabel, isForeignCurrency, normalizeInvoiceCurrency } from "./invoiceCurrency";
 import type { InvoiceCurrencyState } from "./useInvoiceCurrencyState";
 
 const labelClass = "mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--nu-text-muted)]";
@@ -12,7 +12,7 @@ const disabledFieldClass = "bg-slate-100/70 dark:bg-slate-800/50 text-[var(--nu-
 /** Two header cells: Invoice Currency + Exchange Rate (any non-INR currency). Drop into an existing header grid. */
 export function InvoiceCurrencyFields({ state }: { state: InvoiceCurrencyState }) {
   const [rateTouched, setRateTouched] = useState(false);
-  const { currency, rateInput, setCurrency, setRateInput, rateError, isCurrencyFixed, isRateFixed, fixedReason } = state;
+  const { currency, rateInput, setCurrency, setRateInput, rateError, isCurrencyFixed, isRateFixed, fixedReason, projectCurrency, rateSuggestion } = state;
 
   return (
     <>
@@ -37,15 +37,15 @@ export function InvoiceCurrencyFields({ state }: { state: InvoiceCurrencyState }
           </p>
         )}
       </div>
-      {isForeignCurrency(currency) && (
+      {isForeignCurrency(currency, projectCurrency) && (
         <div>
-          <label className={labelClass}>Exchange Rate (1 {currency} = ₹) *</label>
+          <label className={labelClass}>{exchangeRateLabel(currency, projectCurrency)} *</label>
           <Input
             type="text"
             inputMode="decimal"
             value={rateInput}
             disabled={isRateFixed}
-            placeholder="INR per 1 unit"
+            placeholder={projectCurrency === "INR" ? "INR per 1 unit" : `${projectCurrency} per 1 ${currency}`}
             invalid={rateTouched && !!rateError}
             className={isRateFixed ? disabledFieldClass : undefined}
             onBlur={() => setRateTouched(true)}
@@ -55,6 +55,14 @@ export function InvoiceCurrencyFields({ state }: { state: InvoiceCurrencyState }
               setRateInput(raw);
             }}
           />
+          {rateSuggestion && !isRateFixed && (
+            <p className="mt-1 text-[10px] font-medium text-[var(--nu-text-muted)]">
+              Suggestion only - {rateSuggestion.basis}.{" "}
+              <button type="button" className="font-semibold underline" onClick={() => setRateInput(String(rateSuggestion.rate))}>
+                Use this rate
+              </button>
+            </p>
+          )}
           {rateError && (
             <p className="mt-1 flex items-center gap-1 text-[10px] font-medium text-[var(--nu-danger)]">
               <AlertTriangle size={10} className="shrink-0" />

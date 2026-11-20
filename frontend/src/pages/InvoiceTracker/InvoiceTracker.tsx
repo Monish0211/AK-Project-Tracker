@@ -7,7 +7,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { PROJECT_STATUS_OPTIONS } from "../../constants/projectStatus";
 import { ALL_MONTHS, fetchTrackerMonth, type TrackerMonthPage, type TrackerProjectRow } from "../../services/invoiceTrackerService";
-import { formatIndianCurrency } from "../../utils/formatCurrency";
+import { currencyLines, formatByCurrency, hasAmount, trackerMoney } from "./trackerFormat";
 import { PaginationBar, StateMessage } from "../Settings/components/weeklyEmails/WeeklyEmailPaging";
 import { usePagedRequest, usePageParams } from "../Settings/components/weeklyEmails/useWeeklyEmailPaging";
 import { InvoiceActionHost } from "./InvoiceActionHost";
@@ -37,7 +37,7 @@ const HERO_CSS = `
 // at least ~200px: 2 columns by default, 4 from 880px, 7 from 1472px of content width (1 column on a very narrow container).
 // The page root is the `@container` (see the root element below).
 const SUMMARY_GRID = "grid gap-3 grid-cols-1 @min-[560px]:grid-cols-2 @min-[1000px]:grid-cols-12";
-// Two tiers: the three money cards get the width, the four count cards are compact beneath them.
+// Two tiers: the three money cards (they carry one figure per currency) get the width, the four count cards are compact beneath them.
 // 12 columns from 1000px of content width: a money card spans 4 (>= 325px), a count card spans 3 (>= 241px).
 const MONEY_CARD = "@min-[1000px]:col-span-4";
 const COUNT_CARD = "@min-[1000px]:col-span-3";
@@ -56,14 +56,15 @@ export function TrackerSummaryCards({ data, query, refreshKey = 0, onRefresh }: 
   return (
     <div className={SUMMARY_GRID} data-summary data-scope={data.month}>
       {query ? (
-        <RaisedAmountCard className={`${MONEY_CARD} @min-[560px]:col-span-2`} value={formatIndianCurrency(s.raisedAmountINR)} totalINR={s.raisedAmountINR} hint={`Invoices dated in ${scope}`} query={query} refreshKey={refreshKey} onRefresh={onRefresh} />
+        <RaisedAmountCard className={`${MONEY_CARD} @min-[560px]:col-span-2`} value={formatByCurrency(s.raisedByCurrency, s.raisedAmountINR)} lines={currencyLines(s.raisedByCurrency, s.raisedAmountINR)} totalINR={s.raisedAmountINR} hint={`Invoices dated in ${scope}`} query={query} refreshKey={refreshKey} onRefresh={onRefresh} />
       ) : (
-        <StatCard className={`${MONEY_CARD} @min-[560px]:col-span-2`} label="Raised invoice amount" value={formatIndianCurrency(s.raisedAmountINR)} accent="emerald" icon={IndianRupee} hint={`Invoices dated in ${scope}`} />
+        <StatCard className={`${MONEY_CARD} @min-[560px]:col-span-2`} label="Raised invoice amount" value={formatByCurrency(s.raisedByCurrency, s.raisedAmountINR)} lines={currencyLines(s.raisedByCurrency, s.raisedAmountINR)} accent="emerald" icon={IndianRupee} hint={`Invoices dated in ${scope}`} />
       )}
       <StatCard
         className={MONEY_CARD}
         label="Amount collected"
-        value={formatIndianCurrency(s.collected.amountINR)}
+        value={formatByCurrency(s.collected.byCurrency, s.collected.amountINR)}
+        lines={currencyLines(s.collected.byCurrency, s.collected.amountINR)}
         accent="indigo"
         icon={Wallet}
         hint={`Inferred from Paid status — no payments are recorded: ${plural(s.collected.paidInvoiceCount, "Paid invoice")} at full amount${s.collected.partiallyPaidExcludedCount > 0 ? ` · ${fmt(s.collected.partiallyPaidExcludedCount)} Partially Paid not included (amount not recorded)` : ""}${s.collected.needsReviewCount > 0 ? ` · ${fmt(s.collected.needsReviewCount)} Paid need review` : ""}`}
@@ -71,10 +72,11 @@ export function TrackerSummaryCards({ data, query, refreshKey = 0, onRefresh }: 
       <StatCard
         className={MONEY_CARD}
         label={`Outstanding · invoices dated in ${data.month === ALL_MONTHS ? "all months" : "this month"}`}
-        value={formatIndianCurrency(s.outstanding.knownAmountINR)}
+        value={formatByCurrency(s.outstanding.knownByCurrency, s.outstanding.knownAmountINR)}
+        lines={currencyLines(s.outstanding.knownByCurrency, s.outstanding.knownAmountINR)}
         accent="amber"
         icon={Hourglass}
-        warn={s.outstanding.knownAmountINR > 0}
+        warn={hasAmount(s.outstanding.knownByCurrency) || s.outstanding.knownAmountINR > 0}
         hint={`${plural(s.outstanding.invoiceCount, "invoice")} · ${fmt(s.outstanding.balanceNotRecordedCount)} with balance not recorded · every month: Outstanding tab`}
       />
       <StatCard className={COUNT_CARD} label="Workflow records" value={fmt(s.recordCount)} accent="blue" icon={FolderKanban} hint={`${plural(s.invoiceCount, "invoice")} · ${plural(s.requestCount, "request")} · ${plural(s.projectCount, "project")}`} />
@@ -102,13 +104,13 @@ const warnPill = "inline-flex items-center gap-1 rounded-full border border-ambe
  */
 export function LatestAmountCell({ project }: { project: TrackerProjectRow }) {
   const l = project.latestRecord;
-  const warnings = olderOutstandingLines(project.olderOutstanding, formatIndianCurrency, true);
+  const warnings = olderOutstandingLines(project.olderOutstanding, (n) => trackerMoney(n, project.currency ?? "INR"), true);
   return (
     <div className="space-y-1 min-w-[10rem]" data-cell="latest-amount">
       {l ? (
         <div data-latest-record={l.reference} data-latest-kind={l.kind}>
           <div className={`text-[14px] font-extrabold leading-tight ${l.amountINR === null ? "text-[var(--nu-text-muted)]" : "text-[var(--nu-text)]"}`} data-latest-amount>
-            {l.amountINR === null ? <span aria-label="No invoice amount yet">—</span> : formatIndianCurrency(l.amountINR)}
+            {l.amountINR === null ? <span aria-label="No invoice amount yet">—</span> : trackerMoney(l.amountINR, project.currency ?? "INR")}
           </div>
           <div className="text-[11px] text-[var(--nu-text-muted)]" data-latest-caption>
             {latestRecordCaption(l)}
@@ -198,7 +200,7 @@ export function TrackerTable({ data, month, expanded, onToggle, renderChain }: {
                 </td>
                 <td className="p-3">{p.client}</td>
                 <td className="p-3">{p.projectTitle}</td>
-                <td className="p-3 text-right whitespace-nowrap font-semibold">{formatIndianCurrency(p.workOrderValueINR)}</td>
+                <td className="p-3 text-right whitespace-nowrap font-semibold">{trackerMoney(p.workOrderValue ?? p.workOrderValueINR, p.currency)}</td>
                 <td className="p-3">
                   <LatestAmountCell project={p} />
                 </td>
