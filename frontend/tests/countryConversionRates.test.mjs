@@ -165,14 +165,17 @@ test("the amount tooltip uses the amount's own currency: AED, OMR, MYR and QAR n
   assert.equal(moneyTooltipText(1_234.5, "OMR").exact, "OMR 1,234.500", "OMR keeps its three decimals");
 });
 
-test("every Dashboard KPI tile passes its currency to the tooltip; the INR-denominated invoice tiles keep the default", () => {
+test("every Dashboard KPI tile passes its currency to the tooltip; the Invoice Management tiles pass the project's own currency", () => {
   const kpi = src("pages/Dashboard/components/KPISection.tsx");
   const tiles = kpi.match(/<StatTile [^\n]*rawValue=/g) ?? [];
   assert.equal(tiles.length, 5);
   for (const tile of tiles) assert.ok(kpi.includes(`${tile}`), "tile found");
   assert.equal((kpi.match(/rawValue=\{[^}]+\} currency=\{kpiCurrency\}/g) ?? []).length, 5, "all five money tiles carry the KPI currency");
   assert.match(src("components/ui/StatTile.tsx"), /<MoneyTooltip value=\{rawValue\} currency=\{currency\}>/);
-  assert.ok(!/currency/.test(src("pages/Projects/components/Invoice/SummaryCards.tsx")), "invoice tiles are untouched (INR by default)");
+  // Nov 2026: invoice amounts are in the project's own currency since regional invoicing (4cf51c5), so the Invoice Management tiles now pass it
+  // through to the tooltip (INR for India / legacy, unchanged). Rendered behaviour is pinned in invoiceKpiOrder.test.mjs.
+  assert.match(src("pages/Projects/components/Invoice/SummaryCards.tsx"), /currency=\{tile\.currency\}/, "invoice tiles pass their currency");
+  assert.match(src("pages/Projects/components/Invoice/CommercialSummary.tsx"), /projectMoney\(project\)/, "invoice tiles use the project's currency");
 });
 
 test("the legacy-records review is a read-only report: it reads one endpoint, is open to every holder of the grant, and never offers to apply or pick a rate", async () => {
