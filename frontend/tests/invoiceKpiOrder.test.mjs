@@ -44,12 +44,12 @@ const fixture = (base) => ({
   ],
 });
 
-async function renderTiles() {
+async function renderTiles(overrides = {}) {
   const { createEmptyProject } = await load("/src/utils/createEmptyProject.ts");
   const { CommercialSummary } = await load("/src/pages/Projects/components/Invoice/CommercialSummary.tsx");
   const { calculateProjectKPIs } = await load("/src/pages/Projects/components/Invoice/InvoiceCalculations.ts");
   const { formatBusinessINR } = await load("/src/utils/formatCurrency.ts");
-  const project = fixture(createEmptyProject());
+  const project = { ...fixture(createEmptyProject()), ...overrides };
   const html = renderToStaticMarkup(React.createElement(CommercialSummary, { project }));
   // Each tile prints its label in an uppercase <p>; its value follows (inside a tooltip <span> + icon, hence the tag stripping) up to the next tile.
   const marks = [...html.matchAll(/uppercase tracking-wide truncate mb-0\.5">([^<]+)<\/p>/g)];
@@ -99,4 +99,29 @@ test("both screens render this one component: Edit Project (ProjectForm → Invo
   assert.match(src("pages/Projects/components/InvoiceProgressView.tsx"), /<InvoiceDashboard project=\{project\} readOnly \/>/);
   assert.match(src("pages/Projects/components/ProjectForm.tsx"), /<InvoiceCard/);
   assert.match(src("pages/Projects/ViewProject.tsx"), /<InvoiceProgressView project=\{project\} \/>/);
+});
+
+// Nov 2026 (production report on PRAD-2613, Abu Dhabi): the cards printed "₹ 3.2 L" for an AED 320,462.35 work order. The figures were already the
+// project's own currency; only the label and abbreviation were India's. The row now formats with projectMoney(project), as every other invoice screen does.
+test("a non-India project's cards use its own currency, never the rupee", async () => {
+  const { html, tiles } = await renderTiles({ prCategory: "Abu Dhabi", regionalCurrency: "AED" });
+  const { formatMoneyCompact } = await load("/src/utils/currencyDisplay.ts");
+  const byLabel = Object.fromEntries(tiles.map((t) => [t.label, t.value]));
+  assert.equal(byLabel["Work Order Value"], formatMoneyCompact(1_000_000, "AED"));
+  assert.equal(byLabel["Invoice Raised"], formatMoneyCompact(350_000, "AED"));
+  assert.equal(byLabel["Balance to Invoice"], formatMoneyCompact(650_000, "AED"));
+  assert.equal(byLabel["Payment Received"], formatMoneyCompact(100_000, "AED"));
+  assert.equal(byLabel["Outstanding"], formatMoneyCompact(250_000, "AED"));
+  for (const label of ["Work Order Value", "Invoice Raised", "Balance to Invoice", "Payment Received", "Outstanding"]) {
+    assert.match(byLabel[label], /AED/, `${label} shows AED`);
+  }
+  assert.ok(!html.includes("₹"), "no rupee anywhere in the row (tooltips included)");
+  assert.ok(!/L|Cr/.test(tiles.map((t) => t.value).join(" ")), "no Lakh / Crore abbreviation for an AED project");
+});
+
+test("an India project's cards are unchanged (rupee, Indian abbreviations)", async () => {
+  const { tiles, formatBusinessINR } = await renderTiles({ prCategory: "India", regionalCurrency: "INR" });
+  const byLabel = Object.fromEntries(tiles.map((t) => [t.label, t.value]));
+  assert.equal(byLabel["Work Order Value"], formatBusinessINR(1_000_000));
+  assert.equal(byLabel["Outstanding"], formatBusinessINR(250_000));
 });

@@ -7,8 +7,10 @@ export interface SummaryTileConfig {
   value: string;
   icon: ReactNode;
   tint?: StatTileTint;
-  /** Exact rupee amount `value` was rounded from — enables the exact-amount hover tooltip. */
+  /** Exact amount `value` was rounded from — enables the exact-amount hover tooltip. */
   rawValue?: number;
+  /** Currency of `rawValue` (INR when omitted), so the tooltip shows the project's own symbol, never the rupee for another country. */
+  currency?: string;
 }
 
 interface SummaryCardsProps {
@@ -27,7 +29,7 @@ export function SummaryCards({ tiles, className }: SummaryCardsProps) {
   return (
     <div className={className ?? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5"}>
       {tiles.map((tile) => (
-        <StatTile key={tile.key} label={tile.label} value={tile.value} icon={tile.icon} tint={tile.tint ?? "accent"} rawValue={tile.rawValue} />
+        <StatTile key={tile.key} label={tile.label} value={tile.value} icon={tile.icon} tint={tile.tint ?? "accent"} rawValue={tile.rawValue} currency={tile.currency} />
       ))}
     </div>
   );

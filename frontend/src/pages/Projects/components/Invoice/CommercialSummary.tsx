@@ -1,7 +1,7 @@
 import { Banknote, Receipt, AlertCircle, Wallet, PieChart, ListChecks } from "lucide-react";
 import type { Project } from "../../../../types/Project";
 import { calculateProjectKPIs } from "./InvoiceCalculations";
-import { formatBusinessINR } from "../../../../utils/formatCurrency";
+import { projectMoney } from "../../../../utils/currencyDisplay";
 import { SummaryCards } from "./SummaryCards";
 
 interface Props {
@@ -22,45 +22,53 @@ interface Props {
 export function CommercialSummary({ project }: Props) {
   const summary = calculateProjectKPIs(project);
   const totalActivities = project.invoiceItems?.length ?? 0;
+  // Every amount here is in the project's own currency (INR for India / legacy, AED, QAR, OMR, MYR... otherwise): label and abbreviate it as such.
+  // For an India project this is exactly formatBusinessINR, so India is unchanged.
+  const money = projectMoney(project);
 
   const tiles = [
     {
       key: "contract",
       label: "Work Order Value",
-      value: formatBusinessINR(summary.projectValueINR),
+      value: money.compact(summary.projectValueINR),
       rawValue: summary.projectValueINR,
+      currency: money.currency,
       icon: <Banknote size={16} />,
       tint: "accent" as const,
     },
     {
       key: "raised",
       label: "Invoice Raised",
-      value: formatBusinessINR(summary.totalInvoiceRaised),
+      value: money.compact(summary.totalInvoiceRaised),
       rawValue: summary.totalInvoiceRaised,
+      currency: money.currency,
       icon: <Receipt size={16} />,
       tint: "info" as const,
     },
     {
       key: "balance",
       label: "Balance to Invoice",
-      value: formatBusinessINR(summary.pendingDue),
+      value: money.compact(summary.pendingDue),
       rawValue: summary.pendingDue,
+      currency: money.currency,
       icon: <PieChart size={16} />,
       tint: "danger" as const,
     },
     {
       key: "received",
       label: "Payment Received",
-      value: formatBusinessINR(summary.totalPaymentReceived),
+      value: money.compact(summary.totalPaymentReceived),
       rawValue: summary.totalPaymentReceived,
+      currency: money.currency,
       icon: <Wallet size={16} />,
       tint: "success" as const,
     },
     {
       key: "outstanding",
       label: "Outstanding",
-      value: formatBusinessINR(summary.outstandingCollection),
+      value: money.compact(summary.outstandingCollection),
       rawValue: summary.outstandingCollection,
+      currency: money.currency,
       icon: <AlertCircle size={16} />,
       tint: "warning" as const,
     },
