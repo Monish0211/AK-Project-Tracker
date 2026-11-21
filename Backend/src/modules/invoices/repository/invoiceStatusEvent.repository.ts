@@ -20,7 +20,14 @@ import { prisma } from "../../../shared/utils/prismaClient.js";
 export type Tx = Prisma.TransactionClient;
 export type Client = Tx | typeof prisma;
 
-export type InvoiceEventType = "CREATED" | "STATUS_CHANGED" | "DELETED" | "IMPORTED";
+export type InvoiceEventType =
+  | "CREATED"
+  | "STATUS_CHANGED"
+  | "DELETED"
+  | "IMPORTED"
+  // Administrative Controls (Nov 2026): the operation (raise, or Draft -> Paid) completed WITHOUT its automatic email, by an Invoice
+  // Administration holder's choice. fromStatus = toStatus = the status after the operation, so it is never read as a status change.
+  | "EMAIL_SUPPRESSED";
 
 /** Which user-initiated operation produced the event. (No system/automated status writes exist today.) */
 export type InvoiceEventSource =
@@ -52,6 +59,8 @@ export interface PendingEvent {
   eventType: InvoiceEventType;
   fromStatus: string | null;
   toStatus: string | null;
+  /** Only for events that need more than a status pair (EMAIL_SUPPRESSED). */
+  details?: Prisma.InputJsonValue;
 }
 
 /** Runs `work` in the caller's transaction, or opens one when handed the plain client. */
@@ -94,6 +103,7 @@ export async function recordEvents(tx: Tx, audit: InvoiceAuditContext, events: P
         actorUserId: audit.actorUserId,
         actorName: audit.actorName,
         source: audit.source,
+        ...(e.details !== undefined && { details: e.details }),
       };
     }),
   });

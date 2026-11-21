@@ -157,6 +157,10 @@ export function findProjectRequestsDetailed(projectId: string, window: MonthWind
       assignedTo: { select: { fullName: true } },
       fulfilledInvoiceLineId: true,
       fulfilledInvoiceLine: { select: { invoiceNo: true, invoiceDate: true } },
+      raisedEmailStatus: true,
+      raisedEmailDetail: true,
+      finalEmailStatus: true,
+      finalEmailDetail: true,
     },
     orderBy: [{ createdAt: "desc" }, { id: "asc" }],
   });

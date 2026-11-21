@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ClipboardList, Eye, Inbox, Pencil, Plus, Send, Trash2 } from "lucide-react";
+import { ClipboardList, Eye, Inbox, Pencil, Plus, Send, ShieldAlert, Trash2 } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { usePmoToast } from "../../components/ui/usePmoToast";
@@ -9,6 +9,8 @@ import { useAuth } from "../../auth/authContext";
 import { canReviewPRRequests, canSubmitPRRequest } from "../../auth/permissions";
 import { deleteDraftPRRequest, getApprovalsQueue, getMyPRRequests, getUsersByRole, sendToAccounts } from "../../services/prRequestService";
 import type { PRRequest, PRRequestStatus, UserByRole } from "../../types/PRRequest";
+import { useAdminRights } from "../../hooks/useAdminRights";
+import { PR_APPROVAL_ADMINISTRATION } from "../../services/adminControlsService";
 
 type Tab = "mine" | "queue";
 
@@ -18,6 +20,7 @@ const STATUS_TONE: Record<PRRequestStatus, "neutral" | "warning" | "accent" | "s
   "Pending PMO Manager Approval": "accent",
   Approved: "success",
   Rejected: "danger",
+  Deleted: "neutral",
 };
 
 function formatDate(iso: string): string {
@@ -35,6 +38,7 @@ const PRRequests = () => {
   // A user can hold either or both; neither implies the other.
   const canSubmit = canSubmitPRRequest(user);
   const canReview = canReviewPRRequests(user);
+  const { holds } = useAdminRights();
 
   const tabParam = searchParams.get("tab");
   const [tab, setTab] = useState<Tab>(tabParam === "queue" && canReview ? "queue" : "mine");
@@ -126,11 +130,18 @@ const PRRequests = () => {
             <p className="text-[12px] text-[var(--nu-text-muted)]">Track your submissions and act on requests awaiting your approval.</p>
           </div>
         </div>
-        {canSubmit && (
-          <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => navigate("/pr-requests/new")}>
-            New PR Request
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {holds(PR_APPROVAL_ADMINISTRATION) && (
+            <Button variant="outline" size="sm" icon={<ShieldAlert size={14} />} onClick={() => navigate("/admin/pr-requests")}>
+              Administration
+            </Button>
+          )}
+          {canSubmit && (
+            <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => navigate("/pr-requests/new")}>
+              New PR Request
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="bg-[var(--nu-surface)] border border-[var(--nu-border)] rounded-[var(--nu-radius-lg)] p-1.5 shadow-[var(--nu-shadow-sm)] flex items-center gap-1.5 w-fit">
@@ -189,7 +200,14 @@ const PRRequests = () => {
                 // edit); once submitted, the requester's own view is
                 // read-only (PRRequestDetail.tsx) — only the assigned
                 // approver may edit a submitted request.
-                const detailPath = tab === "queue" || isDraft ? `/pr-requests/${row.id}/edit` : `/pr-requests/${row.id}`;
+                // Administrative Controls: a PR Approval Administration holder who is NOT the assigned approver of the current stage reviews it on
+                // the administrative review screen (acting on behalf of the approver) instead of hitting an access error. The assigned approver
+                // keeps the ordinary review; the server re-checks the right on every administrative call either way.
+                const assignedToMe =
+                  (row.status === "Pending Accounts Approval" && row.assignedAccountsApproverId === user?.id) ||
+                  (row.status === "Pending PMO Manager Approval" && row.assignedPmoManagerId === user?.id);
+                const reviewPath = tab === "queue" && !assignedToMe && holds(PR_APPROVAL_ADMINISTRATION) ? `/admin/pr-requests/${row.id}/review` : `/pr-requests/${row.id}/edit`;
+                const detailPath = tab === "queue" ? reviewPath : isDraft ? `/pr-requests/${row.id}/edit` : `/pr-requests/${row.id}`;
                 return (
                   <tr key={row.id} className="border-t border-[var(--nu-border)] hover:bg-[var(--nu-surface-alt)]">
                     <td className="px-4 py-2.5 font-mono cursor-pointer" onClick={() => navigate(detailPath)}>
@@ -221,7 +239,7 @@ const PRRequests = () => {
                           </>
                         )}
                         {tab === "queue" && (
-                          <Button variant="primary" size="sm" icon={<Eye size={13} />} onClick={() => navigate(`/pr-requests/${row.id}/edit`)}>
+                          <Button variant="primary" size="sm" icon={<Eye size={13} />} onClick={() => navigate(reviewPath)}>
                             Review
                           </Button>
                         )}

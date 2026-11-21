@@ -518,7 +518,9 @@ export async function syncInvoiceLinesWithApi(
   previousItems: InvoiceItem[],
   nextItems: InvoiceItem[],
   /** Invoice-level GST snapshot (Nov 2026): the user's rate / tax type per NEW invoice, keyed by normalizeInvoiceNoKey(invoiceNo). */
-  gstSelections?: Record<string, InvoiceGstSelection>
+  gstSelections?: Record<string, InvoiceGstSelection>,
+  /** Administrative Controls: raise without the automatic email (Invoice Administration holders; the server refuses it for anyone else). */
+  suppressEmail = false
 ): Promise<InvoiceItem[]> {
   const previousLines = new Map<string, InvoiceLine>();
   for (const item of previousItems) {
@@ -559,10 +561,16 @@ export async function syncInvoiceLinesWithApi(
         ...toInvoiceLinePayload(line),
         ...(gst && { gst }),
         invoiceIntent,
+        ...(suppressEmail && line.status === "Raised" ? { suppressEmail: true } : {}),
       });
     } else if (hasInvoiceLineChanged(existing, line)) {
       const gst = gstDeclarationFor(line, gstSelections, nextItems, hasSnapshot);
-      await apiClient.patch<BackendInvoiceLineDto>(`/invoice-lines/${id}`, { ...toInvoiceLinePayload(line), ...(gst && { gst }) });
+      const raisesNow = existing.status === "Draft" && line.status !== "Draft" && line.status !== "Cancelled";
+      await apiClient.patch<BackendInvoiceLineDto>(`/invoice-lines/${id}`, {
+        ...toInvoiceLinePayload(line),
+        ...(gst && { gst }),
+        ...(suppressEmail && raisesNow ? { suppressEmail: true } : {}),
+      });
     }
   }
 
@@ -575,4 +583,12 @@ export async function syncInvoiceLinesWithApi(
   }
 
   return fetchInvoiceItemsFromApi(projectId);
+}
+
+/**
+ * Administrative Controls - deletes an invoice that is no longer a Draft (Raised / Cancelled). Invoice Administration holders only, with a
+ * reason; the server archives the full row first and keeps the invoice number reserved. Paid / Partially Paid are always refused.
+ */
+export async function adminDeleteInvoiceLine(invoiceLineId: string, reason: string): Promise<void> {
+  await apiClient.delete<void>(`/invoice-lines/${invoiceLineId}`, { reason });
 }

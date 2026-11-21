@@ -109,6 +109,9 @@ export const createInvoiceLineSchema = z.object({
   status: z.enum(CREATE_INVOICE_LINE_STATUSES).default("Raised"),
 
   gst: gstDeclarationSchema.optional(),
+  // Administrative Controls (Nov 2026): "Raise invoice without sending email" - accepted ONLY from an Invoice Administration holder (403 otherwise).
+  // It only stops the automatic "Invoice Raised Successfully" email; numbering, amounts, GST and request fulfilment are unchanged.
+  suppressEmail: z.boolean().optional(),
 });
 
 export type CreateInvoiceLineInput = z.infer<typeof createInvoiceLineSchema>;
@@ -120,6 +123,9 @@ export type CreateInvoiceLineInput = z.infer<typeof createInvoiceLineSchema>;
  * not editable (identity, frozen at creation).
  */
 export const updateInvoiceLineSchema = z.object({
+  // Administrative Controls (Nov 2026): "Raise invoice without sending email" - accepted ONLY from an Invoice Administration holder (403 otherwise).
+  // It only stops the automatic "Invoice Raised Successfully" email; numbering, amounts, GST and request fulfilment are unchanged.
+  suppressEmail: z.boolean().optional(),
   invoiceNo: z.string().trim().min(1, "Invoice Number cannot be blank.").optional(),
   invoiceDate: dateInput("Invoice Date").optional(),
 
@@ -232,3 +238,9 @@ export const sendInvoiceLineToSchema = z.object({
   userIds: z.array(z.string().trim().min(1)).min(1, "Select at least one recipient."),
 });
 export type SendInvoiceLineToInput = z.infer<typeof sendInvoiceLineToSchema>;
+
+/** Administrative Controls: deleting a Raised (or otherwise no longer Draft) invoice needs a reason; a Draft delete needs none (unchanged). */
+export const deleteInvoiceLineSchema = z.object({
+  reason: z.string().trim().min(5, "A reason of at least 5 characters is required.").max(1000, "Reason cannot exceed 1000 characters.").optional(),
+});
+export type DeleteInvoiceLineInput = z.infer<typeof deleteInvoiceLineSchema>;

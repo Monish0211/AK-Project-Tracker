@@ -9,9 +9,37 @@ export type PRRequestStatus =
   | "Pending Accounts Approval"
   | "Pending PMO Manager Approval"
   | "Approved"
-  | "Rejected";
+  | "Rejected"
+  /** Administrative Controls: deleted by a PR Approval Administration holder (kept, hidden from ordinary lists). */
+  | "Deleted";
 
-export type PRRequestApprovalAction = "Submitted" | "AccountsApproved" | "PmoManagerApproved" | "Rejected";
+export type PRRequestApprovalAction =
+  | "Submitted"
+  | "Edited"
+  | "AccountsApproved"
+  | "PmoManagerApproved"
+  | "Rejected"
+  | "AdminEdited"
+  | "AdminAccountsApproved"
+  | "AdminPmoManagerApproved"
+  | "AdminRejected"
+  | "Reassigned"
+  | "AdminDeleted";
+
+/** How each history action reads on screen. */
+export const PR_ACTION_LABELS: Record<PRRequestApprovalAction, string> = {
+  Submitted: "Submitted",
+  Edited: "Edited by approver",
+  AccountsApproved: "Accounts approved",
+  PmoManagerApproved: "PMO Manager approved",
+  Rejected: "Rejected",
+  AdminEdited: "Edited by administrator",
+  AdminAccountsApproved: "Accounts stage approved by administrator",
+  AdminPmoManagerApproved: "PMO Manager stage approved by administrator",
+  AdminRejected: "Rejected by administrator",
+  Reassigned: "Approver reassigned by administrator",
+  AdminDeleted: "Deleted by administrator",
+};
 
 /** Mirrors Backend's prRequestProjectDataSchema exactly — the same General/Expense-Budget fields createProjectSchema validates, plus quantityItems[]/paymentMilestones[] (Backend's createQuantitySchema/createMilestoneSchema, unchanged). */
 export interface PRRequestQuantityItemData {
@@ -76,6 +104,9 @@ export interface PRRequestApprovalHistoryEntry {
   actorName: string;
   action: PRRequestApprovalAction;
   remarks: string | null;
+  /** The assigned approver an administrator acted for (null for ordinary actions). */
+  onBehalfOfUserId?: string | null;
+  onBehalfOfName?: string | null;
   createdAt: string;
 }
 
@@ -94,8 +125,19 @@ export interface PRRequest {
   rejectedByName: string | null;
   rejectionReason: string | null;
   rejectedAt: string | null;
+  deletedByName?: string | null;
+  deleteReason?: string | null;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** The admin register row: the request plus the request-data fields the register filters and shows. */
+export interface AdminPRRequest extends PRRequest {
+  prCategory: string;
+  prNo: string;
+  projectName: string;
+  customerName: string;
 }
 
 export interface PRRequestDetail extends PRRequest {

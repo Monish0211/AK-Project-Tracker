@@ -205,7 +205,8 @@ test("persist: an unreadable currency lock falls back to the value already known
 
 test("Edit Project → Invoices still gates Edit and Delete on the same rights, through the shared hook (no second implementation)", () => {
   const dash = readFileSync(fileURLToPath(new URL("../src/pages/Projects/components/Invoice/InvoiceDashboard.tsx", import.meta.url)), "utf8");
-  assert.match(dash, /useInvoiceLineActions\(\{ project, setProject, readOnly, onSynced:/);
+  // Administrative Controls added the "raise without email" options; it is still the one shared hook.
+  assert.match(dash, /useInvoiceLineActions\(\{\s*project,\s*setProject,\s*readOnly,[\s\S]*?onSynced:/);
   assert.match(dash, /onEdit=\{isReadOnly \|\| !canEditInvoice \? undefined : handleEditInvoiceLine\}/);
   assert.match(dash, /onDelete=\{isReadOnly \|\| !canDeleteInvoice \? undefined : handleDeleteInvoiceLine\}/);
   assert.match(dash, /onView=\{handleViewInvoiceLine\}/);

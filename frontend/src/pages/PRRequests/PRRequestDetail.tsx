@@ -9,10 +9,11 @@ import { ApiError } from "../../services/apiClient";
 import {
   accountsApprovePRRequest,
   getPRRequestDetail,
+  getPRRequestDetailForAdmin,
   pmoManagerApprovePRRequest,
   rejectPRRequest,
 } from "../../services/prRequestService";
-import type { PRRequestDetail, PRRequestStatus } from "../../types/PRRequest";
+import { PR_ACTION_LABELS, type PRRequestDetail, type PRRequestStatus } from "../../types/PRRequest";
 import { formatDateOnly } from "../../utils/dateOnly";
 import { ProjectTimeline } from "./ProjectTimeline";
 
@@ -22,6 +23,7 @@ const STATUS_TONE: Record<PRRequestStatus, "neutral" | "warning" | "accent" | "s
   "Pending PMO Manager Approval": "accent",
   Approved: "success",
   Rejected: "danger",
+  Deleted: "neutral",
 };
 
 function formatDateTime(iso: string): string {
@@ -49,7 +51,8 @@ const FIELD_LABELS: [string, string][] = [
 /** Fields of the list above that hold a date: stored as ISO timestamps, shown as "01 Nov 2026" (or "—"). */
 const DATE_FIELD_KEYS = new Set<string>(["workOrderDate"]);
 
-const PRRequestDetailPage = () => {
+/** `admin`: Administrative Controls view (PR Approval Administration holders) - any request, any status, read-only here; actions live on the register / review screen. */
+const PRRequestDetailPage = ({ admin = false }: { admin?: boolean }) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -64,7 +67,7 @@ const PRRequestDetailPage = () => {
   const load = () => {
     if (!id) return;
     setIsLoading(true);
-    getPRRequestDetail(id)
+    (admin ? getPRRequestDetailForAdmin(id) : getPRRequestDetail(id))
       .then(setRequest)
       .catch((error) => showToast({ type: "error", message: error instanceof ApiError ? error.message : "Could not load this PR Request." }))
       .finally(() => setIsLoading(false));
@@ -86,8 +89,8 @@ const PRRequestDetailPage = () => {
   // re-verifies identity + current status on every action call, so this
   // never needs to be perfectly authoritative, only close enough to show
   // the right buttons for the common case.
-  const canActOnAccountsStage = request.status === "Pending Accounts Approval" && request.assignedAccountsApproverId === user?.id;
-  const canActOnPmoStage = request.status === "Pending PMO Manager Approval" && request.assignedPmoManagerId === user?.id;
+  const canActOnAccountsStage = !admin && request.status === "Pending Accounts Approval" && request.assignedAccountsApproverId === user?.id;
+  const canActOnPmoStage = !admin && request.status === "Pending PMO Manager Approval" && request.assignedPmoManagerId === user?.id;
   const canAct = canActOnAccountsStage || canActOnPmoStage;
 
   const handleApprove = async () => {
@@ -129,7 +132,7 @@ const PRRequestDetailPage = () => {
     <div className="space-y-4 nu-fade-in max-w-3xl">
       <button
         type="button"
-        onClick={() => navigate(-1)}
+        onClick={() => (admin ? navigate("/admin/pr-requests") : navigate(-1))}
         className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[var(--nu-text-secondary)] hover:text-[var(--nu-text)] cursor-pointer"
       >
         <ArrowLeft size={14} /> Back
@@ -180,6 +183,16 @@ const PRRequestDetailPage = () => {
           </div>
         )}
 
+        {request.status === "Deleted" && (
+          <div className="p-3 rounded-[var(--nu-radius-md)] bg-[var(--nu-surface-alt)] border border-[var(--nu-border)] text-[12px]" data-testid="pr-deleted-banner">
+            <p className="font-bold text-[var(--nu-text)]">
+              Deleted by {request.deletedByName ?? "an administrator"}
+              {request.deletedAt ? ` on ${formatDateTime(request.deletedAt)}` : ""}
+            </p>
+            {request.deleteReason && <p className="text-[var(--nu-text-secondary)] mt-1">{request.deleteReason}</p>}
+          </div>
+        )}
+
         {request.status === "Approved" && request.createdProjectId && (
           <div className="p-3 rounded-[var(--nu-radius-md)] bg-[var(--nu-success-soft)] border border-[var(--nu-success)]/30 text-[12px] flex items-center justify-between">
             <span className="font-semibold text-[var(--nu-success)]">Project created successfully.</span>
@@ -225,7 +238,10 @@ const PRRequestDetailPage = () => {
             <div key={entry.id} className="flex items-start justify-between text-[12px] border-b border-[var(--nu-border)] pb-2.5 last:border-0">
               <div>
                 <p className="font-semibold text-[var(--nu-text)]">
-                  {entry.action} <span className="text-[var(--nu-text-muted)] font-normal">by {entry.actorName}</span>
+                  {PR_ACTION_LABELS[entry.action] ?? entry.action} <span className="text-[var(--nu-text-muted)] font-normal">by {entry.actorName}</span>
+                  {entry.onBehalfOfName && (
+                    <span className="text-[var(--nu-text-muted)] font-normal"> on behalf of {entry.onBehalfOfName}</span>
+                  )}
                 </p>
                 {entry.remarks && <p className="text-[var(--nu-text-secondary)] mt-0.5">{entry.remarks}</p>}
               </div>

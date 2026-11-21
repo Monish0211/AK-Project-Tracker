@@ -32,8 +32,10 @@ interface Props {
   onView: (item: InvoiceItem, line: InvoiceLine) => void;
   /** Omit to hide the Edit action entirely — e.g. in a read-only context. */
   onEdit?: (item: InvoiceItem, line: InvoiceLine) => void;
-  /** Omit to hide the Delete action entirely — e.g. in a read-only context. */
+  /** Omit to hide the Delete action entirely — e.g. in a read-only context. Draft lines only (Administrative Controls, D3). */
   onDelete?: (item: InvoiceItem, line: InvoiceLine) => void;
+  /** Administrative Controls: delete a Raised / Cancelled line with a reason (Invoice Administration holders). Omit to hide it. */
+  onAdminDelete?: (item: InvoiceItem, line: InvoiceLine, reason: string) => void;
   /** Update status for an entire invoice cycle / group. `gstSelection` accompanies the first raise of an invoice that GST applies to. */
   onUpdateInvoiceStatus?: (invoiceNo: string, newStatus: InvoiceLineStatus, gstSelection?: InvoiceGstSelection) => void;
   /** Opens the Print Invoice Document modal for this line's invoice cycle — the same isolated-iframe print pipeline used everywhere else, never a raw window.print(). */
@@ -96,6 +98,7 @@ export function InvoiceHistory({
   onView,
   onEdit,
   onDelete,
+  onAdminDelete,
   onUpdateInvoiceStatus,
   onPrintInvoice,
   onSendInvoiceTo,
@@ -110,6 +113,14 @@ export function InvoiceHistory({
   const [statusFilter, setStatusFilter] = useState<InvoiceLineStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<{ item: InvoiceItem; line: InvoiceLine } | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  // A Draft is deleted as before (Delete Invoice right). Anything raised: only through the administrative delete, never when paid (D3).
+  const deleteActionFor = (line: InvoiceLine): "draft" | "admin" | null => {
+    if (line.status === "Draft") return onDelete ? "draft" : null;
+    if (line.status === "Paid" || line.status === "PartiallyPaid") return null;
+    return onAdminDelete ? "admin" : null;
+  };
+  const isAdminDelete = deleteTarget !== null && deleteTarget.line.status !== "Draft";
   // Choosing "Paid" or "Partially Paid" never applies the status here - it opens the Record Payment popup, where recording the payment is the only way to reach either.
   const [paymentDetailsInvoiceNo, setPaymentDetailsInvoiceNo] = useState<string | null>(null);
   // Raising an invoice that GST applies to (and that has no GST snapshot yet) first asks for its rate and tax type, which are fixed on raise.
@@ -485,10 +496,13 @@ export function InvoiceHistory({
                             <Send size={15} />
                           </button>
                         )}
-                        {onDelete && (
+                        {deleteActionFor(row.line) && (
                           <button
                             type="button"
-                            onClick={() => setDeleteTarget({ item: row.item, line: row.line })}
+                            onClick={() => {
+                              setDeleteReason("");
+                              setDeleteTarget({ item: row.item, line: row.line });
+                            }}
                             title="Delete Invoice"
                             className="p-1.5 rounded-lg text-[var(--nu-danger)] hover:bg-[var(--nu-danger-soft)] transition"
                           >
@@ -532,14 +546,34 @@ export function InvoiceHistory({
       <ConfirmDialog
         open={deleteTarget !== null}
         variant="danger"
-        title="Delete Invoice?"
-        message={`Delete invoice ${deleteTarget?.line.invoiceNo ?? ""}? This cannot be undone.`}
+        title={isAdminDelete ? "Delete raised invoice? (Administrator)" : "Delete Invoice?"}
+        message={
+          isAdminDelete ? (
+            <span className="block space-y-2">
+              <span className="block">
+                Invoice {deleteTarget?.line.invoiceNo} is {deleteTarget?.line.status}. It will be removed from every figure; a full copy is archived and its
+                number stays reserved. Use Cancel instead if it should stay visible.
+              </span>
+              <textarea
+                aria-label="Reason for deleting this invoice"
+                placeholder="Reason (required, at least 5 characters)"
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                className="w-full rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] px-3 py-2 text-[12.5px] text-[var(--nu-text)] outline-none focus:ring-2 focus:ring-[var(--nu-accent)]/30 min-h-[64px]"
+              />
+            </span>
+          ) : (
+            `Delete invoice ${deleteTarget?.line.invoiceNo ?? ""}? This cannot be undone.`
+          )
+        }
         confirmLabel="Delete"
         cancelLabel="Cancel"
+        confirmDisabled={isAdminDelete && deleteReason.trim().length < 5}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => {
           if (!deleteTarget) return;
-          onDelete?.(deleteTarget.item, deleteTarget.line);
+          if (isAdminDelete) onAdminDelete?.(deleteTarget.item, deleteTarget.line, deleteReason.trim());
+          else onDelete?.(deleteTarget.item, deleteTarget.line);
           setDeleteTarget(null);
         }}
       />

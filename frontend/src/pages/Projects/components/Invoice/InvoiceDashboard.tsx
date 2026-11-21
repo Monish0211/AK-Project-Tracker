@@ -13,6 +13,10 @@ import { CommercialSummary } from "./CommercialSummary";
 import { InvoiceSummaryPanel } from "./InvoiceSummaryPanel";
 import { ActivitiesTable } from "./ActivitiesTable";
 import { useInvoiceLineActions } from "./useInvoiceLineActions";
+import { useAdminRights } from "../../../../hooks/useAdminRights";
+import { RaiseWithoutEmailSwitch } from "./RaiseWithoutEmail";
+import { useRaiseWithoutEmail } from "./useRaiseWithoutEmail";
+import { INVOICE_ADMINISTRATION } from "../../../../services/adminControlsService";
 import { InvoiceActionDrawer } from "./InvoiceActionDrawer";
 import { RaiseInvoiceCycleModal } from "./RaiseInvoiceCycleModal";
 import { InvoiceWorkspaceModal } from "./InvoiceWorkspaceModal";
@@ -65,7 +69,22 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
   const { showToast } = usePmoToast();
   const { user } = useAuth();
   // View / Edit / Delete / status-change and the save-to-server path are shared with Invoice Tracker (invoiceLineActions.ts).
-  const actions = useInvoiceLineActions({ project, setProject, readOnly, onSynced: () => refreshInvoiceRequestState() });
+  // Administrative Controls (Invoice Administration holders): "raise without email" - shared with Invoice Tracker (RaiseWithoutEmail.tsx).
+  // It is consumed only by a save that actually raised an invoice; ordinary edits and failed saves leave it on.
+  const { holds } = useAdminRights();
+  const isInvoiceAdmin = holds(INVOICE_ADMINISTRATION);
+  const raiseWithoutEmail = useRaiseWithoutEmail();
+  const actions = useInvoiceLineActions({
+    project,
+    setProject,
+    readOnly,
+    suppressEmail: raiseWithoutEmail.active,
+    onSuppressedRaise: raiseWithoutEmail.consume,
+    onSynced: () => refreshInvoiceRequestState(),
+  });
+  const draftInvoiceCount = new Set(
+    project.invoiceItems.flatMap((item) => item.invoices.filter((line) => line.status === "Draft").map((line) => line.invoiceNo.trim().toUpperCase()))
+  ).size;
   const { isReadOnly, canEditInvoice, canDeleteInvoice, persistProjectChange } = actions;
   // UI-courtesy layer only — the backend's requireApprovalPermission("Raise
   // Invoice") gate on POST /quantity/:quantityItemId/invoice-lines (and the
@@ -236,6 +255,9 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
     <div className="space-y-5">
       <CommercialSummary project={project} />
 
+      {/* Administrative Controls: Invoice Administration holders only (shared with Invoice Tracker). */}
+      {!isReadOnly && <RaiseWithoutEmailSwitch state={raiseWithoutEmail} draftInvoiceCount={draftInvoiceCount} />}
+
       <ActivitiesTable
         project={project}
         readOnly={isReadOnly}
@@ -330,6 +352,7 @@ export function InvoiceDashboard({ project, setProject, readOnly = false, initia
             onView={handleViewInvoiceLine}
             onEdit={isReadOnly || !canEditInvoice ? undefined : handleEditInvoiceLine}
             onDelete={isReadOnly || !canDeleteInvoice ? undefined : handleDeleteInvoiceLine}
+            onAdminDelete={isReadOnly || !isInvoiceAdmin ? undefined : (_item, line, reason) => void actions.adminDeleteRaisedInvoiceLine(line, reason)}
             onUpdateInvoiceStatus={isReadOnly ? undefined : handleUpdateInvoiceCycleStatus}
             onPaymentChanged={actions.reloadInvoicesFromServer}
             onPrintInvoice={handlePrintInvoice}

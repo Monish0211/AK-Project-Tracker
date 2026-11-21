@@ -8,6 +8,7 @@ import { InvoiceActionDrawer } from "../Projects/components/Invoice/InvoiceActio
 import { useInvoiceLineActions } from "../Projects/components/Invoice/useInvoiceLineActions";
 import { usePagedRequest } from "../Settings/components/weeklyEmails/useWeeklyEmailPaging";
 import type { TrackerAction } from "./InvoiceChain";
+import type { RaiseWithoutEmailState } from "../Projects/components/Invoice/useRaiseWithoutEmail";
 
 function Overlay({ children }: { children: React.ReactNode }) {
   return (
@@ -26,7 +27,7 @@ function Overlay({ children }: { children: React.ReactNode }) {
  * backend endpoints, approval gates and status-history recording apply. The project is loaded fresh from the API
  * first; nothing is opened against partial data.
  */
-export function InvoiceActionHost({ action, onClose, onSaving, onSettled }: { action: TrackerAction; onClose: () => void; onSaving: () => void; onSettled: () => void }) {
+export function InvoiceActionHost({ action, onClose, onSaving, onSettled, raiseWithoutEmail }: { action: TrackerAction; onClose: () => void; onSaving: () => void; onSettled: () => void; raiseWithoutEmail?: RaiseWithoutEmailState }) {
   const fetcher = useCallback(() => loadProjectInvoiceContext(action.projectId), [action.projectId]);
   const load = usePagedRequest(fetcher, `${action.projectId}:${action.lineId}:${action.mode}`);
 
@@ -60,20 +61,23 @@ export function InvoiceActionHost({ action, onClose, onSaving, onSettled }: { ac
       </Overlay>
     );
   }
-  return <HostInner initialProject={load.data} action={action} onClose={onClose} onSaving={onSaving} onSettled={onSettled} />;
+  return <HostInner initialProject={load.data} action={action} onClose={onClose} onSaving={onSaving} onSettled={onSettled} raiseWithoutEmail={raiseWithoutEmail} />;
 }
 
-function HostInner({ initialProject, action, onClose, onSaving, onSettled }: { initialProject: Project; action: TrackerAction; onClose: () => void; onSaving: () => void; onSettled: () => void }) {
+function HostInner({ initialProject, action, onClose, onSaving, onSettled, raiseWithoutEmail }: { initialProject: Project; action: TrackerAction; onClose: () => void; onSaving: () => void; onSettled: () => void; raiseWithoutEmail?: RaiseWithoutEmailState | undefined }) {
   const [project, setProject] = useState<Project>(initialProject);
   const item = project.invoiceItems.find((i) => i.id === action.quantityItemId);
   const line = item?.invoices.find((l) => l.id === action.lineId);
   const [confirmDelete, setConfirmDelete] = useState(action.mode === "delete");
+  const [deleteReason, setDeleteReason] = useState("");
 
   const actions = useInvoiceLineActions({
     project,
     setProject,
     onSaving,
     onSettled,
+    suppressEmail: raiseWithoutEmail?.active ?? false,
+    onSuppressedRaise: raiseWithoutEmail?.consume,
     initialDrawer: action.mode !== "delete" && item && line ? { item, mode: action.mode, existingLine: line } : null,
   });
 
@@ -102,22 +106,59 @@ function HostInner({ initialProject, action, onClose, onSaving, onSettled }: { i
     );
   }
 
+  // Administrative Controls (D3): only a Draft is deleted as before. A raised / cancelled invoice needs an Invoice Administration holder and a
+  // reason (archived, number kept); a paid one is never deleted. Same rules and dialog wording as Edit Project -> Invoices.
+  const isDraft = line.status === "Draft";
+  const isPaid = line.status === "Paid" || line.status === "PartiallyPaid";
+  const mayAdminDelete = !isDraft && !isPaid && (raiseWithoutEmail?.available ?? false);
+  const refused = !isDraft && !mayAdminDelete;
   return (
     <>
       {action.mode !== "delete" && <InvoiceActionDrawer project={project} actions={actions} />}
       <ConfirmDialog
         open={confirmDelete}
         variant="danger"
-        title="Delete Invoice?"
-        message={`Delete invoice ${line.invoiceNo}? This cannot be undone.`}
-        confirmLabel="Delete"
+        title={refused ? "This invoice cannot be deleted here" : mayAdminDelete ? "Delete raised invoice? (Administrator)" : "Delete Invoice?"}
+        message={
+          refused ? (
+            isPaid
+              ? `Invoice ${line.invoiceNo} is ${line.status}. A paid or partly paid invoice is never deleted; reverse the payment and correct its status first.`
+              : `Invoice ${line.invoiceNo} is ${line.status}. Only an Invoice Administration holder can delete a raised invoice. Use Cancel to void it instead.`
+          ) : mayAdminDelete ? (
+            <span className="block space-y-2">
+              <span className="block">
+                Invoice {line.invoiceNo} is {line.status}. It will be removed from every figure; a full copy is archived and its number stays reserved.
+                Use Cancel instead if it should stay visible.
+              </span>
+              <textarea
+                aria-label="Reason for deleting this invoice"
+                placeholder="Reason (required, at least 5 characters)"
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                className="w-full rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] px-3 py-2 text-[12.5px] text-[var(--nu-text)] outline-none focus:ring-2 focus:ring-[var(--nu-accent)]/30 min-h-[64px]"
+              />
+            </span>
+          ) : (
+            `Delete invoice ${line.invoiceNo}? This cannot be undone.`
+          )
+        }
+        confirmLabel={refused ? "Close" : "Delete"}
         cancelLabel="Cancel"
+        confirmDisabled={mayAdminDelete && deleteReason.trim().length < 5}
         onCancel={() => {
           setConfirmDelete(false);
           onClose();
         }}
         onConfirm={() => {
           setConfirmDelete(false);
+          if (refused) {
+            onClose();
+            return;
+          }
+          if (mayAdminDelete) {
+            void actions.adminDeleteRaisedInvoiceLine(line, deleteReason.trim()).finally(onClose);
+            return;
+          }
           actions.deleteInvoiceLine(item, line);
           onClose();
         }}

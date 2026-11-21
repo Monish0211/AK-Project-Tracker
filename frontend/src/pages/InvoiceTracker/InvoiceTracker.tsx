@@ -11,6 +11,8 @@ import { currencyLines, formatByCurrency, hasAmount, trackerMoney } from "./trac
 import { PaginationBar, StateMessage } from "../Settings/components/weeklyEmails/WeeklyEmailPaging";
 import { usePagedRequest, usePageParams } from "../Settings/components/weeklyEmails/useWeeklyEmailPaging";
 import { InvoiceActionHost } from "./InvoiceActionHost";
+import { RaiseWithoutEmailSwitch } from "../Projects/components/Invoice/RaiseWithoutEmail";
+import { useRaiseWithoutEmail } from "../Projects/components/Invoice/useRaiseWithoutEmail";
 import { InvoiceChain, type TrackerAction } from "./InvoiceChain";
 import { MonthSelect } from "./MonthSelect";
 import { OutstandingSection } from "./OutstandingView";
@@ -305,6 +307,9 @@ export default function InvoiceTracker() {
   const canMutate = canMutateData(user);
   const canEdit = canMutate && hasApprovalPermission(user, "Edit Invoice");
   const canDelete = canMutate && hasApprovalPermission(user, "Delete Invoice");
+  // Administrative Controls: the same "raise without email" option as Edit Project -> Invoices (one shared implementation). The Tracker raises
+  // only through its Edit drawer (status Draft -> Raised), which uses the same save path, so the same rules and server checks apply.
+  const raiseWithoutEmail = useRaiseWithoutEmail();
 
   const toggle = (id: string) =>
     setExpanded((prev) => {
@@ -350,6 +355,8 @@ export default function InvoiceTracker() {
           </div>
         </div>
       </div>
+
+      {canMutate && <RaiseWithoutEmailSwitch state={raiseWithoutEmail} />}
 
       {(saving.size > 0 || notice) && (
         <div role="status" className="rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-[12px] font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2" data-saving={saving.size > 0} data-notice={notice !== null}>
@@ -484,7 +491,7 @@ export default function InvoiceTracker() {
         </>
       )}
 
-      {action && <InvoiceActionHost key={`${action.projectId}:${action.lineId}:${action.mode}`} action={action} onClose={closeAction} onSaving={() => beginProjectSave(action.projectId)} onSettled={() => settleProject(action.projectId)} />}
+      {action && <InvoiceActionHost key={`${action.projectId}:${action.lineId}:${action.mode}`} action={action} onClose={closeAction} onSaving={() => beginProjectSave(action.projectId)} onSettled={() => settleProject(action.projectId)} raiseWithoutEmail={raiseWithoutEmail} />}
     </div>
   );
 }

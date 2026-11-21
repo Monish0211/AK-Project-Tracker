@@ -8,6 +8,9 @@ import { usePmoToast } from "../../components/ui/usePmoToast";
 import { ApiError } from "../../services/apiClient";
 import {
   accountsApprovePRRequest,
+  adminApprovePRRequest,
+  adminEditPRRequest,
+  adminRejectPRRequest,
   pmoManagerApprovePRRequest,
   rejectPRRequest,
   updatePRRequestProjectData,
@@ -36,20 +39,39 @@ import { validateGeneralTab } from "../../utils/projectValidation";
 interface Props {
   project: Project;
   prRequestId: string;
-  stage: "accounts" | "pmo";
+  /** "draft" only in admin mode: an administrator editing a Draft can only Save. */
+  stage: "accounts" | "pmo" | "draft";
+  /**
+   * Administrative Controls: a PR Approval Administration holder acting on behalf of the assigned approver. Same buttons, but one mandatory
+   * reason goes with every save and decision, and the admin endpoints are called (stage by stage, recorded).
+   */
+  admin?: boolean;
 }
 
-const PRRequestReviewFormButtons = ({ project, prRequestId, stage }: Props) => {
+const PRRequestReviewFormButtons = ({ project, prRequestId, stage, admin = false }: Props) => {
   const navigate = useNavigate();
   const { showToast } = usePmoToast();
   const [isSaving, setIsSaving] = useState(false);
   const [isActioning, setIsActioning] = useState(false);
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [adminReason, setAdminReason] = useState("");
+  const adminReasonOk = adminReason.trim().length >= 5;
+  const backPath = admin ? "/admin/pr-requests" : "/pr-requests?tab=queue";
 
-  const persistCurrentEdits = () => updatePRRequestProjectData(prRequestId, { projectData: projectToDraftPayload(project) });
+  const persistCurrentEdits = () =>
+    admin
+      ? adminEditPRRequest(prRequestId, projectToDraftPayload(project), adminReason.trim())
+      : updatePRRequestProjectData(prRequestId, { projectData: projectToDraftPayload(project) });
+
+  const requireAdminReason = (): boolean => {
+    if (!admin || adminReasonOk) return true;
+    showToast({ type: "error", message: "Enter the reason for this administrative action (at least 5 characters)." });
+    return false;
+  };
 
   const handleSave = async () => {
+    if (!requireAdminReason()) return;
     setIsSaving(true);
     try {
       await persistCurrentEdits();
@@ -62,6 +84,7 @@ const PRRequestReviewFormButtons = ({ project, prRequestId, stage }: Props) => {
   };
 
   const handleApprove = async () => {
+    if (!requireAdminReason()) return;
     setIsActioning(true);
     try {
       // Save first, unconditionally — see this component's own comment
@@ -69,14 +92,17 @@ const PRRequestReviewFormButtons = ({ project, prRequestId, stage }: Props) => {
       // against data that might not match what's on screen.
       await persistCurrentEdits();
 
-      if (stage === "accounts") {
+      if (admin) {
+        await adminApprovePRRequest(prRequestId, adminReason.trim());
+        showToast({ type: "success", message: stage === "accounts" ? "Accounts stage approved — now awaiting PMO Manager approval." : "Approved — Project created." });
+      } else if (stage === "accounts") {
         await accountsApprovePRRequest(prRequestId);
         showToast({ type: "success", message: "Approved — now awaiting PMO Manager approval." });
       } else {
         await pmoManagerApprovePRRequest(prRequestId);
         showToast({ type: "success", message: "Approved — Project created." });
       }
-      navigate("/pr-requests?tab=queue");
+      navigate(backPath);
     } catch (error) {
       showToast({ type: "error", message: error instanceof ApiError ? error.message : "Approval failed. Please try again." });
     } finally {
@@ -86,6 +112,10 @@ const PRRequestReviewFormButtons = ({ project, prRequestId, stage }: Props) => {
 
   const handleReject = async () => {
     if (!rejectReason.trim()) return;
+    if (admin && rejectReason.trim().length < 5) {
+      showToast({ type: "error", message: "The rejection reason must be at least 5 characters." });
+      return;
+    }
     setIsActioning(true);
     try {
       // Same reasoning as handleApprove — persist any on-screen correction
@@ -94,16 +124,18 @@ const PRRequestReviewFormButtons = ({ project, prRequestId, stage }: Props) => {
       // incomplete General section (e.g. a request saved before RFQ No.
       // existed) must not block a rejection: those edits are skipped instead
       // of saved, so invalid data is never stored and nothing is created.
-      const canPersist = Object.keys(validateGeneralTab(project)).length === 0;
+      // Admin: on-screen edits are saved only when a separate admin reason was given (the rejection reason is the decision's own reason).
+      const canPersist = Object.keys(validateGeneralTab(project)).length === 0 && (!admin || adminReasonOk);
       if (canPersist) await persistCurrentEdits();
-      await rejectPRRequest(prRequestId, rejectReason.trim());
+      if (admin) await adminRejectPRRequest(prRequestId, rejectReason.trim());
+      else await rejectPRRequest(prRequestId, rejectReason.trim());
       showToast({
         type: "success",
         message: canPersist
           ? "PR Request rejected."
           : "PR Request rejected. On-screen changes were not saved because the General section is incomplete.",
       });
-      navigate("/pr-requests?tab=queue");
+      navigate(backPath);
     } catch (error) {
       showToast({ type: "error", message: error instanceof ApiError ? error.message : "Reject failed. Please try again." });
     } finally {
@@ -114,9 +146,19 @@ const PRRequestReviewFormButtons = ({ project, prRequestId, stage }: Props) => {
   return (
     <div className="sticky bottom-0 z-40 -mx-4 mt-2 bg-[var(--nu-surface)]/95 backdrop-blur-md border-t border-[var(--nu-border)] py-3 px-4 flex flex-wrap justify-between items-center gap-3 shadow-[var(--nu-shadow-md)] rounded-t-[var(--nu-radius-lg)]">
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="secondary" size="sm" icon={<ArrowLeft size={14} />} onClick={() => navigate("/pr-requests?tab=queue")}>
-          Back to Queue
+        <Button type="button" variant="secondary" size="sm" icon={<ArrowLeft size={14} />} onClick={() => navigate(backPath)}>
+          {admin ? "Back to Register" : "Back to Queue"}
         </Button>
+        {admin && !showRejectForm && (
+          <input
+            type="text"
+            value={adminReason}
+            onChange={(e) => setAdminReason(e.target.value)}
+            placeholder="Reason for this administrative action (required)"
+            aria-label="Administrative reason"
+            className="h-9 min-w-[300px] rounded-[var(--nu-radius-md)] border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] px-3 text-[12.5px] text-[var(--nu-text)] outline-none focus:ring-2 focus:ring-[var(--nu-accent)]/30"
+          />
+        )}
       </div>
 
       {showRejectForm ? (
@@ -140,12 +182,16 @@ const PRRequestReviewFormButtons = ({ project, prRequestId, stage }: Props) => {
           <Button type="button" variant="outline" size="sm" icon={<Save size={14} />} onClick={handleSave} disabled={isSaving}>
             {isSaving ? "Saving..." : "Save"}
           </Button>
-          <Button type="button" variant="danger" size="sm" icon={<XCircle size={14} />} disabled={isActioning} onClick={() => setShowRejectForm(true)}>
-            Reject
-          </Button>
-          <Button type="button" variant="primary" size="sm" icon={<CheckCircle2 size={14} />} disabled={isActioning} onClick={handleApprove}>
-            {stage === "accounts" ? "Approve" : "Approve — Create Project"}
-          </Button>
+          {stage !== "draft" && (
+            <>
+              <Button type="button" variant="danger" size="sm" icon={<XCircle size={14} />} disabled={isActioning} onClick={() => setShowRejectForm(true)}>
+                Reject
+              </Button>
+              <Button type="button" variant="primary" size="sm" icon={<CheckCircle2 size={14} />} disabled={isActioning} onClick={handleApprove}>
+                {stage === "accounts" ? (admin ? "Approve Accounts stage" : "Approve") : "Approve — Create Project"}
+              </Button>
+            </>
+          )}
         </div>
       )}
     </div>

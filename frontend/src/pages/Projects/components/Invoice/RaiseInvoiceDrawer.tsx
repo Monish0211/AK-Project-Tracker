@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText, PlusCircle, X, Lock, Activity, CheckCircle2, ClipboardList,
@@ -72,6 +73,8 @@ interface Props {
   onSave: (updatedProject: Project) => void;
   /** Invoice Payment workflow — reload the invoice after a payment is saved or reversed (its status may have changed on the server). */
   onPaymentChanged?: () => void;
+  /** Administrative Controls: a reminder shown at the top of the drawer (e.g. "raise without sending email" is on). */
+  topNotice?: ReactNode;
 }
 
 interface DraftLine {
@@ -105,6 +108,7 @@ export function RaiseInvoiceDrawer({
   onClose,
   onSave,
   onPaymentChanged,
+  topNotice,
 }: Props) {
   const [show, setShow] = useState(false);
 
@@ -905,6 +909,7 @@ export function RaiseInvoiceDrawer({
               </div>
             )}
 
+            {topNotice}
             {/* ═══ SECTION 2: Invoice Information ═══ */}
             <div className="rounded-2xl border border-[var(--nu-border)] bg-[var(--nu-surface-alt)] p-5 space-y-4 shadow-2xs">
               <div className="flex items-center gap-2">

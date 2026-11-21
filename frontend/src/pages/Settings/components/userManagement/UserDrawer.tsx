@@ -131,6 +131,9 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
   // backend enforces both; this only hides what the server would refuse.
   const { user: signedInUser } = useAuth();
   const canEditCountryAccess = signedInUser?.role === "Administrator" && !(mode === "edit" && user?.id === signedInUser.id);
+  // Administrative Controls (D6, Nov 2026): approval rights follow the same rule - an Administrator, never on their own account. Everyone else
+  // sees them read-only and never sends them (the server refuses and audits any attempt).
+  const canEditApprovalRights = canEditCountryAccess;
   const [animateShow, setAnimateShow] = useState(false);
 
   const [employeeName, setEmployeeName] = useState("");
@@ -327,7 +330,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
           roleId,
           moduleIds,
           regionIds,
-          approvalIds,
+          approvalIds: canEditApprovalRights ? approvalIds : [],
           scopedUserIds,
           ...(canEditCountryAccess ? { allCountriesAccess } : {}),
         });
@@ -392,7 +395,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
           moduleIds,
           // Country access is sent only by an Administrator editing someone else; otherwise it is left untouched.
           ...(canEditCountryAccess ? { regionIds, allCountriesAccess } : {}),
-          approvalIds,
+          ...(canEditApprovalRights ? { approvalIds } : {}),
           scopedUserIds,
           forcePasswordChange,
           accountLocked,
@@ -844,6 +847,13 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
                 <CheckSquare size={16} className="text-[var(--nu-accent)]" />
                 <h3 className="text-[14px] font-bold text-[var(--nu-text)]">Approval Rights</h3>
               </div>
+              {!canEditApprovalRights && (
+                <p className="text-[11.5px] text-[var(--nu-text-muted)]" data-testid="approval-rights-readonly">
+                  {mode === "edit" && user?.id === signedInUser?.id
+                    ? "You cannot change your own approval rights. Another Administrator must change them."
+                    : "Only an Administrator can change approval rights."}
+                </p>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {APPROVAL_FIELDS.map(({ key, label }) => {
                   const isEnabled = approvalRights[key];
@@ -852,7 +862,8 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
                       key={key}
                       type="button"
                       onClick={() => handleToggleApproval(key)}
-                      className={`flex items-center justify-between p-2.5 rounded-[var(--nu-radius-md)] border text-left transition-all cursor-pointer ${
+                      disabled={!canEditApprovalRights}
+                      className={`flex items-center justify-between p-2.5 rounded-[var(--nu-radius-md)] border text-left transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${
                         isEnabled ? "border-emerald-500/40 bg-emerald-500/10 text-[var(--nu-text)]" : "border-[var(--nu-border)] bg-[var(--nu-surface)] text-[var(--nu-text-muted)]"
                       }`}
                     >

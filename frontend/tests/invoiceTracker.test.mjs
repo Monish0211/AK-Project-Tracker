@@ -290,11 +290,12 @@ test("View / Edit / Delete from the Tracker reuse the existing interfaces and sa
   const host = src("pages/InvoiceTracker/InvoiceActionHost.tsx");
   assert.match(host, /InvoiceActionDrawer/, "the existing RaiseInvoiceDrawer, via the shared wrapper");
   assert.match(host, /useInvoiceLineActions\(/, "the shared save / delete path");
-  assert.match(host, /title="Delete Invoice\?"/);
+  // Administrative Controls: the title now also covers the raised-invoice (administrator) and refused cases; a Draft keeps this wording.
+  assert.match(host, /"Delete Invoice\?"/);
   assert.match(host, /Delete invoice \$\{line\.invoiceNo\}\? This cannot be undone\./, "same confirmation copy as Invoice History");
   assert.doesNotMatch(host, /apiClient|syncInvoiceLinesWithApi|\/invoice-lines/, "no API logic of its own");
   const history = src("pages/Projects/components/Invoice/InvoiceHistory.tsx");
-  assert.match(history, /title="Delete Invoice\?"/);
+  assert.match(history, /"Delete Invoice\?"/);
   assert.match(history, /Delete invoice \$\{deleteTarget\?\.line\.invoiceNo \?\? ""\}\? This cannot be undone\./);
   const page = src("pages/InvoiceTracker/InvoiceTracker.tsx");
   assert.match(page, /hasApprovalPermission\(user, "Edit Invoice"\)/);

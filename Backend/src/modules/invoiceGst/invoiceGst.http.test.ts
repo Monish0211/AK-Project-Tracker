@@ -7,6 +7,7 @@ import app from "../../app.js";
 import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
+import { ADMIN_DELETE_BODY, createInvoiceAdministrator } from "../invoices/invoiceApprovalGrants.testutil.js";
 
 /**
  * Invoice-level GST snapshot + GST-inclusive Record Payment - real HTTP against the real app and the local scratch database. Isolated tagged data,
@@ -80,6 +81,10 @@ before(async () => {
   });
   userIds.push(u.id);
   people.recorder = { id: u.id, headers: { "Content-Type": "application/json", Authorization: `Bearer ${signAccessToken({ sub: u.id, email, roleId: engineer.id, roleName: engineer.name })}` } };
+  // Administrative Controls (D3): a Raised invoice is deleted only by an Invoice Administration holder, with a reason.
+  const invoiceAdmin = await createInvoiceAdministrator(TAG, [projectsM.id, invoicesM.id]);
+  userIds.push(invoiceAdmin.id);
+  people.invoiceAdmin = invoiceAdmin;
 
   const mkProject = async (suffix: string, extra: { currency?: string; gstApplicable?: boolean } = {}) => {
     const p = await prisma.project.create({
@@ -290,7 +295,8 @@ test("a multi-line invoice: the first raised line creates the snapshot; later li
   assert.equal(second.status, 201, second.message);
   const two = (await snapshotOf(no))!;
   assert.deepEqual([dec(two.taxableAmount), Number(two.ratePercent), two.taxType, dec(two.gstAmount), dec(two.totalAmount)], ["90000.00", 18, "IGST", "16200.00", "106200.00"]);
-  const removed = await api("DELETE", `/invoice-lines/${second.data.id}`, "recorder");
+  assert.equal((await api("DELETE", `/invoice-lines/${second.data.id}`, "recorder")).status, 403, "Delete Invoice alone no longer deletes a Raised line (D3)");
+  const removed = await api("DELETE", `/invoice-lines/${second.data.id}`, "invoiceAdmin", JSON.parse(ADMIN_DELETE_BODY));
   assert.equal(removed.status, 200, removed.message);
   const one = (await snapshotOf(no))!;
   assert.deepEqual([dec(one.taxableAmount), dec(one.gstAmount)], ["40000.00", "7200.00"]);
@@ -330,13 +336,19 @@ test("moving one line of a multi-line invoice to a new number: the new invoice i
   assert.deepEqual([dec(old.taxableAmount), dec(old.gstAmount), dec(old.totalAmount)], ["40000.00", "7200.00", "47200.00"]);
 });
 
-test("deleting a whole invoice removes its snapshot with its register row (no orphan)", async () => {
+test("deleting a whole RAISED invoice (administrative delete) keeps its number reserved with its snapshot, and archives both (D4)", async () => {
   const P = projects.GST!;
   const no = nextNo();
   assert.equal((await createLine(P, no, 90000, { gst: gst18() })).status, 201);
   const registryId = (await prisma.invoiceNumber.findUniqueOrThrow({ where: { normalizedInvoiceNo: no.toUpperCase() } })).id;
-  assert.equal((await api("DELETE", `/invoice-lines/${(await lineIdsOf(no))[0]}`, "recorder")).status, 200);
-  assert.equal(await prisma.invoiceGstSnapshot.count({ where: { invoiceNumberId: registryId } }), 0);
+  const lineId = (await lineIdsOf(no))[0]!;
+  assert.equal((await api("DELETE", `/invoice-lines/${lineId}`, "recorder")).status, 403, "Delete Invoice alone is refused for a Raised invoice");
+  assert.equal((await api("DELETE", `/invoice-lines/${lineId}`, "invoiceAdmin", JSON.parse(ADMIN_DELETE_BODY))).status, 200);
+  // Like Cancel, the number stays reserved (it may already be with the client): the register row and its GST snapshot stay together - no orphan.
+  assert.equal(await prisma.invoiceNumber.count({ where: { id: registryId } }), 1, "the number stays reserved");
+  assert.equal(await prisma.invoiceGstSnapshot.count({ where: { invoiceNumberId: registryId } }), 1, "the snapshot stays with its register row");
+  const archived = await prisma.invoiceLineDeletion.findFirstOrThrow({ where: { originalLineId: lineId } });
+  assert.equal((archived.related as { gstSnapshot: unknown[] }).gstSnapshot.length, 1, "the archive holds the GST snapshot too");
 });
 
 // ── GST-inclusive settlement ────────────────────────────────────────────────────────────────────

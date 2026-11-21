@@ -1,15 +1,16 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Users, Shield, UserCheck, Mail, Globe2 } from "lucide-react";
+import { Users, Shield, UserCheck, Mail, Globe2, KeyRound } from "lucide-react";
 import { UserManagementSection } from "./components/userManagement/UserManagementSection";
 import { SecurityAuditSection } from "./components/audit/SecurityAuditSection";
 import { PmoCoordinatorsSection } from "./components/pmoCoordinators/PmoCoordinatorsSection";
 import { WeeklyEmailsSection } from "./components/weeklyEmails/WeeklyEmailsSection";
 import { CountryRemindersSection } from "./components/countryReminders/CountryRemindersSection";
+import { AdministrativeControlsSection } from "./components/adminControls/AdministrativeControlsSection";
 import { useAuth } from "../../auth/authContext";
 import "./settings-theme.css";
 
-type SettingsTab = "users" | "coordinators" | "weeklyEmails" | "countryReminders" | "audit";
+type SettingsTab = "users" | "coordinators" | "weeklyEmails" | "countryReminders" | "adminControls" | "audit";
 
 // "system" (System Preferences) and "notifications" (Notification Alert
 // Rules) were removed — both were unimplemented placeholder cards with no
@@ -17,13 +18,15 @@ type SettingsTab = "users" | "coordinators" | "weeklyEmails" | "countryReminders
 // legacy tab values is redirected to the audit tab rather than left to
 // render nothing.
 const LEGACY_REMOVED_TABS = new Set(["system", "notifications"]);
-const VALID_TABS: SettingsTab[] = ["users", "coordinators", "weeklyEmails", "countryReminders", "audit"];
+const VALID_TABS: SettingsTab[] = ["users", "coordinators", "weeklyEmails", "countryReminders", "adminControls", "audit"];
 
 const Settings = () => {
   const { user } = useAuth();
   // PMO Coordinators (Oct 2026) — Administrator / PMO Manager only, the same
   // two roles the backend's /pmo-coordinators routes allow.
   const canManageCoordinators = user?.role === "Administrator" || user?.role === "PMO Manager";
+  // Administrative Controls (Nov 2026): Administrators only (the server re-checks and audits every change).
+  const isAdministrator = user?.role === "Administrator";
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<SettingsTab>(
@@ -111,6 +114,21 @@ const Settings = () => {
           </button>
         )}
 
+        {isAdministrator && (
+          <button
+            type="button"
+            onClick={() => handleTabChange("adminControls")}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-[var(--nu-radius-md)] text-[12.5px] font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
+              activeTab === "adminControls"
+                ? "bg-[var(--nu-accent)] text-white shadow-[var(--nu-shadow-sm)]"
+                : "text-[var(--nu-text-secondary)] hover:bg-[var(--nu-surface-alt)] hover:text-[var(--nu-text)]"
+            }`}
+          >
+            <KeyRound size={15} />
+            Administrative Controls
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => handleTabChange("audit")}
@@ -130,6 +148,7 @@ const Settings = () => {
       {activeTab === "coordinators" && canManageCoordinators && <PmoCoordinatorsSection />}
       {activeTab === "weeklyEmails" && canManageCoordinators && <WeeklyEmailsSection />}
       {activeTab === "countryReminders" && canManageCoordinators && <CountryRemindersSection />}
+      {activeTab === "adminControls" && isAdministrator && <AdministrativeControlsSection />}
       {activeTab === "audit" && <SecurityAuditSection />}
     </div>
   );

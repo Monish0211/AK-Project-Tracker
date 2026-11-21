@@ -14,18 +14,19 @@ import { createMilestoneForProject } from "../../milestones/services/milestone.s
 import { repointDocumentsToProject } from "../../documents/repository/document.repository.js";
 import { assertCoordinatorEntryAssignable } from "../../pmoCoordinators/index.js";
 import { assertModuleAccess } from "../../../shared/utils/moduleAccess.js";
+import { PR_APPROVAL_ADMINISTRATION, userHoldsAdminRight } from "../../../shared/utils/adminRights.js";
 import { prRequestProjectDataSchema } from "../validators/prRequest.validators.js";
 import type { AccessTokenPayload } from "../../../shared/types/auth.types.js";
 import type { PRRequestApprovalHistoryDto, PRRequestDetailDto, PRRequestDto } from "../dto/prRequest.dto.js";
 import * as repo from "../repository/prRequest.repository.js";
 import type { PRRequestProjectDataInput, SaveDraftPRRequestInput, SendToAccountsInput } from "../validators/prRequest.validators.js";
 
-type PRRequestRow = NonNullable<Awaited<ReturnType<typeof repo.findPRRequestById>>>;
+export type PRRequestRow = NonNullable<Awaited<ReturnType<typeof repo.findPRRequestById>>>;
 
 const SUBMIT_DENIED_MESSAGE = "You do not have permission to submit PR Requests.";
 const REVIEW_DENIED_MESSAGE = "You do not have permission to review PR Requests.";
 
-function toPRRequestDto(row: PRRequestRow): PRRequestDto {
+export function toPRRequestDto(row: PRRequestRow): PRRequestDto {
   return {
     id: row.id,
     requestedByUserId: row.requestedByUserId,
@@ -41,18 +42,23 @@ function toPRRequestDto(row: PRRequestRow): PRRequestDto {
     rejectedByName: row.rejectedBy?.fullName ?? null,
     rejectionReason: row.rejectionReason,
     rejectedAt: row.rejectedAt,
+    deletedByName: row.deletedBy?.fullName ?? null,
+    deleteReason: row.deleteReason,
+    deletedAt: row.deletedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
 
-function toApprovalHistoryDto(row: Awaited<ReturnType<typeof repo.findApprovalHistory>>[number]): PRRequestApprovalHistoryDto {
+export function toApprovalHistoryDto(row: Awaited<ReturnType<typeof repo.findApprovalHistory>>[number]): PRRequestApprovalHistoryDto {
   return {
     id: row.id,
     actorUserId: row.actorUserId,
     actorName: row.actor.fullName,
     action: row.action as PRRequestApprovalHistoryDto["action"],
     remarks: row.remarks,
+    onBehalfOfUserId: row.onBehalfOfUserId,
+    onBehalfOfName: row.onBehalfOf?.fullName ?? null,
     createdAt: row.createdAt,
   };
 }
@@ -73,7 +79,7 @@ function toApprovalHistoryDto(row: Awaited<ReturnType<typeof repo.findApprovalHi
  * that), so a reviewer can still correct other fields if the coordinator's
  * account changed meanwhile.
  */
-async function assertDraftCoordinatorAssignable(next: { pmoCoordinatorEntryId?: string | undefined }, previous: unknown): Promise<void> {
+export async function assertDraftCoordinatorAssignable(next: { pmoCoordinatorEntryId?: string | undefined }, previous: unknown): Promise<void> {
   const nextId = next.pmoCoordinatorEntryId;
   if (!nextId) return;
   const previousId =
@@ -265,7 +271,8 @@ export async function sendToAccounts(id: string, input: SendToAccountsInput, req
 /** Requester Data Privacy — a PR Request User sees only requests they themselves submitted, never anyone else's. */
 export async function listMyPRRequests(requester: AccessTokenPayload): Promise<PRRequestDto[]> {
   const rows = await repo.findPRRequestsByRequester(requester.sub);
-  return rows.map(toPRRequestDto);
+  // Administrative Controls: a request deleted by a PR Approval Administration holder is hidden from every ordinary list.
+  return rows.filter((row) => row.status !== "Deleted").map(toPRRequestDto);
 }
 
 /**
@@ -309,6 +316,10 @@ export async function getPRRequestDetail(id: string, caller: AccessTokenPayload)
     throw new AppError("PR Request not found.", 404);
   }
   assertCanViewPRRequest(existing, caller);
+  // A deleted request is visible only to PR Approval Administration holders (the admin register); for everyone else it no longer exists.
+  if (existing.status === "Deleted" && !(await userHoldsAdminRight(caller.sub, PR_APPROVAL_ADMINISTRATION))) {
+    throw new AppError("PR Request not found.", 404);
+  }
 
   const history = await repo.findApprovalHistory(id);
   return { ...toPRRequestDto(existing), approvalHistory: history.map(toApprovalHistoryDto) };
@@ -331,6 +342,23 @@ export async function accountsApprove(id: string, actor: AccessTokenPayload, rem
     throw new AppError("You are not the assigned Accounts Approver for this PR Request.", 403);
   }
 
+  return performAccountsApproval(existing, actor, { action: "AccountsApproved", remarks: remarks ?? null, onBehalfOfUserId: null });
+}
+
+/** How a stage action is recorded: the ordinary approver's own action, or an administrator acting for the assigned approver (Administrative Controls). */
+export interface StageActionRecord {
+  action: string;
+  remarks: string | null;
+  onBehalfOfUserId: string | null;
+}
+
+/**
+ * The Accounts-stage approval itself, shared by the assigned Accounts approver (accountsApprove) and a PR Approval Administration holder
+ * (prRequestAdmin.service.ts). The caller has already decided WHO may act; everything below - the claim, the history entry, the notification -
+ * is identical for both, so an administrative approval can never skip or change a stage.
+ */
+export async function performAccountsApproval(existing: PRRequestRow, actor: AccessTokenPayload, record: StageActionRecord): Promise<PRRequestDto> {
+  const id = existing.id;
   // See prRequest.repository.ts's claimStatusTransition() for why this
   // conditional UPDATE — not the existence check above — is the real
   // concurrency guarantee: two racing approve calls can both pass the
@@ -343,8 +371,9 @@ export async function accountsApprove(id: string, actor: AccessTokenPayload, rem
   await repo.createApprovalHistoryEntry({
     prRequestId: id,
     actorUserId: actor.sub,
-    action: "AccountsApproved",
-    remarks: remarks ?? null,
+    action: record.action,
+    remarks: record.remarks,
+    onBehalfOfUserId: record.onBehalfOfUserId,
   });
 
   const updated = await repo.findPRRequestById(id);
@@ -383,6 +412,27 @@ export async function pmoManagerApprove(id: string, actor: AccessTokenPayload, r
   if (!existing.assignedPmoManagerId || existing.assignedPmoManagerId !== actor.sub) {
     throw new AppError("You are not the assigned PMO Manager for this PR Request.", 403);
   }
+
+  return performPmoManagerApproval(existing, actor, { action: "PmoManagerApproved", remarks: remarks ?? null, onBehalfOfUserId: null });
+}
+
+/**
+ * The final (PMO Manager) approval itself, shared by the assigned PMO Manager (pmoManagerApprove) and a PR Approval Administration holder.
+ * Identical for both: same status check, same data validation, same exactly-once project creation, document move and replay. The project's owner
+ * is ALWAYS the assigned PMO Manager. `countryAuthorizerUserId` (administrator only, decision D2): whose country grants authorise creating the
+ * project in its country - the acting administrator's instead of the assigned PMO Manager's. Undefined = the assigned PMO Manager (unchanged).
+ */
+export async function performPmoManagerApproval(
+  existing: PRRequestRow,
+  actor: AccessTokenPayload,
+  record: StageActionRecord,
+  countryAuthorizerUserId?: string
+): Promise<PRRequestDto> {
+  const id = existing.id;
+  if (!existing.assignedPmoManagerId) {
+    throw new AppError("This PR Request has no assigned PMO Manager.", 409);
+  }
+  const ownerUserId = existing.assignedPmoManagerId;
 
   // Same 409 the claim below gives, checked early so an already-finalized
   // request never reaches the data validation that follows.
@@ -423,7 +473,7 @@ export async function pmoManagerApprove(id: string, actor: AccessTokenPayload, r
     // recorded as managing it going forward, which is the PMO Manager who
     // just approved it, not a "PR Request User" role that typically holds no
     // ongoing Projects module access at all.
-    createdProject = await createProject(generalInfo, existing.assignedPmoManagerId);
+    createdProject = await createProject(generalInfo, ownerUserId, countryAuthorizerUserId ? { countryAuthorizerUserId } : undefined);
   } catch (err) {
     // Creation failed (e.g. a PR Number collision that appeared between
     // submission and approval) — revert the claim so the request isn't left
@@ -509,8 +559,10 @@ export async function pmoManagerApprove(id: string, actor: AccessTokenPayload, r
   await repo.createApprovalHistoryEntry({
     prRequestId: id,
     actorUserId: actor.sub,
-    action: "PmoManagerApproved",
-    remarks: replayNote ?? (remarks ?? null),
+    action: record.action,
+    // Ordinary approval: unchanged (the replay note wins). Administrative: the mandatory reason is always kept, with any replay note after it.
+    remarks: record.onBehalfOfUserId ? (replayNote ? `${record.remarks ?? ""} - ${replayNote}` : record.remarks) : (replayNote ?? record.remarks),
+    onBehalfOfUserId: record.onBehalfOfUserId,
   });
 
   const updated = await repo.findPRRequestById(id);
@@ -541,7 +593,7 @@ export async function rejectPRRequest(id: string, actor: AccessTokenPayload, rea
     throw new AppError("PR Request not found.", 404);
   }
 
-  let fromStatus: string;
+  let fromStatus: "Pending Accounts Approval" | "Pending PMO Manager Approval";
   if (existing.status === "Pending Accounts Approval") {
     if (!existing.assignedAccountsApproverId || existing.assignedAccountsApproverId !== actor.sub) {
       throw new AppError("You are not authorized to reject this request at its current stage.", 403);
@@ -556,13 +608,31 @@ export async function rejectPRRequest(id: string, actor: AccessTokenPayload, rea
     throw new AppError("This request has already been finalized and cannot be rejected.", 409);
   }
 
+  return performRejection(existing, actor, fromStatus, { action: "Rejected", remarks: reason, onBehalfOfUserId: null });
+}
+
+/** The rejection itself, shared by the assigned approver (rejectPRRequest) and a PR Approval Administration holder. `record.remarks` is the reason. */
+export async function performRejection(
+  existing: PRRequestRow,
+  actor: AccessTokenPayload,
+  fromStatus: "Pending Accounts Approval" | "Pending PMO Manager Approval",
+  record: StageActionRecord
+): Promise<PRRequestDto> {
+  const id = existing.id;
+  const reason = record.remarks ?? "";
   const claimed = await repo.claimStatusTransition(id, fromStatus, "Rejected");
   if (claimed.count === 0) {
     throw new AppError("This request was already actioned by another action.", 409);
   }
 
   await repo.recordRejection(id, actor.sub, reason);
-  await repo.createApprovalHistoryEntry({ prRequestId: id, actorUserId: actor.sub, action: "Rejected", remarks: reason });
+  await repo.createApprovalHistoryEntry({
+    prRequestId: id,
+    actorUserId: actor.sub,
+    action: record.action,
+    remarks: reason,
+    onBehalfOfUserId: record.onBehalfOfUserId,
+  });
 
   const updated = await repo.findPRRequestById(id);
   if (!updated) {
@@ -586,6 +656,12 @@ export async function rejectPRRequest(id: string, actor: AccessTokenPayload, rea
 // users/services/user.service.ts. A failure in either must never surface as
 // a failure of the state transition that already committed.
 // ---------------------------------------------------------------------------
+
+/** Administrative Controls: after a reassignment, the newly assigned approver of the CURRENT stage gets the same notification a normal hand-over sends. */
+export async function notifyCurrentStageApprover(request: PRRequestRow): Promise<void> {
+  if (request.status === "Pending Accounts Approval") await notifyAccountsApprover(request);
+  else if (request.status === "Pending PMO Manager Approval") await notifyAssignedPmoManager(request);
+}
 
 function reviewUrl(id: string): string {
   return `${env.FRONTEND_URL}/pr-requests/${id}`;

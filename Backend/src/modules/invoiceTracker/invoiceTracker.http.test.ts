@@ -47,6 +47,8 @@ const L: Record<string, string> = {}; // invoice line ids by label
 const payViaWorkflow = (who: string, projectId: string, invoiceNo: string) =>
   settleInvoiceViaPayment({ url, authorization: people[who]!.headers.Authorization!, userId: people[who]!.id, projectId, invoiceNo });
 
+const ADMIN_DELETE = { reason: "Test: administrative delete of a raised invoice" };
+
 async function api(path: string, who: string | null, method = "GET", body?: unknown) {
   const res = await fetch(`${url}${path}`, {
     method,
@@ -107,6 +109,9 @@ before(async () => {
     people[key] = { id: u.id, name: u.fullName, headers: { "Content-Type": "application/json", Authorization: `Bearer ${signAccessToken({ sub: u.id, email, roleId: role.id, roleName: role.name })}` } };
   };
   await make("ownerA", engineer, [projectsM.id, invoicesM.id], [raise.id, edit.id, del.id]);
+  // Administrative Controls (D3): Raised invoices are deleted only by an Invoice Administration holder, with a reason.
+  const invoiceAdminType = await prisma.approvalType.findFirstOrThrow({ where: { name: "Invoice Administration" } });
+  await make("invoiceAdmin", adminRole, [projectsM.id, invoicesM.id], [raise.id, edit.id, del.id, viewAll.id, invoiceAdminType.id]);
   await make("ownerB", engineer, [invoicesM.id], []);
   await make("admin", adminRole, [invoicesM.id], [raise.id, edit.id, del.id]);
   await make("noInvoices", engineer, [projectsM.id], []);
@@ -656,8 +661,11 @@ test("delete: an invoice that fulfilled a request deletes cleanly (the request s
     // no right to delete -> refused, nothing removed
     assert.equal((await api(`/invoice-lines/${L.DELX}`, "ownerB", "DELETE")).status, 403);
     assert.equal((await view()).invoices.length, 3);
-    // delete the invoice that fulfilled the request
-    assert.equal((await api(`/invoice-lines/${L.DELX}`, "ownerA", "DELETE")).status, 200, "the request's link is ON DELETE SET NULL — it does not block the delete");
+    // Delete Invoice alone no longer deletes a Raised invoice (D3) - refused, nothing removed
+    assert.equal((await api(`/invoice-lines/${L.DELX}`, "ownerA", "DELETE")).status, 403);
+    assert.equal((await view()).invoices.length, 3);
+    // delete the invoice that fulfilled the request (administrative delete, with a reason)
+    assert.equal((await api(`/invoice-lines/${L.DELX}`, "invoiceAdmin", "DELETE", ADMIN_DELETE)).status, 200, "the request's link is ON DELETE SET NULL — it does not block the delete");
     const after = await view();
     assert.deepEqual(after.invoices.map((i: any) => i.invoiceNo.slice(TAG.length + 1)).sort(), ["KEEPY", "RACE"], "the row is gone from the Tracker");
     assert.equal(after.requests.length, 1);
@@ -667,7 +675,7 @@ test("delete: an invoice that fulfilled a request deletes cleanly (the request s
     assert.deepEqual([c.summary.invoiceCount, c.summary.invoicesRaised, c.summary.raisedAmountINR], [2, 1, 300], "cards follow: counts and amounts count the remaining invoices once");
     assert.equal(c.items[0].records.invoiceCount, 2);
     // the same delete again (a second click) and two deletes racing: exactly one wins, the rest are plain 404s
-    assert.equal((await api(`/invoice-lines/${L.DELX}`, "ownerA", "DELETE")).status, 404, "an already-deleted invoice is not found — no second deletion, no error page");
+    assert.equal((await api(`/invoice-lines/${L.DELX}`, "invoiceAdmin", "DELETE", ADMIN_DELETE)).status, 404, "an already-deleted invoice is not found — no second deletion, no error page");
     const race = await Promise.all([api(`/invoice-lines/${L.RACE}`, "ownerA", "DELETE"), api(`/invoice-lines/${L.RACE}`, "ownerA", "DELETE"), api(`/invoice-lines/${L.RACE}`, "ownerA", "DELETE")]);
     assert.deepEqual(race.map((r) => r.status).sort(), [200, 404, 404], "three simultaneous deletes of one invoice: one 200, two 404");
     assert.deepEqual((await view()).invoices.map((i: any) => i.invoiceNo.slice(TAG.length + 1)), ["KEEPY"]);
@@ -821,10 +829,13 @@ test("14 (workflow): invoices created and changed through the EXISTING API show 
   assert.equal((await api(`/invoice-lines/${L.API1}`, "ownerA", "DELETE")).status, 409);
   const paymentId = (await prisma.invoicePayment.findFirstOrThrow({ where: { invoiceNo: `${TAG}-API1` } })).id;
   assert.equal((await api(`/invoice-payments/${paymentId}/reverse`, "ownerA", "POST", { reason: "test: reversing before deleting" })).status, 200);
-  assert.equal((await api(`/invoice-lines/${L.API1}`, "ownerA", "DELETE")).status, 200);
-  assert.equal((await read()).length, 0, "deleting removes it from the report");
+  // Administrative Controls (D3): an invoice whose status is still Partially Paid / Paid is never deleted - not by Delete Invoice, not by an
+  // Invoice Administration holder. Its status must be corrected (or it is cancelled) first; nothing is removed.
+  assert.equal((await api(`/invoice-lines/${L.API1}`, "ownerA", "DELETE")).status, 409);
+  assert.equal((await api(`/invoice-lines/${L.API1}`, "invoiceAdmin", "DELETE", ADMIN_DELETE)).status, 409);
+  assert.equal((await read()).length, 1, "a partly paid invoice stays in the report");
   const events = await prisma.invoiceStatusEvent.findMany({ where: { invoiceLineId: L.API1! }, orderBy: [{ occurredAt: "asc" }, { seq: "asc" }] });
-  assert.deepEqual(events.map((e) => [e.eventType, e.toStatus]), [["CREATED", "Raised"], ["STATUS_CHANGED", "PartiallyPaid"], ["STATUS_CHANGED", "Paid"], ["STATUS_CHANGED", "PartiallyPaid"], ["DELETED", null]], "history outlives the invoice");
+  assert.deepEqual(events.map((e) => [e.eventType, e.toStatus]), [["CREATED", "Raised"], ["STATUS_CHANGED", "PartiallyPaid"], ["STATUS_CHANGED", "Paid"], ["STATUS_CHANGED", "PartiallyPaid"]], "the refused deletes record nothing");
 });
 
 test("an invoice that predates history and is only PAID through the API has no raise date — the payment time is never shown as the raise", async () => {

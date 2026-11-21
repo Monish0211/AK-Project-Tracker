@@ -57,6 +57,10 @@ function toInvoiceRequestDto(row: InvoiceRequestRow): InvoiceRequestDto {
     attachments: row.documents.map((d) => ({ id: d.id, fileName: d.fileName, fileSizeBytes: d.fileSizeBytes })),
     emailStatus: row.emailStatus,
     emailDetail: row.emailDetail,
+    raisedEmailStatus: row.raisedEmailStatus,
+    raisedEmailDetail: row.raisedEmailDetail,
+    finalEmailStatus: row.finalEmailStatus,
+    finalEmailDetail: row.finalEmailDetail,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -354,22 +358,32 @@ async function sendAssignedEmail(request: InvoiceRequestRow, additionalCcEmails:
  * UPDATE keyed on status = "Open", so a concurrent/duplicate call for the
  * same request is a harmless no-op.
  */
-export async function fulfillOpenInvoiceRequestsForProject(projectId: string, invoiceLineId: string): Promise<void> {
+/** `suppressEmail` (Administrative Controls, Invoice Administration holders only - checked by the caller): fulfil exactly as usual and keep the
+ *  in-app notification, but do not send the "Invoice Raised Successfully" email; the request records it as "suppressed" by `actorName`.
+ *  Returns the ids of the requests this call fulfilled. */
+export async function fulfillOpenInvoiceRequestsForProject(
+  projectId: string,
+  invoiceLineId: string,
+  options: { suppressEmail?: boolean; actorName?: string } = {}
+): Promise<string[]> {
+  const fulfilled: string[] = [];
   const openRequests = await repo.findOpenInvoiceRequestsForProject(projectId);
-  if (openRequests.length === 0) return;
+  if (openRequests.length === 0) return fulfilled;
 
   for (const [index, request] of openRequests.entries()) {
     const fulfilledInvoiceLineId = index === 0 ? invoiceLineId : null;
     const claimed = await repo.claimInvoiceRequestCompletion(request.id, fulfilledInvoiceLineId);
     if (claimed.count === 0) continue;
+    fulfilled.push(request.id);
 
-    void notifyRequesterInvoiceRaised(request).catch((error) => {
+    void notifyRequesterInvoiceRaised(request, options.suppressEmail === true, options.actorName).catch((error) => {
       console.error("[invoiceRequests] notifyRequesterInvoiceRaised failed:", error instanceof Error ? error.message : error);
     });
   }
+  return fulfilled;
 }
 
-async function notifyRequesterInvoiceRaised(request: InvoiceRequestRow): Promise<void> {
+async function notifyRequesterInvoiceRaised(request: InvoiceRequestRow, suppressEmail = false, actorName?: string): Promise<void> {
   await notify([request.requestedByUserId], {
     title: "Your requested invoice has been raised",
     message: `The invoice you requested for ${request.project.projectTitle} (PR ${request.project.prNo}) has been successfully raised.`,
@@ -378,6 +392,12 @@ async function notifyRequesterInvoiceRaised(request: InvoiceRequestRow): Promise
     entityType: "Invoice",
     entityId: request.projectId,
   });
+
+  // Administrative Controls: an administrator chose to raise without email - nothing is built or sent, and the request says so.
+  if (suppressEmail) {
+    await recordWorkflowOutcomeSafely(request.id, "raised", "suppressed", `Not sent: ${actorName ?? "an administrator"} raised the invoice without email.`);
+    return;
+  }
 
   try {
     const email = buildInvoiceRaisedSuccessfullyEmail({
@@ -392,6 +412,7 @@ async function notifyRequesterInvoiceRaised(request: InvoiceRequestRow): Promise
     if (!result.success) {
       console.error(`[invoiceRequests] Fulfilled email failed for ${request.requestedBy.email}: ${result.error}`);
     }
+    await recordWorkflowOutcomeSafely(request.id, "raised", result.success ? "sent" : "failed", result.success ? null : (result.failure ?? "failed"));
   } catch (error) {
     console.error(
       "[invoiceRequests] Unexpected error while sending Fulfilled email:",
@@ -422,7 +443,9 @@ export async function notifyInvoicePaidIfLinked(
     exchangeRateToINR?: number | undefined;
     /** Multi-country (Phase 5): the project's own currency when it is not INR; invoiceAmountINR / exchangeRateToINR are then in that currency. */
     projectCurrency?: string | undefined;
-  }
+  },
+  /** Administrative Controls: Draft -> Paid raised without email - keep the in-app notification, skip the "Invoice Paid" email, record why. */
+  options: { suppressEmail?: boolean; actorName?: string } = {}
 ): Promise<void> {
   const invoiceRequest = await repo.findInvoiceRequestByFulfilledLineId(invoiceLineId);
   if (!invoiceRequest) return;
@@ -435,6 +458,11 @@ export async function notifyInvoicePaidIfLinked(
     entityType: "Invoice",
     entityId: invoiceRequest.projectId,
   });
+
+  if (options.suppressEmail) {
+    await recordWorkflowOutcomeSafely(invoiceRequest.id, "paid", "suppressed", `Not sent: ${options.actorName ?? "an administrator"} raised the invoice as Paid without email.`);
+    return;
+  }
 
   try {
     const email = buildInvoicePaidEmail({
@@ -455,10 +483,20 @@ export async function notifyInvoicePaidIfLinked(
     if (!result.success) {
       console.error(`[invoiceRequests] Paid email failed for ${invoiceRequest.requestedBy.email}: ${result.error}`);
     }
+    await recordWorkflowOutcomeSafely(invoiceRequest.id, "paid", result.success ? "sent" : "failed", result.success ? null : (result.failure ?? "failed"));
   } catch (error) {
     console.error(
       "[invoiceRequests] Unexpected error while sending Paid email:",
       error instanceof Error ? error.message : error
     );
+  }
+}
+
+/** Records a workflow email outcome without ever failing the notification flow that called it. */
+async function recordWorkflowOutcomeSafely(id: string, kind: "raised" | "paid", status: "sent" | "failed" | "suppressed", detail: string | null): Promise<void> {
+  try {
+    await repo.recordWorkflowEmailOutcome(id, kind, status, detail);
+  } catch (error) {
+    console.error(`[invoiceRequests] Could not record the ${kind} email outcome:`, error instanceof Error ? error.message : error);
   }
 }

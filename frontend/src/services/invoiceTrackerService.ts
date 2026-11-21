@@ -258,6 +258,11 @@ export interface TrackerRequest {
   fulfilledByInvoiceNo: string | null;
   /** That invoice's date (date-only): the month its amount is counted in. null when unknown. */
   fulfilledByInvoiceDate: string | null;
+  /** Administrative Controls: outcome of the automatic workflow emails - sent | failed | suppressed (null = not reached / older). */
+  raisedEmailStatus?: string | null;
+  raisedEmailDetail?: string | null;
+  finalEmailStatus?: string | null;
+  finalEmailDetail?: string | null;
 }
 
 export interface TrackerChain {

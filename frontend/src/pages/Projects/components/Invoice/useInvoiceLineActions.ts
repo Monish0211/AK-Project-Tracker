@@ -6,7 +6,8 @@ import { useAuth } from "../../../../auth/authContext";
 import { hasApprovalPermission } from "../../../../auth/permissions";
 import { usePmoToast } from "../../../../components/ui/usePmoToast";
 import { logInvoiceCycleStatusChangedAudit, logInvoiceDeletedAudit } from "../../../../services/projectAuditService";
-import { fetchInvoiceItemsFromApi } from "../../../../services/invoiceService";
+import { adminDeleteInvoiceLine, fetchInvoiceItemsFromApi } from "../../../../services/invoiceService";
+import { ApiError } from "../../../../services/apiClient";
 import {
   persistInvoiceProjectChange,
   realPersistDeps,
@@ -29,6 +30,10 @@ export interface UseInvoiceLineActionsOptions {
   onSettled?: (() => void) | undefined;
   /** Open the drawer straight away (Invoice Tracker mounts this hook per action, already knowing which line). */
   initialDrawer?: DrawerState | null | undefined;
+  /** Administrative Controls: raise without the automatic email in the next save (Invoice Administration holders only; server-checked). */
+  suppressEmail?: boolean | undefined;
+  /** Administrative Controls: a save with suppressEmail on actually raised N line(s) - the switch is consumed only then. */
+  onSuppressedRaise?: ((count: number) => void) | undefined;
 }
 
 /**
@@ -37,7 +42,7 @@ export interface UseInvoiceLineActionsOptions {
  * editor, one save path and one set of rules. The UI-courtesy permission flags mirror the backend's authoritative
  * "Edit Invoice" content check (PATCH) and requireApprovalPermission("Delete Invoice") (DELETE).
  */
-export function useInvoiceLineActions({ project, setProject, readOnly = false, onSaving, onSynced, onSettled, initialDrawer = null }: UseInvoiceLineActionsOptions) {
+export function useInvoiceLineActions({ project, setProject, readOnly = false, onSaving, onSynced, onSettled, initialDrawer = null, suppressEmail = false, onSuppressedRaise }: UseInvoiceLineActionsOptions) {
   const { showToast } = usePmoToast();
   const { user } = useAuth();
   const isReadOnly = readOnly || !setProject;
@@ -50,7 +55,17 @@ export function useInvoiceLineActions({ project, setProject, readOnly = false, o
   const syncingRef = useRef(false);
 
   const persistProjectChange = (updatedProject: Project): boolean =>
-    persistInvoiceProjectChange({ project, updatedProject, setProject, syncing: syncingRef, onStart: onSaving, onSynced, onSettled, deps: realPersistDeps(showToast) });
+    persistInvoiceProjectChange({
+      project,
+      updatedProject: suppressEmail ? { ...updatedProject, invoiceSuppressEmail: true } : updatedProject,
+      setProject,
+      syncing: syncingRef,
+      onStart: onSaving,
+      onSynced,
+      onSettled,
+      onRaised: suppressEmail ? onSuppressedRaise : undefined,
+      deps: realPersistDeps(showToast),
+    });
 
   const openView = (item: InvoiceItem, line: InvoiceLine) => {
     setDrawerState({ item, mode: "view", existingLine: line });
@@ -67,6 +82,32 @@ export function useInvoiceLineActions({ project, setProject, readOnly = false, o
 
     // Audit Log "Invoice Deleted"
     logInvoiceDeletedAudit(project.id, line.invoiceNo, line.invoiceAmountINR, "User deleted invoice line from Invoice History");
+  };
+
+  /**
+   * Administrative Controls (D3/D4): an invoice that is no longer a Draft is deleted only by an Invoice Administration holder, with a reason,
+   * straight through the API (the server archives it first and keeps its number reserved) - never through the optimistic diff, which has no
+   * place for a reason. The list is then reloaded from the server.
+   */
+  const adminDeleteRaisedInvoiceLine = async (line: InvoiceLine, reason: string): Promise<boolean> => {
+    if (isReadOnly || !setProject || syncingRef.current) return false;
+    syncingRef.current = true;
+    onSaving?.();
+    try {
+      await adminDeleteInvoiceLine(line.id, reason);
+      showToast({ type: "success", message: `Invoice ${line.invoiceNo} deleted and archived. Its number stays reserved.` });
+      logInvoiceDeletedAudit(project.id, line.invoiceNo, line.invoiceAmountINR, `Administrative delete: ${reason}`);
+      const items = await fetchInvoiceItemsFromApi(project.id);
+      setProject((current) => ({ ...current, invoiceItems: items }));
+      onSynced?.();
+      return true;
+    } catch (error) {
+      showToast({ type: "error", title: "Invoice not deleted", message: error instanceof ApiError ? error.message : "The delete failed. Please try again.", duration: 0 });
+      return false;
+    } finally {
+      syncingRef.current = false;
+      onSettled?.();
+    }
   };
 
   const updateInvoiceCycleStatus = (invoiceNo: string, newStatus: InvoiceLineStatus, gstSelection?: InvoiceGstSelection) => {
@@ -113,6 +154,8 @@ export function useInvoiceLineActions({ project, setProject, readOnly = false, o
     openView,
     openEdit,
     deleteInvoiceLine,
+    adminDeleteRaisedInvoiceLine,
+    suppressEmail,
     updateInvoiceCycleStatus,
     reloadInvoicesFromServer,
     saveFromDrawer,

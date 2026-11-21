@@ -11,10 +11,24 @@ export type PRRequestStatus =
   | "Pending Accounts Approval"
   | "Pending PMO Manager Approval"
   | "Approved"
-  | "Rejected";
+  | "Rejected"
+  /** Administrative Controls: deleted by a PR Approval Administration holder (soft delete - the request and its history are kept). */
+  | "Deleted";
 
 /** Submitted | Edited | AccountsApproved | PmoManagerApproved | Rejected — mirrors PRRequestApprovalHistory.action. "Edited" is logged only for an approver's correction while a stage is pending, never for the requester's own pre-submission Draft edits. */
-export type PRRequestApprovalAction = "Submitted" | "Edited" | "AccountsApproved" | "PmoManagerApproved" | "Rejected";
+export type PRRequestApprovalAction =
+  | "Submitted"
+  | "Edited"
+  | "AccountsApproved"
+  | "PmoManagerApproved"
+  | "Rejected"
+  // Administrative Controls (Nov 2026): actions by a PR Approval Administration holder. The actor is the administrator; onBehalfOf the assigned approver.
+  | "AdminEdited"
+  | "AdminAccountsApproved"
+  | "AdminPmoManagerApproved"
+  | "AdminRejected"
+  | "Reassigned"
+  | "AdminDeleted";
 
 export interface PRRequestApprovalHistoryDto {
   id: string;
@@ -22,6 +36,9 @@ export interface PRRequestApprovalHistoryDto {
   actorName: string;
   action: PRRequestApprovalAction;
   remarks: string | null;
+  /** The assigned approver an administrator acted for; null for every ordinary action. */
+  onBehalfOfUserId: string | null;
+  onBehalfOfName: string | null;
   createdAt: Date;
 }
 
@@ -40,6 +57,10 @@ export interface PRRequestDto {
   rejectedByName: string | null;
   rejectionReason: string | null;
   rejectedAt: Date | null;
+  /** Administrative delete (status "Deleted"): who, when and why. */
+  deletedByName: string | null;
+  deleteReason: string | null;
+  deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

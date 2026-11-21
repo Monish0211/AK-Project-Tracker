@@ -125,7 +125,9 @@ model PortalUser {
   prRequestsAssigned                   PRRequest[]                @relation("PRRequestAssignedPmoManager")
   prRequestsAssignedAsAccountsApprover PRRequest[]                @relation("PRRequestAssignedAccountsApprover")
   prRequestsRejected                   PRRequest[]                @relation("PRRequestRejectedBy")
-  prRequestApprovalActions             PRRequestApprovalHistory[]
+  prRequestsAdminDeleted               PRRequest[]                @relation("PRRequestDeletedBy")
+  prRequestApprovalActions             PRRequestApprovalHistory[] @relation("PRRequestApprovalActor")
+  prRequestApprovalsOnBehalf           PRRequestApprovalHistory[] @relation("PRRequestApprovalOnBehalfOf")
 
   // Request Invoice workflow (Sept 2026) — same onDelete: Restrict
   // audit-preservation treatment as the PR Request relations above: a user
@@ -439,6 +441,12 @@ model PRRequest {
   rejectionReason  String?
   rejectedAt       DateTime?
 
+  // Administrative Controls (Nov 2026): an administrative delete keeps the request and its history; status becomes "Deleted" (DB CHECK).
+  deletedAt       DateTime?
+  deletedByUserId String?
+  deletedBy       PortalUser? @relation("PRRequestDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
+  deleteReason    String?
+
   approvalHistory PRRequestApprovalHistory[]
 
   // Documents feature — files uploaded while this request is still a Draft
@@ -540,6 +548,16 @@ model InvoiceRequest {
   emailDetail    String?
   emailUpdatedAt DateTime?
 
+  // Administrative Controls (Nov 2026): outcome of the two automatic workflow emails, kept apart from emailStatus above (the assignment
+  // email), which is never overwritten. sent | failed | suppressed (an administrator raised without email). NULL = not reached yet.
+  raisedEmailStatus    String?
+  raisedEmailDetail    String?
+  raisedEmailUpdatedAt DateTime?
+  // finalEmail* = the "Invoice Paid" email (the request's final workflow email); never "paid..." - the invoice tables carry no payment-like column.
+  finalEmailStatus      String?
+  finalEmailDetail      String?
+  finalEmailUpdatedAt   DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -583,7 +601,11 @@ model PRRequestApprovalHistory {
   prRequest   PRRequest @relation(fields: [prRequestId], references: [id], onDelete: Cascade)
 
   actorUserId String
-  actor       PortalUser @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  actor       PortalUser @relation("PRRequestApprovalActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  // Administrative Controls: when an administrator acted for the assigned approver, that approver (actor stays the real acting user).
+  onBehalfOfUserId String?
+  onBehalfOf       PortalUser? @relation("PRRequestApprovalOnBehalfOf", fields: [onBehalfOfUserId], references: [id], onDelete: SetNull)
 
   // Submitted | Edited | AccountsApproved | PmoManagerApproved | Rejected
   action String
@@ -1274,6 +1296,10 @@ model InvoiceStatusEvent {
   // timestamptz, unlike the older timestamp-without-tz columns: the server session zone is Asia/Calcutta, and a plain
   // timestamp default would be read back by Prisma as UTC, 5.5 h wrong. An audit instant must be exact.
   occurredAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+
+  // Administrative Controls (Nov 2026): extra facts for events that need more than a status pair - only the EMAIL_SUPPRESSED event uses it
+  // (operation, which automatic emails were intentionally not sent, related Invoice Requests). NULL for every other event.
+  details Json?
 
   @@index([invoiceLineId, occurredAt])
   @@index([projectId, occurredAt])
@@ -2505,4 +2531,25 @@ model CountryReminder {
   updatedAt       DateTime  @updatedAt
 
   @@index([regionId, reminderDate])
+}
+
+// Administrative Controls (Nov 2026): append-only archive of a Raised invoice line deleted by an Invoice Administration holder. The complete
+// original row is kept with the reason and the acting administrator; a database trigger forbids UPDATE and DELETE. No foreign keys on purpose:
+// the archive must outlive the project and the actor.
+model InvoiceLineDeletion {
+  id             String   @id @default(dbgenerated("gen_random_uuid()"))
+  originalLineId String
+  invoiceNo      String
+  projectId      String
+  prNo           String
+  status         String
+  originalRow    Json
+  related        Json
+  reason         String
+  actorUserId    String?
+  actorName      String
+  deletedAt      DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+
+  @@index([projectId])
+  @@index([invoiceNo])
 }

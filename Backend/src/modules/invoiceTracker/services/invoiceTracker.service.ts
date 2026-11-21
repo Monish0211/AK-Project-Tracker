@@ -466,6 +466,11 @@ export async function getProjectRecords(user: AccessTokenPayload, projectId: str
     /** The invoice whose raise fulfilled this request (Completed only), and that invoice's date (date-only) so its own month can be found. */
     fulfilledByInvoiceNo: r.fulfilledInvoiceLine?.invoiceNo ?? null,
     fulfilledByInvoiceDate: r.fulfilledInvoiceLine && isValidInvoiceDate(r.fulfilledInvoiceLine.invoiceDate) ? dateOnly(r.fulfilledInvoiceLine.invoiceDate) : null,
+    /** Administrative Controls: outcome of the automatic workflow emails (sent | failed | suppressed; null = not reached / older). */
+    raisedEmailStatus: r.raisedEmailStatus,
+    raisedEmailDetail: r.raisedEmailDetail,
+    finalEmailStatus: r.finalEmailStatus,
+    finalEmailDetail: r.finalEmailDetail,
   });
 
   return {

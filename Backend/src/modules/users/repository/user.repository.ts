@@ -1,3 +1,4 @@
+import { ADMIN_CONTROL_RIGHTS } from "../../../shared/utils/adminRights.js";
 import type { Prisma } from "../../../../generated/prisma/client.js";
 import { prisma } from "../../../shared/utils/prismaClient.js";
 
@@ -131,7 +132,8 @@ export async function getLookups() {
     prisma.portalRole.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.module.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.region.findMany({ where: { isActive: true }, select: { id: true, name: true, code: true, displayName: true, defaultCurrency: true }, orderBy: { name: "asc" } }),
-    prisma.approvalType.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    // The Administrative Controls rights are managed only in Settings > Administrative Controls, never in the User Management form.
+    prisma.approvalType.findMany({ where: { isActive: true, name: { notIn: [...ADMIN_CONTROL_RIGHTS] } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
   return {

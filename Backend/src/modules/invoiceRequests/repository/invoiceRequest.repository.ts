@@ -148,3 +148,19 @@ export function claimInvoiceRequestCompletion(id: string, fulfilledInvoiceLineId
     data: { status: "Completed", fulfilledInvoiceLineId },
   });
 }
+
+/**
+ * Administrative Controls (Nov 2026): the outcome of an automatic workflow email (raised / paid) for one request. Separate columns from the
+ * assignment email's emailStatus, which this never touches. "suppressed" = an Invoice Administration holder raised without email.
+ */
+export function recordWorkflowEmailOutcome(id: string, kind: "raised" | "paid", status: "sent" | "failed" | "suppressed", detail: string | null) {
+  const now = new Date();
+  return prisma.invoiceRequest.update({
+    where: { id },
+    data:
+      kind === "raised"
+        ? { raisedEmailStatus: status, raisedEmailDetail: detail, raisedEmailUpdatedAt: now }
+        : { finalEmailStatus: status, finalEmailDetail: detail, finalEmailUpdatedAt: now },
+    select: { id: true },
+  });
+}

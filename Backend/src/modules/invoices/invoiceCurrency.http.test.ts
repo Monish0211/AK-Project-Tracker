@@ -6,7 +6,7 @@ import app from "../../app.js";
 import { hashPassword } from "../../shared/utils/password.util.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
 import { signAccessToken } from "../../shared/utils/jwt.util.js";
-import { invoiceEditDeleteGrants } from "./invoiceApprovalGrants.testutil.js";
+import { ADMIN_DELETE_BODY, createInvoiceAdministrator, invoiceEditDeleteGrants } from "./invoiceApprovalGrants.testutil.js";
 import { settleInvoiceViaPayment } from "../invoicePayments/settleInvoice.testutil.js";
 
 /**
@@ -405,6 +405,10 @@ test("Invoice Currency — all seven currencies, project currency lock, and INR 
     //    otherwise kept. Cancelling never unlocks.
     // =================================================================
     const deleteLine = (id: string) => fetch(`${url}/invoice-lines/${id}`, { method: "DELETE", headers });
+    // Administrative Controls (D3): a Raised / Cancelled line is deleted only by an Invoice Administration holder, with a reason.
+    const invoiceAdmin = await createInvoiceAdministrator(TAG, [projectsModule.id, invoicesModule.id]);
+    createdUserIds.push(invoiceAdmin.id);
+    const adminDeleteLine = (id: string) => fetch(`${url}/invoice-lines/${id}`, { method: "DELETE", headers: invoiceAdmin.headers, body: ADMIN_DELETE_BODY });
     const dtoLock = async (id: string) =>
       ((await (await fetch(`${url}/projects/${id}`, { headers })).json()) as { data: { invoiceCurrency: string | null } }).data.invoiceCurrency;
     const usd = (invoiceNo: string, status: string, rate = 83) => ({
@@ -427,7 +431,9 @@ test("Invoice Currency — all seven currencies, project currency lock, and INR 
     const g2 = await makeProject(1);
     const g2Line = await dataOf(await createLine(g2.items[0]!.id, usd(`${TAG}-G2-1`, "Raised", 93)));
     assert.equal(await projectLock(g2.project.id), "USD");
-    assert.equal((await deleteLine(g2Line.id)).status, 200);
+    assert.equal((await deleteLine(g2Line.id)).status, 403, "G2: Delete Invoice alone no longer deletes a Raised invoice");
+    assert.equal(await projectLock(g2.project.id), "USD", "G2: a refused delete changes nothing");
+    assert.equal((await adminDeleteLine(g2Line.id)).status, 200);
     assert.equal(await projectLock(g2.project.id), null, "G2: no genuine invoice left -> lock released");
     assert.equal(await dtoLock(g2.project.id), null, "G2: ProjectDto (what the frontend reads) reflects the release");
     const g2Inr = await createLine(g2.items[0]!.id, { invoiceNo: `${TAG}-G2-2`, invoiceAmountINR: 700, status: "Raised" });
@@ -440,7 +446,7 @@ test("Invoice Currency — all seven currencies, project currency lock, and INR 
     const g3b = await createLine(g3.items[0]!.id, usd(`${TAG}-G3-2`, "Raised", 84));
     assert.equal(g3b.status, 201);
     assert.equal((await settleInvoiceViaPayment({ url, authorization: `Bearer ${token}`, userId: raiser.id, projectId: g3.project.id, invoiceNo: `${TAG}-G3-2` })).status, 201);
-    assert.equal((await deleteLine(g3a.id)).status, 200);
+    assert.equal((await adminDeleteLine(g3a.id)).status, 200);
     assert.equal(await projectLock(g3.project.id), "USD", "G3: another genuine invoice remains -> lock kept");
     assert.equal(
       (await createLine(g3.items[0]!.id, { invoiceNo: `${TAG}-G3-3`, invoiceAmountINR: 1, status: "Draft" })).status,
@@ -457,11 +463,11 @@ test("Invoice Currency — all seven currencies, project currency lock, and INR 
     const g4Draft = await dataOf(await createLine(g4.items[0]!.id, usd(`${TAG}-G4-2`, "Draft")));
     assert.equal((await deleteLine(g4Draft.id)).status, 200);
     assert.equal(await projectLock(g4.project.id), "USD", "G4: deleting a Draft while a cancelled invoice remains keeps the lock");
-    assert.equal((await deleteLine(g4Raised.id)).status, 200);
+    assert.equal((await adminDeleteLine(g4Raised.id)).status, 200);
     assert.equal(await projectLock(g4.project.id), null, "G4: deleting the last genuine (cancelled) invoice releases the lock");
 
     // G5. Delete of an already-deleted line is a clean 404, never a 500.
-    assert.equal((await deleteLine(g4Raised.id)).status, 404);
+    assert.equal((await adminDeleteLine(g4Raised.id)).status, 404);
 
     // G6. Concurrency: deleting the only USD invoice while an INR invoice is raised on another
     //     activity. Either order is valid, but the end state must never mix currencies.
@@ -469,7 +475,7 @@ test("Invoice Currency — all seven currencies, project currency lock, and INR 
       const g6 = await makeProject(2);
       const only = await dataOf(await createLine(g6.items[0]!.id, usd(`${TAG}-G6-${round}-USD`, "Raised")));
       const [delRes, inrRes] = await Promise.all([
-        deleteLine(only.id),
+        adminDeleteLine(only.id),
         createLine(g6.items[1]!.id, { invoiceNo: `${TAG}-G6-${round}-INR`, invoiceAmountINR: 100, status: "Raised" }),
       ]);
       assert.equal(delRes.status, 200);

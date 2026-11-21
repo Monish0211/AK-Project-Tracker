@@ -4,6 +4,7 @@ import { AppError } from "../../../shared/utils/AppError.js";
 import { requireUser } from "../../../shared/utils/requireUser.js";
 import * as invoiceService from "../services/invoice.service.js";
 import {
+  deleteInvoiceLineSchema,
   invoiceLineIdParamSchema,
   projectIdParamSchema,
   quantityItemIdParamSchema,
@@ -85,7 +86,10 @@ export const updateInvoiceLine = asyncHandler(async (req: Request, res: Response
 export const deleteInvoiceLine = asyncHandler(async (req: Request, res: Response) => {
   const user = requireUser(req);
   const id = parseInvoiceLineIdParam(req);
-  await invoiceService.deleteInvoiceLine(id, user);
+  // Administrative Controls: an optional { reason } body - required by the service only for a no-longer-Draft invoice.
+  const parsedBody = deleteInvoiceLineSchema.safeParse(req.body ?? {});
+  if (!parsedBody.success) throw new AppError(parsedBody.error.issues[0]?.message ?? "Invalid request.", 400);
+  await invoiceService.deleteInvoiceLine(id, user, parsedBody.data.reason);
   res.status(200).json({ success: true, data: null, message: "Invoice line deleted successfully." });
 });
 

@@ -85,6 +85,8 @@ export function describeEvent(e: Pick<TimelineEvent, "eventType" | "fromStatus" 
       return `${statusLabel(e.fromStatus)} → ${statusLabel(e.toStatus)}${lines}`;
     case "DELETED":
       return `Deleted (was ${statusLabel(e.fromStatus)})${lines}`;
+    case "EMAIL_SUPPRESSED":
+      return `${statusLabel(e.toStatus)} without sending email — automatic email not sent (administrator's choice)${lines}`;
     default:
       return `${e.eventType}${lines}`;
   }

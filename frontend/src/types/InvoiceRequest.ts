@@ -45,6 +45,11 @@ export interface InvoiceRequest {
    * null = a request created before outcomes were recorded. "pending" does NOT mean the person was notified yet.
    */
   emailStatus: string | null;
+  /** Administrative Controls: outcome of the automatic "Invoice Raised Successfully" / "Invoice Paid" emails - sent | failed | suppressed. */
+  raisedEmailStatus?: string | null;
+  raisedEmailDetail?: string | null;
+  finalEmailStatus?: string | null;
+  finalEmailDetail?: string | null;
   emailDetail: string | null;
 
   createdAt: string;

@@ -16,6 +16,7 @@ function withDisplayRelations() {
     assignedAccountsApprover: REQUESTER_SELECT,
     assignedPmoManager: REQUESTER_SELECT,
     rejectedBy: REQUESTER_SELECT,
+    deletedBy: REQUESTER_SELECT,
   };
 }
 
@@ -73,7 +74,7 @@ export function findPRRequests(where: Prisma.PRRequestWhereInput) {
 export function findApprovalHistory(prRequestId: string) {
   return prisma.pRRequestApprovalHistory.findMany({
     where: { prRequestId },
-    include: { actor: { select: { id: true, fullName: true } } },
+    include: { actor: { select: { id: true, fullName: true } }, onBehalfOf: { select: { id: true, fullName: true } } },
     orderBy: { createdAt: "asc" },
   });
 }
@@ -83,6 +84,8 @@ export function createApprovalHistoryEntry(data: {
   actorUserId: string;
   action: string;
   remarks?: string | null;
+  /** Administrative Controls: the assigned approver an administrator acted for (actorUserId stays the real acting administrator). */
+  onBehalfOfUserId?: string | null;
 }) {
   return prisma.pRRequestApprovalHistory.create({ data });
 }
@@ -143,4 +146,29 @@ export function findActiveUserById(id: string) {
     where: { id },
     select: { id: true, fullName: true, email: true, isActive: true },
   });
+}
+
+// ---- Administrative Controls (Nov 2026) ----------------------------------------------------------------------------------------------------
+
+/** Cross-country register for PR Approval Administration holders. Never used for anyone else. */
+export function findPRRequestsForAdmin(where: Prisma.PRRequestWhereInput) {
+  return prisma.pRRequest.findMany({ where, include: withDisplayRelations(), orderBy: { createdAt: "desc" } });
+}
+
+/** Reassigns the approvers of a still-pending request; only succeeds while the status is unchanged (same claim-ticket idea as the transitions). */
+export function reassignApprovers(id: string, fromStatus: string, data: { assignedAccountsApproverId?: string; assignedPmoManagerId?: string }) {
+  return prisma.pRRequest.updateMany({ where: { id, status: fromStatus }, data });
+}
+
+/** Administrative soft delete: the request and its history stay; status becomes "Deleted" (DB CHECK keeps who/when/why together). */
+export function claimAdminDelete(id: string, fromStatus: string, deletedByUserId: string, deleteReason: string) {
+  return prisma.pRRequest.updateMany({
+    where: { id, status: fromStatus, deletedAt: null },
+    data: { status: "Deleted", deletedAt: new Date(), deletedByUserId, deleteReason },
+  });
+}
+
+/** Administrative edit: replaces the project data only while the request is still in the status the administrator saw (0 rows = it moved on). */
+export function updateProjectDataIfStatus(id: string, fromStatus: string, projectData: Prisma.InputJsonValue) {
+  return prisma.pRRequest.updateMany({ where: { id, status: fromStatus }, data: { projectData } });
 }

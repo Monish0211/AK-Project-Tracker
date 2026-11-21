@@ -131,8 +131,9 @@ test("WIRING: the detail page uses the timeline component (the raw start-date ro
   assert.ok(/draftPayloadToProject\(prev, detail\.projectData\)/.test(requestPr), "Accounts and PMO Manager review forms are filled through draftPayloadToProject");
   assert.ok(/toDateOnly\(data\.projectStartDate\)/.test(src("pages/PRRequests/draftMapping.ts")) && /toDateOnly\(data\.projectEndDate\)/.test(src("pages/PRRequests/draftMapping.ts")));
   // the approval flow itself is untouched: same calls, same stage rules
-  assert.ok(/canActOnAccountsStage = request\.status === "Pending Accounts Approval" && request\.assignedAccountsApproverId === user\?\.id/.test(detail));
-  assert.ok(/canActOnPmoStage = request\.status === "Pending PMO Manager Approval" && request\.assignedPmoManagerId === user\?\.id/.test(detail));
+  // Administrative Controls: the administrator's read-only view (admin) never offers the ordinary approve buttons; the stage rule itself is unchanged.
+  assert.ok(/canActOnAccountsStage = (!admin && )?request\.status === "Pending Accounts Approval" && request\.assignedAccountsApproverId === user\?\.id/.test(detail));
+  assert.ok(/canActOnPmoStage = (!admin && )?request\.status === "Pending PMO Manager Approval" && request\.assignedPmoManagerId === user\?\.id/.test(detail));
   assert.ok(/accountsApprovePRRequest\(id\)/.test(detail) && /pmoManagerApprovePRRequest\(id\)/.test(detail) && /rejectPRRequest\(id, rejectReason\.trim\(\)\)/.test(detail));
 });
 

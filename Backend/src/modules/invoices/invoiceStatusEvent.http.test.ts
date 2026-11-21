@@ -84,6 +84,9 @@ before(async () => {
   await make("second", engineer, [raise.id, edit.id, del.id]);
   await make("noRaise", engineer, [edit.id]);
   await make("admin", adminRole, [raise.id, edit.id, del.id, permDel.id]);
+  // Administrative Controls (D3): deletes a Raised invoice (with a reason).
+  const invoiceAdminType = await prisma.approvalType.findFirstOrThrow({ where: { name: "Invoice Administration" } });
+  await make("invoiceAdmin", adminRole, [raise.id, edit.id, del.id, invoiceAdminType.id]);
 
   const mkProject = async (suffix: string) => {
     const p = await prisma.project.create({
@@ -183,18 +186,27 @@ test("duplicate and concurrent status submissions leave one consistent event cha
 });
 
 test("delete records DELETED and the history survives the line; deleting a missing line still 404s", async () => {
-  const line = await create("raiser", "L6", "Raised");
-  await api("PATCH", `/invoice-lines/${line.id}`, "raiser", resend(line, { status: "PartiallyPaid" }));
-  assert.equal((await api("DELETE", `/invoice-lines/${line.id}`, "second")).status, 200);
+  const reason = { reason: "Test: administrative delete of a raised invoice" };
+  // Administrative Controls (D3): a Partially Paid invoice is never deleted - not even by an Invoice Administration holder - and a refused
+  // delete records nothing.
+  const partly = await create("raiser", "L6", "Raised");
+  await api("PATCH", `/invoice-lines/${partly.id}`, "raiser", resend(partly, { status: "PartiallyPaid" }));
+  assert.equal((await api("DELETE", `/invoice-lines/${partly.id}`, "second")).status, 409);
+  assert.equal((await api("DELETE", `/invoice-lines/${partly.id}`, "invoiceAdmin", reason)).status, 409);
+  assert.equal((await events(partly.id)).length, 2, "no event for a refused delete");
+
+  // A Raised invoice: Delete Invoice alone is refused; an Invoice Administration holder deletes it with a reason, and history survives the line.
+  const line = await create("raiser", "L6B", "Raised");
+  assert.equal((await api("DELETE", `/invoice-lines/${line.id}`, "second")).status, 403);
+  assert.equal((await api("DELETE", `/invoice-lines/${line.id}`, "invoiceAdmin", reason)).status, 200);
   assert.equal(await prisma.invoiceLine.findUnique({ where: { id: line.id } }), null);
   const ev = await events(line.id);
   assert.deepEqual(ev.map((e) => [e.eventType, e.fromStatus, e.toStatus, e.actorName, e.source]), [
     ["CREATED", null, "Raised", "Ise raiser", "invoice_create"],
-    ["STATUS_CHANGED", "Raised", "PartiallyPaid", "Ise raiser", "invoice_update"],
-    ["DELETED", "PartiallyPaid", null, "Ise second", "invoice_delete"],
+    ["DELETED", "Raised", null, "Ise invoiceAdmin", "invoice_delete"],
   ]);
-  assert.equal((await api("DELETE", `/invoice-lines/${line.id}`, "second")).status, 404);
-  assert.equal((await events(line.id)).length, 3, "no event for a failed delete");
+  assert.equal((await api("DELETE", `/invoice-lines/${line.id}`, "invoiceAdmin", reason)).status, 404);
+  assert.equal((await events(line.id)).length, 2, "no event for a failed delete");
 });
 
 test("clearing Cancelled lines when an activity is deleted records one DELETED event per line", async () => {

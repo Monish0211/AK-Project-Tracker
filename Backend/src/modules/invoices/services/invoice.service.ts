@@ -52,6 +52,7 @@ import {
   updateLine as updateLineInRepository,
 } from "../repository/invoice.repository.js";
 import type { InvoiceAuditContext } from "../repository/invoiceStatusEvent.repository.js";
+import { lockLine, recordEvents } from "../repository/invoiceStatusEvent.repository.js";
 import { hasActivePayments } from "../../invoicePayments/repository/invoicePayment.repository.js";
 import { countRaisedLines, syncInvoiceGstSnapshot, toSnapshotDto } from "../../invoiceGst/invoiceGst.service.js";
 import type { InvoiceGstSnapshotDto } from "../../invoiceGst/invoiceGst.service.js";
@@ -59,6 +60,8 @@ import { findSnapshotsForInvoices, normalizeInvoiceNo } from "../../invoiceGst/i
 import { loadPaymentFigures } from "../../invoicePayments/services/paymentFigures.service.js";
 import type { PaymentLineFigures } from "../../invoicePayments/paymentCash.rules.js";
 import { buildInvoiceAudit } from "../invoiceAudit.js";
+import { INVOICE_ADMINISTRATION, assertAdminRight, userHoldsAdminRight } from "../../../shared/utils/adminRights.js";
+import { createAuditLog } from "../../auth/repository/auth.repository.js";
 import type {
   CreateInvoiceLineInput,
   IngestInvoiceLinesInput,
@@ -121,6 +124,44 @@ async function insertInvoiceNumberOrReject(invoiceNo: string, projectId: string,
  * Recipient resolution follows the same approved rule as Project events —
  * the project's real creator if known, otherwise Invoices module holders.
  */
+/**
+ * Administrative Controls: the invoice's own status history records that this operation completed WITHOUT its automatic email(s). Written in
+ * the same transaction as the raise. fromStatus = toStatus = the status after the operation, so readers never take it for a status change.
+ */
+async function recordEmailSuppression(tx: Prisma.TransactionClient, audit: InvoiceAuditContext, line: { id: string; invoiceNo: string; quantityItemId: string; status: string }, projectId: string): Promise<void> {
+  const openRequests = await tx.invoiceRequest.findMany({ where: { projectId, status: "Open" }, select: { id: true }, orderBy: { createdAt: "asc" } });
+  const operation = line.status === "Raised" ? "Raised" : line.status;
+  const emailsSuppressed = ["Invoice Raised Successfully", ...(line.status === "Paid" ? ["Invoice Paid"] : [])];
+  await recordEvents(tx, audit, [
+    {
+      line,
+      eventType: "EMAIL_SUPPRESSED",
+      fromStatus: line.status,
+      toStatus: line.status,
+      details: { operation, emailsSuppressed, invoiceRequestIds: openRequests.map((r) => r.id), reason: "Raised without sending email (Invoice Administration)" },
+    },
+  ]);
+}
+
+/** Administrative Controls: every raise without the automatic email is recorded (who, which invoice, which requests it fulfilled without email). */
+async function auditRaisedWithoutEmail(
+  user: AccessTokenPayload,
+  projectId: string,
+  line: { id: string; invoiceNo: string; status: string },
+  fulfilledRequestIds: string[]
+): Promise<void> {
+  try {
+    await createAuditLog({
+      userId: user.sub,
+      email: user.email,
+      event: "INVOICE_RAISED_WITHOUT_EMAIL",
+      details: { projectId, invoiceLineId: line.id, invoiceNo: line.invoiceNo, status: line.status, fulfilledRequestIds, emailSent: false },
+    });
+  } catch (error) {
+    console.error("[invoices] audit (raised without email) failed:", error instanceof Error ? error.message : error);
+  }
+}
+
 export async function notifyInvoiceStatusEvent(projectId: string, invoiceNo: string, message: string): Promise<void> {
   const createdByUserId = await getProjectCreatorUserId(projectId);
   const recipients = await resolveProjectEventRecipients(createdByUserId, "Invoices");
@@ -588,9 +629,12 @@ export async function checkInvoiceNumberAvailability(
 
 export async function createInvoiceLineForQuantityItem(
   quantityItemId: string,
-  input: CreateInvoiceLineInput,
+  rawInput: CreateInvoiceLineInput,
   user: AccessTokenPayload
 ): Promise<InvoiceLineDto> {
+  // Administrative Controls: the flag never reaches a database write; only an Invoice Administration holder may send it (checked before anything).
+  const { suppressEmail = false, ...input } = rawInput;
+  if (suppressEmail) await assertAdminRight(user, INVOICE_ADMINISTRATION);
   const quantityItem = await getQuantityItemById(quantityItemId);
   await assertProjectAccessById(quantityItem.projectId, user);
   // Multi-country invoice currency (Phase 5): a project whose regional currency is not INR follows the project-currency model; null (an INR or legacy project)
@@ -741,6 +785,8 @@ export async function createInvoiceLineForQuantityItem(
         hadRaisedBefore,
         actorName: audit.actorName,
       });
+      // Administrative Controls: a raise without email is recorded in the invoice's own history, atomically with the raise itself.
+      if (suppressEmail && line.status === "Raised") await recordEmailSuppression(tx, audit, line, quantityItem.projectId);
       return line;
     },
     // Same headroom reasoning as milestone.service.ts's createMilestoneForProject()
@@ -763,9 +809,11 @@ export async function createInvoiceLineForQuantityItem(
   // create response, and a failure here must never be mistaken for the
   // invoice line itself failing to save (it has already committed above).
   if (created.status === "Raised") {
-    void fulfillOpenInvoiceRequestsForProject(quantityItem.projectId, created.id).catch((error) => {
-      console.error("[invoices] fulfillOpenInvoiceRequestsForProject failed:", error instanceof Error ? error.message : error);
-    });
+    void fulfillOpenInvoiceRequestsForProject(quantityItem.projectId, created.id, { suppressEmail, actorName: audit.actorName })
+      .then((fulfilled) => (suppressEmail ? auditRaisedWithoutEmail(user, quantityItem.projectId, created, fulfilled) : undefined))
+      .catch((error) => {
+        console.error("[invoices] fulfillOpenInvoiceRequestsForProject failed:", error instanceof Error ? error.message : error);
+      });
   }
 
   return toInvoiceLineDto(created);
@@ -782,9 +830,12 @@ export async function createInvoiceLineForQuantityItem(
  */
 export async function updateInvoiceLine(
   id: string,
-  input: UpdateInvoiceLineInput,
+  rawInput: UpdateInvoiceLineInput,
   user: AccessTokenPayload
 ): Promise<InvoiceLineDto> {
+  // Administrative Controls: see createInvoiceLineForQuantityItem - same flag, same rule.
+  const { suppressEmail = false, ...input } = rawInput;
+  if (suppressEmail) await assertAdminRight(user, INVOICE_ADMINISTRATION);
   const existing = await getLineById(id);
   if (!existing) {
     throw new AppError("Invoice line not found.", 404);
@@ -999,6 +1050,9 @@ export async function updateInvoiceLine(
         });
       }
 
+      // Administrative Controls: whether THIS write raises the invoice is decided from the row locked inside this transaction, so a retried or
+      // duplicate request (already raised) never records a second suppression event.
+      const lockedBefore = suppressEmail ? await lockLine(tx, id) : null;
       const written = await updateLineInRepository(
         id,
         {
@@ -1027,6 +1081,9 @@ export async function updateInvoiceLine(
         audit,
         tx
       );
+      if (lockedBefore && lockedBefore.status === "Draft" && written.status !== "Draft" && written.status !== "Cancelled") {
+        await recordEmailSuppression(tx, audit, written, parentQuantityItem.projectId);
+      }
       if (invoiceNoChanging) {
         // The line moved to a NEW invoice number: that invoice inherits the old invoice's frozen GST settings (when the old one had a snapshot),
         // and the old invoice is recomputed from the lines it still has. This runs BEFORE the old register row is released, so the snapshot
@@ -1115,7 +1172,8 @@ export async function updateInvoiceLine(
   void (async () => {
     if (isGenuineInvoiceTransition) {
       try {
-        await fulfillOpenInvoiceRequestsForProject(parentQuantityItem.projectId, updated.id);
+        const fulfilled = await fulfillOpenInvoiceRequestsForProject(parentQuantityItem.projectId, updated.id, { suppressEmail, actorName: audit.actorName });
+        if (suppressEmail) await auditRaisedWithoutEmail(user, parentQuantityItem.projectId, updated, fulfilled);
       } catch (error) {
         console.error("[invoices] fulfillOpenInvoiceRequestsForProject failed:", error instanceof Error ? error.message : error);
       }
@@ -1124,14 +1182,20 @@ export async function updateInvoiceLine(
     if (isGenuinePaidNow) {
       try {
         const emailFigures = emailAmountFigures(updated);
-        await notifyInvoicePaidIfLinked(updated.id, {
-          invoiceNo: updated.invoiceNo,
-          invoiceAmountINR: emailFigures.invoiceAmountINR,
-          currency: updated.currency,
-          invoiceAmountOriginal: updated.invoiceAmountOriginal,
-          exchangeRateToINR: emailFigures.exchangeRateToINR,
-          projectCurrency: emailFigures.projectCurrency,
-        });
+        await notifyInvoicePaidIfLinked(
+          updated.id,
+          {
+            invoiceNo: updated.invoiceNo,
+            invoiceAmountINR: emailFigures.invoiceAmountINR,
+            currency: updated.currency,
+            invoiceAmountOriginal: updated.invoiceAmountOriginal,
+            exchangeRateToINR: emailFigures.exchangeRateToINR,
+            projectCurrency: emailFigures.projectCurrency,
+          },
+          // Administrative Controls: Draft -> Paid in one step with "raise without email" - the Invoice Paid email is part of that same
+          // raising action, so it is not sent either. A payment recorded on an already-raised invoice is never affected.
+          suppressEmail && isGenuineInvoiceTransition ? { suppressEmail: true, actorName: audit.actorName } : {}
+        );
       } catch (error) {
         console.error("[invoices] notifyInvoicePaidIfLinked failed:", error instanceof Error ? error.message : error);
       }
@@ -1151,13 +1215,26 @@ export async function updateInvoiceLine(
  * "Cancelled" via PATCH (see updateInvoiceLine()), which preserves history
  * instead of erasing it.
  */
-export async function deleteInvoiceLine(id: string, user: AccessTokenPayload): Promise<void> {
+export async function deleteInvoiceLine(id: string, user: AccessTokenPayload, reason?: string): Promise<void> {
   const existing = await getLineById(id);
   if (!existing) {
     throw new AppError("Invoice line not found.", 404);
   }
   const parentQuantityItem = await getQuantityItemById(existing.quantityItemId);
   await assertProjectAccessById(parentQuantityItem.projectId, user);
+  // Administrative Controls (Nov 2026, decisions D3/D4): a Paid or Partially Paid invoice is never deleted; anything no longer a Draft (Raised,
+  // Cancelled) only by an Invoice Administration holder, with a reason, archived first, its number kept reserved. Drafts: unchanged.
+  if (existing.status === "Paid" || existing.status === "PartiallyPaid") {
+    throw new AppError("A paid or partly paid invoice cannot be deleted. Reverse the payment first.", 409);
+  }
+  const isAdministrativeDelete = existing.status !== "Draft";
+  const trimmedReason = (reason ?? "").trim();
+  if (isAdministrativeDelete) {
+    if (!(await userHoldsAdminRight(user.sub, INVOICE_ADMINISTRATION))) {
+      throw new AppError(`Only an Invoice Administration holder can delete a ${existing.status} invoice. Use Cancel to void it instead.`, 403);
+    }
+    if (trimmedReason.length < 5) throw new AppError("A reason of at least 5 characters is required to delete a raised invoice.", 400);
+  }
   // Invoice Payment workflow (Nov 2026) - an invoice with a recorded payment cannot lose its lines.
   if (await hasActivePayments(parentQuantityItem.projectId, existing.invoiceNo)) {
     throw new AppError("This invoice has a recorded payment. Reverse the payment before deleting the invoice.", 409);
@@ -1178,6 +1255,36 @@ export async function deleteInvoiceLine(id: string, user: AccessTokenPayload): P
       await lockInvoiceNumber(existing.invoiceNo, tx);
       const currencyLockKey = `invoice-currency:${parentQuantityItem.projectId}`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${currencyLockKey}))`;
+      if (isAdministrativeDelete) {
+        // Re-read under the locks: the archived copy is exactly the row being removed, written in the same transaction (both or neither).
+        const row = await tx.invoiceLine.findUnique({ where: { id } });
+        if (!row) throw new AppError("Invoice line not found.", 404);
+        if (row.status === "Paid" || row.status === "PartiallyPaid" || row.status === "Draft") {
+          throw new AppError("This invoice changed meanwhile - reload and try again.", 409);
+        }
+        const [project, gstSnapshot, requests, statusEvents] = await Promise.all([
+          tx.project.findUnique({ where: { id: parentQuantityItem.projectId }, select: { prNo: true } }),
+          tx.invoiceGstSnapshot.findMany({ where: { invoiceNumber: { projectId: parentQuantityItem.projectId, invoiceNo: row.invoiceNo } } }),
+          tx.invoiceRequest.findMany({ where: { fulfilledInvoiceLineId: id }, select: { id: true, status: true, requestedByUserId: true } }),
+          tx.invoiceStatusEvent.findMany({ where: { invoiceLineId: id }, orderBy: { occurredAt: "asc" } }),
+        ]);
+        const toJson = (value: unknown) =>
+          JSON.parse(JSON.stringify(value, (_k, v: unknown) => (typeof v === "bigint" ? v.toString() : v))) as Prisma.InputJsonValue;
+        await tx.invoiceLineDeletion.create({
+          data: {
+            originalLineId: row.id,
+            invoiceNo: row.invoiceNo,
+            projectId: parentQuantityItem.projectId,
+            prNo: project?.prNo ?? "",
+            status: row.status,
+            originalRow: toJson(row),
+            related: toJson({ quantityItemId: row.quantityItemId, gstSnapshot, fulfilledInvoiceRequests: requests, statusEvents, numberKeptReserved: true }),
+            reason: trimmedReason,
+            actorUserId: user.sub,
+            actorName: audit.actorName,
+          },
+        });
+      }
       try {
         await deleteLineInRepository(id, audit, tx);
       } catch (error) {
@@ -1189,13 +1296,25 @@ export async function deleteInvoiceLine(id: string, user: AccessTokenPayload): P
       await clearProjectInvoiceCurrencyIfNoGenuineLines(parentQuantityItem.projectId, tx);
       // Manual invoice numbering — deleting the LAST line of an invoice
       // releases its number (the invoice no longer exists); cancelling keeps
-      // it reserved.
-      await releaseInvoiceNumberIfUnused(existing.invoiceNo, parentQuantityItem.projectId, tx);
+      // it reserved. Administrative Controls (D4): a deleted RAISED invoice also keeps its number - it may already be with the client.
+      if (!isAdministrativeDelete) await releaseInvoiceNumberIfUnused(existing.invoiceNo, parentQuantityItem.projectId, tx);
       // Invoice-level GST snapshot: when the invoice still has lines, its taxable amount and GST totals follow them.
       await syncInvoiceGstSnapshot(tx, { projectId: parentQuantityItem.projectId, invoiceNo: existing.invoiceNo, hadRaisedBefore: true, actorName: audit.actorName });
     },
     { timeout: 30_000, maxWait: 10_000 }
   );
+  if (isAdministrativeDelete) {
+    try {
+      await createAuditLog({
+        userId: user.sub,
+        email: user.email,
+        event: "INVOICE_ADMIN_DELETED",
+        details: { invoiceLineId: id, invoiceNo: existing.invoiceNo, projectId: parentQuantityItem.projectId, status: existing.status, reason: trimmedReason, numberKeptReserved: true },
+      });
+    } catch (error) {
+      console.error("[invoices] audit (administrative delete) failed:", error instanceof Error ? error.message : error);
+    }
+  }
 }
 
 /**

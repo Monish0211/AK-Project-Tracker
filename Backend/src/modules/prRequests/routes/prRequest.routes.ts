@@ -21,6 +21,8 @@ import {
   saveDraftPRRequestSchema,
   sendToAccountsSchema,
 } from "../validators/prRequest.validators.js";
+import { adminApprove, adminDelete, adminEdit, adminReassign, adminReject, getDetailForAdmin, listAllForAdmin } from "../controllers/prRequestAdmin.controller.js";
+import { adminEditPRRequestSchema, adminReasonSchema, adminReassignSchema } from "../validators/prRequestAdmin.validators.js";
 
 const router = Router();
 
@@ -38,6 +40,15 @@ const router = Router();
 // Registered BEFORE "/:id" below, same reasoning as project.routes.ts's
 // "/status-counts" — these are single, literal path segments that would
 // otherwise be swallowed by "/:id".
+// Administrative Controls (Nov 2026) - PR Approval Administration holders only. No module gate: the right itself (re-read from the database on every
+// call, active Administrator + grant) is the gate, enforced in prRequestAdmin.service.ts. Two-segment paths, so "/pr-requests/:id" never swallows them.
+router.get("/pr-requests/admin/all", authenticate, listAllForAdmin);
+router.get("/pr-requests/:id/admin", authenticate, getDetailForAdmin);
+router.put("/pr-requests/:id/admin/data", authenticate, denyReadOnlyWrites, validate(adminEditPRRequestSchema), adminEdit);
+router.post("/pr-requests/:id/admin/approve", authenticate, denyReadOnlyWrites, validate(adminReasonSchema), adminApprove);
+router.post("/pr-requests/:id/admin/reject", authenticate, denyReadOnlyWrites, validate(adminReasonSchema), adminReject);
+router.post("/pr-requests/:id/admin/reassign", authenticate, denyReadOnlyWrites, validate(adminReassignSchema), adminReassign);
+router.post("/pr-requests/:id/admin/delete", authenticate, denyReadOnlyWrites, validate(adminReasonSchema), adminDelete);
 router.get("/pr-requests/mine", authenticate, requireModuleAccess("PR Request", "Approvals"), getMyPRRequests);
 router.get("/pr-requests/queue", authenticate, requireModuleAccess("Approvals"), getApprovalsQueue);
 

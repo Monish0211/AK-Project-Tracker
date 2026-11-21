@@ -262,6 +262,13 @@ function RequestRecord({ req, latest, showCreatedMonth }: { req: TrackerRequest;
           {req.fulfilledByInvoiceDate ? ` dated ${formatDateOnly(req.fulfilledByInvoiceDate)}` : ""} — a completed request is not a payment
         </p>
       )}
+      {(req.raisedEmailStatus || req.finalEmailStatus) && (
+        <p className="text-[11px] text-[var(--nu-text-muted)]" data-workflow-emails>
+          {req.raisedEmailStatus && <>"Invoice Raised" email: <strong className="font-semibold">{workflowEmailLabel(req.raisedEmailStatus)}</strong>{req.raisedEmailStatus === "suppressed" && req.raisedEmailDetail ? ` (${req.raisedEmailDetail})` : ""}</>}
+          {req.raisedEmailStatus && req.finalEmailStatus ? " · " : ""}
+          {req.finalEmailStatus && <>"Invoice Paid" email: <strong className="font-semibold">{workflowEmailLabel(req.finalEmailStatus)}</strong>{req.finalEmailStatus === "suppressed" && req.finalEmailDetail ? ` (${req.finalEmailDetail})` : ""}</>}
+        </p>
+      )}
     </li>
   );
 }
@@ -334,4 +341,12 @@ export function InvoiceChain({ projectId, month, refreshTick, canEdit, canDelete
     return <StateMessage kind="empty" title={month === ALL_MONTHS ? "No workflow records for this project" : `No invoice is dated, and no invoice request was made, up to the end of ${formatMonthLabel(month)}.`} detail="Invoices appear under the month of their invoice date; invoice requests under the month they were created." />;
   }
   return <InvoiceChainView data={data} loading={state.loading} canEdit={canEdit} canDelete={canDelete} onAction={onAction} />;
+}
+
+/** Administrative Controls: how a workflow email outcome reads. "suppressed" is never shown as sent or as a failure. */
+function workflowEmailLabel(status: string): string {
+  if (status === "sent") return "sent";
+  if (status === "failed") return "not delivered (failed)";
+  if (status === "suppressed") return "not sent — raised without email";
+  return status;
 }

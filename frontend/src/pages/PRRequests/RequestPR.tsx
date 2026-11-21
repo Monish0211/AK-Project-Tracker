@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { Project } from "../../types/Project";
 import { createEmptyProject } from "../../utils/createEmptyProject";
-import { getPRRequestDetail } from "../../services/prRequestService";
+import { getPRRequestDetail, getPRRequestDetailForAdmin } from "../../services/prRequestService";
+import { adminControlsService, PR_APPROVAL_ADMINISTRATION } from "../../services/adminControlsService";
 import { usePmoToast } from "../../components/ui/usePmoToast";
 import { useAuth } from "../../auth/authContext";
 import { ApiError } from "../../services/apiClient";
@@ -23,7 +24,8 @@ type Mode = "draft" | "review";
  * RequestPRForm's own footer, which itself picks Draft-footer vs
  * Review-footer based on the `mode` this component passes down.
  */
-const RequestPR = () => {
+/** `admin`: Administrative Controls review (PR Approval Administration holders) - any Draft or pending request, at its current stage. */
+const RequestPR = ({ admin = false }: { admin?: boolean }) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -31,15 +33,26 @@ const RequestPR = () => {
 
   const [project, setProject] = useState<Project>(createEmptyProject());
   const [mode, setMode] = useState<Mode>("draft");
-  const [reviewStage, setReviewStage] = useState<"accounts" | "pmo" | undefined>(undefined);
+  const [reviewStage, setReviewStage] = useState<"accounts" | "pmo" | "draft" | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(Boolean(id));
+  // Administrative Controls: while deciding where a user without ordinary access goes (administrative review or away), show nothing.
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
 
-    getPRRequestDetail(id)
+    (admin ? getPRRequestDetailForAdmin(id) : getPRRequestDetail(id))
       .then((detail) => {
-        if (detail.status === "Draft") {
+        if (admin) {
+          const stage = detail.status === "Pending Accounts Approval" ? "accounts" : detail.status === "Pending PMO Manager Approval" ? "pmo" : detail.status === "Draft" ? "draft" : null;
+          if (!stage) {
+            showToast({ type: "error", message: `A request that is ${detail.status} can no longer be edited.` });
+            navigate(`/admin/pr-requests/${id}`);
+            return;
+          }
+          setMode("review");
+          setReviewStage(stage);
+        } else if (detail.status === "Draft") {
           setMode("draft");
         } else if (detail.status === "Pending Accounts Approval" && detail.assignedAccountsApproverId === user?.id) {
           setMode("review");
@@ -48,8 +61,21 @@ const RequestPR = () => {
           setMode("review");
           setReviewStage("pmo");
         } else {
-          showToast({ type: "error", message: "You do not have access to edit this PR Request." });
-          navigate("/pr-requests");
+          // Administrative Controls: an administrator who holds PR Approval Administration (e.g. a direct link, a refresh, or Review from the
+          // normal queue) is taken to the administrative review of the SAME request instead of an access error. Everyone else: unchanged.
+          setIsRedirecting(true);
+          void adminControlsService
+            .getMyRights()
+            .then((r) => r.rights.includes(PR_APPROVAL_ADMINISTRATION))
+            .catch(() => false)
+            .then((isHolder) => {
+              if (isHolder) {
+                navigate(`/admin/pr-requests/${id}/review`, { replace: true });
+                return;
+              }
+              showToast({ type: "error", message: "You do not have access to edit this PR Request." });
+              navigate("/pr-requests");
+            });
           return;
         }
         setProject((prev) => draftPayloadToProject(prev, detail.projectData));
@@ -60,13 +86,13 @@ const RequestPR = () => {
       })
       .finally(() => setIsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, user?.id]);
+  }, [id, user?.id, admin]);
 
-  if (isLoading) {
+  if (isLoading || isRedirecting) {
     return <div className="py-12 text-center text-[var(--nu-text-muted)]">Loading...</div>;
   }
 
-  return <RequestPRForm project={project} setProject={setProject} draftId={id ?? null} mode={mode} reviewStage={reviewStage} />;
+  return <RequestPRForm project={project} setProject={setProject} draftId={id ?? null} mode={mode} reviewStage={reviewStage} admin={admin} />;
 };
 
 export default RequestPR;

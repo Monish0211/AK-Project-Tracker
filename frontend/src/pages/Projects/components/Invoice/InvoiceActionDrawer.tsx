@@ -1,6 +1,7 @@
 import type { Project } from "../../../../types/Project";
 import { RaiseInvoiceDrawer } from "./RaiseInvoiceDrawer";
 import type { InvoiceLineActions } from "./useInvoiceLineActions";
+import { RaiseWithoutEmailNotice } from "./RaiseWithoutEmail";
 
 /**
  * The existing View / Edit Invoice interface (RaiseInvoiceDrawer — Invoice Header Details + Billable Line Items),
@@ -23,6 +24,7 @@ export function InvoiceActionDrawer({ project, actions, projectInvoiceCycle }: {
       onClose={actions.closeDrawer}
       onSave={actions.saveFromDrawer}
       onPaymentChanged={actions.reloadInvoicesFromServer}
+      topNotice={<RaiseWithoutEmailNotice active={actions.suppressEmail} />}
     />
   );
 }

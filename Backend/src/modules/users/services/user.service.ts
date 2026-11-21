@@ -11,6 +11,7 @@ import type { CreatedUserDto, UserLookupsDto } from "../dto/createUser.dto.js";
 import type { UserListItemDto } from "../dto/userList.dto.js";
 import { assertMayChangeCountryAccess, auditCountryAccessChange, describeCountryAccessChange } from "../countryAccessAdmin.js";
 import { assertMayChangeConversionRateAccess, auditConversionRateAccessChange, CONVERSION_RATES_MODULE_NAME } from "../conversionRateAccessAudit.js";
+import { assertMayChangeApprovalRights, auditApprovalRightsChange, planApprovalRightsChange } from "../approvalRightsAdmin.js";
 import type { CountryAccessRequester } from "../countryAccessAdmin.js";
 import {
   createPortalUser,
@@ -115,6 +116,9 @@ export async function createUser(input: CreateUserInput, requester?: CountryAcce
   const countryChange = describeCountryAccessChange(countryBefore, { regionIds: input.regionIds, allCountries: input.allCountriesAccess });
   await assertMayChangeCountryAccess(requester, null, countryChange, { regionIds: input.regionIds, allCountries: input.allCountriesAccess });
   await assertMayChangeConversionRateAccess(requester, null, false, input.moduleIds);
+  // Approval rights (D6): Administrator only, audited; the Administrative Controls rights can never be granted here.
+  const approvalChange = await planApprovalRightsChange([], input.approvalIds);
+  await assertMayChangeApprovalRights(requester, null, approvalChange);
 
   const existingUser = await findUserByEmail(input.email);
   if (existingUser) {
@@ -156,7 +160,7 @@ export async function createUser(input: CreateUserInput, requester?: CountryAcce
 
     await createUserModuleAccess(tx, user.id, input.moduleIds);
     await createUserRegionAccess(tx, user.id, input.regionIds);
-    await createUserApprovalPermissions(tx, user.id, input.approvalIds);
+    await createUserApprovalPermissions(tx, user.id, approvalChange.nextIds ?? []);
     await createProjectManagerScope(tx, user.id, scopedUserIds);
 
     return user;
@@ -164,6 +168,7 @@ export async function createUser(input: CreateUserInput, requester?: CountryAcce
 
   await auditCountryAccessChange(requester, createdUser.id, countryBefore, { regionIds: input.regionIds, allCountries: input.allCountriesAccess === true }, countryChange);
   await auditConversionRateAccessChange(requester, createdUser.id, false, input.moduleIds);
+  await auditApprovalRightsChange(requester, createdUser.id, approvalChange);
 
   // Transaction already committed above — everything below is best-effort.
   // Sent exactly once, here, and nowhere else in the create-user path.
@@ -317,6 +322,12 @@ export async function updateUser(
   await assertMayChangeCountryAccess(requester, targetUserId, countryChange, { regionIds: input.regionIds, allCountries: input.allCountriesAccess });
   const hadConversionAccess = existingUser.moduleAccess.some((grant) => grant.module.name === CONVERSION_RATES_MODULE_NAME);
   await assertMayChangeConversionRateAccess(requester, targetUserId, hadConversionAccess, input.moduleIds);
+  // Approval rights (D6): only a real change is an attempt; Administrator only, never on yourself, audited. Administrative Controls rights are kept.
+  const approvalChange = await planApprovalRightsChange(
+    existingUser.approvalPermissions.map((grant) => grant.approvalTypeId),
+    input.approvalIds
+  );
+  await assertMayChangeApprovalRights(requester, targetUserId, approvalChange);
 
   if (input.email && input.email !== existingUser.email) {
     const emailOwner = await findUserByEmail(input.email);
@@ -382,7 +393,7 @@ export async function updateUser(
     await replaceUserModuleAccess(tx, targetUserId, input.moduleIds);
     // Rewritten only when the set of countries actually changed (an unchanged list the form re-sent is a no-op).
     await replaceUserRegionAccess(tx, targetUserId, countryChange.regionsChanged ? input.regionIds : undefined);
-    await replaceUserApprovalPermissions(tx, targetUserId, input.approvalIds);
+    await replaceUserApprovalPermissions(tx, targetUserId, approvalChange.nextIds);
     await replaceProjectManagerScope(tx, targetUserId, scopedUserIds);
   });
 
@@ -397,6 +408,7 @@ export async function updateUser(
     countryChange
   );
   await auditConversionRateAccessChange(requester, targetUserId, hadConversionAccess, input.moduleIds);
+  await auditApprovalRightsChange(requester, targetUserId, approvalChange);
 
   // Deactivating or locking a user must end their existing session, not
   // just block new ones — every outstanding refresh token stops working

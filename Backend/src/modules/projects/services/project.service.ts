@@ -467,11 +467,17 @@ function regionalDefaultCurrencyFields(
  * `createdByUserId`/similar field in `createProjectSchema` to trust from the
  * client, so there is nothing to strip or validate against spoofing.
  */
-export async function createProject(input: CreateProjectRequestInput, creatorUserId: string): Promise<ProjectDto> {
+export interface CreateProjectOptions {
+  /** Administrative Controls (D2): when an Administrator finally approves a PR Request on someone's behalf, the country check uses the
+   *  ADMINISTRATOR's own country access, while the project is still owned by (created for) the assigned PMO Manager. */
+  countryAuthorizerUserId?: string;
+}
+
+export async function createProject(input: CreateProjectRequestInput, creatorUserId: string, options: CreateProjectOptions = {}): Promise<ProjectDto> {
   assertPrCategoryPrNoRule(input.prCategory, input.prNo);
   // Country (Phase 2): the project's country comes from its PR Category only; the creator must hold that country (any authorized country
   // is allowed whatever the creator's own country or the active-country selector). Checked before anything about the PR Number is revealed.
-  const { regionId: projectRegionId, regionalCurrency: projectRegionalCurrency } = await resolveAndAuthorizeCreateCountry(input.prCategory, creatorUserId);
+  const { regionId: projectRegionId, regionalCurrency: projectRegionalCurrency } = await resolveAndAuthorizeCreateCountry(input.prCategory, options.countryAuthorizerUserId ?? creatorUserId);
   await assertPrNoAvailable(input.prNo);
 
   // Creating a project directly as Completed follows the same completion and

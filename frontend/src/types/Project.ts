@@ -153,6 +153,8 @@ export interface Project {
    * server with the write that raises the invoice. The server then freezes it in the invoice's GST snapshot.
    */
   invoiceGstSelections?: Record<string, InvoiceGstSelection>;
+  /** Administrative Controls (Invoice Administration holders): raise the invoices in this save without the automatic "invoice raised" email. Transient, never stored. */
+  invoiceSuppressEmail?: boolean;
 
   contractType: string;
 

@@ -5,6 +5,8 @@ import Sidebar from "../components/Sidebar/Sidebar";
 import Navbar from "../components/Navbar/Navbar";
 import { GlobalReminderProvider } from "../notifications/GlobalReminderProvider";
 import { ModuleRoute } from "../auth/ModuleRoute";
+import { AdminRightRoute } from "../auth/AdminRightRoute";
+import { PR_APPROVAL_ADMINISTRATION } from "../services/adminControlsService";
 import { PmoAssistant } from "../components/PmoAssistant/PmoAssistant";
 import { loadEmployeesForApp } from "../services/employeeService";
 
@@ -40,6 +42,7 @@ const Settings = lazy(() => import("../pages/Settings/Settings"));
 const RequestPR = lazy(() => import("../pages/PRRequests/RequestPR"));
 const PRRequests = lazy(() => import("../pages/PRRequests/PRRequests"));
 const PRRequestDetail = lazy(() => import("../pages/PRRequests/PRRequestDetail"));
+const AdminPRRequests = lazy(() => import("../pages/PRRequests/admin/AdminPRRequests"));
 
 const MainLayout = () => {
   // Central Employee Master hydration — MainLayout mounts exactly once per
@@ -253,6 +256,21 @@ const MainLayout = () => {
               <Route
                 path="/pr-requests/:id"
                 element={<ModuleRoute anyOf={["PR Request", "Approvals"]}><PRRequestDetail /></ModuleRoute>}
+              />
+
+              {/* Administrative Controls (Nov 2026): PR Approval Administration holders only - every request in every country.
+                  Not module-gated: the right itself is the gate, and the server re-checks it on every call. */}
+              <Route
+                path="/admin/pr-requests"
+                element={<AdminRightRoute right={PR_APPROVAL_ADMINISTRATION}><AdminPRRequests /></AdminRightRoute>}
+              />
+              <Route
+                path="/admin/pr-requests/:id"
+                element={<AdminRightRoute right={PR_APPROVAL_ADMINISTRATION}><PRRequestDetail admin /></AdminRightRoute>}
+              />
+              <Route
+                path="/admin/pr-requests/:id/review"
+                element={<AdminRightRoute right={PR_APPROVAL_ADMINISTRATION}><RequestPR admin /></AdminRightRoute>}
               />
 
               {/* Wildcard Fallback */}

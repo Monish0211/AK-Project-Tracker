@@ -100,6 +100,8 @@ export interface PersistArgs {
   /** Called when the save has finished either way (Invoice Tracker refreshes its list from the server's truth). */
   onSettled?: (() => void) | undefined;
   deps: PersistDeps;
+  /** Administrative Controls: after a successful save that raised N invoice line(s). */
+  onRaised?: ((count: number) => void) | undefined;
 }
 
 /**
@@ -124,10 +126,27 @@ async function readServerInvoiceCurrency(projectId: string, fallback: Project["i
  * refused. This is the single place invoice edits and deletes reach the existing PATCH / DELETE endpoints, and so
  * the single place every invoice status-history event originates from the UI.
  */
-export function persistInvoiceProjectChange({ project, updatedProject: requestedProject, setProject, syncing, onStart, onSynced, onSettled, deps }: PersistArgs): boolean {
+/**
+ * Administrative Controls: how many invoice lines a save RAISES - a new line saved as anything but Draft / Cancelled, or an existing Draft line
+ * moved to anything but Draft / Cancelled. Exactly the writes that carry "raise without email" (see syncInvoiceLinesWithApi()).
+ */
+export function countRaisingLines(previousItems: InvoiceItem[], nextItems: InvoiceItem[]): number {
+  const previous = new Map(previousItems.flatMap((item) => item.invoices.map((line) => [line.id, line.status] as const)));
+  let count = 0;
+  for (const item of nextItems) {
+    for (const line of item.invoices) {
+      if (line.status === "Draft" || line.status === "Cancelled") continue;
+      const before = previous.get(line.id);
+      if (before === undefined || before === "Draft") count += 1;
+    }
+  }
+  return count;
+}
+
+export function persistInvoiceProjectChange({ project, updatedProject: requestedProject, setProject, syncing, onStart, onSynced, onSettled, onRaised, deps }: PersistArgs): boolean {
   // Invoice-level GST snapshot (Nov 2026): the rate / tax type chosen for a NEW invoice travels on the project as a transient field. It is
   // taken off here — it must never reach React state or the local copy — and handed to the server with the write that raises the invoice.
-  const { invoiceGstSelections: gstSelections, ...updatedProject } = requestedProject;
+  const { invoiceGstSelections: gstSelections, invoiceSuppressEmail, ...updatedProject } = requestedProject;
   if (!syncing.current) {
     // A first raise of an invoice that GST applies to must carry a rate and tax type; refuse here, clearly, instead of failing at the server.
     const missingGstFor = findInvoiceMissingGstChoice(project, updatedProject as Project, gstSelections);
@@ -151,6 +170,7 @@ export function persistInvoiceProjectChange({ project, updatedProject: requested
   }
   syncing.current = true;
   onStart?.();
+  const raisedCount = countRaisingLines(project.invoiceItems, updatedProject.invoiceItems);
 
   setProject?.(updatedProject);
   deps.updateProject({ ...updatedProject, updatedAt: deps.now() });
@@ -159,12 +179,14 @@ export function persistInvoiceProjectChange({ project, updatedProject: requested
   // write) announces once more when it settles instead of once per step.
   void batchPmoDataChanged(() =>
   deps
-    .syncInvoiceLinesWithApi(project.id, project.invoiceItems, updatedProject.invoiceItems, gstSelections)
+    .syncInvoiceLinesWithApi(project.id, project.invoiceItems, updatedProject.invoiceItems, gstSelections, invoiceSuppressEmail === true)
     .then(async (reconciledItems) => {
       const invoiceCurrency = await readServerInvoiceCurrency(project.id, updatedProject.invoiceCurrency, deps);
       const reconciledProject = { ...updatedProject, invoiceItems: reconciledItems, invoiceCurrency };
       setProject?.(reconciledProject);
       deps.updateProject({ ...reconciledProject, updatedAt: deps.now() });
+      // Only after the WHOLE save succeeded: a save that raised nothing, or that failed, never reports a raise.
+      if (raisedCount > 0) onRaised?.(raisedCount);
       onSynced?.();
     })
     .catch((error) => {

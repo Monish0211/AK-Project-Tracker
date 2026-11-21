@@ -68,11 +68,13 @@ interface Props {
    * active. See PRRequestReviewFormButtons.tsx.
    */
   mode?: "draft" | "review";
-  /** Required when mode is "review" — which stage's approval action Approve should call. */
-  reviewStage?: "accounts" | "pmo";
+  /** Required when mode is "review" — which stage's approval action Approve should call ("draft": administrator editing a Draft, Save only). */
+  reviewStage?: "accounts" | "pmo" | "draft";
+  /** Administrative Controls: a PR Approval Administration holder reviewing any request (reason required; admin endpoints). */
+  admin?: boolean;
 }
 
-const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewStage }: Props) => {
+const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewStage, admin = false }: Props) => {
   const isReview = mode === "review";
   const [activeTab, setActiveTab] = useState<TabKey>("general");
   const [unlockedIndex, setUnlockedIndex] = useState(isReview ? TABS.length - 1 : 0);
@@ -174,10 +176,12 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
           </div>
           <div className="min-w-0">
             <h1 className="text-[19px] font-bold text-[var(--nu-text)] leading-tight">
-              {isReview ? "Review PR Request" : draftId ? "Edit PR Request Draft" : "New PR Request"}
+              {admin ? "Review PR Request (Administrator)" : isReview ? "Review PR Request" : draftId ? "Edit PR Request Draft" : "New PR Request"}
             </h1>
             <p className="text-[12.5px] text-[var(--nu-text-muted)] mt-0.5">
-              {isReview
+              {admin
+                ? "You are acting as an administrator at this request's current stage, on behalf of its assigned approver. Every save or decision needs a reason and is recorded."
+                : isReview
                 ? "Review the submitted data across every tab. You can correct anything before deciding — Save persists a correction without approving or rejecting."
                 : "Enter project information across General, Quantity, Payments, and Expense Budget — the same fields Add Project captures. Saving here only creates a Draft; it never creates a Project and nobody is notified. Send this to Accounts for approval afterward from My Requests."}
             </p>
@@ -275,7 +279,7 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
       </div>
 
       {isReview ? (
-        <PRRequestReviewFormButtons project={project} prRequestId={draftId!} stage={reviewStage!} />
+        <PRRequestReviewFormButtons project={project} prRequestId={draftId!} stage={reviewStage!} admin={admin} />
       ) : (
         <RequestPRFormButtons
           project={project}

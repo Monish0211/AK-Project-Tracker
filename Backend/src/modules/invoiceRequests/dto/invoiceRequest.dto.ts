@@ -46,6 +46,11 @@ export interface InvoiceRequestDto {
    */
   emailStatus: string | null;
   emailDetail: string | null;
+  /** Administrative Controls: outcome of the automatic "Invoice Raised Successfully" / "Invoice Paid" emails - sent | failed | suppressed. */
+  raisedEmailStatus: string | null;
+  raisedEmailDetail: string | null;
+  finalEmailStatus: string | null;
+  finalEmailDetail: string | null;
 
   createdAt: Date;
   updatedAt: Date;
