@@ -2553,3 +2553,24 @@ model InvoiceLineDeletion {
   @@index([projectId])
   @@index([invoiceNo])
 }
+
+/// Weekly email report exclusions (Nov 2026): an Administrator took this project out of one weekly report until restored.
+/// Report-level only - never changes project, invoice, expense or payment data. Permanent history (DB trigger): never deleted,
+/// restored once. At most one active row per (projectId, reportType) - partial unique index in the migration (not expressible here).
+model WeeklyReportExclusion {
+  id               String    @id @default(dbgenerated("gen_random_uuid()"))
+  projectId        String
+  reportType       String
+  prNo             String
+  projectTitle     String
+  client           String
+  excludedByUserId String
+  excludedByName   String
+  excludedAt       DateTime  @default(now())
+  restoredByUserId String?
+  restoredByName   String?
+  restoredAt       DateTime?
+
+  @@index([reportType, restoredAt, excludedAt])
+  @@index([projectId])
+}

@@ -131,6 +131,10 @@ export interface WeeklyEmailPreviewPage<Row, Summary = undefined> extends PageIn
   recipients: { to: string; cc: string[] };
   emailEnabled: boolean;
   wouldSend: boolean;
+  /** Projects an Administrator excluded from this report (already left out of every count and row). */
+  excludedCount?: number;
+  /** The viewer is an Administrator (decided by the backend from the database): show Exclude + Excluded History. */
+  canExclude?: boolean;
 }
 
 export type MissingExpensePreviewRow = WeeklyEmailPreview["projects"][number];
@@ -178,6 +182,46 @@ export type WeeklyEmailApi<P, PP = WeeklyEmailPreviewPage<unknown, unknown>> = R
 
 export const missingExpenseEmailApi = weeklyEmailApi<WeeklyEmailPreview, MissingExpensePreviewPage>(BASE);
 export const unpaidInvoiceEmailApi = weeklyEmailApi<UnpaidInvoicePreview, UnpaidInvoicePreviewPage>(UNPAID_INVOICES_BASE);
+
+// ── Report exclusions + Excluded History (Nov 2026, Administrators only) ────
+
+const EXCLUSIONS_BASE = "/notification-settings/report-exclusions";
+
+export type WeeklyReportType = "missing_other_project_expenses" | "unpaid_invoices_30_days";
+export type ExclusionStatusFilter = "active" | "restored" | "all";
+
+export interface WeeklyReportExclusion {
+  id: string;
+  projectId: string;
+  reportType: WeeklyReportType;
+  reportName: string;
+  prNo: string;
+  projectTitle: string;
+  client: string;
+  excludedBy: string;
+  excludedAt: string;
+  status: "Active" | "Restored";
+  restoredBy: string | null;
+  restoredAt: string | null;
+}
+
+export interface WeeklyReportExclusionPage extends PageInfo {
+  reportType: WeeklyReportType;
+  reportName: string;
+  status: ExclusionStatusFilter;
+  items: WeeklyReportExclusion[];
+  counts: Record<WeeklyReportType, { active: number; restored: number }>;
+}
+
+export const weeklyReportExclusionApi = {
+  list: (reportType: WeeklyReportType, status: ExclusionStatusFilter, page: number, pageSize: number) => {
+    const q = new URLSearchParams({ reportType, status, page: String(page), pageSize: String(pageSize) });
+    return apiClient.get<WeeklyReportExclusionPage>(`${EXCLUSIONS_BASE}?${q.toString()}`);
+  },
+  /** Report-level only: never changes the project, its invoices, expenses or payments. */
+  exclude: (reportType: WeeklyReportType, projectId: string) => apiClient.post<WeeklyReportExclusion>(EXCLUSIONS_BASE, { reportType, projectId }),
+  restore: (id: string) => apiClient.post<WeeklyReportExclusion>(`${EXCLUSIONS_BASE}/${encodeURIComponent(id)}/restore`, {}),
+};
 
 /**
  * The CC picker lists the same active PMO Portal users on every card, so cards

@@ -16,6 +16,7 @@ import {
 import * as recipientsSvc from "./weeklyRecipients.service.js";
 import { lastRunView, runHistoryView, runWeeklyJob, type JobOutcome, type RunOptions, type WeeklySender, type WeeklyJobSpec } from "./weeklyJob.runner.js";
 import { pageOf, type PageRequest } from "../weeklyPaging.js";
+import { activeExcludedProjectIds, canManageExclusions, withoutExcluded } from "./weeklyReportExclusion.service.js";
 
 export type { CcRecipientView, RecipientsView, UpdateRecipientsInput } from "./weeklyRecipients.service.js";
 export type { JobOutcome, RunOptions } from "./weeklyJob.runner.js";
@@ -93,8 +94,13 @@ export function setMissingExpenseCandidatesForTests(source: CandidateSource | nu
   candidateSourceOverride = source;
 }
 
+/**
+ * The report behind the preview AND every send. Projects an Administrator excluded from this report (Excluded History)
+ * are dropped before the rules run, so they are neither counted as checked nor listed as matching.
+ */
 export async function buildReport(): Promise<MissingExpenseReport> {
-  return buildMissingExpenseReport(await (candidateSourceOverride ?? repo.findCandidateProjects)());
+  const candidates = await (candidateSourceOverride ?? repo.findCandidateProjects)();
+  return buildMissingExpenseReport(await withoutExcluded(MISSING_EXPENSE_JOB_NAME, candidates, (p) => p.id));
 }
 
 /**
@@ -153,8 +159,13 @@ export async function previewReport(now = new Date()) {
  * counts are exact); only one page of its rows is returned. Never sends,
  * never records a run.
  */
-export async function previewPage(request: PageRequest, now = new Date()) {
-  const [report, recipients] = await Promise.all([buildReport(), resolveSendRecipients()]);
+export async function previewPage(request: PageRequest, now = new Date(), viewerUserId?: string) {
+  const [report, recipients, excluded, canExclude] = await Promise.all([
+    buildReport(),
+    resolveSendRecipients(),
+    activeExcludedProjectIds(MISSING_EXPENSE_JOB_NAME),
+    viewerUserId ? canManageExclusions(viewerUserId) : Promise.resolve(false),
+  ]);
   const page = pageOf(report.missing, request);
   return {
     generatedAt: now.toISOString(),
@@ -162,6 +173,10 @@ export async function previewPage(request: PageRequest, now = new Date()) {
     timezone: env.APP_TIMEZONE,
     eligibleCount: report.eligibleCount,
     matchCount: report.missing.length,
+    /** Projects currently excluded from this report by an Administrator (already left out of every count above). */
+    excludedCount: excluded.size,
+    /** The viewer is an Administrator: show Exclude and the Excluded History link. */
+    canExclude,
     ...page,
     items: page.items.map((p) => ({
       id: p.id,

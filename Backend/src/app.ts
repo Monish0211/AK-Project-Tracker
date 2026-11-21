@@ -26,7 +26,7 @@ import { prRequestRoutes } from "./modules/prRequests/index.js";
 import { invoiceRequestRoutes } from "./modules/invoiceRequests/index.js";
 import { documentRoutes } from "./modules/documents/index.js";
 import { pmoCoordinatorRoutes } from "./modules/pmoCoordinators/index.js";
-import { missingExpenseNotificationRoutes, unpaidInvoiceNotificationRoutes } from "./modules/weeklyNotifications/index.js";
+import { missingExpenseNotificationRoutes, unpaidInvoiceNotificationRoutes, weeklyReportExclusionRoutes } from "./modules/weeklyNotifications/index.js";
 import { invoiceTrackerRoutes } from "./modules/invoiceTracker/index.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { requestLogger } from "./shared/middleware/requestLogger.js";
@@ -179,6 +179,8 @@ app.use("/pmo-coordinators", pmoCoordinatorRoutes);
 app.use("/notification-settings/missing-expenses", missingExpenseNotificationRoutes);
 // Weekly "Invoices Unpaid for 30+ Days" email settings (Settings → Weekly Emails, Oct 2026).
 app.use("/notification-settings/unpaid-invoices", unpaidInvoiceNotificationRoutes);
+// Weekly email report exclusions + Excluded History (Settings → Weekly Emails, Nov 2026). Administrators only.
+app.use("/notification-settings/report-exclusions", weeklyReportExclusionRoutes);
 // Invoice Tracker (Oct 2026) - monthly invoice activity per project, read-only.
 app.use("/invoice-tracker", invoiceTrackerRoutes);
 

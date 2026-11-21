@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, Eye, History, Loader2, Mail, Play, Plus, Save, Trash2, Undo2 } from "lucide-react";
+import { AlertTriangle, Eye, EyeOff, History, Loader2, Mail, Play, Plus, Save, Trash2, Undo2 } from "lucide-react";
 import { Card, CardHeader } from "../../../../components/ui/Card";
 import { Badge } from "../../../../components/ui/Badge";
 import { Button } from "../../../../components/ui/Button";
@@ -21,6 +21,7 @@ import {
   formatWhen,
   runTypeLabel,
   WEEKLY_EMAIL_NOTIFICATIONS,
+  weeklyEmailExcludedPath,
   weeklyEmailPreviewPath,
   weeklyEmailRunsPath,
   type WeeklyEmailNotification,
@@ -71,7 +72,20 @@ export function WeeklyEmailCardStatus({ config, settings }: { config: WeeklyEmai
 }
 
 /** Preview Report / View All Runs links, and Run now when the server allows manual runs. */
-export function WeeklyEmailCardLinks({ config, settings, running, onRunNow }: { config: WeeklyEmailNotification; settings: WeeklyEmailSettings; running: boolean; onRunNow: () => void }) {
+export function WeeklyEmailCardLinks({
+  config,
+  settings,
+  running,
+  onRunNow,
+  showExcludedHistory = false,
+}: {
+  config: WeeklyEmailNotification;
+  settings: WeeklyEmailSettings;
+  running: boolean;
+  onRunNow: () => void;
+  /** Administrators only (the backend refuses everyone else). */
+  showExcludedHistory?: boolean;
+}) {
   return (
     <>
       <Link to={weeklyEmailPreviewPath(config.slug)} className={linkButtonClass} data-link="preview">
@@ -82,6 +96,12 @@ export function WeeklyEmailCardLinks({ config, settings, running, onRunNow }: { 
         <History size={13} />
         View All Runs{settings.totalRuns > 0 ? ` (${settings.totalRuns.toLocaleString("en-IN")})` : ""}
       </Link>
+      {showExcludedHistory && (
+        <Link to={weeklyEmailExcludedPath(config.slug)} className={linkButtonClass} data-link="excluded">
+          <EyeOff size={13} />
+          Excluded History
+        </Link>
+      )}
       {settings.manualTriggerEnabled && (
         <Button variant="secondary" size="sm" icon={running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} onClick={onRunNow} disabled={running}>
           Run now
@@ -104,7 +124,7 @@ export interface WeeklyEmailCardInitial {
  * the report or the run history is loaded here). Administrator / PMO Manager
  * only (Settings.tsx + backend).
  */
-export function WeeklyEmailCard({ config, initial }: { config: WeeklyEmailNotification; initial?: WeeklyEmailCardInitial }) {
+export function WeeklyEmailCard({ config, initial, showExcludedHistory = false }: { config: WeeklyEmailNotification; initial?: WeeklyEmailCardInitial; showExcludedHistory?: boolean }) {
   const { showToast } = usePmoToast();
   const { api } = config;
   const [settings, setSettings] = useState<WeeklyEmailSettings | null>(initial?.settings ?? null);
@@ -374,7 +394,7 @@ export function WeeklyEmailCard({ config, initial }: { config: WeeklyEmailNotifi
               Discard changes
             </Button>
             <span className="flex-1" />
-            <WeeklyEmailCardLinks config={config} settings={settings} running={running} onRunNow={() => setConfirmRun(true)} />
+            <WeeklyEmailCardLinks config={config} settings={settings} running={running} onRunNow={() => setConfirmRun(true)} showExcludedHistory={showExcludedHistory} />
           </div>
           {settings.recipients.updatedAt && (
             <p className="text-[11px] text-[var(--nu-text-muted)]">
@@ -403,10 +423,13 @@ export function WeeklyEmailCard({ config, initial }: { config: WeeklyEmailNotifi
 }
 
 /** Settings → Weekly Emails: one card per weekly notification. */
-export const WeeklyEmailsSection = () => (
-  <div className="space-y-5">
-    {WEEKLY_EMAIL_NOTIFICATIONS.map((n) => (
-      <WeeklyEmailCard key={n.slug} config={n} />
-    ))}
-  </div>
-);
+/** `showExcludedHistory`: the signed-in user is an Administrator (Settings decides; the backend enforces it). */
+export const WeeklyEmailsSection = ({ showExcludedHistory = false }: { showExcludedHistory?: boolean }) => {
+  return (
+    <div className="space-y-5">
+      {WEEKLY_EMAIL_NOTIFICATIONS.map((n) => (
+        <WeeklyEmailCard key={n.slug} config={n} showExcludedHistory={showExcludedHistory} />
+      ))}
+    </div>
+  );
+};

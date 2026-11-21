@@ -1,4 +1,4 @@
-import { missingExpenseEmailApi, unpaidInvoiceEmailApi, type WeeklyEmailApi } from "../../../../services/weeklyEmailService";
+import { missingExpenseEmailApi, unpaidInvoiceEmailApi, type WeeklyEmailApi, type WeeklyReportType } from "../../../../services/weeklyEmailService";
 
 /**
  * Settings → Weekly Emails (Oct 2026): one entry per weekly notification.
@@ -22,12 +22,16 @@ export interface WeeklyEmailNotification {
   matchLabel: string; // preview summary + run history column: what is listed
   /** Extra module the preview needs (the backend enforces it too). */
   previewModule?: string;
+  /** Backend report key for Exclude / Excluded History (the run log's job name). */
+  reportType: WeeklyReportType;
   api: WeeklyEmailApi<unknown, unknown>;
 }
 
 export const WEEKLY_EMAILS_SETTINGS_PATH = "/settings?tab=weeklyEmails";
 export const weeklyEmailPreviewPath = (slug: WeeklyEmailSlug) => `/settings/weekly-emails/${slug}/preview`;
 export const weeklyEmailRunsPath = (slug: WeeklyEmailSlug) => `/settings/weekly-emails/${slug}/runs`;
+/** Excluded History (Administrators only), opened on one report's tab. */
+export const weeklyEmailExcludedPath = (slug: WeeklyEmailSlug) => `/settings/weekly-emails/excluded?report=${slug}`;
 
 export const WEEKLY_EMAIL_NOTIFICATIONS: readonly WeeklyEmailNotification[] = [
   {
@@ -40,6 +44,7 @@ export const WEEKLY_EMAIL_NOTIFICATIONS: readonly WeeklyEmailNotification[] = [
     matchPhrase: "project with a Non Man-Hour Budget entered is missing Other Project Expenses",
     eligibleLabel: "Eligible projects checked (Non Man-Hour Budget entered)",
     matchLabel: "Missing Other Project Expenses",
+    reportType: "missing_other_project_expenses",
     api: missingExpenseEmailApi,
   },
   {
@@ -53,6 +58,7 @@ export const WEEKLY_EMAIL_NOTIFICATIONS: readonly WeeklyEmailNotification[] = [
     eligibleLabel: "Raised / Submitted and Partially Paid invoices checked",
     matchLabel: "Unpaid for 30+ days",
     previewModule: "Invoices",
+    reportType: "unpaid_invoices_30_days",
     api: unpaidInvoiceEmailApi,
   },
 ];
@@ -64,6 +70,14 @@ export function findWeeklyEmailNotification(slug: string | undefined): WeeklyEma
 /** Same two roles as the backend's /notification-settings routes (and the Settings tab). */
 export function canManageWeeklyEmails(role: string | null | undefined): boolean {
   return role === "Administrator" || role === "PMO Manager";
+}
+
+/**
+ * Exclude a project from a weekly report / Excluded History: Administrators only (Nov 2026). This only decides what is
+ * SHOWN - the backend refuses everyone else and re-checks the role from the database.
+ */
+export function canManageReportExclusions(role: string | null | undefined): boolean {
+  return role === "Administrator";
 }
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

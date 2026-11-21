@@ -5,6 +5,7 @@ import { UserManagementSection } from "./components/userManagement/UserManagemen
 import { SecurityAuditSection } from "./components/audit/SecurityAuditSection";
 import { PmoCoordinatorsSection } from "./components/pmoCoordinators/PmoCoordinatorsSection";
 import { WeeklyEmailsSection } from "./components/weeklyEmails/WeeklyEmailsSection";
+import { canManageReportExclusions } from "./components/weeklyEmails/weeklyEmailNotifications";
 import { CountryRemindersSection } from "./components/countryReminders/CountryRemindersSection";
 import { AdministrativeControlsSection } from "./components/adminControls/AdministrativeControlsSection";
 import { useAuth } from "../../auth/authContext";
@@ -146,7 +147,7 @@ const Settings = () => {
       {/* Tab Panels */}
       {activeTab === "users" && <UserManagementSection />}
       {activeTab === "coordinators" && canManageCoordinators && <PmoCoordinatorsSection />}
-      {activeTab === "weeklyEmails" && canManageCoordinators && <WeeklyEmailsSection />}
+      {activeTab === "weeklyEmails" && canManageCoordinators && <WeeklyEmailsSection showExcludedHistory={canManageReportExclusions(user?.role)} />}
       {activeTab === "countryReminders" && canManageCoordinators && <CountryRemindersSection />}
       {activeTab === "adminControls" && isAdministrator && <AdministrativeControlsSection />}
       {activeTab === "audit" && <SecurityAuditSection />}

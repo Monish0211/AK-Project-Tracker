@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Play } from "lucide-react";
+import { EyeOff, Play } from "lucide-react";
 import { Badge } from "../../../../components/ui/Badge";
 import { Button } from "../../../../components/ui/Button";
 import { formatMoney } from "../../../../utils/currencyDisplay";
@@ -42,7 +42,16 @@ function PrLink({ href, children }: { href: string; children: ReactNode }) {
   );
 }
 
-export function MissingExpensePreviewTable({ rows }: { rows: MissingExpensePreviewRow[] }) {
+/** Exclude button of one preview row (Administrators only - the page passes onExclude only to them). */
+function ExcludeButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <Button variant="outline" size="sm" icon={<EyeOff size={12} />} onClick={onClick} data-action="exclude" aria-label={label}>
+      Exclude
+    </Button>
+  );
+}
+
+export function MissingExpensePreviewTable({ rows, onExclude }: { rows: MissingExpensePreviewRow[]; onExclude?: (row: MissingExpensePreviewRow) => void }) {
   return (
     <table className="w-full border-collapse text-left text-[12px]" data-table="weekly-email-preview">
       <thead className="sticky top-0 bg-[var(--nu-surface-alt)] text-[11px] uppercase text-[var(--nu-text-muted)]">
@@ -52,6 +61,7 @@ export function MissingExpensePreviewTable({ rows }: { rows: MissingExpensePrevi
           <th className={th}>Project Title</th>
           <th className={th}>Project Manager</th>
           <th className={th}>Status</th>
+          {onExclude && <th className={`${th} text-right`}>Action</th>}
         </tr>
       </thead>
       <tbody>
@@ -64,6 +74,11 @@ export function MissingExpensePreviewTable({ rows }: { rows: MissingExpensePrevi
             <td className={td}>{x.projectTitle}</td>
             <td className={td}>{x.projectManager || "—"}</td>
             <td className={td}>{x.projectStatus || "—"}</td>
+            {onExclude && (
+              <td className={`${td} text-right`}>
+                <ExcludeButton label={`Exclude ${x.prNo} from this report`} onClick={() => onExclude(x)} />
+              </td>
+            )}
           </tr>
         ))}
       </tbody>
@@ -71,7 +86,8 @@ export function MissingExpensePreviewTable({ rows }: { rows: MissingExpensePrevi
   );
 }
 
-export function UnpaidInvoicePreviewTable({ rows }: { rows: UnpaidInvoicePreviewRow[] }) {
+/** Exclusion is per PROJECT: the button on any of a project's invoice rows excludes all of them. */
+export function UnpaidInvoicePreviewTable({ rows, onExclude }: { rows: UnpaidInvoicePreviewRow[]; onExclude?: (row: UnpaidInvoicePreviewRow) => void }) {
   return (
     <table className="w-full border-collapse text-left text-[12px]" data-table="weekly-unpaid-invoices-preview">
       <thead className="sticky top-0 bg-[var(--nu-surface-alt)] text-[11px] uppercase text-[var(--nu-text-muted)]">
@@ -87,6 +103,7 @@ export function UnpaidInvoicePreviewTable({ rows }: { rows: UnpaidInvoicePreview
           <th className={`${th} text-right`}>Outstanding</th>
           <th className={th}>Status</th>
           <th className={th}>Project Manager</th>
+          {onExclude && <th className={`${th} text-right`}>Action</th>}
         </tr>
       </thead>
       <tbody>
@@ -108,6 +125,11 @@ export function UnpaidInvoicePreviewTable({ rows }: { rows: UnpaidInvoicePreview
             <td className={`${td} text-right whitespace-nowrap font-semibold`}>{x.outstandingINR === null ? <NotRecorded /> : money(x.outstandingINR, x.currency)}</td>
             <td className={`${td} whitespace-nowrap ${x.status === "Partially Paid" ? "text-[var(--nu-warning)]" : "text-[var(--nu-danger)]"}`}>{x.status}</td>
             <td className={td}>{x.projectManager || "—"}</td>
+            {onExclude && (
+              <td className={`${td} text-right`}>
+                <ExcludeButton label={`Exclude project ${x.prNo} (all its invoices) from this report`} onClick={() => onExclude(x)} />
+              </td>
+            )}
           </tr>
         ))}
       </tbody>
@@ -139,6 +161,7 @@ export function PreviewSummary({ config, data }: { config: WeeklyEmailNotificati
         <Stat label={config.matchLabel} value={fmt(data.matchCount)} tone={data.matchCount > 0 ? "danger" : undefined} />
         {summary && <Stat label="Outstanding on fully unpaid (Raised / Submitted)" value={outstandingText(summary)} />}
         {summary && summary.partiallyPaidCount > 0 && <Stat label="Partially Paid (outstanding not recorded)" value={fmt(summary.partiallyPaidCount)} tone="warning" />}
+        {data.canExclude && <Stat label="Projects excluded by an Administrator" value={fmt(data.excludedCount ?? 0)} />}
       </div>
       <p className="text-[11.5px] text-[var(--nu-text-muted)]" data-send-line>
         Opening this preview never sends an email.{" "}

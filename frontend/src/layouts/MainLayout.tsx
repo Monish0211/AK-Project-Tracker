@@ -18,6 +18,7 @@ import Projects from "../pages/Projects/Projects";
 /* Settings → Weekly Emails sub-pages (Oct 2026) — lazy: only admins open them, and only on demand. */
 const WeeklyEmailPreviewPage = lazy(() => import("../pages/Settings/WeeklyEmails/WeeklyEmailPreviewPage"));
 const WeeklyEmailRunsPage = lazy(() => import("../pages/Settings/WeeklyEmails/WeeklyEmailRunsPage"));
+const WeeklyEmailExcludedHistoryPage = lazy(() => import("../pages/Settings/WeeklyEmails/WeeklyEmailExcludedHistoryPage"));
 const InvoiceTracker = lazy(() => import("../pages/InvoiceTracker/InvoiceTracker"));
 const pageFallback = <div className="py-16 text-center text-[12px] text-[var(--nu-text-muted)]">Loading…</div>;
 
@@ -219,6 +220,11 @@ const MainLayout = () => {
               <Route
                 path="/settings"
                 element={<ModuleRoute module="Settings"><Settings /></ModuleRoute>}
+              />
+
+              <Route
+                path="/settings/weekly-emails/excluded"
+                element={<ModuleRoute module="Settings"><Suspense fallback={pageFallback}><WeeklyEmailExcludedHistoryPage /></Suspense></ModuleRoute>}
               />
 
               <Route

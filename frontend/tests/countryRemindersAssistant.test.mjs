@@ -118,7 +118,8 @@ test("PMO Assistant: Project Workspace reminders are shown in one section per pr
 test("Settings: the Country Reminders tab holds the project reminder alerts switch, change history and important reminders; no weekly-email configuration", () => {
   const s = src("pages/Settings/Settings.tsx");
   assert.match(s, /activeTab === "countryReminders" && canManageCoordinators && <CountryRemindersSection \/>/);
-  assert.match(s, /activeTab === "weeklyEmails" && canManageCoordinators && <WeeklyEmailsSection \/>/, "the global Weekly Emails tab is unchanged");
+  // Same tab, same role gate; Nov 2026 only adds the Administrator-only Excluded History link.
+  assert.match(s, /activeTab === "weeklyEmails" && canManageCoordinators && <WeeklyEmailsSection showExcludedHistory=\{canManageReportExclusions\(user\?\.role\)\} \/>/, "the global Weekly Emails tab is unchanged");
   const c = src("pages/Settings/components/countryReminders/CountryRemindersSection.tsx");
   for (const call of ["updateSetting", "audit", "createReminder", "deleteReminder"]) assert.ok(c.includes(`countryReminderService.${call}`) || c.includes(`.${call}(`), call);
   for (const gone of ["Recipients", "Run history", "Weekday", "Local time", "Time zone"]) assert.ok(!c.includes(gone), `no per-country ${gone}`);

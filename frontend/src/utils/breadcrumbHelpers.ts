@@ -65,6 +65,15 @@ export const getBreadcrumbs = (pathname: string): BreadcrumbItem[] => {
     ];
   }
 
+  // Settings → Weekly Emails → Excluded History (Administrators only)
+  if (matchPath("/settings/weekly-emails/excluded", pathname)) {
+    return [
+      { label: "Dashboard", icon: LayoutDashboard, href: "/", clickable: true },
+      { label: "Settings", icon: Settings, href: "/settings?tab=weeklyEmails", clickable: true },
+      { label: "Excluded History", icon: History, clickable: false, current: true }
+    ];
+  }
+
   // Settings → Weekly Emails sub-pages (Preview Report / View All Runs)
   const weeklyEmailMatch = matchPath("/settings/weekly-emails/:notification/:view", pathname);
   if (weeklyEmailMatch) {

@@ -17,6 +17,7 @@ import * as recipientsSvc from "./weeklyRecipients.service.js";
 import { getRecipients as getMissingExpenseRecipients, projectEditUrl } from "./missingExpense.service.js";
 import { lastRunView, runHistoryView, runWeeklyJob, type JobOutcome, type RunOptions, type WeeklySender, type WeeklyJobSpec } from "./weeklyJob.runner.js";
 import { pageOf, type PageRequest } from "../weeklyPaging.js";
+import { activeExcludedProjectIds, canManageExclusions, withoutExcluded } from "./weeklyReportExclusion.service.js";
 
 /**
  * Weekly "Invoices Unpaid for 30+ Days" email (Oct 2026). Same lifecycle,
@@ -99,8 +100,14 @@ export function invoiceUrl(row: { projectId: string; invoiceLineId: string }): s
   return projectEditUrl(row.projectId, "invoices", { invoiceLineId: row.invoiceLineId });
 }
 
+/**
+ * The report behind the preview AND every send. Exclusion is per PROJECT: every invoice of a project an Administrator
+ * excluded from this report is dropped before the rules run (counts and outstanding totals included). The invoices
+ * themselves are never touched.
+ */
 export async function buildReport(now = new Date()): Promise<UnpaidInvoiceReport> {
-  return buildUnpaidInvoiceReport(await (lineSourceOverride ?? invoiceRepo.findUnpaidInvoiceLines)(), now, env.APP_TIMEZONE);
+  const lines = await (lineSourceOverride ?? invoiceRepo.findUnpaidInvoiceLines)();
+  return buildUnpaidInvoiceReport(await withoutExcluded(UNPAID_INVOICE_JOB_NAME, lines, (l) => l.projectId), now, env.APP_TIMEZONE);
 }
 
 export function renderReportEmail(report: UnpaidInvoiceReport, now: Date) {
@@ -141,8 +148,13 @@ export async function previewReport(now = new Date()) {
  * counts and outstanding total cover the complete result; only one page of
  * rows is returned. Never sends, never records a run.
  */
-export async function previewPage(request: PageRequest, now = new Date()) {
-  const [report, recipients] = await Promise.all([buildReport(now), resolveSendRecipients()]);
+export async function previewPage(request: PageRequest, now = new Date(), viewerUserId?: string) {
+  const [report, recipients, excluded, canExclude] = await Promise.all([
+    buildReport(now),
+    resolveSendRecipients(),
+    activeExcludedProjectIds(UNPAID_INVOICE_JOB_NAME),
+    viewerUserId ? canManageExclusions(viewerUserId) : Promise.resolve(false),
+  ]);
   const page = pageOf(report.overdue, request);
   return {
     generatedAt: now.toISOString(),
@@ -150,6 +162,10 @@ export async function previewPage(request: PageRequest, now = new Date()) {
     timezone: env.APP_TIMEZONE,
     eligibleCount: report.eligibleCount,
     matchCount: report.overdue.length,
+    /** Projects currently excluded from this report by an Administrator (all their invoices are left out above). */
+    excludedCount: excluded.size,
+    /** The viewer is an Administrator: show Exclude and the Excluded History link. */
+    canExclude,
     summary: {
       overdueDays: OVERDUE_DAYS,
       knownOutstandingINR: totalKnownOutstanding(report.overdue),

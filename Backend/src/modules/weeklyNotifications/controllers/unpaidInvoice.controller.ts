@@ -25,7 +25,7 @@ export const previewUnpaidInvoiceReport = asyncHandler(async (_req: Request, res
 
 /** GET /preview?page=&pageSize= — one page of the report (read-only; never sends, never records a run). */
 export const previewUnpaidInvoicePage = asyncHandler(async (req: Request, res: Response) => {
-  res.status(200).json({ success: true, data: await service.previewPage(parseQuery(previewPageQuerySchema, req.query)) });
+  res.status(200).json({ success: true, data: await service.previewPage(parseQuery(previewPageQuerySchema, req.query), new Date(), requireUser(req).sub) });
 });
 
 /** GET /runs?page=&pageSize=&status=&trigger= — run history, newest first (read-only). */
