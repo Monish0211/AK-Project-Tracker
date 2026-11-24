@@ -251,6 +251,25 @@ export function applyRegionalCurrencyToProject<T extends { quantityItems: Quanti
   } as unknown as Partial<T> & { regionalCurrency: string | null };
 }
 
+/**
+ * Reprices every Quantity line with the project's SAVED currency and rate and refreshes the totals (Total WO Value, GST, Total Project Budget).
+ * Used when a saved PR request is loaded for editing or review: the stored payload carries only the raw inputs (qty, unit rate, rate), so
+ * without this the line values and totals keep their empty-form defaults (Total WO Value 0) until someone edits a field.
+ * Unlike applyRegionalCurrencyToProject, the currency and exchange rate are kept exactly as saved.
+ */
+export function recalculateProjectQuantities<
+  T extends { quantityItems: QuantityItem[]; currency: string; currentExchangeRate: number; gstApplicable: boolean }
+>(project: T, regionalCurrency: string | null | undefined): Partial<T> {
+  const regional = regionalCurrency || null;
+  const quantityItems = project.quantityItems.map((item) => recalcQuantityItem(item, project.currency, project.currentExchangeRate, regional));
+  const totals = calculateQuantity(quantityItems, project.currency, project.currentExchangeRate, project.gstApplicable, regional);
+  return {
+    quantityItems,
+    ...totals,
+    totalProjectBudget: !regional || regional === "INR" ? totals.workOrderValueINR : totals.workOrderValueRegional,
+  } as unknown as Partial<T>;
+}
+
 export function createEmptyQuantityItem(
   projectCurrency: string = "INR",
   projectExchangeRate: number = 1,

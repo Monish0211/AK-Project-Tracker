@@ -1,6 +1,7 @@
 import type { Project } from "../../types/Project";
 import type { PRRequestProjectData } from "../../types/PRRequest";
 import { toDateOnly } from "../../utils/dateOnly";
+import { recalculateProjectQuantities } from "../../utils/quantityCalculations";
 
 /**
  * Converts the in-memory `Project`-shaped draft object (the exact same type
@@ -73,7 +74,7 @@ export function projectToDraftPayload(project: Project): PRRequestProjectData {
  * take over from immediately.
  */
 export function draftPayloadToProject(base: Project, data: PRRequestProjectData): Project {
-  return {
+  const loaded: Project = {
     ...base,
     poMonth: data.poMonth,
     prCategory: data.prCategory,
@@ -124,8 +125,8 @@ export function draftPayloadToProject(base: Project, data: PRRequestProjectData)
             currency: item.currency,
             unitRate: item.unitRate,
             exchangeRate: item.exchangeRate,
-            unitRateINR: item.currency === "INR" ? item.unitRate : item.unitRate * item.exchangeRate,
-            woValue: item.uom === "LUMP SUM" ? item.unitRate : item.woQty * item.unitRate,
+            unitRateINR: 0,
+            woValue: 0,
             pendingAmount: 0,
           }))
         : base.quantityItems,
@@ -141,4 +142,9 @@ export function draftPayloadToProject(base: Project, data: PRRequestProjectData)
           }))
         : base.paymentMilestones,
   };
+  // The stored payload holds only the raw inputs, so the line values and the totals (Total WO Value, Total Project Budget) are worked out
+  // here with the saved currency and rate, the same pricing the form and the backend use. Without this the review screens showed a
+  // Total WO Value of 0, and a foreign-currency line showed its USD amount labelled as rupees. The regional currency is not stored
+  // either: RequestPRForm looks it up from the category and reprices again in that currency.
+  return { ...loaded, ...recalculateProjectQuantities(loaded, loaded.regionalCurrency) };
 }

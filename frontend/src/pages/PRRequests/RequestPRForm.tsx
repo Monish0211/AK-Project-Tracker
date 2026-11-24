@@ -11,7 +11,7 @@ import { uploadPRRequestDocument } from "../../services/documentService";
 import { getUserFriendlyErrorMessage } from "../../utils/errorMessage";
 import QuantityCard from "../Projects/components/QuantityCard";
 import { usePrCategoryCountries } from "../Projects/usePrCategoryCountries";
-import { applyRegionalCurrencyToProject } from "../../utils/quantityCalculations";
+import { applyRegionalCurrencyToProject, recalculateProjectQuantities } from "../../utils/quantityCalculations";
 import CommercialCard from "../Projects/components/PaymentMilestoneCard";
 import ExpenseBudgetCard from "../Projects/components/ExpenseBudgetCard";
 import RequestPRFormButtons from "./RequestPRFormButtons";
@@ -89,13 +89,14 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
   // which categories a requester may choose is unchanged.
   const currencyReference = usePrCategoryCountries(true);
   // A saved draft does not carry the regional currency, so it is looked up again from the category. A draft with no priced line yet also
-  // takes the regional currency at rate 1; a priced one keeps its saved currency and rates.
+  // takes the regional currency at rate 1; a priced one keeps its saved currency and rates, and its lines and totals are repriced in that
+  // regional currency (for a non-INR region the values belong in the regional fields, not the INR ones).
   useEffect(() => {
     if (!currencyReference || !project.prCategory || project.regionalCurrency) return;
     const regional = currencyReference.items.find((i) => i.prCategory === project.prCategory)?.country?.defaultCurrency ?? null;
     if (!regional) return;
     const hasPricedLine = project.quantityItems.some((i) => i.unitRate > 0);
-    setProject((prev) => (prev.regionalCurrency ? prev : { ...prev, ...(hasPricedLine ? { regionalCurrency: regional } : applyRegionalCurrencyToProject(prev, regional)) }));
+    setProject((prev) => (prev.regionalCurrency ? prev : { ...prev, ...(hasPricedLine ? { regionalCurrency: regional, ...recalculateProjectQuantities(prev, regional) } : applyRegionalCurrencyToProject(prev, regional)) }));
   }, [currencyReference, project.prCategory, project.regionalCurrency, project.quantityItems, setProject]);
 
   // Supporting documents picked BEFORE this request has been saved (no
