@@ -133,16 +133,23 @@ export function calculateQuantity(
  * The commercial currency a project opens with (Phase 3). A project that has a regional currency but no priced quantity line yet opens in that
  * currency at rate 1 (an Oman project reads OMR, not the old INR default). Once any line is priced, the saved currency is left exactly as saved.
  * A legacy project (no regional currency) is never changed.
+ *
+ * Nov 2026 fix: ONLY the untouched default - INR at rate 1, what the server stores when nobody chose a currency (the backend applies the same rule in
+ * regionalDefaultCurrencyFields) - is replaced. A currency someone actually chose (USD at 3.67 on an Abu Dhabi project) is ALWAYS kept, even while the
+ * quantity lines are not known yet: Edit Project first opens the project from its general information alone (no lines - the browser mirror is empty
+ * after a logout), and the old "no priced line" test then replaced the saved USD with AED before the lines arrived.
  */
 export function resolveOpeningCurrency(project: {
   currency?: string | null | undefined;
+  currentExchangeRate?: number | null | undefined;
   regionalCurrency?: string | null | undefined;
   quantityItems?: { unitRate?: number | undefined }[] | undefined;
 }): { currency: string; useRegionalDefault: boolean } {
   const saved = project.currency || "INR";
   const regional = project.regionalCurrency || null;
   const hasPricedLine = Array.isArray(project.quantityItems) && project.quantityItems.some((i) => typeof i.unitRate === "number" && i.unitRate > 0);
-  const useRegionalDefault = Boolean(regional) && !hasPricedLine && saved !== regional;
+  const untouchedDefault = saved === "INR" && (typeof project.currentExchangeRate === "number" ? project.currentExchangeRate : 1) === 1;
+  const useRegionalDefault = Boolean(regional) && !hasPricedLine && saved !== regional && untouchedDefault;
   return { currency: useRegionalDefault ? (regional as string) : saved, useRegionalDefault };
 }
 

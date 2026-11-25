@@ -254,6 +254,12 @@ test("an Oman project with no priced line opens as OMR at rate 1 (not the old IN
   assert.deepEqual(resolveOpeningCurrency({ regionalCurrency: "OMR", currency: "OMR", quantityItems: [] }), { currency: "OMR", useRegionalDefault: false });
   assert.deepEqual(resolveOpeningCurrency({ regionalCurrency: null, currency: "INR", quantityItems: [] }), { currency: "INR", useRegionalDefault: false }, "a legacy project is untouched");
   assert.deepEqual(resolveOpeningCurrency({ currency: "USD" }), { currency: "USD", useRegionalDefault: false });
+  // Nov 2026 regression (PRAD-2613, Abu Dhabi): a currency someone CHOSE is kept even before the quantity lines are known - Edit Project first
+  // opens the project from its general information alone (no lines after a logout), and that used to turn the saved USD @ 3.67 into AED @ 1.
+  assert.deepEqual(resolveOpeningCurrency({ regionalCurrency: "AED", currency: "USD", currentExchangeRate: 3.67, quantityItems: [] }), { currency: "USD", useRegionalDefault: false }, "a chosen USD survives a load without lines");
+  assert.deepEqual(resolveOpeningCurrency({ regionalCurrency: "AED", currency: "USD", currentExchangeRate: 3.67 }), { currency: "USD", useRegionalDefault: false });
+  assert.deepEqual(resolveOpeningCurrency({ regionalCurrency: "AED", currency: "INR", currentExchangeRate: 22.5, quantityItems: [] }), { currency: "INR", useRegionalDefault: false }, "INR at a real rate is a choice too");
+  assert.deepEqual(resolveOpeningCurrency({ regionalCurrency: "AED", currency: "INR", currentExchangeRate: 1, quantityItems: [] }), { currency: "AED", useRegionalDefault: true }, "only the untouched INR @ 1 default becomes the regional currency");
   // ...and normalizeProject really uses it for both the currency and the rates.
   const svc = src("services/projectService.ts");
   assert.match(svc, /resolveOpeningCurrency\(project\)/);
