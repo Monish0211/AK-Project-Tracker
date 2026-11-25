@@ -19,7 +19,7 @@ import {
 
 /** Invoice Currency feature (Oct 2026) — DB-free unit tests for invoiceCurrency.rules.ts. */
 
-const FOREIGN = ["USD", "EUR", "AED", "MYR", "QAR", "OMR"] as const;
+const FOREIGN = ["USD", "EUR", "AED", "MYR", "QAR", "OMR", "SAR"] as const;
 /** Realistic INR-per-unit rates, only used as test inputs. */
 const SAMPLE_RATES: Record<(typeof FOREIGN)[number], number> = {
   USD: 83.25,
@@ -28,6 +28,7 @@ const SAMPLE_RATES: Record<(typeof FOREIGN)[number], number> = {
   MYR: 18.95,
   QAR: 22.87,
   OMR: 216.35,
+  SAR: 22.2,
 };
 
 function assertAppError(fn: () => unknown, status: number, messagePart?: string): void {
@@ -39,10 +40,11 @@ function assertAppError(fn: () => unknown, status: number, messagePart?: string)
   });
 }
 
-test("supported invoice currencies are exactly Quantity Details' seven, in the same order", () => {
+test("supported invoice currencies are exactly Quantity Details' eight, in the same order", () => {
   assert.deepEqual([...INVOICE_CURRENCIES], [...CURRENCY_OPTIONS]);
-  assert.deepEqual([...INVOICE_CURRENCIES], ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR"]);
+  assert.deepEqual([...INVOICE_CURRENCIES], ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR", "SAR"]);
   assert.equal(CURRENCY_MINOR_UNITS.OMR, 3);
+  assert.equal(CURRENCY_MINOR_UNITS.SAR, 2);
 });
 
 test("resolveCreateAmounts: a legacy caller (no currency fields) is INR, rate 1, original === INR amount", () => {

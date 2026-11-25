@@ -31,7 +31,7 @@ import { AppError } from "../../shared/utils/AppError.js";
  * of which is pdfImport/validators/enumOptions.ts's CURRENCY_OPTIONS
  * (asserted by invoiceCurrency.rules.test.ts).
  */
-export const INVOICE_CURRENCIES = ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR"] as const;
+export const INVOICE_CURRENCIES = ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR", "SAR"] as const;
 export type InvoiceCurrency = (typeof INVOICE_CURRENCIES)[number];
 
 /** ISO 4217 minor units — the most decimal places an original amount may carry. OMR (baisa) has 3. */
@@ -43,6 +43,7 @@ export const CURRENCY_MINOR_UNITS: Record<InvoiceCurrency, number> = {
   MYR: 2,
   QAR: 2,
   OMR: 3,
+  SAR: 2,
 };
 
 /** Statuses that make a line a genuine invoice — and so establish/enforce the project's currency lock. */

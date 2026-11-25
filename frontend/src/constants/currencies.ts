@@ -6,7 +6,7 @@
  * backend's invoiceCurrency.rules.ts INVOICE_CURRENCIES and
  * pdfImport/validators/enumOptions.ts CURRENCY_OPTIONS.
  */
-export const SUPPORTED_CURRENCIES = ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR"] as const;
+export const SUPPORTED_CURRENCIES = ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR", "SAR"] as const;
 export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
 
 export const CURRENCY_NAMES: Record<SupportedCurrency, string> = {
@@ -17,6 +17,7 @@ export const CURRENCY_NAMES: Record<SupportedCurrency, string> = {
   MYR: "Malaysian Ringgit",
   QAR: "Qatari Riyal",
   OMR: "Omani Rial",
+  SAR: "Saudi Riyal",
 };
 
 /** ISO 4217 minor units — OMR (baisa) has 3 decimal places, the rest 2. */
@@ -28,6 +29,7 @@ export const CURRENCY_MINOR_UNITS: Record<SupportedCurrency, number> = {
   MYR: 2,
   QAR: 2,
   OMR: 3,
+  SAR: 2,
 };
 
 export function isSupportedCurrency(value: unknown): value is SupportedCurrency {
