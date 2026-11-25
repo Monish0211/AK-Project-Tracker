@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../utils/prCategoryLabel";
 import { apiClient, ApiError } from "./apiClient";
 
 /**
@@ -59,6 +60,8 @@ export interface PrCategoryCountryReference {
     prNoPrefix: string;
     /** defaultCurrency is the country's regional currency (Phase 3); null or absent when none is configured. */
     country: { code: string | null; name: string; displayName: string; defaultCurrency?: string | null } | null;
+    /** Which Commercial Summary a new project of this category shows, decided by the server. */
+    taxMode?: "GST" | "TAX";
     authorized: boolean;
   }[];
 }
@@ -125,8 +128,10 @@ export function categoryOptionState(
   opts: { currentCategory: string; lockCountry: boolean }
 ): CategoryOptionState {
   const entry = reference?.items.find((i) => i.prCategory === category);
-  const displayName = entry?.country?.displayName;
-  const label = displayName && displayName !== category ? `${category} (${displayName})` : category;
+  // the option reads the shown name (FZE for the stored FZI); a country configured with a different name of its own is added after it
+  const base = prCategoryLabel(category);
+  const shown = prCategoryLabel(entry?.country?.displayName);
+  const label = shown && shown !== base ? `${base} (${shown})` : base;
   if (category === opts.currentCategory) return { disabled: false, label };
   if (opts.lockCountry) return { disabled: true, label };
   if (reference?.enforced && (!entry || !entry.country || !entry.authorized)) return { disabled: true, label };
@@ -142,9 +147,10 @@ export function categoryHint(
   if (!reference || !category) return null;
   const entry = reference.items.find((i) => i.prCategory === category);
   if (!entry?.country) return reference.enforced ? "This PR Category is not linked to a country yet. Ask an Administrator to configure it." : null;
-  if (reference.enforced && !entry.authorized && !opts.lockCountry) return `You do not have access to create projects for ${entry.country.displayName}.`;
+  const name = prCategoryLabel(entry.country.displayName);
+  if (reference.enforced && !entry.authorized && !opts.lockCountry) return `You do not have access to create projects for ${name}.`;
   const currency = entry.country.defaultCurrency ? ` · Regional currency: ${entry.country.defaultCurrency}` : "";
   return opts.lockCountry
-    ? `Country: ${entry.country.displayName}${currency}. A saved project's country cannot be changed here.`
-    : `Country: ${entry.country.displayName}${currency}`;
+    ? `Country: ${name}${currency}. A saved project's country cannot be changed here.`
+    : `Country: ${name}${currency}`;
 }

@@ -766,6 +766,13 @@ model Project {
   // explicitly changes it.
   gstApplicable Boolean @default(false)
 
+  // Project Tax (Nov 2026): the Commercial Summary Tax setting of a project OUTSIDE India (see modules/projects/projectTax.rules.ts - India and legacy
+  // projects keep the GST switch above). NULL = "Not Set" - never assumed to be 0%. The rate is kept while Tax is Not Applicable, so switching it back on
+  // restores it. Tax Amount and Grand Total are NOT stored: they are derived from this rate and the current regional Work Order Value. Never read by
+  // invoices, payments or milestones. A CHECK constraint in the migration keeps the rate within 0..100.
+  taxApplicable  Boolean?
+  taxRatePercent Decimal? @db.Decimal(7, 4)
+
   // Quantity Details project-level currency defaults (Quantity tab header,
   // and shown separately on Business Information as Contract/Current
   // Exchange Rate). Previously frontend/localStorage-only, same gap

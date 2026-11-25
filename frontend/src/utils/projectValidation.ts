@@ -1,3 +1,4 @@
+import { taxFieldsApply } from "./projectTax";
 import type { Project } from "../types/Project";
 import { dateInputError } from "./dateInputValidation";
 
@@ -51,6 +52,11 @@ export const validateQuantityTab = (project: Project): Record<string, string> =>
   } else if (project.regionalCurrency && project.currency !== regionalCurrency && project.currentExchangeRate === 1) {
     // Same rule the server applies: a rate of exactly 1 between two different currencies is an untouched default, not a real rate.
     errors["exchangeRate"] = `A rate of exactly 1 is not valid for ${project.currency} to ${regionalCurrency}. Enter the actual rate: 1 ${project.currency} = ? ${regionalCurrency}.`;
+  }
+
+  // Project Tax (outside India): "Applicable" needs a rate (0% counts). Not Set and Not Applicable need none.
+  if (project.taxApplicable === true && typeof project.taxRatePercent !== "number" && taxFieldsApply(project)) {
+    errors["taxRatePercent"] = "Select a Tax Rate, or set Tax Applicability to Not Applicable.";
   }
 
   project.quantityItems.forEach((item, index) => {

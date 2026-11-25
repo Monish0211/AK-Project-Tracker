@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../../../utils/prCategoryLabel";
 import type { ReactNode } from "react";
 import { X, User as UserIcon, Shield, CheckSquare, Settings2, KeyRound, MapPin, Pencil, Info } from "lucide-react";
 import type { User } from "../../../../types/UserModel";
@@ -154,7 +155,7 @@ export const UserViewDrawer = ({ isOpen, user, onClose, onEdit }: UserViewDrawer
                         isAssigned ? "border-[var(--nu-accent)]/40 bg-[var(--nu-surface-alt)] text-[var(--nu-text)]" : "border-[var(--nu-border)] bg-[var(--nu-surface)] text-[var(--nu-text-muted)]"
                       }`}
                     >
-                      <span className="text-[12px] font-medium">{label}</span>
+                      <span className="text-[12px] font-medium">{prCategoryLabel(label)}</span>
                       <span
                         className={`w-4 h-4 rounded-sm border flex items-center justify-center ${
                           isAssigned ? "bg-[var(--nu-accent)] border-[var(--nu-accent)] text-white" : "border-[var(--nu-border)] bg-transparent"

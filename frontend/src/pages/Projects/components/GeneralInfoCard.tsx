@@ -214,8 +214,9 @@ const GeneralInfoCard = ({ project, setProject, errors = {}, clearError, showCus
                 // Phase 3 (Add Project): the category decides the country, so it also decides the regional currency. Read from the
                 // backend's reference, never derived here from the PR prefix.
                 const currencySource = categoryCountries ?? currencyReference;
+                // A blank category changes nothing; if the list has not arrived yet, useRegionalCurrency() applies the currency when it does.
                 const regionalFields =
-                  applyRegionalCurrency && currencySource
+                  applyRegionalCurrency && currencySource && newCategory
                     ? applyRegionalCurrencyToProject(
                         project,
                         currencySource.items.find((i) => i.prCategory === newCategory)?.country?.defaultCurrency ?? null

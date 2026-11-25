@@ -261,7 +261,7 @@ test("the PR Category field offers only what the backend would accept, and alway
   assert.equal(svc.categoryOptionState(reference(false), "Oman", add).disabled, false, "nothing is disabled while access is not enforced");
   assert.equal(svc.categoryOptionState(null, "Oman", add).disabled, false, "no reference loaded: offer everything, the server decides");
   assert.equal(svc.categoryOptionState(reference(), "Oman", { currentCategory: "Oman", lockCountry: false }).disabled, false, "the saved category is never disabled");
-  assert.equal(svc.categoryOptionState(reference(), "FZI", add).label, "FZI (FZE)", "the stored name stays visible next to the display name");
+  assert.equal(svc.categoryOptionState(reference(), "FZI", add).label, "FZE", "the stored FZI is shown as FZE, once");
   assert.equal(svc.categoryOptionState(reference(), "India", add).label, "India");
 });
 

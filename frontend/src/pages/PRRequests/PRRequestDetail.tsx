@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../utils/prCategoryLabel";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
@@ -152,7 +153,10 @@ const PRRequestDetailPage = ({ admin = false }: { admin?: boolean }) => {
             <div key={key}>
               <p className="text-[10.5px] font-bold uppercase tracking-wide text-[var(--nu-text-muted)]">{label}</p>
               <p className="font-semibold text-[var(--nu-text)] mt-0.5">
-                {DATE_FIELD_KEYS.has(key) ? formatDateOnly((request.projectData as unknown as Record<string, string | null | undefined>)[key]) : String((request.projectData as unknown as Record<string, unknown>)[key] ?? "—")}
+                {DATE_FIELD_KEYS.has(key) ? formatDateOnly((request.projectData as unknown as Record<string, string | null | undefined>)[key])
+                  : key === "prCategory"
+                  ? prCategoryLabel(request.projectData.prCategory) || "—"
+                  : String((request.projectData as unknown as Record<string, unknown>)[key] ?? "—")}
               </p>
             </div>
           ))}

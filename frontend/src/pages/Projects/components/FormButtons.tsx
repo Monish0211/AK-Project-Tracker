@@ -1,6 +1,6 @@
 import { Save, RotateCcw, X, ArrowLeft, ChevronRight } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
 import type { Project } from "../../../types/Project";
@@ -15,7 +15,9 @@ import {
   getProjectById,
   createProjectGeneralInfo,
   updateProjectGeneralInfo,
+  saveProjectCurrency,
 } from "../../../services/projectService";
+import { STALE_PROJECT_MESSAGE, currencyDiffers, readSavedCurrencyState, savedStateChanged, type SavedCurrencyState } from "../../../services/projectCurrencyGuard";
 import { syncQuantityItemsWithApi } from "../../../services/quantityService";
 import { syncMilestonesWithApi } from "../../../services/paymentMilestoneService";
 import { syncExpensesWithApi, type ExpensesConcurrencySignal } from "../../../services/otherProjectExpenseService";
@@ -109,6 +111,14 @@ const FormButtons = ({
   // still reading) for the duration of any save, not just document ones.
   const [isSaving, setIsSaving] = useState(false);
 
+  // Two windows: what this form last knew to be saved (currency, rates, quantity lines). Edit Project reads it on opening, and it is read
+  // again after each of this form's own saves. null = it could not be read on opening; undefined = nothing to compare with.
+  const knownSaved = useRef<Promise<SavedCurrencyState | null | undefined>>(Promise.resolve(undefined));
+  const openedId = useRef(mode === "edit" ? project.id : "");
+  useEffect(() => {
+    if (openedId.current) knownSaved.current = readSavedCurrencyState(openedId.current).catch(() => null);
+  }, []);
+
   /**
    * Phase 3.1: General Information now round-trips through the real backend
    * (POST/PATCH /projects) as a gating pre-step, alongside the existing
@@ -122,6 +132,16 @@ const FormButtons = ({
    * while the server has no record of it.
    */
   const saveProjectData = async (): Promise<boolean> => {
+    const written = { id: "" };
+    try {
+      return await writeProjectData(written);
+    } finally {
+      // Whatever this save managed to write is now the known state; a failed re-read leaves nothing to compare with rather than blocking.
+      if (written.id) knownSaved.current = readSavedCurrencyState(written.id).catch(() => undefined);
+    }
+  };
+
+  const writeProjectData = async (written: { id: string }): Promise<boolean> => {
     // P0 fix — EditProject data-loss protection. If Quantity/Milestones/
     // Expenses failed to load this session, their local state cannot be
     // trusted as "the complete desired set" — syncQuantityItemsWithApi() (and
@@ -144,10 +164,14 @@ const FormButtons = ({
     const timestamp = new Date().toISOString();
     const existing = getProjectById(project.id);
     let projectToSave = project;
+    // The project currency and rates the server held before this save (for a new project: what it was created with).
+    let savedCurrency: Pick<SavedCurrencyState, "currency" | "currentExchangeRate" | "contractExchangeRate">;
 
     try {
       if (!existing) {
-        const created = await createProjectGeneralInfo(project);
+        const created = await createProjectGeneralInfo(project, { omitCurrency: true });
+        written.id = created.id;
+        savedCurrency = created;
         projectToSave = { ...project, id: created.id };
         setProject(projectToSave);
 
@@ -176,7 +200,19 @@ const FormButtons = ({
           }
         }
       } else {
-        await updateProjectGeneralInfo(existing.id, project);
+        const opened = await knownSaved.current;
+        const now = await readSavedCurrencyState(existing.id);
+        if (opened === null) {
+          showToast({ type: "error", message: "The saved project could not be checked for newer changes. Please reload the page before saving." });
+          return false;
+        }
+        if (opened && savedStateChanged(opened, now)) {
+          showToast({ type: "error", message: STALE_PROJECT_MESSAGE });
+          return false;
+        }
+        written.id = existing.id;
+        savedCurrency = now;
+        await updateProjectGeneralInfo(existing.id, project, { omitCurrency: true });
 
         // Same flush, for the case where the user ignored a failed
         // upload's Retry button and simply clicked Save & Next again —
@@ -214,6 +250,8 @@ const FormButtons = ({
         const syncedQuantityItems = await syncQuantityItemsWithApi(projectToSave.id, projectToSave.quantityItems);
         projectToSave = { ...projectToSave, quantityItems: syncedQuantityItems };
         setProject(projectToSave);
+        // The project currency follows only once every line is saved in it, so the two never disagree.
+        if (currencyDiffers(project, savedCurrency)) await saveProjectCurrency(projectToSave.id, project);
       } catch (err) {
         showToast({
           type: "error",
@@ -238,6 +276,10 @@ const FormButtons = ({
         message: "Quantity Details are incomplete and were not saved. Please review the Quantity tab before saving.",
       });
       return false;
+    }
+
+    if (Object.keys(validateQuantityTab(projectToSave)).length > 0 && currencyDiffers(project, savedCurrency) && project.quantityItems.some((item) => item.unitRate > 0)) {
+      showToast({ type: "warning", message: "The currency change was not saved. Finish the quantity rows on the Quantity tab, then save again." });
     }
 
     // Phase 3.4: Payment Milestones round-trip through the real backend the

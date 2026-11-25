@@ -17,6 +17,7 @@ import {
 } from "../../services/prRequestService";
 import { projectToDraftPayload } from "./draftMapping";
 import { validateGeneralTab } from "../../utils/projectValidation";
+import { missingExchangeRateMessage } from "../../utils/regionalCurrencySync";
 
 /**
  * The footer for an Accounts/PMO Manager REVIEWING a pending PR Request —
@@ -46,9 +47,11 @@ interface Props {
    * reason goes with every save and decision, and the admin endpoints are called (stage by stage, recorded).
    */
   admin?: boolean;
+  /** False until the country's currency is known: Save, Approve and Reject wait for it. */
+  ready?: boolean;
 }
 
-const PRRequestReviewFormButtons = ({ project, prRequestId, stage, admin = false }: Props) => {
+const PRRequestReviewFormButtons = ({ project, prRequestId, stage, admin = false, ready = true }: Props) => {
   const navigate = useNavigate();
   const { showToast } = usePmoToast();
   const [isSaving, setIsSaving] = useState(false);
@@ -70,8 +73,14 @@ const PRRequestReviewFormButtons = ({ project, prRequestId, stage, admin = false
     return false;
   };
 
+  const requireExchangeRate = (): boolean => {
+    const message = missingExchangeRateMessage(project);
+    if (message) showToast({ type: "error", message });
+    return !message;
+  };
+
   const handleSave = async () => {
-    if (!requireAdminReason()) return;
+    if (!requireAdminReason() || !requireExchangeRate()) return;
     setIsSaving(true);
     try {
       await persistCurrentEdits();
@@ -84,7 +93,7 @@ const PRRequestReviewFormButtons = ({ project, prRequestId, stage, admin = false
   };
 
   const handleApprove = async () => {
-    if (!requireAdminReason()) return;
+    if (!requireAdminReason() || !requireExchangeRate()) return;
     setIsActioning(true);
     try {
       // Save first, unconditionally — see this component's own comment
@@ -126,14 +135,25 @@ const PRRequestReviewFormButtons = ({ project, prRequestId, stage, admin = false
       // of saved, so invalid data is never stored and nothing is created.
       // Admin: on-screen edits are saved only when a separate admin reason was given (the rejection reason is the decision's own reason).
       const canPersist = Object.keys(validateGeneralTab(project)).length === 0 && (!admin || adminReasonOk);
-      if (canPersist) await persistCurrentEdits();
+      // A rejection is never blocked by the form: edits the server refuses (an unfinished quantity line, a missing rate) are left unsaved.
+      let editsRefused = false;
+      if (canPersist) {
+        try {
+          await persistCurrentEdits();
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.status !== 400) throw error;
+          editsRefused = true;
+        }
+      }
       if (admin) await adminRejectPRRequest(prRequestId, rejectReason.trim());
       else await rejectPRRequest(prRequestId, rejectReason.trim());
       showToast({
         type: "success",
-        message: canPersist
-          ? "PR Request rejected."
-          : "PR Request rejected. On-screen changes were not saved because the General section is incomplete.",
+        message: !canPersist
+          ? "PR Request rejected. On-screen changes were not saved because the General section is incomplete."
+          : editsRefused
+          ? "PR Request rejected. On-screen changes were not saved because some of them are incomplete."
+          : "PR Request rejected.",
       });
       navigate(backPath);
     } catch (error) {
@@ -173,21 +193,21 @@ const PRRequestReviewFormButtons = ({ project, prRequestId, stage, admin = false
           <Button type="button" variant="secondary" size="sm" onClick={() => setShowRejectForm(false)} disabled={isActioning}>
             Cancel
           </Button>
-          <Button type="button" variant="danger" size="sm" disabled={!rejectReason.trim() || isActioning} onClick={handleReject}>
+          <Button type="button" variant="danger" size="sm" disabled={!rejectReason.trim() || isActioning || !ready} onClick={handleReject}>
             Confirm Rejection
           </Button>
         </div>
       ) : (
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" icon={<Save size={14} />} onClick={handleSave} disabled={isSaving}>
+          <Button type="button" variant="outline" size="sm" icon={<Save size={14} />} onClick={handleSave} disabled={isSaving || !ready}>
             {isSaving ? "Saving..." : "Save"}
           </Button>
           {stage !== "draft" && (
             <>
-              <Button type="button" variant="danger" size="sm" icon={<XCircle size={14} />} disabled={isActioning} onClick={() => setShowRejectForm(true)}>
+              <Button type="button" variant="danger" size="sm" icon={<XCircle size={14} />} disabled={isActioning || !ready} onClick={() => setShowRejectForm(true)}>
                 Reject
               </Button>
-              <Button type="button" variant="primary" size="sm" icon={<CheckCircle2 size={14} />} disabled={isActioning} onClick={handleApprove}>
+              <Button type="button" variant="primary" size="sm" icon={<CheckCircle2 size={14} />} disabled={isActioning || !ready} onClick={handleApprove}>
                 {stage === "accounts" ? (admin ? "Approve Accounts stage" : "Approve") : "Approve — Create Project"}
               </Button>
             </>

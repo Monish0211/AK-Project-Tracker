@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../utils/prCategoryLabel";
 import { ALL_COUNTRIES } from "./countryTypes";
 import type { CountryOption } from "./countryTypes";
 
@@ -25,7 +26,7 @@ export const ALL_COUNTRIES_LABEL = "All Countries";
  * explicitly granted it (the server decides, via `allCountries`). A role name never adds a choice.
  */
 export function buildCountryChoices(countries: CountryOption[], allCountries: boolean): CountryChoice[] {
-  const individual = countries.map((c) => ({ value: c.code ?? c.id, label: c.displayName }));
+  const individual = countries.map((c) => ({ value: c.code ?? c.id, label: prCategoryLabel(c.displayName) }));
   return allCountries ? [{ value: ALL_COUNTRIES, label: ALL_COUNTRIES_LABEL }, ...individual] : individual;
 }
 
@@ -74,5 +75,5 @@ export function choiceValueForCountry(country: { code: string | null; displayNam
   if (!country) return null;
   const byCode = country.code ? choices.find((c) => c.value === country.code) : undefined;
   if (byCode) return byCode.value;
-  return choices.find((c) => c.value !== ALL_COUNTRIES && c.label === country.displayName)?.value ?? null;
+  return choices.find((c) => c.value !== ALL_COUNTRIES && c.label === prCategoryLabel(country.displayName))?.value ?? null;
 }

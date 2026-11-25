@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "./prCategoryLabel";
 import type { DashboardSummary, Departments, TopClient } from "../services/dashboardSummaryService";
 
 /**
@@ -18,14 +19,14 @@ export interface CountrySection<T> {
 
 export function topClientSections(summary: Pick<DashboardSummary, "topClients" | "topClientsByCountry" | "kpiCurrency">): CountrySection<TopClient[]>[] {
   if (summary.topClientsByCountry) {
-    return summary.topClientsByCountry.map((s) => ({ key: `${s.countryKey}|${s.currency}`, country: s.country, currency: s.currency, data: s.clients }));
+    return summary.topClientsByCountry.map((s) => ({ key: `${s.countryKey}|${s.currency}`, country: prCategoryLabel(s.country), currency: s.currency, data: s.clients }));
   }
   return [{ key: "headline", country: null, currency: summary.kpiCurrency ?? "INR", data: summary.topClients }];
 }
 
 export function departmentSections(summary: Pick<DashboardSummary, "departments" | "departmentsByCountry" | "kpiCurrency">): CountrySection<Departments>[] {
   if (summary.departmentsByCountry) {
-    return summary.departmentsByCountry.map((s) => ({ key: `${s.countryKey}|${s.currency}`, country: s.country, currency: s.currency, data: s.departments }));
+    return summary.departmentsByCountry.map((s) => ({ key: `${s.countryKey}|${s.currency}`, country: prCategoryLabel(s.country), currency: s.currency, data: s.departments }));
   }
   return [{ key: "headline", country: null, currency: summary.kpiCurrency ?? "INR", data: summary.departments }];
 }

@@ -8,7 +8,14 @@ import type { PrCategoryCountryReference } from "../../services/projectCountryIm
  * every category as before and the server remains the enforcement point.
  */
 export function usePrCategoryCountries(enabled: boolean): PrCategoryCountryReference | null {
+  return usePrCategoryCountriesStatus(enabled).reference;
+}
+
+/** The same reference, with whether it failed to load and a way to try again (forms that must know the currency before saving). */
+export function usePrCategoryCountriesStatus(enabled: boolean): { reference: PrCategoryCountryReference | null; failed: boolean; retry: () => void } {
   const [reference, setReference] = useState<PrCategoryCountryReference | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
@@ -17,11 +24,17 @@ export function usePrCategoryCountries(enabled: boolean): PrCategoryCountryRefer
         if (!cancelled) setReference(data);
       })
       .catch(() => {
-        if (!cancelled) setReference(null);
+        if (cancelled) return;
+        setReference(null);
+        setFailed(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
-  return reference;
+  }, [enabled, attempt]);
+  const retry = () => {
+    setFailed(false);
+    setAttempt((n) => n + 1);
+  };
+  return { reference, failed, retry };
 }

@@ -13,11 +13,13 @@ import { prisma } from "../../shared/utils/prismaClient.js";
  * Subject AND heading of the PR Request "approved" and "rejected" emails, end to end (Oct 2026): a real PR Request is drafted, sent to Accounts and approved /
  * rejected over HTTP against a real database, and every email the server composes is captured by a FAKE mail transport (no SMTP connection is ever opened).
  * Proves the service hands the request's client to the template, that the subject and the body heading are the same line with the FULL client and the FULL
- * project title and NO PR number, that the rejection reason is escaped, and that who receives each email (To only, no CC / BCC) is unchanged.
+ * project title and NO PR number, that the rejection reason is escaped, and that who receives each email is the same To as before, plus the
+ * mandatory CC of the PR Request approval workflow (Nov 2026) and no BCC.
  *
  * Run with SMTP_* blanked (the test aborts if SMTP is configured).
  */
 
+const MANDATORY_CC = ["arun@ifluids.com"];
 const TAG = `prsubj-${Date.now()}`;
 const CLIENT = "HTH Technology Co Private Limited & Sons";
 const TITLE = "3D F&G Mapping Services Project";
@@ -150,7 +152,7 @@ test("approved: subject and heading carry the FULL client and project title and 
   assert.ok(!mail.subject.includes(prNo) && !headingOf(mail.html).includes(prNo), "no PR number in the subject or the heading");
   assert.ok(mail.html.includes(`>${prNo}</td>`), "the PR Number row still shows it");
   assert.equal(mail.to, fx.requester.email, "still addressed to the original requester");
-  assert.ok(mail.cc === undefined && mail.bcc === undefined, "no CC / BCC");
+  assert.deepEqual([mail.cc, mail.bcc], [MANDATORY_CC, undefined], "only the mandatory CC, no BCC");
   assert.ok(mail.html.includes("&amp; Sons"), "the ampersand in the client is escaped in the markup");
   assert.match(mail.html, /Your PR Request has been fully approved and the Project has been created in the PMO Portal\./);
 
@@ -161,7 +163,10 @@ test("approved: subject and heading carry the FULL client and project title and 
   const awaitingPmo = await waitForMail("PR Request awaiting your approval");
   assert.equal(awaitingPmo.subject, "PR Request awaiting your approval");
   assert.equal(awaitingPmo.to, fx.pmo.email);
-  for (const m of [submitted, awaitingPmo]) assert.ok(!/<h2\b/.test(m.html) && m.cc === undefined && m.bcc === undefined);
+  for (const m of [submitted, awaitingPmo]) {
+    assert.ok(!/<h2\b/.test(m.html));
+    assert.deepEqual([m.cc, m.bcc], [MANDATORY_CC, undefined]);
+  }
 });
 
 test("rejected: subject and heading carry the FULL client and project title and no PR number; the reason is escaped; To is the requester only", async () => {
@@ -178,7 +183,7 @@ test("rejected: subject and heading carry the FULL client and project title and 
   assert.ok(!mail.subject.includes(prNo) && !headingOf(mail.html).includes(prNo), "no PR number in the subject or the heading");
   assert.ok(mail.html.includes(`>${prNo}</td>`), "the PR Number row still shows it");
   assert.equal(mail.to, fx.requester.email, "still addressed to the original requester");
-  assert.ok(mail.cc === undefined && mail.bcc === undefined, "no CC / BCC");
+  assert.deepEqual([mail.cc, mail.bcc], [MANDATORY_CC, undefined], "only the mandatory CC, no BCC");
   assert.ok(mail.html.includes(">Budget &amp; scope &quot;Q4&quot; &lt;b&gt;over&lt;/b&gt; limit</td>"), "the rejection reason is shown, escaped");
   assert.ok(!mail.html.includes("<b>over</b>"), "no raw markup from the reason");
   assert.match(mail.html, /Your PR Request was rejected by PR Subject Accounts\. No Project has been created for this request\./);

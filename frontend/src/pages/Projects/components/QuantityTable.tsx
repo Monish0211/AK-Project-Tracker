@@ -16,6 +16,8 @@ import {
   calculateProjectDuration,
 } from "../../../utils/quantityCalculations";
 import CommercialSummaryCard from "./CommercialSummaryCard";
+import ProjectTaxCard from "./ProjectTaxCard";
+import { resolveTaxMode } from "../../../utils/projectTax";
 import { Card, CardHeader } from "../../../components/ui/Card";
 import { StatTile } from "../../../components/ui/StatTile";
 import { Badge } from "../../../components/ui/Badge";
@@ -182,18 +184,28 @@ const QuantityTable = ({ project }: Props) => {
         />
       </div>
 
-      <CommercialSummaryCard
-        currency={project.currency}
-        workOrderValueINR={project.workOrderValueINR}
-        regionalCurrency={project.regionalCurrency}
-        workOrderValueRegional={project.workOrderValueRegional}
-        grandTotalRegional={project.grandTotalRegional}
-        gstApplicable={project.gstApplicable}
-        gstRate={project.gstRate}
-        gstAmount={project.gstAmount}
-        grandTotal={project.grandTotal}
-        editable={false}
-      />
+      {resolveTaxMode(project, null) === "TAX" ? (
+        <ProjectTaxCard
+          currency={regionalCurrency}
+          workOrderValue={regionalWorkOrderValue(project)}
+          applicable={project.taxApplicable}
+          ratePercent={project.taxRatePercent}
+          editable={false}
+        />
+      ) : (
+        <CommercialSummaryCard
+          currency={project.currency}
+          workOrderValueINR={project.workOrderValueINR}
+          regionalCurrency={project.regionalCurrency}
+          workOrderValueRegional={project.workOrderValueRegional}
+          grandTotalRegional={project.grandTotalRegional}
+          gstApplicable={project.gstApplicable}
+          gstRate={project.gstRate}
+          gstAmount={project.gstAmount}
+          grandTotal={project.grandTotal}
+          editable={false}
+        />
+      )}
     </div>
   );
 };

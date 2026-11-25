@@ -1,3 +1,4 @@
+import { prCategoryFromText } from "./prCategoryLabel";
 import type { Project } from "../types/Project";
 import { syncInvoiceItemsWithQuantity } from "../services/invoiceSyncService";
 
@@ -51,7 +52,7 @@ export function applyPrCategoryToPrNo(oldCategory: string, oldPrNo: string, newC
 
 export function inferPrCategory(prNo: string, rawPrCategory?: string): string {
   if (rawPrCategory && rawPrCategory.trim()) {
-    const trimmed = rawPrCategory.trim();
+    const trimmed = prCategoryFromText(rawPrCategory.trim()); // "FZE" typed or imported means the stored "FZI"
     const match = PR_CATEGORIES.find((c) => c.toLowerCase() === trimmed.toLowerCase());
     if (match) return match;
     return trimmed;

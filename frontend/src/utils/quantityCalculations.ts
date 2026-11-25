@@ -236,22 +236,32 @@ export function recalcQuantityItem(
 }
 
 /**
- * The project fields that follow from choosing the project's regional currency (Add Project: picking the PR Category fixes the country and
- * so the regional currency). The transaction currency becomes the regional one, the rate is 1 (read-only), every line is repriced and the
- * totals refresh. Pass null to fall back to a legacy-style INR project.
+ * The project fields that follow from the project's regional currency changing because its PR Category was chosen or changed (Add Project and
+ * PR Request). A currency, unit rate or value the user entered is never silently replaced:
+ * - no line priced yet: the transaction currency becomes the new regional one at rate 1;
+ * - priced in the new regional currency: rate 1;
+ * - priced in another currency and the regional currency is the same (Abu Dhabi <-> FZE): currency and rate stay;
+ * - priced in another currency and the regional currency is different: currency and prices stay, the rate is cleared and must be entered again.
+ * Every line is repriced and the totals refresh. Pass null to fall back to a legacy-style INR project (nothing else moves).
  */
 export function applyRegionalCurrencyToProject<T extends { quantityItems: QuantityItem[]; gstApplicable: boolean }>(
   project: T,
   regionalCurrency: string | null
 ): Partial<T> & { regionalCurrency: string | null } {
   if (!regionalCurrency) return { regionalCurrency: null } as Partial<T> & { regionalCurrency: string | null };
-  const quantityItems = project.quantityItems.map((item) => recalcQuantityItem(item, regionalCurrency, 1, regionalCurrency));
-  const totals = calculateQuantity(quantityItems, regionalCurrency, 1, project.gstApplicable, regionalCurrency);
+  const before = project as T & { regionalCurrency?: string | null; currency?: string; currentExchangeRate?: number; contractExchangeRate?: number };
+  const keepsEnteredCurrency = Boolean(before.currency) && before.currency !== regionalCurrency && project.quantityItems.some((item) => item.unitRate > 0);
+  const sameRegional = before.regionalCurrency === regionalCurrency;
+  const currency = keepsEnteredCurrency ? (before.currency as string) : regionalCurrency;
+  const rate = !keepsEnteredCurrency ? 1 : sameRegional ? (before.currentExchangeRate ?? 0) : 0;
+  const contractRate = keepsEnteredCurrency && sameRegional ? (before.contractExchangeRate ?? rate) : rate;
+  const quantityItems = project.quantityItems.map((item) => recalcQuantityItem(item, currency, rate, regionalCurrency));
+  const totals = calculateQuantity(quantityItems, currency, rate, project.gstApplicable, regionalCurrency);
   return {
     regionalCurrency,
-    currency: regionalCurrency,
-    currentExchangeRate: 1,
-    contractExchangeRate: 1,
+    currency,
+    currentExchangeRate: rate,
+    contractExchangeRate: contractRate,
     quantityItems,
     ...totals,
     totalProjectBudget: regionalCurrency === "INR" ? totals.workOrderValueINR : totals.workOrderValueRegional,
@@ -262,13 +272,17 @@ export function applyRegionalCurrencyToProject<T extends { quantityItems: Quanti
  * Reprices every Quantity line with the project's SAVED currency and rate and refreshes the totals (Total WO Value, GST, Total Project Budget).
  * Used when a saved PR request is loaded for editing or review: the stored payload carries only the raw inputs (qty, unit rate, rate), so
  * without this the line values and totals keep their empty-form defaults (Total WO Value 0) until someone edits a field.
- * Unlike applyRegionalCurrencyToProject, the currency and exchange rate are kept exactly as saved.
+ * Unlike applyRegionalCurrencyToProject, the currency and exchange rate are kept exactly as saved. While the regional currency is not known
+ * yet, each line also keeps its own saved rate: it must not become 1 just because the currency is INR.
  */
 export function recalculateProjectQuantities<
   T extends { quantityItems: QuantityItem[]; currency: string; currentExchangeRate: number; gstApplicable: boolean }
 >(project: T, regionalCurrency: string | null | undefined): Partial<T> {
   const regional = regionalCurrency || null;
-  const quantityItems = project.quantityItems.map((item) => recalcQuantityItem(item, project.currency, project.currentExchangeRate, regional));
+  const quantityItems = project.quantityItems.map((item) => {
+    const priced = recalcQuantityItem(item, project.currency, project.currentExchangeRate, regional);
+    return regional ? priced : { ...priced, exchangeRate: item.exchangeRate };
+  });
   const totals = calculateQuantity(quantityItems, project.currency, project.currentExchangeRate, project.gstApplicable, regional);
   return {
     quantityItems,

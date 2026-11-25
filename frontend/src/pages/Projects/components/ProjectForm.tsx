@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../../utils/prCategoryLabel";
 import { useEffect, useState } from "react";
 import { inferPrCategory } from "../../../utils/createEmptyProject";
 import {
@@ -26,7 +27,9 @@ import type { Dispatch, SetStateAction } from "react";
 import GeneralInfoCard from "./GeneralInfoCard";
 import { formatMoney, isNonInrRegional, regionalCurrencyOf, regionalWorkOrderValue } from "../../../utils/currencyDisplay";
 import { currencyIconFor } from "../../../components/ui/currencyIconFor";
-import { usePrCategoryCountries } from "../usePrCategoryCountries";
+import { usePrCategoryCountriesStatus } from "../usePrCategoryCountries";
+import { useRegionalCurrency } from "../useRegionalCurrency";
+import CurrencyPending from "./CurrencyPending";
 import { useAuth } from "../../../auth/authContext";
 import { isReadOnlyAssignedCoordinator } from "../../../auth/permissions";
 import ProjectDocumentsCard from "./ProjectDocumentsCard";
@@ -116,7 +119,9 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
   // loaded, once — not from the coordinator picked in this session.
   const [isReadOnlyCoordinator] = useState(() => mode === "edit" && isReadOnlyAssignedCoordinator(user, project));
   // The backend's PR Category -> country reference (and this user's own access to each country) for the General tab's PR Category field.
-  const prCategoryCountries = usePrCategoryCountries(true);
+  const { reference: prCategoryCountries, failed: currencyFailed, retry: retryCurrency } = usePrCategoryCountriesStatus(true);
+  // Add Project: the Quantity step waits for the country's currency (Edit Project's comes with the saved project).
+  const currencyReady = useRegionalCurrency(project, setProject, prCategoryCountries, mode === "add");
   const TABS = mode === "add" ? TABS_ADD : TABS_EDIT;
   const [activeTab, setActiveTab] = useState<TabKey>(
     initialTab && TABS.some((tab) => tab.key === initialTab)
@@ -310,7 +315,7 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
     { label: "PR Number", value: project.prNo, icon: Hash },
     { label: "Client", value: project.client, icon: Building2 },
     { label: "Project Title", value: project.projectTitle, icon: Briefcase },
-    { label: "PR Category", value: inferPrCategory(project.prNo, project.prCategory), icon: Layers },
+    { label: "PR Category", value: prCategoryLabel(inferPrCategory(project.prNo, project.prCategory)), icon: Layers },
     { label: "Department", value: project.department, icon: Layers },
     { label: "Project Status", value: project.projectStatus, icon: Activity },
     {
@@ -496,9 +501,12 @@ const ProjectForm = ({ project, setProject, mode, initialTab, initialActivityId,
             </div>
           )}
 
-          {activeTab === "quantity" && (
-            <QuantityCard project={project} setProject={setProject} errors={errors} clearError={clearError} />
-          )}
+          {activeTab === "quantity" &&
+            (currencyReady ? (
+              <QuantityCard project={project} setProject={setProject} errors={errors} clearError={clearError} categoryReference={prCategoryCountries} />
+            ) : (
+              <CurrencyPending failed={currencyFailed} onRetry={retryCurrency} />
+            ))}
 
           {activeTab === "payments" && (
             <CommercialCard project={project} setProject={setProject} errors={errors} clearError={clearError} />

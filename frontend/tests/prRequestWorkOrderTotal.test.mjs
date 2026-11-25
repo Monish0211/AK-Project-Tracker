@@ -90,6 +90,7 @@ test("an empty request still loads with zero totals and the form's blank line", 
 
 test("wiring: the PR form reprices a priced draft once the regional currency is looked up", () => {
   const form = src("pages/PRRequests/RequestPRForm.tsx");
-  assert.match(form, /regionalCurrency: regional, \.\.\.recalculateProjectQuantities\(prev, regional\)/);
+  assert.match(form, /useRegionalCurrency\(project, setProject, currencyReference, true\)/);
+  assert.match(src("utils/regionalCurrencySync.ts"), /regionalCurrency: savedRegional, \.\.\.recalculateProjectQuantities\(project, savedRegional\)/);
   assert.match(src("pages/PRRequests/draftMapping.ts"), /recalculateProjectQuantities\(loaded, loaded\.regionalCurrency\)/);
 });

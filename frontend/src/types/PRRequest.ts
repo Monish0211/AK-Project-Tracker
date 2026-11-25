@@ -85,6 +85,9 @@ export interface PRRequestProjectData {
   pmoCoordinatorEntryId?: string;
   paymentType: "Single" | "Multiple";
   gstApplicable: boolean;
+  /** Project Tax (outside India); absent on India requests and on requests saved before it existed. */
+  taxApplicable?: boolean | null;
+  taxRatePercent?: number | null;
   currency: string;
   currentExchangeRate: number;
   contractExchangeRate: number;

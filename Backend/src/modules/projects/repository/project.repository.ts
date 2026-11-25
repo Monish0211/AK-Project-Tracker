@@ -43,6 +43,9 @@ export interface ProjectGeneralInfoData {
   pmoCoordinator?: string | null;
   paymentType: string;
   gstApplicable: boolean;
+  /** Project Tax (outside India). Optional so a write that does not carry it never touches the saved value. */
+  taxApplicable?: boolean | null;
+  taxRatePercent?: number | null;
   currency: string;
   currentExchangeRate: number;
   contractExchangeRate: number;

@@ -1,7 +1,8 @@
 import { AppError } from "../../shared/utils/AppError.js";
+import { resolveProjectTaxMode, type ProjectTaxMode } from "./projectTax.rules.js";
 import { prisma } from "../../shared/utils/prismaClient.js";
 import { getCountryAccessMode, grantsAllowRegion, loadCountryGrants } from "../../shared/utils/countryAccess.js";
-import { PR_CATEGORY_PREFIX_MAP, PR_CATEGORY_VALUES, isValidPrCategory } from "./project.constants.js";
+import { PR_CATEGORY_PREFIX_MAP, PR_CATEGORY_VALUES, isValidPrCategory, prCategoryLabel } from "./project.constants.js";
 import type { PrCategory } from "./project.constants.js";
 import { findActiveProjectsByPrNos } from "./repository/project.repository.js";
 
@@ -56,6 +57,8 @@ export interface PrCategoryCountryEntry {
   prNoPrefix: string;
   /** null = this category has no active country configured yet (reported, never guessed). */
   country: { code: string | null; name: string; displayName: string; defaultCurrency: string | null } | null;
+  /** The tax setting a NEW project of this category uses (projectTax.rules.ts), so the form never decides it itself. */
+  taxMode: ProjectTaxMode;
   /** true when the CALLER's grants allow creating a project in this country (always true while country access is not enforced). */
   authorized: boolean;
 }
@@ -73,6 +76,7 @@ export async function listPrCategoryCountries(userId: string): Promise<{ enforce
         prCategory,
         prNoPrefix: PR_CATEGORY_PREFIX_MAP[prCategory],
         country: country ? { code: country.code, name: country.name, displayName: country.displayName, defaultCurrency: country.defaultCurrency } : null,
+        taxMode: resolveProjectTaxMode(prCategory, country?.defaultCurrency ?? null),
         authorized: grants === null ? true : country !== null && grantsAllowRegion(grants, country.regionId),
       };
     }),
@@ -93,7 +97,7 @@ export async function resolveAndAuthorizeCreateCountry(
   const mode = getCountryAccessMode();
   if (resolution.kind !== "mapped") {
     if (mode === "enforce") {
-      throw new AppError(`PR Category "${prCategory}" is not linked to a country, so the project cannot be created. Ask an Administrator to configure it.`, 400);
+      throw new AppError(`PR Category "${prCategoryLabel(prCategory)}" is not linked to a country, so the project cannot be created. Ask an Administrator to configure it.`, 400);
     }
     return { regionId: null, regionalCurrency: null };
   }

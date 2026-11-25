@@ -3,6 +3,7 @@ import { AppError } from "../../../shared/utils/AppError.js";
 import { assertProjectAccess, assertProjectReadAccess, resolveProjectReadScope } from "../../../shared/utils/projectAccess.js";
 import { getCountryAccessMode, regionIdForPrCategory } from "../../../shared/utils/countryAccess.js";
 import { assertImportCountriesAcceptable, checkImportRows, resolveAndAuthorizeCreateCountry, resolveCountryForPrCategory } from "../prCategoryCountry.js";
+import { assertTaxFieldsAllowed, resolveProjectTaxMode } from "../projectTax.rules.js";
 import { usesRegionalRules } from "../../quantity/quantityCurrency.rules.js";
 import { validatePrCategoryPrNoRule } from "../project.constants.js";
 import { reconcileUnassignedEntriesForProject } from "../../timesheets/services/timesheet.service.js";
@@ -237,6 +238,9 @@ function toProjectDto(
     pmoCoordinatorAssignedAt: project.pmoCoordinatorAssignedAt,
     paymentType: project.paymentType,
     gstApplicable: project.gstApplicable,
+    taxMode: resolveProjectTaxMode(project.prCategory, project.regionalCurrency),
+    taxApplicable: project.taxApplicable,
+    taxRatePercent: project.taxRatePercent === null ? null : Number(project.taxRatePercent),
     currency: project.currency,
     currentExchangeRate: project.currentExchangeRate,
     contractExchangeRate: project.contractExchangeRate,
@@ -428,6 +432,8 @@ function toGeneralInfoData(input: GeneralInfoInput): ProjectGeneralInfoData {
     pmoCoordinator: input.pmoCoordinator ?? null,
     paymentType: input.paymentType,
     gstApplicable: input.gstApplicable,
+    taxApplicable: input.taxApplicable ?? null,
+    taxRatePercent: input.taxRatePercent ?? null,
     currency: input.currency,
     currentExchangeRate: input.currentExchangeRate,
     contractExchangeRate: input.contractExchangeRate,
@@ -478,6 +484,8 @@ export async function createProject(input: CreateProjectRequestInput, creatorUse
   // Country (Phase 2): the project's country comes from its PR Category only; the creator must hold that country (any authorized country
   // is allowed whatever the creator's own country or the active-country selector). Checked before anything about the PR Number is revealed.
   const { regionId: projectRegionId, regionalCurrency: projectRegionalCurrency } = await resolveAndAuthorizeCreateCountry(input.prCategory, options.countryAuthorizerUserId ?? creatorUserId);
+  // Project Tax: only a project outside India (with a regional currency) may carry it.
+  assertTaxFieldsAllowed(resolveProjectTaxMode(input.prCategory, projectRegionalCurrency), input);
   await assertPrNoAvailable(input.prNo);
 
   // Creating a project directly as Completed follows the same completion and
@@ -593,6 +601,7 @@ export async function bulkImportProjects(
     creatorUserId
   );
   assertImportCountriesAcceptable(countryCheck);
+  input.projects.forEach((p, i) => assertTaxFieldsAllowed(resolveProjectTaxMode(p.prCategory, countryCheck.rows[i]?.regionalCurrency ?? null), p, p.prNo));
 
   const existing = await findActiveProjectsByPrNos(prNos);
   if (existing.length > 0) {
@@ -708,6 +717,8 @@ function toUpdateData(input: UpdateProjectInput): Partial<ProjectGeneralInfoData
     ...(input.pmoCoordinator !== undefined && { pmoCoordinator: input.pmoCoordinator }),
     ...(input.paymentType !== undefined && { paymentType: input.paymentType }),
     ...(input.gstApplicable !== undefined && { gstApplicable: input.gstApplicable }),
+    ...(input.taxApplicable !== undefined && { taxApplicable: input.taxApplicable }),
+    ...(input.taxRatePercent !== undefined && { taxRatePercent: input.taxRatePercent }),
     ...(input.currency !== undefined && { currency: input.currency }),
     ...(input.currentExchangeRate !== undefined && { currentExchangeRate: input.currentExchangeRate }),
     ...(input.contractExchangeRate !== undefined && { contractExchangeRate: input.contractExchangeRate }),
@@ -820,6 +831,17 @@ export async function updateProject(id: string, input: UpdateProjectInput, user:
         409
       );
     }
+  }
+  // Project Tax: decided on the category and regional currency the project will have AFTER this save. A save that moves a project to India
+  // (or any other GST case) clears its Tax setting, so it can never be carried into India; a Tax value sent for a GST project is refused.
+  const nextTaxMode = resolveProjectTaxMode(
+    input.prCategory ?? existing.prCategory,
+    updateData.regionalCurrency !== undefined ? updateData.regionalCurrency : existing.regionalCurrency
+  );
+  assertTaxFieldsAllowed(nextTaxMode, input);
+  if (nextTaxMode === "GST" && input.prCategory !== undefined && input.prCategory !== existing.prCategory) {
+    updateData.taxApplicable = null;
+    updateData.taxRatePercent = null;
   }
   const entryId = input.pmoCoordinatorEntryId;
   const isReadOnly = user.roleName === "Read Only";

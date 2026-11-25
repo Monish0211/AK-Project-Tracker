@@ -108,6 +108,13 @@ export interface Project {
   regionalCurrency?: string | null;
   workOrderValueRegional?: number;
   grandTotalRegional?: number;
+  // Project Tax (Nov 2026), outside India only - see utils/projectTax.ts. taxMode is the server's verdict for the saved record and
+  // taxModeCategory the PR Category it was given for. null = Not Set; undefined = this browser does not know it (never sent on save).
+  // Tax Amount and Grand Total are derived on screen and stored nowhere. India keeps gstApplicable / gstRate / gstAmount / grandTotal.
+  taxMode?: "GST" | "TAX";
+  taxModeCategory?: string;
+  taxApplicable?: boolean | null;
+  taxRatePercent?: number | null;
   backendWorkOrderValueRegional?: number;
   backendPendingDueRegional?: number;
   /** Phase 4 / Option A: PENDING / FAILED while the automatic manpower recalculation after an employee-rate change has not completed for this project. */

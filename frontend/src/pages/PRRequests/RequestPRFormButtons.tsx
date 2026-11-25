@@ -11,6 +11,7 @@ import { ApiError } from "../../services/apiClient";
 import { saveDraftPRRequest, updatePRRequestProjectData } from "../../services/prRequestService";
 import { createEmptyProject } from "../../utils/createEmptyProject";
 import { projectToDraftPayload } from "./draftMapping";
+import { missingExchangeRateMessage } from "../../utils/regionalCurrencySync";
 
 /**
  * The Request PR form's own footer — deliberately NOT Projects'
@@ -35,9 +36,11 @@ interface Props {
   onValidate?: () => boolean;
   /** New request only: uploads documents staged before the draft existed, right after it is created. False if any upload failed. */
   onFlushPendingDocuments?: (prRequestId: string) => Promise<boolean>;
+  /** False until the country's currency is known: saving waits for it. */
+  ready?: boolean;
 }
 
-const RequestPRFormButtons = ({ project, setProject, draftId, isLastTab, isFirstTab, onSaveAndNext, onBack, onValidate, onFlushPendingDocuments }: Props) => {
+const RequestPRFormButtons = ({ project, setProject, draftId, isLastTab, isFirstTab, onSaveAndNext, onBack, onValidate, onFlushPendingDocuments, ready = true }: Props) => {
   const navigate = useNavigate();
   const { showToast } = usePmoToast();
   const [isSaving, setIsSaving] = useState(false);
@@ -46,6 +49,11 @@ const RequestPRFormButtons = ({ project, setProject, draftId, isLastTab, isFirst
 
   const handleSaveDraft = async () => {
     if (onValidate && !onValidate()) return;
+    const missingRate = missingExchangeRateMessage(project);
+    if (missingRate) {
+      showToast({ type: "error", message: missingRate });
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -123,7 +131,7 @@ const RequestPRFormButtons = ({ project, setProject, draftId, isLastTab, isFirst
           </Button>
         )}
         {isLastTab && (
-          <Button type="button" variant="primary" size="sm" icon={<Save size={14} />} onClick={handleSaveDraft} disabled={isSaving}>
+          <Button type="button" variant="primary" size="sm" icon={<Save size={14} />} onClick={handleSaveDraft} disabled={isSaving || !ready}>
             {isSaving ? "Saving..." : "Save Draft"}
           </Button>
         )}

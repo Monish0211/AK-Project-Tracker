@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../../utils/prCategoryLabel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Eye, Pencil, ShieldAlert, Trash2, UserCog } from "lucide-react";
@@ -149,7 +150,7 @@ const AdminPRRequests = () => {
         <select aria-label="Country" className={selectClass} value={prCategory} onChange={(e) => setFilter("country", e.target.value)}>
           <option value="">All countries</option>
           {PR_CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
+            <option key={c} value={c}>{prCategoryLabel(c)}</option>
           ))}
         </select>
         <input
@@ -194,7 +195,7 @@ const AdminPRRequests = () => {
                   <tr key={row.id} className="border-t border-[var(--nu-border)] hover:bg-[var(--nu-surface-alt)]" data-status={row.status}>
                     <td className="px-4 py-2.5 font-mono">{row.prNo || "—"}</td>
                     <td className="px-4 py-2.5">{row.projectName || "Untitled Draft"}</td>
-                    <td className="px-4 py-2.5 text-[var(--nu-text-secondary)]">{row.prCategory || "—"}</td>
+                    <td className="px-4 py-2.5 text-[var(--nu-text-secondary)]">{prCategoryLabel(row.prCategory) || "—"}</td>
                     <td className="px-4 py-2.5 text-[var(--nu-text-secondary)]">{row.requestedByName}</td>
                     <td className="px-4 py-2.5 text-[var(--nu-text-secondary)]">{currentApprover ?? "—"}</td>
                     <td className="px-4 py-2.5">

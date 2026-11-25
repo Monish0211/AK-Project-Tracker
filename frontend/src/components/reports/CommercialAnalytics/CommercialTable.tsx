@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../../utils/prCategoryLabel";
 import { useState, useMemo } from "react";
 import { Search } from "lucide-react";
 import { useReportMoney } from "../reportCurrencyContext";
@@ -34,7 +35,7 @@ export function CommercialTable({ projects }: Props) {
         prNo: p.prNo || "-",
         client: p.client || "-",
         projectTitle: p.projectTitle || "-",
-        category: p.prCategory || "-",
+        category: prCategoryLabel(p.prCategory) || "-",
         region: p.domesticForeign || "Domestic",
         paymentTerms: p.paymentTerms || "Net 30 Days",
         woVal,

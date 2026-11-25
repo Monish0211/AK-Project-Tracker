@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../utils/prCategoryLabel";
 import "./reports-theme.css";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -498,7 +499,7 @@ const Reports = () => {
             startDate: p.projectStartDate || "—",
             endDate: p.projectEndDate || "—",
             status: p.projectStatus,
-            category: p.prCategory || "—",
+            category: prCategoryLabel(p.prCategory) || "—",
           }))
           .filter(
             (r) =>
@@ -950,7 +951,7 @@ const Reports = () => {
               >
                 <option value="All">All Categories</option>
                 {uniqueCategories.filter((cat) => cat !== "All").map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
+                  <option key={cat} value={cat}>{prCategoryLabel(cat)}</option>
                 ))}
               </select>
             </div>
@@ -1635,7 +1636,7 @@ const Reports = () => {
           <div><strong>Department:</strong> {deptFilter}</div>
           <div><strong>Client:</strong> {clientFilter}</div>
           <div><strong>Status:</strong> {statusFilter}</div>
-          <div><strong>Category:</strong> {categoryFilter}</div>
+          <div><strong>Category:</strong> {prCategoryLabel(categoryFilter)}</div>
           <div><strong>Period Preset:</strong> {datePreset}</div>
         </div>
 

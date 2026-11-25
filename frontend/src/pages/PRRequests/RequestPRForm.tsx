@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { FileText, LayoutGrid, Package, CreditCard, Wallet, Lock, Check } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -10,8 +10,9 @@ import type { PendingDocument } from "../Projects/components/ProjectDocumentsCar
 import { uploadPRRequestDocument } from "../../services/documentService";
 import { getUserFriendlyErrorMessage } from "../../utils/errorMessage";
 import QuantityCard from "../Projects/components/QuantityCard";
-import { usePrCategoryCountries } from "../Projects/usePrCategoryCountries";
-import { applyRegionalCurrencyToProject, recalculateProjectQuantities } from "../../utils/quantityCalculations";
+import { usePrCategoryCountriesStatus } from "../Projects/usePrCategoryCountries";
+import { useRegionalCurrency } from "../Projects/useRegionalCurrency";
+import CurrencyPending from "../Projects/components/CurrencyPending";
 import CommercialCard from "../Projects/components/PaymentMilestoneCard";
 import ExpenseBudgetCard from "../Projects/components/ExpenseBudgetCard";
 import RequestPRFormButtons from "./RequestPRFormButtons";
@@ -87,17 +88,10 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
 
   // Regional currency (Phase 3): the project's country decides it, read from the backend's reference. Only the currency is taken from it here;
   // which categories a requester may choose is unchanged.
-  const currencyReference = usePrCategoryCountries(true);
-  // A saved draft does not carry the regional currency, so it is looked up again from the category. A draft with no priced line yet also
-  // takes the regional currency at rate 1; a priced one keeps its saved currency and rates, and its lines and totals are repriced in that
-  // regional currency (for a non-INR region the values belong in the regional fields, not the INR ones).
-  useEffect(() => {
-    if (!currencyReference || !project.prCategory || project.regionalCurrency) return;
-    const regional = currencyReference.items.find((i) => i.prCategory === project.prCategory)?.country?.defaultCurrency ?? null;
-    if (!regional) return;
-    const hasPricedLine = project.quantityItems.some((i) => i.unitRate > 0);
-    setProject((prev) => (prev.regionalCurrency ? prev : { ...prev, ...(hasPricedLine ? { regionalCurrency: regional, ...recalculateProjectQuantities(prev, regional) } : applyRegionalCurrencyToProject(prev, regional)) }));
-  }, [currencyReference, project.prCategory, project.regionalCurrency, project.quantityItems, setProject]);
+  const { reference: currencyReference, failed: currencyFailed, retry: retryCurrency } = usePrCategoryCountriesStatus(true);
+  // A saved draft does not carry the regional currency, so it is looked up again from the category (see utils/regionalCurrencySync.ts).
+  // Until it is known, the Quantity step and every Save / Approve / Reject wait.
+  const currencyReady = useRegionalCurrency(project, setProject, currencyReference, true);
 
   // Supporting documents picked BEFORE this request has been saved (no
   // PR Request id yet) — same staging approach as Add Project: held in memory
@@ -273,14 +267,21 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
               />
             </div>
           )}
-          {activeTab === "quantity" && <QuantityCard project={project} setProject={setProject} errors={errors} clearError={clearError} />}
+          {activeTab === "quantity" &&
+            (currencyReady ? (
+              <QuantityCard project={project} setProject={setProject} errors={errors} clearError={clearError} categoryReference={currencyReference} />
+            ) : (
+              <CurrencyPending failed={currencyFailed} onRetry={retryCurrency} />
+            ))}
           {activeTab === "payments" && <CommercialCard project={project} setProject={setProject} errors={errors} clearError={clearError} />}
           {activeTab === "budget" && <ExpenseBudgetCard project={project} setProject={setProject} />}
         </div>
       </div>
 
+      {!currencyReady && activeTab !== "quantity" && <CurrencyPending failed={currencyFailed} onRetry={retryCurrency} />}
+
       {isReview ? (
-        <PRRequestReviewFormButtons project={project} prRequestId={draftId!} stage={reviewStage!} admin={admin} />
+        <PRRequestReviewFormButtons project={project} prRequestId={draftId!} stage={reviewStage!} admin={admin} ready={currencyReady} />
       ) : (
         <RequestPRFormButtons
           project={project}
@@ -292,6 +293,7 @@ const RequestPRForm = ({ project, setProject, draftId, mode = "draft", reviewSta
           onSaveAndNext={goToNextTab}
           onBack={goToPreviousTab}
           onFlushPendingDocuments={canStageDocuments ? flushPendingDocuments : undefined}
+          ready={currencyReady}
         />
       )}
     </div>

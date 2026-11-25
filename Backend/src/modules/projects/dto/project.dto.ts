@@ -1,3 +1,4 @@
+import type { ProjectTaxMode } from "../projectTax.rules.js";
 /**
  * Phase 3.1 — General Information only. Every field here maps 1:1 onto a
  * column on the Project model (see schema.prisma), which itself mirrors
@@ -61,6 +62,12 @@ export interface ProjectDto {
   // column. GST Rate/GST Amount/Grand Total are NOT part of this DTO —
   // those stay derived client-side from quantityItems + this flag.
   gstApplicable: boolean;
+
+  // Project Tax (Nov 2026). taxMode is the server's decision (projectTax.rules.ts): "GST" = India / legacy, "TAX" = every other country.
+  // The two values are NULL while Not Set. Tax Amount and Grand Total are derived on screen, never stored.
+  taxMode: ProjectTaxMode;
+  taxApplicable: boolean | null;
+  taxRatePercent: number | null;
 
   // Quantity Details project-level currency defaults — see schema.prisma's
   // own comment on these columns. Each QuantityItem's own currency/

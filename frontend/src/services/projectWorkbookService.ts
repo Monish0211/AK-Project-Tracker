@@ -1,4 +1,5 @@
 // exceljs (~0.9 MB source) is loaded on demand, only when the user actually exports/imports a workbook — never at app start.
+import { prCategoryLabel } from "../utils/prCategoryLabel";
 import type ExcelJS from "exceljs";
 import type { Project } from "../types/Project";
 import type { QuantityItem } from "../types/QuantityItem";
@@ -161,7 +162,7 @@ export function getLookupLists(projects: Project[]): LookupLists {
 
   return {
     departments,
-    prCategories: PR_CATEGORIES,
+    prCategories: PR_CATEGORIES.map((c) => prCategoryLabel(c)), // the template offers the shown names; import maps them back
     currencies: CURRENCIES,
     contractTypes: CONTRACT_TYPES,
     projectStatuses: [...PROJECT_STATUS_OPTIONS],
@@ -363,7 +364,7 @@ function projectToRow(p: Project) {
   const ld = p.projectStatus === "Completed" ? projectLdSummary(p) : null;
   return {
     prNo: p.prNo || "",
-    prCategory,
+    prCategory: prCategoryLabel(prCategory),
     rfqNo: p.rfqNo || "",
     poMonth: p.poMonth ? parsePoMonthToDate(p.poMonth) : undefined,
     client: p.client || "",

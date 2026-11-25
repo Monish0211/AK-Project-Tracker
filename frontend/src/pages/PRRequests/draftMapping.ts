@@ -2,6 +2,7 @@ import type { Project } from "../../types/Project";
 import type { PRRequestProjectData } from "../../types/PRRequest";
 import { toDateOnly } from "../../utils/dateOnly";
 import { recalculateProjectQuantities } from "../../utils/quantityCalculations";
+import { taxPayloadFields } from "../../utils/projectTax";
 
 /**
  * Converts the in-memory `Project`-shaped draft object (the exact same type
@@ -39,6 +40,7 @@ export function projectToDraftPayload(project: Project): PRRequestProjectData {
     ...(project.pmoCoordinatorEntryId ? { pmoCoordinatorEntryId: project.pmoCoordinatorEntryId } : {}),
     paymentType: project.paymentType,
     gstApplicable: project.gstApplicable,
+    ...taxPayloadFields(project),
     currency: project.currency,
     currentExchangeRate: project.currentExchangeRate,
     contractExchangeRate: project.contractExchangeRate,
@@ -103,6 +105,8 @@ export function draftPayloadToProject(base: Project, data: PRRequestProjectData)
     pmoCoordinatorEntryId: data.pmoCoordinatorEntryId ?? undefined,
     paymentType: data.paymentType,
     gstApplicable: data.gstApplicable,
+    taxApplicable: data.taxApplicable,
+    taxRatePercent: data.taxRatePercent,
     currency: data.currency,
     currentExchangeRate: data.currentExchangeRate,
     contractExchangeRate: data.contractExchangeRate,

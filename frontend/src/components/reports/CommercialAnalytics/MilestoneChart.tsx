@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../../utils/prCategoryLabel";
 import { useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { useReportMoney } from "../reportCurrencyContext";
@@ -12,7 +13,7 @@ export function MilestoneChart({ projects }: Props) {
     const catMap: Record<string, { category: string; woValue: number; billed: number }> = {};
 
     projects.forEach((p) => {
-      const catName = p.prCategory || "Consultancy Services";
+      const catName = prCategoryLabel(p.prCategory) || "Consultancy Services";
       if (!catMap[catName]) {
         catMap[catName] = { category: catName, woValue: 0, billed: 0 };
       }

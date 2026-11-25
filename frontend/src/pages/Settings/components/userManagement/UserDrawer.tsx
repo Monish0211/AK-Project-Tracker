@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../../../utils/prCategoryLabel";
 import React, { useState, useEffect } from "react";
 import { X, User as UserIcon, Shield, CheckSquare, Settings2, KeyRound, Camera, Save, Info, MapPin, Users } from "lucide-react";
 import type {
@@ -259,7 +260,7 @@ export const UserDrawer = ({ isOpen, mode, user, onClose, onSaved, onRequestRese
   };
 
   /** Shows the configured display name (FZE) while grants keep matching on the stored region name (FZI): see resolveSelectedIds. */
-  const regionDisplayLabel = (label: string): string => lookups?.regions.find((r) => r.name === label)?.displayName ?? label;
+  const regionDisplayLabel = (label: string): string => prCategoryLabel(lookups?.regions.find((r) => r.name === label)?.displayName ?? label);
 
   const handleToggleApproval = (key: keyof UserApprovalRights) => {
     setApprovalRights((prev) => ({ ...prev, [key]: !prev[key] }));

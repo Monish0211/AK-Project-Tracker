@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../utils/prCategoryLabel";
 import type { Project } from "../../types/Project";
 import type { InvoiceDocumentDTO, InvoiceDocumentDetails, InvoiceDocumentLineItem } from "../../types/InvoiceDocument";
 import {
@@ -73,7 +74,7 @@ function issuerFor(project: Project, details: InvoiceDocumentDetails) {
       authorisedSignatoryText: details.authorisedSignatoryText || "AUTHORISED SIGNATORY",
     };
   }
-  const country = project.prCategory || "this country";
+  const country = prCategoryLabel(project.prCategory) || "this country";
   return {
     companyName: "",
     companyAddress: `Issuer details for ${country} are not configured yet - complete them before issuing this invoice.`,

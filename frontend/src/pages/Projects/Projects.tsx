@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../utils/prCategoryLabel";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { formatMoneyCompact, isNonInrRegional, moneyFormatter, regionalCurrencyOf, regionalWorkOrderValue } from "../../utils/currencyDisplay";
@@ -1065,7 +1066,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
               <option value="All">All PR Categories</option>
               {PR_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {prCategoryLabel(c)}
                 </option>
               ))}
             </select>
@@ -1185,7 +1186,7 @@ const Projects = ({ mode = "repository" }: ProjectsProps) => {
                   Invoice Status <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
                 <th onClick={() => toggleSort("workOrderValueINR")} className="p-3 font-extrabold uppercase select-none text-right grp sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
-                  WO Value (INR) <span className="sic"><ArrowUpDown size={8} /></span>
+                  WO Value <span className="sic"><ArrowUpDown size={8} /></span>
                 </th>
                 <th onClick={() => toggleSort("pendingDue")} className="p-3 font-extrabold uppercase select-none text-right sticky top-0 z-20 bg-slate-50 dark:bg-slate-900">
                   Pending Due <span className="sic"><ArrowUpDown size={8} /></span>

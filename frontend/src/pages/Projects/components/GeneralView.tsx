@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../../utils/prCategoryLabel";
 import { Building2, CalendarRange, FileSignature, FileText, LayoutGrid, Timer } from "lucide-react";
 import type { Project } from "../../../types/Project";
 import { inferPrCategory, inferDomesticForeign } from "../../../utils/createEmptyProject";
@@ -36,7 +37,7 @@ const GeneralView = ({ project }: Props) => {
         <CardHeader icon={<LayoutGrid size={15} />} title="General Details" subtitle="PR identity and project title" />
         <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <InfoField label="PO Month" value={project.poMonth ? formatMonthDisplay(project.poMonth) : ""} />
-          <InfoField label="PR Category" value={inferPrCategory(project.prNo, project.prCategory)} />
+          <InfoField label="PR Category" value={prCategoryLabel(inferPrCategory(project.prNo, project.prCategory))} />
           <InfoField label="PR Number" value={project.prNo} />
           <InfoField label="RFQ No." value={project.rfqNo} />
           <InfoField label="Project Title" value={project.projectTitle} />

@@ -27,6 +27,9 @@ import {
   UOM_OPTIONS,
 } from "../../../utils/quantityCalculations";
 import CommercialSummaryCard from "./CommercialSummaryCard";
+import ProjectTaxCard from "./ProjectTaxCard";
+import { resolveTaxMode } from "../../../utils/projectTax";
+import type { PrCategoryCountryReference } from "../../../services/projectCountryImportService";
 import { Card, CardHeader, CardBody } from "../../../components/ui/Card";
 import { FormLabel, RequiredAsterisk } from "../../../components/ui/FormLabel";
 import { StatTile } from "../../../components/ui/StatTile";
@@ -43,6 +46,8 @@ interface Props {
   setProject: Dispatch<SetStateAction<Project>>;
   errors?: Record<string, string>;
   clearError?: (field: string) => void;
+  /** The server's PR Category reference: which Commercial Summary (GST or Tax) a category not yet saved shows. */
+  categoryReference?: PrCategoryCountryReference | null;
 }
 
 const NUMBER_INPUT_PATTERN = /^\d*\.?\d*$/;
@@ -329,7 +334,7 @@ const AssignedToInput = ({ value, onChange, ariaLabel }: AssignedToInputProps) =
   );
 };
 
-const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) => {
+const QuantityCard = ({ project, setProject, errors = {}, clearError, categoryReference }: Props) => {
   const handleDescriptionChange = useCallback(
     (index: number, value: string) => {
       clearError?.(`qty_desc_${index}`);
@@ -495,6 +500,23 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
       });
     },
     [setProject]
+  );
+
+  // Project Tax (outside India): only the two settings are state - the card derives the amounts from the regional Work Order Value.
+  const handleTaxApplicableChange = useCallback(
+    (taxApplicable: boolean) => {
+      setProject((prev) => ({ ...prev, taxApplicable }));
+      clearError?.("taxRatePercent");
+    },
+    [setProject, clearError]
+  );
+
+  const handleTaxRateChange = useCallback(
+    (taxRatePercent: number | null) => {
+      setProject((prev) => ({ ...prev, taxRatePercent }));
+      clearError?.("taxRatePercent");
+    },
+    [setProject, clearError]
   );
 
   // Phase 3: the project's regional currency (INR for a legacy project) and whether the chosen currency IS the regional one (rate 1, read-only).
@@ -829,19 +851,33 @@ const QuantityCard = ({ project, setProject, errors = {}, clearError }: Props) =
         </CardBody>
       </Card>
 
-      <CommercialSummaryCard
-        currency={project.currency}
-        workOrderValueINR={project.workOrderValueINR}
-        regionalCurrency={project.regionalCurrency}
-        workOrderValueRegional={project.workOrderValueRegional}
-        grandTotalRegional={project.grandTotalRegional}
-        gstApplicable={project.gstApplicable}
-        gstRate={project.gstRate}
-        gstAmount={project.gstAmount}
-        grandTotal={project.grandTotal}
-        editable
-        onGstApplicableChange={handleGstApplicableChange}
-      />
+      {resolveTaxMode(project, categoryReference) === "TAX" ? (
+        <ProjectTaxCard
+          key={project.id}
+          currency={regionalCurrency}
+          workOrderValue={regionalWorkOrderValue(project)}
+          applicable={project.taxApplicable}
+          ratePercent={project.taxRatePercent}
+          editable
+          rateError={errors["taxRatePercent"]}
+          onApplicableChange={handleTaxApplicableChange}
+          onRateChange={handleTaxRateChange}
+        />
+      ) : (
+        <CommercialSummaryCard
+          currency={project.currency}
+          workOrderValueINR={project.workOrderValueINR}
+          regionalCurrency={project.regionalCurrency}
+          workOrderValueRegional={project.workOrderValueRegional}
+          grandTotalRegional={project.grandTotalRegional}
+          gstApplicable={project.gstApplicable}
+          gstRate={project.gstRate}
+          gstAmount={project.gstAmount}
+          grandTotal={project.grandTotal}
+          editable
+          onGstApplicableChange={handleGstApplicableChange}
+        />
+      )}
     </div>
   );
 };

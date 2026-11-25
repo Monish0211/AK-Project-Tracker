@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PROJECT_STATUS_VALUES, WORK_ORDER_STATUS_VALUES } from "../project.constants.js";
 import { dateInput } from "../../../shared/utils/dateInput.js";
+import { taxApplicableField, taxRatePercentField } from "../projectTax.rules.js";
 
 /**
  * RFQ No. — the same rule on create and update: a string that is non-empty
@@ -74,6 +75,10 @@ export const createProjectSchema = z.object({
   // working unchanged — same technique as contractType/paymentType's own
   // defaults above.
   gstApplicable: z.boolean().default(false),
+
+  // Project Tax (Nov 2026) - outside India only (the service refuses it on a GST project). No default: omitted / null = "Not Set".
+  taxApplicable: taxApplicableField,
+  taxRatePercent: taxRatePercentField,
 
   // Quantity Details project-level currency defaults. Defaults match the
   // frontend's own pre-existing defaults (INR / rate 1) so a create request
@@ -198,6 +203,10 @@ export const updateProjectSchema = z.object({
   // No default here (unlike create) — omitting it on an update must leave
   // the existing value alone, not silently reset it to false.
   gstApplicable: z.boolean().optional(),
+
+  // Project Tax (Nov 2026): omitted leaves the saved value alone; an explicit null returns it to "Not Set".
+  taxApplicable: taxApplicableField,
+  taxRatePercent: taxRatePercentField,
 
   // No default here either (unlike create) — omitting any of these on an
   // update must leave the existing value alone.

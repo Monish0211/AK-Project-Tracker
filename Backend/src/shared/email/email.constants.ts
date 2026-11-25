@@ -22,6 +22,13 @@ export const MANDATORY_INVOICE_ACCOUNTS_CC_EMAIL = "accounts@ifluids.com";
 export const MANDATORY_INVOICE_WORKFLOW_CC_EMAILS = [MANDATORY_INVOICE_REQUEST_CC_EMAIL, MANDATORY_INVOICE_ACCOUNTS_CC_EMAIL] as const;
 
 /**
+ * PR Request approval workflow (Nov 2026): EVERY email it sends (sent to Accounts, cleared Accounts, approved, rejected - including an approver
+ * reassigned by an administrator) carries this mandatory CC. It is added by the server (see modules/prRequests/prRequestEmail.rules.ts), is never
+ * chosen or removable in the app, and is not tied to a PortalUser row. This is the single place the address is written for PR Requests.
+ */
+export const MANDATORY_PR_REQUEST_CC_EMAIL = "arun@ifluids.com";
+
+/**
  * One subject line per template, kept here rather than inline in each
  * template file so a future notification-log/audit feature can list "what
  * subject lines does this system send" without importing every template.

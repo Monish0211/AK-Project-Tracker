@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../utils/prCategoryLabel";
 import type { Project } from "../../types/Project";
 import type { PrCategoryCountryReference } from "../../services/projectCountryImportService";
 import { isNonInrRegional, regionalCurrencyOf, regionalWorkOrderValue } from "../../utils/currencyDisplay";
@@ -22,8 +23,8 @@ export interface ProjectCountry {
 export function countryOfProject(project: Pick<Project, "prCategory">, reference: PrCategoryCountryReference | null | undefined): ProjectCountry {
   const category = project.prCategory ?? "";
   const country = reference?.items.find((item) => item.prCategory === category)?.country;
-  if (country) return { key: country.code ?? country.name, label: country.displayName };
-  if (category) return { key: `category:${category}`, label: category };
+  if (country) return { key: country.code ?? country.name, label: prCategoryLabel(country.displayName) };
+  if (category) return { key: `category:${category}`, label: prCategoryLabel(category) };
   return { key: NO_COUNTRY_KEY, label: "No country" };
 }
 

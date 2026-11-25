@@ -3,6 +3,7 @@ import type { InvoiceLine, InvoiceLineStatus } from "../types/InvoiceItem";
 import type { Employee } from "../types/EmployeeModel";
 import { createEmptyProject, inferPrCategory, inferDomesticForeign } from "../utils/createEmptyProject";
 import { calculateQuantity, priceQuantityLine, resolveOpeningCurrency } from "../utils/quantityCalculations";
+import { taxPayloadFields } from "../utils/projectTax";
 import { syncInvoiceItemsWithQuantity } from "./invoiceSyncService";
 import { notificationService } from "../notifications/notificationService";
 import { apiClient, ApiError } from "./apiClient";
@@ -343,6 +344,10 @@ export const clearProjects = (): void => {
 
 /** Raw shape one row of GET/POST/PATCH /projects returns — see Backend's ProjectDto. */
 interface BackendProjectDto {
+  /** Project Tax (outside India): the server's card choice and the saved values (null = Not Set). */
+  taxMode?: "GST" | "TAX";
+  taxApplicable?: boolean | null;
+  taxRatePercent?: number | null;
   id: string;
   poMonth: string;
   prCategory: string;
@@ -467,6 +472,9 @@ interface ProjectGeneralInfoPayload {
   /** Set only when a registry entry was picked this session — the backend links the account from it (see Backend project.validators.ts). */
   pmoCoordinatorEntryId?: string;
   paymentType: string;
+  // Project Tax (outside India) - only ever sent for such a project, and only values this browser actually knows (see taxPayloadFields).
+  taxApplicable?: boolean | null;
+  taxRatePercent?: number | null;
   // Commercial Summary GST toggle — see Backend's ProjectDto/schema.prisma
   // comment. GST Rate/GST Amount/Grand Total are NOT part of this
   // interface — those stay derived client-side.
@@ -548,6 +556,7 @@ function toGeneralInfoPayload(project: Project): ProjectGeneralInfoPayload {
     // stay derived client-side from quantityItems + this flag via the
     // existing calculateQuantity(), exactly as before.
     gstApplicable: typeof project.gstApplicable === "boolean" ? project.gstApplicable : false,
+    ...taxPayloadFields(project),
     // Bug fix (Sep 2026): same never-persisted gap gstApplicable had —
     // these three drive the Quantity tab's currency header and Business
     // Information's Contract/Current Exchange Rate, but were never sent to
@@ -656,6 +665,11 @@ function mergeBackendGeneralInfoIntoLocalProject(dto: BackendProjectDto, explici
     // value genuinely is false. This is the fix: the backend value must
     // always win here, in both directions (true and false).
     gstApplicable: dto.gstApplicable,
+    // Project Tax: the server's values always win (null = Not Set), with the category its card choice was given for.
+    taxMode: dto.taxMode,
+    taxModeCategory: dto.taxMode ? dto.prCategory : undefined,
+    taxApplicable: dto.taxApplicable,
+    taxRatePercent: dto.taxRatePercent,
     // Bug fix (Sep 2026): direct pass-through, same reasoning as
     // gstApplicable above — the backend's columns are NOT NULL with real
     // values, so they must always win here rather than being silently
@@ -1029,9 +1043,26 @@ export async function fetchProjectByIdFromApi(id: string, options: { includeReso
   }
 }
 
+/** Edit/Add Project's Save: the project currency and rates are saved only together with the quantity lines (see saveProjectCurrency). */
+function generalInfoPayloadFor(project: Project, options: { omitCurrency?: boolean }): Partial<ProjectGeneralInfoPayload> {
+  const payload: Partial<ProjectGeneralInfoPayload> = toGeneralInfoPayload(project);
+  if (options.omitCurrency) {
+    delete payload.currency;
+    delete payload.currentExchangeRate;
+    delete payload.contractExchangeRate;
+  }
+  return payload;
+}
+
+/** Saves only the project-level currency and rates — called after the quantity lines were saved in that currency. */
+export async function saveProjectCurrency(id: string, project: Project): Promise<void> {
+  const { currency, currentExchangeRate, contractExchangeRate } = toGeneralInfoPayload(project);
+  await apiClient.patch<BackendProjectDto>(`/projects/${id}`, { currency, currentExchangeRate, contractExchangeRate });
+}
+
 /** Creates a project's General Information via the real backend — POST /projects. */
-export async function createProjectGeneralInfo(project: Project): Promise<Project> {
-  const dto = await apiClient.post<BackendProjectDto>("/projects", toGeneralInfoPayload(project));
+export async function createProjectGeneralInfo(project: Project, options: { omitCurrency?: boolean } = {}): Promise<Project> {
+  const dto = await apiClient.post<BackendProjectDto>("/projects", generalInfoPayloadFor(project, options));
   // Bug fix (Aug 2026): explicitBase was previously omitted here, so a
   // brand-new project's id (not yet in the local mirror) made this fall
   // back to createEmptyProject() — discarding whatever Quantity Details/
@@ -1054,8 +1085,8 @@ export async function createProjectGeneralInfo(project: Project): Promise<Projec
  * project.service.ts updateProject), so a completed project stays fully
  * reopenable with its manpower/timesheet history intact.
  */
-export async function updateProjectGeneralInfo(id: string, project: Project): Promise<Project> {
-  const dto = await apiClient.patch<BackendProjectDto>(`/projects/${id}`, toGeneralInfoPayload(project));
+export async function updateProjectGeneralInfo(id: string, project: Project, options: { omitCurrency?: boolean } = {}): Promise<Project> {
+  const dto = await apiClient.patch<BackendProjectDto>(`/projects/${id}`, generalInfoPayloadFor(project, options));
   const merged = mergeBackendGeneralInfoIntoLocalProject(dto);
   writeThroughProjectsMirror([merged]);
   return merged;

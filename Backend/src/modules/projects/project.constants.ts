@@ -108,6 +108,11 @@ export type PrCategory = keyof typeof PR_CATEGORY_PREFIX_MAP;
 
 export const PR_CATEGORY_VALUES = Object.keys(PR_CATEGORY_PREFIX_MAP) as PrCategory[];
 
+/** How a category is SHOWN in a message: the stored "FZI" reads "FZE" (display only - stored values and the "PRI-" prefix are unchanged). */
+export function prCategoryLabel(value: string): string {
+  return value === "FZI" ? "FZE" : value;
+}
+
 export function isValidPrCategory(value: string): value is PrCategory {
   return Object.prototype.hasOwnProperty.call(PR_CATEGORY_PREFIX_MAP, value);
 }
@@ -126,12 +131,12 @@ export function isValidPrCategory(value: string): value is PrCategory {
  */
 export function validatePrCategoryPrNoRule(prCategory: string, prNo: string): string | null {
   if (!isValidPrCategory(prCategory)) {
-    return `Invalid PR Category "${prCategory}". Must be one of: ${PR_CATEGORY_VALUES.join(", ")}.`;
+    return `Invalid PR Category "${prCategory}". Must be one of: ${PR_CATEGORY_VALUES.map(prCategoryLabel).join(", ")}.`;
   }
 
   const expectedPrefix: string = PR_CATEGORY_PREFIX_MAP[prCategory];
   if (!prNo.startsWith(expectedPrefix)) {
-    return `PR Number must start with "${expectedPrefix}" for PR Category "${prCategory}".`;
+    return `PR Number must start with "${expectedPrefix}" for PR Category "${prCategoryLabel(prCategory)}".`;
   }
 
   if (prNo.slice(expectedPrefix.length).trim() === "") {

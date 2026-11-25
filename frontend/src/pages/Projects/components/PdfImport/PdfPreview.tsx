@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../../../utils/prCategoryLabel";
 import { CreditCard, FileSignature, Info, LayoutGrid, Package } from "lucide-react";
 import type { ExtractedField, PdfImportResponse } from "../../../../types/PdfImport";
 import { Card, CardBody, CardHeader } from "../../../../components/ui/Card";
@@ -47,7 +48,7 @@ export const PdfPreview = ({ response }: Props) => {
         <CardHeader icon={<LayoutGrid size={15} />} title="General Information" subtitle="Extracted from the uploaded document" />
         <CardBody className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <PreviewField label="PO Month" field={gi.poMonth} />
-          <PreviewField label="PR Category" field={gi.prCategory} />
+          <PreviewField label="PR Category" field={{ ...gi.prCategory, value: prCategoryLabel(gi.prCategory.value) }} />
           <PreviewField label="Project Title" field={gi.projectTitle} />
           <PreviewField label="Client Name" field={gi.client} />
           <PreviewField label="Department" field={gi.department} />

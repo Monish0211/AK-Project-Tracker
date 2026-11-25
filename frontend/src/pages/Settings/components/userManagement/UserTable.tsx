@@ -18,7 +18,7 @@ const REGION_LABELS: Record<keyof UserProjectRegionAccess, string> = {
   malaysia: "Malaysia",
   oman: "Oman",
   abuDhabi: "Abu Dhabi",
-  fzi: "FZI",
+  fzi: "FZE", // shown name; the stored region name stays "FZI" (utils/accessFields.ts)
   elixirQatar: "Elixir Qatar",
 };
 

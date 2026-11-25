@@ -45,7 +45,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
   }
 
   try {
-    await getTransporter().sendMail({
+    const info: unknown = await getTransporter().sendMail({
       from: `"${env.SMTP_FROM_NAME}" <${env.SMTP_FROM_EMAIL}>`,
       to: options.to,
       cc: options.cc,
@@ -58,7 +58,9 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
         : {}),
     });
 
-    return { success: true };
+    // Nodemailer succeeds when at least one address is accepted; the refused ones are reported so a caller can log them.
+    const refused = (info as { rejected?: unknown } | null | undefined)?.rejected;
+    return Array.isArray(refused) && refused.length > 0 ? { success: true, rejected: refused.map(String) } : { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown email delivery error.";
     console.error("[email] Failed to send email:", message);

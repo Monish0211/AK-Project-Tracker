@@ -9,6 +9,7 @@ import * as repo from "../repository/prRequest.repository.js";
 import type { AdminEditPRRequestInput, AdminListPRRequestsQuery, AdminReassignInput } from "../validators/prRequestAdmin.validators.js";
 import {
   assertDraftCoordinatorAssignable,
+  assertDraftTaxFields,
   notifyCurrentStageApprover,
   performAccountsApproval,
   performPmoManagerApproval,
@@ -121,6 +122,7 @@ export async function adminEdit(id: string, actor: AccessTokenPayload, input: Ad
     throw new AppError(`A request that is ${existing.status} can no longer be edited.`, 409);
   }
   await assertDraftCoordinatorAssignable(input.projectData, existing.projectData);
+  await assertDraftTaxFields(input.projectData);
 
   const normalized = JSON.parse(JSON.stringify(input.projectData)) as unknown;
   const changed = !isDeepStrictEqual(existing.projectData, normalized);

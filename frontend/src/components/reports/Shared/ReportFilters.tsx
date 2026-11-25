@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../../utils/prCategoryLabel";
 import { Filter, RotateCcw } from "lucide-react";
 import type { ReportFilterState } from "../useReportsData";
 import { SearchableAutocomplete } from "./SearchableAutocomplete";
@@ -174,7 +175,7 @@ export function ReportFilters({ filters, setFilters, resetFilters, options }: Pr
               <option value="ALL">All Categories</option>
               {options.categories.map((cat) => (
                 <option key={cat} value={cat}>
-                  {cat}
+                  {prCategoryLabel(cat)}
                 </option>
               ))}
             </select>

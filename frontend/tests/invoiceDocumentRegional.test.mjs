@@ -106,7 +106,8 @@ test("every other country prints no Indian issuer either (Malaysia, FZE, Elixir 
     assert.equal(d.invoiceCurrency, currency);
     assert.equal(d.companyName, "");
     assert.equal(d.companyGstin, "");
-    assert.ok(d.companyAddress.includes(category), `${category}: the notice names the country`);
+    const shown = category === "FZI" ? "FZE" : category; // the stored FZI is shown as FZE
+    assert.ok(d.companyAddress.includes(shown), `${category}: the notice names the country`);
     assert.equal(d.amountInWords.startsWith(currency + " "), true);
   }
 });

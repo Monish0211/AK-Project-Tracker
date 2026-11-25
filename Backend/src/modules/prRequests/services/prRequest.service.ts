@@ -3,13 +3,19 @@ import type { Prisma } from "../../../../generated/prisma/client.js";
 import { AppError } from "../../../shared/utils/AppError.js";
 import { env } from "../../../shared/utils/env.js";
 import { sendEmail } from "../../../shared/email/email.service.js";
+import type { EmailContent } from "../../../shared/email/email.types.js";
+import { buildPRRequestRecipients, sameEmailAddress } from "../prRequestEmail.rules.js";
 import { buildPRRequestAccountsApprovedEmail } from "../../../shared/email/templates/prRequestAccountsApproved.template.js";
 import { buildPRRequestApprovedEmail } from "../../../shared/email/templates/prRequestApproved.template.js";
 import { buildPRRequestRejectedEmail } from "../../../shared/email/templates/prRequestRejected.template.js";
 import { buildPRRequestSubmittedEmail } from "../../../shared/email/templates/prRequestSubmitted.template.js";
 import { notify } from "../../notifications/notification.service.js";
 import { createProject } from "../../projects/services/project.service.js";
+import { resolveCountryForPrCategory } from "../../projects/prCategoryCountry.js";
+import { assertTaxFieldsAllowed, resolveProjectTaxMode, type TaxFieldsInput } from "../../projects/projectTax.rules.js";
 import { createQuantityForProject } from "../../quantity/services/quantity.service.js";
+import { createQuantitySchema } from "../../quantity/validators/quantity.validators.js";
+import { assertQuantityCurrency } from "../../quantity/quantityCurrency.rules.js";
 import { createMilestoneForProject } from "../../milestones/services/milestone.service.js";
 import { repointDocumentsToProject } from "../../documents/repository/document.repository.js";
 import { assertCoordinatorEntryAssignable } from "../../pmoCoordinators/index.js";
@@ -88,7 +94,18 @@ export async function assertDraftCoordinatorAssignable(next: { pmoCoordinatorEnt
   await assertCoordinatorEntryAssignable(nextId);
 }
 
+/**
+ * Project Tax (Nov 2026): a saved request may carry Tax settings only when its category's project would use them (outside India) - the same rule
+ * approval's createProject() applies, checked while the request can still be corrected.
+ */
+export async function assertDraftTaxFields(data: TaxFieldsInput & { prCategory?: string | undefined }): Promise<void> {
+  if ((data.taxApplicable ?? null) === null && (data.taxRatePercent ?? null) === null) return;
+  const resolution = await resolveCountryForPrCategory(data.prCategory);
+  assertTaxFieldsAllowed(resolveProjectTaxMode(data.prCategory, resolution.kind === "mapped" ? resolution.country.defaultCurrency : null), data);
+}
+
 export async function saveDraftPRRequest(input: SaveDraftPRRequestInput, requester: AccessTokenPayload): Promise<PRRequestDto> {
+  await assertDraftTaxFields(input.projectData);
   await assertDraftCoordinatorAssignable(input.projectData, undefined);
   const created = await repo.createDraftPRRequest({
     requestedByUserId: requester.sub,
@@ -174,6 +191,7 @@ export async function updatePRRequestProjectData(
   // that's actually correct for "did the caller's data change vs. what's
   // stored," not just "do these two serializations happen to match."
   await assertDraftCoordinatorAssignable(input.projectData, existing.projectData);
+  await assertDraftTaxFields(input.projectData);
 
   const normalizedInput = JSON.parse(JSON.stringify(input.projectData)) as unknown;
   const dataActuallyChanged = !isDeepStrictEqual(existing.projectData, normalizedInput);
@@ -359,6 +377,8 @@ export interface StageActionRecord {
  */
 export async function performAccountsApproval(existing: PRRequestRow, actor: AccessTokenPayload, record: StageActionRecord): Promise<PRRequestDto> {
   const id = existing.id;
+  // Checked before the status is claimed, so a refused request stays where it is and can be corrected or rejected.
+  if (existing.status === "Pending Accounts Approval") await assertQuantityLinesApprovable(existing.projectData);
   // See prRequest.repository.ts's claimStatusTransition() for why this
   // conditional UPDATE — not the existence check above — is the real
   // concurrency guarantee: two racing approve calls can both pass the
@@ -456,6 +476,8 @@ export async function performPmoManagerApproval(
     );
   }
   const { quantityItems, paymentMilestones, ...generalInfo } = parsed.data;
+  // Before the claim: a Project is never created with a Quantity line left out.
+  await assertQuantityLinesApprovable(existing.projectData);
 
   const claimed = await repo.claimStatusTransition(id, "Pending PMO Manager Approval", "Approved");
   if (claimed.count === 0) {
@@ -663,6 +685,51 @@ export async function notifyCurrentStageApprover(request: PRRequestRow): Promise
   else if (request.status === "Pending PMO Manager Approval") await notifyAssignedPmoManager(request);
 }
 
+/**
+ * Approval (Accounts, PMO Manager, or an administrator acting for either) is refused while any saved Quantity line would be rejected when the Project
+ * is created - the same line rules, in the currency of the request's country. Without this the Project was created without those lines. Rejecting
+ * and saving a request are not affected.
+ */
+export async function assertQuantityLinesApprovable(projectData: unknown): Promise<void> {
+  const data = (projectData ?? {}) as { prCategory?: string; quantityItems?: unknown };
+  const items: unknown[] = Array.isArray(data.quantityItems) ? data.quantityItems : [];
+  if (items.length === 0) return;
+  const resolution = await resolveCountryForPrCategory(data.prCategory);
+  const regionalCurrency = resolution.kind === "mapped" ? resolution.country.defaultCurrency : null;
+  const problems: string[] = [];
+  items.forEach((raw, index) => {
+    const description = (raw as { description?: unknown } | null)?.description;
+    const label = `Line ${index + 1}${typeof description === "string" && description.trim() ? ` "${description.trim()}"` : ""}`;
+    const line = createQuantitySchema.safeParse(raw);
+    if (!line.success) {
+      problems.push(`${label}: ${line.error.issues[0]?.message ?? "invalid line."}`);
+      return;
+    }
+    try {
+      assertQuantityCurrency(line.data.currency, line.data.exchangeRate, regionalCurrency);
+    } catch (err) {
+      problems.push(`${label}: ${err instanceof Error ? err.message : "invalid currency or exchange rate."}`);
+    }
+  });
+  if (problems.length > 0) {
+    throw new AppError(`This PR Request cannot be approved until its Quantity lines are corrected. ${problems.join(" ")}`, 400);
+  }
+}
+
+/**
+ * The ONE way a PR Request approval email leaves: its workflow recipient as To, plus the mandatory CC (never the same person twice). A refused
+ * address never stops the others; it is logged, and a failed send is logged exactly as before. No retry is made (unchanged).
+ */
+async function sendPRRequestEmail(primaryEmail: string, email: EmailContent, label: string): Promise<void> {
+  const result = await sendEmail({ ...buildPRRequestRecipients(primaryEmail), subject: email.subject, html: email.html });
+  if (!result.success) {
+    console.error(`[prRequests] ${label} email failed for ${primaryEmail}: ${result.error}`);
+  } else if (result.rejected) {
+    const primaryRefused = result.rejected.some((address) => sameEmailAddress(address, primaryEmail));
+    console.error(`[prRequests] ${label} email for ${primaryEmail}: the mail server refused ${result.rejected.join(", ")}${primaryRefused ? " - the workflow recipient did NOT receive it" : ""}.`);
+  }
+}
+
 function reviewUrl(id: string): string {
   return `${env.FRONTEND_URL}/pr-requests/${id}`;
 }
@@ -697,10 +764,7 @@ async function notifyAccountsApprover(request: PRRequestRow): Promise<void> {
       client: projectData.client,
       reviewUrl: reviewUrl(request.id),
     });
-    const result = await sendEmail({ to: request.assignedAccountsApprover.email, subject: email.subject, html: email.html });
-    if (!result.success) {
-      console.error(`[prRequests] Submitted email failed for ${request.assignedAccountsApprover.email}: ${result.error}`);
-    }
+    await sendPRRequestEmail(request.assignedAccountsApprover.email, email, "Submitted");
   } catch (error) {
     console.error("[prRequests] Unexpected error while sending Submitted email:", error instanceof Error ? error.message : error);
   }
@@ -736,10 +800,7 @@ async function notifyAssignedPmoManager(request: PRRequestRow): Promise<void> {
       projectTitle: projectData.projectTitle,
       reviewUrl: reviewUrl(request.id),
     });
-    const result = await sendEmail({ to: request.assignedPmoManager.email, subject: email.subject, html: email.html });
-    if (!result.success) {
-      console.error(`[prRequests] Accounts Approved email failed for ${request.assignedPmoManager.email}: ${result.error}`);
-    }
+    await sendPRRequestEmail(request.assignedPmoManager.email, email, "Accounts Approved");
   } catch (error) {
     console.error(
       "[prRequests] Unexpected error while sending Accounts Approved email:",
@@ -768,10 +829,7 @@ async function notifyRequesterApproved(request: PRRequestRow, createdProjectId: 
       client: projectData.client,
       projectUrl: `${env.FRONTEND_URL}/projects/edit/${createdProjectId}`,
     });
-    const result = await sendEmail({ to: request.requestedBy.email, subject: email.subject, html: email.html });
-    if (!result.success) {
-      console.error(`[prRequests] Approved email failed for ${request.requestedBy.email}: ${result.error}`);
-    }
+    await sendPRRequestEmail(request.requestedBy.email, email, "Approved");
   } catch (error) {
     console.error("[prRequests] Unexpected error while sending Approved email:", error instanceof Error ? error.message : error);
   }
@@ -799,10 +857,7 @@ async function notifyRequesterRejected(request: PRRequestRow, rejectedBy: Access
       rejectedByName,
       reason: request.rejectionReason ?? "",
     });
-    const result = await sendEmail({ to: request.requestedBy.email, subject: email.subject, html: email.html });
-    if (!result.success) {
-      console.error(`[prRequests] Rejected email failed for ${request.requestedBy.email}: ${result.error}`);
-    }
+    await sendPRRequestEmail(request.requestedBy.email, email, "Rejected");
   } catch (error) {
     console.error("[prRequests] Unexpected error while sending Rejected email:", error instanceof Error ? error.message : error);
   }

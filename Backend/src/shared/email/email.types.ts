@@ -35,6 +35,8 @@ export type EmailFailureKind = "not_configured" | "size_rejected" | "rejected" |
 
 export interface SendEmailResult {
   success: boolean;
+  /** Set only when the mail server accepted the message but refused some of its addresses (it was delivered to the others). */
+  rejected?: string[];
   /** Present only when success is false — never thrown, so a failed email can never crash the request that triggered it. */
   error?: string;
   /** Present only when success is false. */

@@ -1,3 +1,4 @@
+import { prCategoryLabel } from "../../../utils/prCategoryLabel";
 import { useEffect } from "react";
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, X } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
@@ -114,8 +115,8 @@ export function ProjectImportPreviewPanel({ preview, rejection, busy = false, on
                           <tr key={row.index} className={`border-t border-[var(--nu-border)] ${bad ? "bg-red-50/40" : ""}`}>
                             <td className={td}>{row.rowNumber}</td>
                             <td className={td}>{row.prNo || "(blank)"}</td>
-                            <td className={td}>{row.prCategory || "(blank)"}</td>
-                            <td className={td}>{row.country?.displayName ?? "(not identified)"}</td>
+                            <td className={td}>{prCategoryLabel(row.prCategory) || "(blank)"}</td>
+                            <td className={td}>{prCategoryLabel(row.country?.displayName) ?? "(not identified)"}</td>
                             <td className={td}>{countryStatusLabel(row.countryStatus, preview.enforced)}</td>
                             <td className={td}>{row.duplicate === "none" ? "No" : row.duplicate === "in_file" ? "Repeated in file" : "Already exists"}</td>
                             <td className={td}>{row.errors.length ? row.errors.join(" ") : "None"}</td>
@@ -126,8 +127,8 @@ export function ProjectImportPreviewPanel({ preview, rejection, busy = false, on
                         <tr key={`${row.rowNumber}-${i}`} className="border-t border-[var(--nu-border)] bg-red-50/40">
                           <td className={td}>{row.rowNumber}</td>
                           <td className={td}>{row.prNo || "(blank)"}</td>
-                          <td className={td}>{row.prCategory || "(blank)"}</td>
-                          <td className={td}>{row.country ?? "(not identified)"}</td>
+                          <td className={td}>{prCategoryLabel(row.prCategory) || "(blank)"}</td>
+                          <td className={td}>{prCategoryLabel(row.country) ?? "(not identified)"}</td>
                           <td className={td}>{countryStatusLabel(row.status, true)}</td>
                           <td className={td}>{row.errors.join(" ")}</td>
                         </tr>
