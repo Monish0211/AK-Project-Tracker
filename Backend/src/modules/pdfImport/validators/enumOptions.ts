@@ -48,7 +48,7 @@ export const CONTRACT_TYPE_OPTIONS = ["LUMP SUM", "ARC"] as const;
 // today (Project has no currency column) — this list exists purely so a
 // Claude-suggested currency value can be validated for internal
 // consistency; it doesn't yet have anywhere to persist to server-side.
-export const CURRENCY_OPTIONS = ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR", "SAR"] as const;
+export const CURRENCY_OPTIONS = ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR", "SAR", "KWD"] as const;
 
 // Backend/src/modules/projects/validators/project.validators.ts:36,107 — a
 // real, already-enforced backend Zod enum, duplicated here verbatim.

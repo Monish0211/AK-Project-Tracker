@@ -19,7 +19,7 @@ import {
 
 /** Invoice Currency feature (Oct 2026) — DB-free unit tests for invoiceCurrency.rules.ts. */
 
-const FOREIGN = ["USD", "EUR", "AED", "MYR", "QAR", "OMR", "SAR"] as const;
+const FOREIGN = ["USD", "EUR", "AED", "MYR", "QAR", "OMR", "SAR", "KWD"] as const;
 /** Realistic INR-per-unit rates, only used as test inputs. */
 const SAMPLE_RATES: Record<(typeof FOREIGN)[number], number> = {
   USD: 83.25,
@@ -29,6 +29,7 @@ const SAMPLE_RATES: Record<(typeof FOREIGN)[number], number> = {
   QAR: 22.87,
   OMR: 216.35,
   SAR: 22.2,
+  KWD: 270.5,
 };
 
 function assertAppError(fn: () => unknown, status: number, messagePart?: string): void {
@@ -40,11 +41,12 @@ function assertAppError(fn: () => unknown, status: number, messagePart?: string)
   });
 }
 
-test("supported invoice currencies are exactly Quantity Details' eight, in the same order", () => {
+test("supported invoice currencies are exactly Quantity Details' nine, in the same order", () => {
   assert.deepEqual([...INVOICE_CURRENCIES], [...CURRENCY_OPTIONS]);
-  assert.deepEqual([...INVOICE_CURRENCIES], ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR", "SAR"]);
+  assert.deepEqual([...INVOICE_CURRENCIES], ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR", "SAR", "KWD"]);
   assert.equal(CURRENCY_MINOR_UNITS.OMR, 3);
   assert.equal(CURRENCY_MINOR_UNITS.SAR, 2);
+  assert.equal(CURRENCY_MINOR_UNITS.KWD, 3);
 });
 
 test("resolveCreateAmounts: a legacy caller (no currency fields) is INR, rate 1, original === INR amount", () => {
@@ -69,7 +71,7 @@ test("resolveCreateAmounts: explicit INR with consistent fields is accepted; inc
 test("resolveCreateAmounts: every foreign currency derives INR = round2(original x rate) server-side", () => {
   for (const currency of FOREIGN) {
     const rate = SAMPLE_RATES[currency];
-    const original = currency === "OMR" ? 1234.567 : 1234.56;
+    const original = currency === "OMR" || currency === "KWD" ? 1234.567 : 1234.56;
     const result = resolveCreateAmounts({ currency, exchangeRateToINR: rate, invoiceAmountOriginal: original });
     assert.equal(result.currency, currency);
     assert.equal(result.exchangeRateToINR, rate);

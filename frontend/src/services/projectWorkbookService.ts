@@ -119,7 +119,7 @@ const EXPENSE_COLUMNS: ColumnDef[] = [
 export const EXPENSE_CATEGORIES = ["Travel", "Accommodation", "Software", "Equipment", "Consumables", "Miscellaneous"];
 const DEFAULT_DEPARTMENTS = ["Design Engineering Services", "Environment", "Risk Management", "Training"];
 const PR_CATEGORIES = ["India", "Malaysia", "Oman", "Abu Dhabi", "Qatar", "Elixir Qatar", "FZI"];
-const CURRENCIES = ["INR", "USD", "EUR", "AED", "OMR", "QAR", "SAR"];
+const CURRENCIES = ["INR", "USD", "EUR", "AED", "OMR", "QAR", "SAR", "KWD"];
 const CONTRACT_TYPES = ["LUMP SUM", "UNIT RATE", "MAN-HOUR", "RATE CONTRACT"];
 // Sourced from the shared constants/projectStatus.ts (single source of
 // truth also used by GeneralInfoCard.tsx's dropdowns) — this only drives the

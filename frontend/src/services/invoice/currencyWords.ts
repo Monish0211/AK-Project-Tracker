@@ -14,6 +14,7 @@ const MINOR_UNIT_NAME: Record<Exclude<InvoiceCurrency, "INR">, { one: string; ma
   QAR: { one: "Dirham", many: "Dirhams" },
   OMR: { one: "Baisa", many: "Baisa" },
   SAR: { one: "Halala", many: "Halalas" },
+  KWD: { one: "Fils", many: "Fils" },
 };
 
 /** International scale (Billion / Million / Thousand) — foreign-currency invoices are not written in Lakh/Crore. */

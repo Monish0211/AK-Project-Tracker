@@ -16,6 +16,7 @@
  */
 
 import { prNoCollator } from "./missingExpense.rules.js";
+import { CURRENCY_MINOR_UNITS } from "../invoices/invoiceCurrency.rules.js";
 
 export const UNPAID_INVOICE_JOB_NAME = "unpaid_invoices_30_days";
 export const UNPAID_INVOICE_SETTING_KEY = "unpaid_invoices_30_days";
@@ -99,10 +100,14 @@ export function daysFrom(invoiceDate: Date, today: string): number {
   return Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${invoiceDay}T00:00:00Z`)) / 86_400_000);
 }
 
+function minorUnitsOf(currency: string): number {
+  return (CURRENCY_MINOR_UNITS as Record<string, number>)[currency] ?? 2;
+}
+
 function formatOriginal(currency: string, amount: number, projectCurrency = "INR"): string {
-  // India / legacy: exactly the long-standing note. Another country: the invoice currency's own decimals (OMR: 3).
+  // India / legacy: exactly the long-standing note. Another country: the invoice currency's own decimals (OMR and KWD: 3).
   if (projectCurrency === "INR") return `${currency} ${amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const digits = currency === "OMR" ? 3 : 2;
+  const digits = minorUnitsOf(currency);
   return `${currency} ${amount.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 }
 
@@ -130,7 +135,7 @@ export function buildUnpaidInvoiceReport(lines: InvoiceLineCandidate[], now: Dat
     const days = daysFrom(earliest.invoiceDate, today);
     if (days < OVERDUE_DAYS) continue;
     const projectCurrency = first.projectCurrency ?? "INR";
-    const scale = projectCurrency === "OMR" ? 1000 : 100;
+    const scale = 10 ** minorUnitsOf(projectCurrency);
     const amount = Math.round(g.reduce((s, l) => s + l.invoiceAmountINR, 0) * scale) / scale;
     const partial = g.some((l) => l.status === "PartiallyPaid");
     // "Foreign" = an invoice currency other than the project's own (INR for India / legacy, so India's note is unchanged).
@@ -171,7 +176,7 @@ export function totalKnownOutstanding(rows: OverdueInvoiceRow[]): number {
 export function totalKnownOutstandingByCurrency(rows: OverdueInvoiceRow[]): Record<string, number> {
   const totals: Record<string, number> = {};
   for (const r of rows) {
-    const scale = r.currency === "OMR" ? 1000 : 100;
+    const scale = 10 ** minorUnitsOf(r.currency);
     totals[r.currency] = Math.round(((totals[r.currency] ?? 0) + (r.outstandingINR ?? 0)) * scale) / scale;
   }
   return totals;

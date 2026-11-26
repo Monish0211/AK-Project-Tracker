@@ -5,6 +5,7 @@ import { ALL_MONTHS, fetchTrackerChain, type TrackerChain, type TrackerInvoice, 
 import { INVOICE_LINE_STATUS_TONE } from "../Projects/components/Invoice/InvoiceCalculations";
 import type { InvoiceLineStatus } from "../../types/InvoiceItem";
 import { trackerMoney } from "./trackerFormat";
+import { CURRENCY_MINOR_UNITS, isSupportedCurrency } from "../../constants/currencies";
 import { StateMessage } from "../Settings/components/weeklyEmails/WeeklyEmailPaging";
 import { usePagedRequest } from "../Settings/components/weeklyEmails/useWeeklyEmailPaging";
 import { InvoiceTimeline } from "./InvoiceTimeline";
@@ -87,7 +88,7 @@ function HistoryToggle({ inv }: { inv: TrackerInvoice }) {
 }
 
 const amountText = (inv: TrackerInvoice) =>
-  `${trackerMoney(inv.amountINR, inv.projectCurrency ?? "INR")}${inv.originalAmount !== null ? ` (${inv.currency} ${inv.originalAmount.toLocaleString((inv.projectCurrency ?? "INR") === "INR" ? "en-IN" : "en-US", { minimumFractionDigits: inv.currency === "OMR" ? 3 : 2, maximumFractionDigits: inv.currency === "OMR" ? 3 : 2 })})` : ""}`;
+  `${trackerMoney(inv.amountINR, inv.projectCurrency ?? "INR")}${inv.originalAmount !== null ? ` (${inv.currency} ${inv.originalAmount.toLocaleString((inv.projectCurrency ?? "INR") === "INR" ? "en-IN" : "en-US", { minimumFractionDigits: isSupportedCurrency(inv.currency) ? CURRENCY_MINOR_UNITS[inv.currency] : 2, maximumFractionDigits: isSupportedCurrency(inv.currency) ? CURRENCY_MINOR_UNITS[inv.currency] : 2 })})` : ""}`;
 
 function LinesTable({ inv, projectId, canEdit, canDelete, onAction }: { inv: TrackerInvoice; projectId: string; canEdit: boolean; canDelete: boolean; onAction: (a: TrackerAction) => void }) {
   return (

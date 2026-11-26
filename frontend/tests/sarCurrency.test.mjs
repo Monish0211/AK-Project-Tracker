@@ -19,9 +19,9 @@ before(async () => {
 after(() => vite?.close());
 const src = (rel) => readFileSync(new URL(`../src/${rel}`, import.meta.url), "utf8");
 
-test("SAR is in the shared list the Quantity and Invoice dropdowns read, after the existing seven, with 2 decimals", async () => {
+test("SAR is in the shared list the Quantity and Invoice dropdowns read, after the existing seven (KWD follows), with 2 decimals", async () => {
   const c = await load("/src/constants/currencies.ts");
-  assert.deepEqual([...c.SUPPORTED_CURRENCIES], ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR", "SAR"]);
+  assert.deepEqual([...c.SUPPORTED_CURRENCIES], ["INR", "USD", "EUR", "AED", "MYR", "QAR", "OMR", "SAR", "KWD"]);
   assert.equal(c.CURRENCY_NAMES.SAR, "Saudi Riyal");
   assert.equal(c.CURRENCY_MINOR_UNITS.SAR, 2);
   assert.ok(c.isSupportedCurrency("SAR"));
@@ -60,7 +60,7 @@ test("PDF import and the Excel template know SAR", () => {
   assert.match(config, /enumOptions: \[[^\]]*"SAR"[^\]]*\]/);
   assert.match(config, /SAR: \/SAR\\s\?\[\\d,\]\//);
   const norm = src("services/pdfExtraction/ruleEngine/normalizer.ts");
-  assert.match(norm, /"EUR", "SAR"\]\.includes\(trimmed\)/);
+  assert.match(norm, /"EUR", "SAR"(, "KWD")?\]\.includes\(trimmed\)/);
   assert.match(norm, /\\bSAR\\b\|SAUDI/);
-  assert.match(src("services/projectWorkbookService.ts"), /const CURRENCIES = \[[^\]]*"SAR"\]/);
+  assert.match(src("services/projectWorkbookService.ts"), /const CURRENCIES = \[[^\]]*"SAR"[^\]]*\]/);
 });

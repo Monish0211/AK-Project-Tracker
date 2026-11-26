@@ -1,3 +1,4 @@
+import { CURRENCY_MINOR_UNITS } from "../../../modules/invoices/invoiceCurrency.rules.js";
 import { EMAIL_BRAND } from "../email.constants.js";
 import { renderEmailLayout } from "./layout.template.js";
 import { escapeHtml } from "./missingOtherExpenses.template.js";
@@ -44,10 +45,10 @@ export function formatINR(value: number): string {
   return `₹ ${INR_FORMAT.format(value)}`;
 }
 
-/** An amount in a currency: INR keeps the established "₹ 1,23,456.00"; every other currency is code first with its own decimals (OMR: 3). */
+/** An amount in a currency: INR keeps the established "₹ 1,23,456.00"; every other currency is code first with its own decimals (OMR and KWD: 3). */
 export function formatAmount(value: number, currency = "INR"): string {
   if (currency === "INR") return formatINR(value);
-  const digits = currency === "OMR" ? 3 : 2;
+  const digits = (CURRENCY_MINOR_UNITS as Record<string, number>)[currency] ?? 2;
   return `${currency} ${value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 }
 

@@ -139,12 +139,13 @@ function normalizeContractType(raw: string): "LUMP SUM" | "ARC" | null {
 
 function normalizeCurrency(raw: string): string | null {
   const trimmed = raw.trim().toUpperCase();
-  if (["INR", "USD", "AED", "OMR", "QAR", "MYR", "GBP", "EUR", "SAR"].includes(trimmed)) return trimmed;
+  if (["INR", "USD", "AED", "OMR", "QAR", "MYR", "GBP", "EUR", "SAR", "KWD"].includes(trimmed)) return trimmed;
   if (/₹|RS\.?|RUPEE/i.test(raw)) return "INR";
   if (/AED|DIRHAM/i.test(raw)) return "AED";
   if (/OMR|RIAL/i.test(raw)) return "OMR";
   if (/QAR/i.test(raw)) return "QAR";
   if (/\bSAR\b|SAUDI/i.test(raw)) return "SAR";
+  if (/\bKWD\b|KUWAIT/i.test(raw)) return "KWD";
   if (/\bRM\b|RINGGIT|MYR/i.test(raw)) return "MYR";
   if (/\$/.test(raw)) return "USD";
   return null;
