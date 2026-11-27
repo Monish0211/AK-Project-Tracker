@@ -355,6 +355,13 @@ export async function getDashboardSummary(callerUserId: string | undefined): Pro
   };
 }
 
+/**
+ * Financial Loss Projects / the Dashboard "Projects in Loss" tile. A project qualifies only while it is ACTIVE / IN PROGRESS (the centralized
+ * isActiveProjectStatus(): Active, Ongoing, On-going and the in-progress workflow stages through Final Report Submitted) AND its actual hours exceed its
+ * approved budget hours. Completed, On Hold, Cancelled (and Not Started or an unknown legacy status) never qualify, whatever their historical overrun;
+ * the check reads the project's CURRENT status, so a saved status change moves it out of (or back into) the list on the next load. The hours figures and
+ * ordering are unchanged. The page's search, sorting, paging and Export List all work on this one list, so they inherit the same eligibility.
+ */
 function buildHoursOverrun(
   projects: DashboardProjectRow[],
   _woByProject: Map<string, number>,
@@ -363,7 +370,7 @@ function buildHoursOverrun(
   const overrunProjects: HoursOverrunProjectDto[] = [];
 
   for (const p of projects) {
-    if (p.projectStatus === "Archived" || p.projectStatus === "Cancelled") continue;
+    if (!isActiveProjectStatus(p.projectStatus)) continue;
     const budget = Number(p.manhourBudgetHours) || 0;
     const actual = roundHours(timesheetHours.get(p.id) ?? 0);
     if (!(budget > 0 && actual > budget)) continue;
