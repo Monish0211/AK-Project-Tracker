@@ -328,6 +328,13 @@ export function assertCanViewPRRequest(request: PRRequestRow, caller: AccessToke
   throw new AppError("You do not have access to this PR Request.", 403);
 }
 
+/** The currency of the request's country, from its PR Category (the same country lookup approval uses); null when the category has no country or currency configured. */
+export async function regionalCurrencyOfRequest(row: PRRequestRow): Promise<string | null> {
+  const data = row.projectData as { prCategory?: string } | null;
+  const resolution = await resolveCountryForPrCategory(data?.prCategory);
+  return resolution.kind === "mapped" ? resolution.country.defaultCurrency : null;
+}
+
 export async function getPRRequestDetail(id: string, caller: AccessTokenPayload): Promise<PRRequestDetailDto> {
   const existing = await repo.findPRRequestById(id);
   if (!existing) {
@@ -340,7 +347,7 @@ export async function getPRRequestDetail(id: string, caller: AccessTokenPayload)
   }
 
   const history = await repo.findApprovalHistory(id);
-  return { ...toPRRequestDto(existing), approvalHistory: history.map(toApprovalHistoryDto) };
+  return { ...toPRRequestDto(existing), approvalHistory: history.map(toApprovalHistoryDto), regionalCurrency: await regionalCurrencyOfRequest(existing) };
 }
 
 /**

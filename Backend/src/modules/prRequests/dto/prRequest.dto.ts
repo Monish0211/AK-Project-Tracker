@@ -67,6 +67,11 @@ export interface PRRequestDto {
 
 export interface PRRequestDetailDto extends PRRequestDto {
   approvalHistory: PRRequestApprovalHistoryDto[];
+  /**
+   * The currency of the request's country (Region.defaultCurrency, found from its PR Category - never inferred from the amounts). The detail page needs it to
+   * tell whether the transaction currency differs from the regional one. null = the category has no country or currency configured yet (a legacy-style INR request).
+   */
+  regionalCurrency: string | null;
 }
 
 /** GET /users/by-role — minimal shape, deliberately narrower than the full User Directory row (see user.repository.ts's findActiveUsersByRoleName). */

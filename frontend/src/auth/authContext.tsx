@@ -1,3 +1,4 @@
+import { markExplicitSignOut } from "./returnTo";
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { authService } from "./authService";
 import type { UserSession } from "./authService";
@@ -84,6 +85,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // so ProtectedRoute redirects at once, while the POST /auth/logout call
   // (best-effort refresh-token revocation) happens in the background.
   const logout = useCallback(() => {
+    markExplicitSignOut(); // signing out on purpose: the next sign-in must not be sent to this user's last page
     setUser(null);
     void authService.logout();
   }, []);

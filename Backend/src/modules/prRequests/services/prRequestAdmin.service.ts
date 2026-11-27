@@ -14,6 +14,7 @@ import {
   performAccountsApproval,
   performPmoManagerApproval,
   performRejection,
+  regionalCurrencyOfRequest,
   toApprovalHistoryDto,
   toPRRequestDto,
   type PRRequestRow,
@@ -107,11 +108,11 @@ export async function listAllForAdmin(actor: AccessTokenPayload, query: AdminLis
 }
 
 /** Any request's detail with its full history (Deleted included) - holders only; no module grant needed. */
-export async function getDetailForAdmin(id: string, actor: AccessTokenPayload): Promise<AdminPRRequestDto & Pick<PRRequestDetailDto, "approvalHistory">> {
+export async function getDetailForAdmin(id: string, actor: AccessTokenPayload): Promise<AdminPRRequestDto & Pick<PRRequestDetailDto, "approvalHistory" | "regionalCurrency">> {
   await assertAdminRight(actor, PR_APPROVAL_ADMINISTRATION);
   const existing = await loadOr404(id);
   const history = await repo.findApprovalHistory(id);
-  return { ...toAdminDto(existing), approvalHistory: history.map(toApprovalHistoryDto) };
+  return { ...toAdminDto(existing), approvalHistory: history.map(toApprovalHistoryDto), regionalCurrency: await regionalCurrencyOfRequest(existing) };
 }
 
 /** Edit the data of a Draft or pending request (same validation as the form). Logged as AdminEdited only when something actually changed. */

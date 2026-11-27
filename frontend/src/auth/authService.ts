@@ -1,3 +1,4 @@
+import { currentRouterPath, loginPathWithReturn, wasExplicitSignOut } from "./returnTo";
 import { apiClient, setAccessToken, setUnauthorizedHandler } from "../services/apiClient";
 import { AUTH_CONFIG } from "./authConfig";
 // Deliberate exception to this function's own "just duplicate key names,
@@ -220,7 +221,10 @@ setUnauthorizedHandler(() => {
   // their token simply expired mid-session.
   clearCachedBusinessDataOnLogout();
   if (window.location.pathname !== "/login") {
-    window.location.assign("/login");
+    // An expired session remembers the page it expired on (validated; never an auth page or an external address); an explicit sign-out does not.
+    const base = import.meta.env.BASE_URL;
+    const here = wasExplicitSignOut() ? null : currentRouterPath(window.location, base);
+    window.location.assign(`${base.replace(/\/+$/, "")}${loginPathWithReturn(here)}`);
   }
 });
 

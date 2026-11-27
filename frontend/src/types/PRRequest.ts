@@ -145,6 +145,8 @@ export interface AdminPRRequest extends PRRequest {
 
 export interface PRRequestDetail extends PRRequest {
   approvalHistory: PRRequestApprovalHistoryEntry[];
+  /** The currency of the request's country, looked up by the server from its PR Category; null when the category has no country or currency configured. */
+  regionalCurrency: string | null;
 }
 
 export interface UserByRole {

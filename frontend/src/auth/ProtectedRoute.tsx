@@ -2,6 +2,7 @@ import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./authContext";
 import AccessNotConfigured from "../pages/AccessNotConfigured/AccessNotConfigured";
+import { loginPathWithReturn, wasExplicitSignOut } from "./returnTo";
 
 interface Props {
   children: React.ReactNode;
@@ -23,8 +24,12 @@ const ProtectedRoute: React.FC<Props> = ({ children }) => {
     );
   }
 
+  // The page being asked for, so Login can send the visitor back to it (an approval email link, a notification, a pasted address). Signing out on
+  // purpose does not remember the page; a session that simply expired does. Only a validated in-app path is ever carried (see returnTo.ts).
+  const here = `${location.pathname}${location.search}${location.hash}`;
+
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={wasExplicitSignOut() ? "/login" : loginPathWithReturn(here)} replace />;
   }
 
   // A forced password change blocks every other route — Dashboard, Sidebar,
@@ -32,7 +37,7 @@ const ProtectedRoute: React.FC<Props> = ({ children }) => {
   // route (including the change-password page's own wrapper below), so the
   // explicit path comparison is what stops it from being a redirect loop.
   if (user.forcePasswordChange && location.pathname !== CHANGE_PASSWORD_PATH) {
-    return <Navigate to={CHANGE_PASSWORD_PATH} replace />;
+    return <Navigate to={CHANGE_PASSWORD_PATH} replace state={{ returnTo: here }} />;
   }
 
   // Country access is being enforced and this account has none: no project or financial data is requested for it, and

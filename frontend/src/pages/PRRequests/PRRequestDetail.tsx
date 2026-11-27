@@ -1,7 +1,7 @@
 import { prCategoryLabel } from "../../utils/prCategoryLabel";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Pencil, XCircle } from "lucide-react";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { usePmoToast } from "../../components/ui/usePmoToast";
@@ -17,6 +17,9 @@ import {
 import { PR_ACTION_LABELS, type PRRequestDetail, type PRRequestStatus } from "../../types/PRRequest";
 import { formatDateOnly } from "../../utils/dateOnly";
 import { ProjectTimeline } from "./ProjectTimeline";
+import { CommercialSummaryCard } from "./CommercialSummaryCard";
+import { buildPRCommercialSummary } from "./prCommercialSummary";
+import { prRequestEditPath } from "./prRequestEditAccess";
 
 const STATUS_TONE: Record<PRRequestStatus, "neutral" | "warning" | "accent" | "success" | "danger"> = {
   Draft: "neutral",
@@ -94,6 +97,13 @@ const PRRequestDetailPage = ({ admin = false }: { admin?: boolean }) => {
   const canActOnPmoStage = !admin && request.status === "Pending PMO Manager Approval" && request.assignedPmoManagerId === user?.id;
   const canAct = canActOnAccountsStage || canActOnPmoStage;
 
+  // Edit opens the EXISTING full review form (General / Quantity / Payments / Expense Budget) for the same request. Shown only to someone who may edit it under
+  // the existing rules (see prRequestEditAccess.ts); the form and the server re-check that on every open and every save. Opening it changes nothing.
+  const editPath = prRequestEditPath(request, user, admin);
+
+  // The Work Order Value the approver is about to turn into a Project, from the saved lines (the same pricing and totals the review form and the backend use).
+  const commercialSummary = buildPRCommercialSummary(request.projectData, request.regionalCurrency);
+
   const handleApprove = async () => {
     if (!id) return;
     setIsActioning(true);
@@ -145,7 +155,14 @@ const PRRequestDetailPage = ({ admin = false }: { admin?: boolean }) => {
             <h1 className="text-[16px] font-bold text-[var(--nu-text)]">{request.projectData.projectTitle}</h1>
             <p className="text-[12px] font-mono text-[var(--nu-text-muted)]">{request.projectData.prNo}</p>
           </div>
-          <Badge tone={STATUS_TONE[request.status]}>{request.status}</Badge>
+          <div className="flex items-center gap-2">
+            {editPath && (
+              <Button variant="outline" size="sm" icon={<Pencil size={13} />} onClick={() => navigate(editPath)} data-testid="pr-edit-button">
+                Edit
+              </Button>
+            )}
+            <Badge tone={STATUS_TONE[request.status]}>{request.status}</Badge>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[12px]">
@@ -164,6 +181,8 @@ const PRRequestDetailPage = ({ admin = false }: { admin?: boolean }) => {
 
         {/* The dates the requester entered. The approvers' editable review form shows the same two values in its Project Schedule box. */}
         <ProjectTimeline start={request.projectData.projectStartDate} end={request.projectData.projectEndDate} />
+
+        <CommercialSummaryCard summary={commercialSummary} />
 
         <div className="grid grid-cols-3 gap-3 pt-3 border-t border-[var(--nu-border)] text-[12px]">
           <div>

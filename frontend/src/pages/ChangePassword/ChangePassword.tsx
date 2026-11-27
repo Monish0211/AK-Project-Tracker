@@ -1,3 +1,4 @@
+import { loginPathWithReturn, safeReturnPath } from "../../auth/returnTo";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -32,13 +33,15 @@ export default function ChangePassword() {
   const navigate = useNavigate();
   const location = useLocation();
   const stateEmail = (location.state as { email?: string } | null)?.email;
+  // The page the user was trying to open when sent here (kept through a forced password change); validated, never an auth page or external address.
+  const returnTo = safeReturnPath((location.state as { returnTo?: string } | null)?.returnTo);
   const isForcedFirstLogin = !user && !!stateEmail;
 
   useEffect(() => {
     if (!loading && !user && !stateEmail) {
-      navigate("/login", { replace: true });
+      navigate(loginPathWithReturn(returnTo), { replace: true });
     }
-  }, [loading, user, stateEmail, navigate]);
+  }, [loading, user, stateEmail, navigate, returnTo]);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -86,7 +89,7 @@ export default function ChangePassword() {
       // Either branch above already persisted a fresh token — pull the
       // profile into AuthContext so ProtectedRoute stops redirecting here.
       await refreshUser();
-      setTimeout(() => navigate("/", { replace: true }), 1200);
+      setTimeout(() => navigate(returnTo ?? "/", { replace: true }), 1200);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
     } finally {

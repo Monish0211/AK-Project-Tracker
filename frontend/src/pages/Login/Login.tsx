@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Eye, EyeOff, Lock, User, Sun, Moon, ShieldAlert, Check,
   FolderGit2, TrendingUp, Users, Award, ShieldCheck, ChevronRight,
@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../auth/authContext";
 import { hasModuleAccess } from "../../auth/permissions";
+import { clearExplicitSignOut, returnToFromSearch } from "../../auth/returnTo";
 import { useTheme } from "../../context/ThemeContext";
 import LoadingScreen from "../../components/LoadingScreen/LoadingScreen";
 import { Logo } from "../../components/ui/Logo";
@@ -39,13 +40,22 @@ export default function Login() {
   const { user, login } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+  // The page the visitor was trying to open before being sent here (e.g. an approval email link), already validated as an in-app path; null
+  // when absent or unsafe, in which case the long-standing default destination below applies unchanged.
+  const returnTo = returnToFromSearch(location.search);
+
+  // Arriving at the sign-in screen ends any explicit-sign-out marker: from here on an expired session may remember its page again.
+  useEffect(() => {
+    clearExplicitSignOut();
+  }, []);
 
   // If already authenticated, redirect immediately.
   useEffect(() => {
     if (user && user.isAuthenticated) {
-      navigate(getPostLoginPath(user), { replace: true });
+      navigate(returnTo ?? getPostLoginPath(user), { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, returnTo]);
 
   // Input Refs
   const emailRef = useRef<HTMLInputElement>(null);
@@ -152,7 +162,7 @@ export default function Login() {
       const result = await login(email, password);
       if (result.success && result.requiresPasswordChange) {
         setIsSubmitting(false);
-        navigate("/auth/change-password", { state: { email: result.email ?? email } });
+        navigate("/auth/change-password", { state: { email: result.email ?? email, returnTo } });
         return;
       }
 
@@ -161,11 +171,11 @@ export default function Login() {
         setAuthStatusText("Success!");
         setFailedAttempts(0);
 
-        const postLoginPath = getPostLoginPathFromModules(result.modules);
+        const postLoginPath = returnTo ?? getPostLoginPathFromModules(result.modules);
         setTimeout(() => {
           setIsTransitioning(true);
           setTimeout(() => {
-            navigate(postLoginPath);
+            navigate(postLoginPath, returnTo ? { replace: true } : undefined);
           }, 600);
         }, 1000);
       } else {

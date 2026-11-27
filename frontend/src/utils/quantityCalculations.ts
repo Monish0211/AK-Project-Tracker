@@ -51,6 +51,18 @@ export function calculateProjectDuration(
   return `${diffDays} Days`;
 }
 
+/**
+ * The work order value of the lines in THEIR OWN (transaction) currency: quantity x unit rate, a LUMP SUM line counting its unit rate once. Nothing is
+ * converted. Used by calculateQuantity below and by the PR detail page's Commercial Summary, so both always add the lines the same way.
+ */
+export function sumTransactionCurrencyValue(items: ReadonlyArray<Pick<QuantityItem, "uom" | "woQty" | "unitRate">>): number {
+  return items.reduce((sum, item) => {
+    const isLumpSum = (item.uom || "").trim().toUpperCase() === "LUMP SUM";
+    const val = isLumpSum ? (item.unitRate || 0) : ((item.woQty || 0) * (item.unitRate || 0));
+    return sum + val;
+  }, 0);
+}
+
 export function calculateQuantity(
   items: QuantityItem[],
   currency: string = "INR",
@@ -88,14 +100,7 @@ export function calculateQuantity(
     0
   );
 
-  const totalWOValueProjectCurrency = items.reduce(
-    (sum, item) => {
-      const isLumpSum = (item.uom || "").trim().toUpperCase() === "LUMP SUM";
-      const val = isLumpSum ? (item.unitRate || 0) : ((item.woQty || 0) * (item.unitRate || 0));
-      return sum + val;
-    },
-    0
-  );
+  const totalWOValueProjectCurrency = sumTransactionCurrencyValue(items);
 
   const workOrderValue = currency === "INR" ? totalWOValueINR : totalWOValueProjectCurrency;
   const workOrderValueINR = totalWOValueINR;
